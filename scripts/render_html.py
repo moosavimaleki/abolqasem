@@ -6,9 +6,9 @@ import sys
 
 
 def main() -> int:
-    binary = shutil.which("ai-session-viewer")
+    binary = shutil.which("ai-agent-manager")
     if not binary:
-        sys.stderr.write("ai-session-viewer is not installed on PATH\n")
+        sys.stderr.write("ai-agent-manager is not installed on PATH\n")
         return 1
 
     env = os.environ.copy()

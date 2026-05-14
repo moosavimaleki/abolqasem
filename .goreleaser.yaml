@@ -1,6 +1,6 @@
 version: 2
 
-project_name: ai-session-viewer
+project_name: ai-agent-manager
 
 before:
   hooks:
@@ -8,9 +8,9 @@ before:
     - go test ./...
 
 builds:
-  - id: ai-session-viewer
-    main: ./cmd/ai-session-viewer
-    binary: ai-session-viewer
+  - id: ai-agent-manager
+    main: ./cmd/ai-agent-manager
+    binary: ai-agent-manager
     env:
       - CGO_ENABLED=0
     goos:

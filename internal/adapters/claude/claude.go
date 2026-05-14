@@ -1,15 +1,15 @@
 package claude
 
 import (
-	"ai-session-viewer/internal/adapters"
-	"ai-session-viewer/internal/state"
+	"ai-agent-manager/internal/adapters"
+	"ai-agent-manager/internal/state"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 )
 
-const hookName = "ai-session-viewer-claude-stop"
+const hookName = "ai-agent-manager-claude-stop"
 
 type ClaudeAdapter struct{}
 

@@ -1,5 +1,5 @@
-APP=ai-session-viewer
-PKG=./cmd/ai-session-viewer
+APP=ai-agent-manager
+PKG=./cmd/ai-agent-manager
 DIST=dist
 
 .PHONY: clean build test build-all

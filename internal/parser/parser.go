@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"ai-session-viewer/internal/render"
+	"ai-agent-manager/internal/render"
 )
 
 var ErrTranscriptUnavailable = errors.New("transcript is unavailable")

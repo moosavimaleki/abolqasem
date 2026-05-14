@@ -1,6 +1,6 @@
 package adapters
 
-import "ai-session-viewer/internal/state"
+import "ai-agent-manager/internal/state"
 
 type InstallScope string
 

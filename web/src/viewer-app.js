@@ -34,6 +34,7 @@ export function createViewerApp() {
     settings: loadSettings(),
     eventSource: null,
     sessionNoticeTimer: null,
+    sessionNoticeInterval: null,
   };
 
   const els = {
@@ -182,12 +183,12 @@ export function createViewerApp() {
         await loadSession(state.sessions[0].key);
       }
       if (state.sessions.length === 0) {
-        renderEmptyState("هنوز نشستی ثبت نشده است.", "ai-session-viewer install --all --scope user");
+        renderEmptyState("هنوز نشستی ثبت نشده است.", "ai-agent-manager install --all --scope user");
       }
     } catch (error) {
       console.error(error);
       els.sessionCount.textContent = "خطا";
-      renderEmptyState("نشست‌ها بارگذاری نشدند.", "ai-session-viewer server");
+      renderEmptyState("نشست‌ها بارگذاری نشدند.", "ai-agent-manager server");
     }
   }
 
@@ -792,7 +793,6 @@ export function createViewerApp() {
     const action = document.createElement("button");
     action.type = "button";
     action.className = "session-notice-action";
-    action.textContent = "رفتن به این چت";
 
     const close = document.createElement("button");
     close.type = "button";
@@ -813,20 +813,39 @@ export function createViewerApp() {
 
     const notice = getSessionNotice();
     const title = event.project_name || event.session_id || "نشست جدید";
-    notice.querySelector(".session-notice-text").textContent = `نشست به‌روزرسانی شد: ${title}`;
-    notice.querySelector(".session-notice-action").onclick = async () => {
+    const durationSeconds = 8;
+    let remainingSeconds = durationSeconds;
+    const action = notice.querySelector(".session-notice-action");
+
+    const goToSession = async () => {
       hideSessionNotice();
       await loadSessionList({ loadInitial: false });
       if (state.sessions.some((item) => item.key === event.session_key)) {
         await loadSession(event.session_key);
       }
     };
+    const updateCountdown = () => {
+      action.textContent = `رفتن به این چت (${remainingSeconds})`;
+      notice.style.setProperty("--notice-progress", String(Math.max(0, remainingSeconds / durationSeconds)));
+    };
+
+    notice.querySelector(".session-notice-text").textContent = `نشست به‌روزرسانی شد: ${title}`;
+    action.onclick = goToSession;
+    updateCountdown();
 
     notice.classList.remove("hidden");
     window.requestAnimationFrame(() => notice.classList.add("is-visible"));
 
     window.clearTimeout(state.sessionNoticeTimer);
-    state.sessionNoticeTimer = window.setTimeout(hideSessionNotice, 12000);
+    window.clearInterval(state.sessionNoticeInterval);
+    state.sessionNoticeInterval = window.setInterval(() => {
+      remainingSeconds -= 1;
+      updateCountdown();
+      if (remainingSeconds <= 0) {
+        goToSession();
+      }
+    }, 1000);
+    state.sessionNoticeTimer = window.setTimeout(goToSession, durationSeconds * 1000);
   }
 
   function hideSessionNotice() {
@@ -836,6 +855,7 @@ export function createViewerApp() {
     }
     notice.classList.remove("is-visible");
     window.clearTimeout(state.sessionNoticeTimer);
+    window.clearInterval(state.sessionNoticeInterval);
     state.sessionNoticeTimer = window.setTimeout(() => {
       notice.classList.add("hidden");
     }, 180);

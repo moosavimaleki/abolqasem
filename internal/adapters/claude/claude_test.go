@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"ai-session-viewer/internal/adapters"
+	"ai-agent-manager/internal/adapters"
 )
 
 func TestInstallAndUninstallHookPreservesOtherHooks(t *testing.T) {
@@ -65,9 +65,9 @@ func TestInstallHookIsIdempotentAndRepairsExistingHook(t *testing.T) {
       {
         "hooks": [
           {
-            "name": "ai-session-viewer-claude-stop",
+            "name": "ai-agent-manager-claude-stop",
             "type": "command",
-            "command": "/old/bin/ai-session-viewer hook --agent claude",
+            "command": "/old/bin/ai-agent-manager hook --agent claude",
             "timeout": 1
           }
         ]
@@ -92,7 +92,7 @@ func TestInstallHookIsIdempotentAndRepairsExistingHook(t *testing.T) {
 		t.Fatalf("read config: %v", err)
 	}
 	config := string(data)
-	if strings.Contains(config, "/old/bin/ai-session-viewer") {
+	if strings.Contains(config, "/old/bin/ai-agent-manager") {
 		t.Fatalf("expected stale hook command to be repaired: %s", config)
 	}
 	if !strings.Contains(config, "hook") || !strings.Contains(config, "--agent") || !strings.Contains(config, "claude") {

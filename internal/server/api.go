@@ -1,8 +1,8 @@
 package server
 
 import (
-	"ai-session-viewer/internal/parser"
-	"ai-session-viewer/internal/state"
+	"ai-agent-manager/internal/parser"
+	"ai-agent-manager/internal/state"
 	"encoding/json"
 	"errors"
 	"net/http"

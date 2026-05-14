@@ -1,8 +1,8 @@
-# Windows installer for ai-session-viewer.
+# Windows installer for ai-agent-manager.
 
 [CmdletBinding()]
 param(
-    [string]$BinDir = "$env:LOCALAPPDATA\ai-session-viewer\bin",
+    [string]$BinDir = "$env:LOCALAPPDATA\ai-agent-manager\bin",
     [switch]$NoBuild,
     [switch]$BuildAll,
     [switch]$Hooks,
@@ -14,8 +14,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$App = "ai-session-viewer"
-$Pkg = ".\cmd\ai-session-viewer"
+$App = "ai-agent-manager"
+$Pkg = ".\cmd\ai-agent-manager"
 $Dist = "dist"
 
 function Get-TargetArch {
@@ -96,8 +96,8 @@ if ($Hooks -or $AllAgents -or $Agent) {
     }
 } else {
     Write-Host "Hook install skipped. To install hooks later:"
-    Write-Host "  ai-session-viewer install --all --scope user"
+    Write-Host "  ai-agent-manager install --all --scope user"
 }
 
 Write-Host "Run the server with:"
-Write-Host "  ai-session-viewer server"
+Write-Host "  ai-agent-manager server"

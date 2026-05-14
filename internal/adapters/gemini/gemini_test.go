@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"ai-session-viewer/internal/adapters"
+	"ai-agent-manager/internal/adapters"
 )
 
 func TestInstallAndUninstallHookPreservesOtherHooks(t *testing.T) {
@@ -68,9 +68,9 @@ func TestInstallHookIsIdempotentAndRepairsExistingHooks(t *testing.T) {
         "matcher": "*",
         "hooks": [
           {
-            "name": "ai-session-viewer-gemini-after-agent",
+            "name": "ai-agent-manager-gemini-after-agent",
             "type": "command",
-            "command": "/old/bin/ai-session-viewer hook --agent gemini"
+            "command": "/old/bin/ai-agent-manager hook --agent gemini"
           }
         ]
       }
@@ -80,9 +80,9 @@ func TestInstallHookIsIdempotentAndRepairsExistingHooks(t *testing.T) {
         "matcher": "*",
         "hooks": [
           {
-            "name": "ai-session-viewer-gemini-session-end",
+            "name": "ai-agent-manager-gemini-session-end",
             "type": "command",
-            "command": "/old/bin/ai-session-viewer hook --agent gemini"
+            "command": "/old/bin/ai-agent-manager hook --agent gemini"
           }
         ]
       }
@@ -106,7 +106,7 @@ func TestInstallHookIsIdempotentAndRepairsExistingHooks(t *testing.T) {
 		t.Fatalf("read config: %v", err)
 	}
 	config := string(data)
-	if strings.Contains(config, "/old/bin/ai-session-viewer") {
+	if strings.Contains(config, "/old/bin/ai-agent-manager") {
 		t.Fatalf("expected stale hook commands to be repaired: %s", config)
 	}
 	if !strings.Contains(config, " hook --agent gemini") {

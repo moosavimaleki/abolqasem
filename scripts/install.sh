@@ -2,8 +2,8 @@
 
 set -eu
 
-APP="ai-session-viewer"
-PKG="./cmd/ai-session-viewer"
+APP="ai-agent-manager"
+PKG="./cmd/ai-agent-manager"
 DIST="dist"
 SCOPE="user"
 HOOKS="0"
@@ -14,7 +14,7 @@ BIN_DIR="${BIN_DIR:-}"
 
 usage() {
   cat <<'EOF'
-Install ai-session-viewer from source.
+Install ai-agent-manager from source.
 
 Usage:
   scripts/install.sh [options]

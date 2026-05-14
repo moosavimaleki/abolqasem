@@ -1,8 +1,8 @@
 package gemini
 
 import (
-	"ai-session-viewer/internal/adapters"
-	"ai-session-viewer/internal/state"
+	"ai-agent-manager/internal/adapters"
+	"ai-agent-manager/internal/state"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	afterAgentHookName = "ai-session-viewer-gemini-after-agent"
-	sessionEndHookName = "ai-session-viewer-gemini-session-end"
+	afterAgentHookName = "ai-agent-manager-gemini-after-agent"
+	sessionEndHookName = "ai-agent-manager-gemini-session-end"
 )
 
 type GeminiAdapter struct{}

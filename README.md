@@ -1,6 +1,6 @@
-# AI Session Viewer
+# AI Agent Manager
 
-`ai-session-viewer` یک viewer محلی و zero-token برای نمایش sessionهای Codex، Claude Code و Gemini CLI در مرورگر است. ابزار از hookهای محلی استفاده می‌کند، transcriptهای JSONL را می‌خواند، و آن‌ها را با UI سازگار با RTL/LTR، markdown امن، lazy loading و اعلان session فعال نمایش می‌دهد.
+`ai-agent-manager` یک viewer محلی و zero-token برای نمایش sessionهای Codex، Claude Code و Gemini CLI در مرورگر است. ابزار از hookهای محلی استفاده می‌کند، transcriptهای JSONL را می‌خواند، و آن‌ها را با UI سازگار با RTL/LTR، markdown امن، lazy loading و اعلان session فعال نمایش می‌دهد.
 
 ## What It Solves
 
@@ -29,29 +29,29 @@ irm https://raw.githubusercontent.com/moosavimaleki/ai-agent-manager/main/script
 Windows PowerShell همراه نصب hookها:
 
 ```powershell
-$env:AI_SESSION_VIEWER_INSTALL_HOOKS="1"; irm https://raw.githubusercontent.com/moosavimaleki/ai-agent-manager/main/scripts/install-release.ps1 | iex
+$env:AI_AGENT_MANAGER_INSTALL_HOOKS="1"; irm https://raw.githubusercontent.com/moosavimaleki/ai-agent-manager/main/scripts/install-release.ps1 | iex
 ```
 
 برای نصب از سورس:
 
 ```bash
 git clone <repo-url>
-cd codex-rtl-plugin
+cd ai-agent-manager
 scripts/install.sh
 ```
 
 برای نصب hookها بعد از نصب binary:
 
 ```bash
-ai-session-viewer install --agent codex --scope user
-ai-session-viewer install --agent claude --scope user
-ai-session-viewer install --agent gemini --scope user
+ai-agent-manager install --agent codex --scope user
+ai-agent-manager install --agent claude --scope user
+ai-agent-manager install --agent gemini --scope user
 ```
 
 برای همه agentها:
 
 ```bash
-ai-session-viewer install --all --scope user
+ai-agent-manager install --all --scope user
 ```
 
 `install` امن و idempotent است؛ اجرای دوباره آن hookهای موجود را خراب نمی‌کند و مسیر binary را repair می‌کند.
@@ -61,43 +61,43 @@ ai-session-viewer install --all --scope user
 server را بالا بیاور:
 
 ```bash
-ai-session-viewer server
+ai-agent-manager server
 ```
 
 viewer را در مرورگر باز کن:
 
 ```bash
-ai-session-viewer open
+ai-agent-manager open
 ```
 
 اگر server بالا نیست:
 
 ```bash
-ai-session-viewer open --start-server
+ai-agent-manager open --start-server
 ```
 
 وضعیت server و hookها:
 
 ```bash
-ai-session-viewer status
+ai-agent-manager status
 ```
 
 ## CLI
 
 ```text
-ai-session-viewer server
-ai-session-viewer hook --agent codex|claude|gemini
-ai-session-viewer install --agent codex|claude|gemini --scope user|project
-ai-session-viewer uninstall --agent codex|claude|gemini --scope user|project
-ai-session-viewer open [--start-server]
-ai-session-viewer status
+ai-agent-manager server
+ai-agent-manager hook --agent codex|claude|gemini
+ai-agent-manager install --agent codex|claude|gemini --scope user|project
+ai-agent-manager uninstall --agent codex|claude|gemini --scope user|project
+ai-agent-manager open [--start-server]
+ai-agent-manager status
 ```
 
 ## Architecture
 
 - Hook محلی event را از stdin می‌گیرد.
 - اگر server بالا باشد، event به `POST /api/hook` فرستاده می‌شود.
-- اگر server پایین باشد، event در `~/.cache/ai-session-viewer/pending-events.jsonl` ذخیره می‌شود.
+- اگر server پایین باشد، event در `~/.cache/ai-agent-manager/pending-events.jsonl` ذخیره می‌شود.
 - server روی `127.0.0.1` UI و API را serve می‌کند.
 - transcriptها parse و cache می‌شوند و پیام‌ها به صورت pagination شده به UI می‌رسند.
 

@@ -30,7 +30,7 @@ jobs:
         if: runner.os == 'Windows'
       - run: go vet ./...
       - run: go test ./...
-      - run: go build -trimpath -o dist/ai-session-viewer ./cmd/ai-session-viewer
+      - run: go build -trimpath -o dist/ai-agent-manager ./cmd/ai-agent-manager
 
   build-all:
     runs-on: ubuntu-latest

@@ -1,7 +1,7 @@
 package cli
 
 import (
-	"ai-session-viewer/internal/state"
+	"ai-agent-manager/internal/state"
 	"net/http"
 	"net/url"
 	"os"

@@ -1,4 +1,4 @@
-module ai-session-viewer
+module ai-agent-manager
 
 go 1.22.2
 

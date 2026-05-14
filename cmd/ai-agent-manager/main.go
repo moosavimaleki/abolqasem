@@ -1,6 +1,6 @@
 package main
 
-import "ai-session-viewer/internal/cli"
+import "ai-agent-manager/internal/cli"
 
 func main() {
 	cli.Execute()

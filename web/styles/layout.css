@@ -269,15 +269,18 @@
 }
 
 .session-notice {
+  --notice-progress: 1;
   position: fixed;
   left: 28px;
   bottom: 28px;
   z-index: 90;
   width: min(420px, calc(100vw - 56px));
   min-height: 54px;
-  border: 1px solid var(--line-strong);
+  border: 1px solid transparent;
   border-radius: 16px;
-  background: color-mix(in srgb, var(--surface-strong) 94%, var(--bg));
+  background:
+    linear-gradient(color-mix(in srgb, var(--surface-strong) 94%, var(--bg)), color-mix(in srgb, var(--surface-strong) 94%, var(--bg))) padding-box,
+    conic-gradient(var(--success) calc(var(--notice-progress) * 1turn), color-mix(in srgb, var(--line-strong) 72%, transparent) 0) border-box;
   box-shadow: var(--shadow);
   backdrop-filter: blur(18px);
   color: var(--text);
@@ -307,17 +310,19 @@
 }
 
 .session-notice-action {
-  border: 1px solid var(--line);
+  min-width: 128px;
+  border: 1px solid color-mix(in srgb, var(--success) 54%, var(--line));
   border-radius: 999px;
-  background: var(--surface-soft);
+  background: color-mix(in srgb, var(--success) 10%, transparent);
   color: var(--text);
   padding: 7px 12px;
   font-size: 0.84rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .session-notice-action:hover {
-  border-color: var(--line-strong);
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: var(--success);
+  background: color-mix(in srgb, var(--success) 16%, transparent);
 }
 
 .session-notice-close {

@@ -1,9 +1,9 @@
 package cli
 
 import (
-	viewer "ai-session-viewer"
-	"ai-session-viewer/internal/server"
-	"ai-session-viewer/internal/state"
+	viewer "ai-agent-manager"
+	"ai-agent-manager/internal/server"
+	"ai-agent-manager/internal/state"
 	"log"
 	"net/url"
 	"strconv"

@@ -1,7 +1,7 @@
 package cli
 
 import (
-	"ai-session-viewer/internal/platform"
+	"ai-agent-manager/internal/platform"
 	"fmt"
 	"time"
 

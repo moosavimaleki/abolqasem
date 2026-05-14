@@ -2,17 +2,17 @@
 
 set -eu
 
-APP="ai-session-viewer"
-REPO="${AI_SESSION_VIEWER_REPO:-moosavimaleki/ai-agent-manager}"
-VERSION="${AI_SESSION_VIEWER_VERSION:-latest}"
+APP="ai-agent-manager"
+REPO="${AI_AGENT_MANAGER_REPO:-moosavimaleki/ai-agent-manager}"
+VERSION="${AI_AGENT_MANAGER_VERSION:-latest}"
 BIN_DIR="${BIN_DIR:-}"
-INSTALL_HOOKS="${AI_SESSION_VIEWER_INSTALL_HOOKS:-0}"
-HOOK_SCOPE="${AI_SESSION_VIEWER_HOOK_SCOPE:-user}"
-HOOK_AGENTS="${AI_SESSION_VIEWER_AGENTS:-all}"
+INSTALL_HOOKS="${AI_AGENT_MANAGER_INSTALL_HOOKS:-0}"
+HOOK_SCOPE="${AI_AGENT_MANAGER_HOOK_SCOPE:-user}"
+HOOK_AGENTS="${AI_AGENT_MANAGER_AGENTS:-all}"
 
 usage() {
   cat <<'EOF'
-Install ai-session-viewer from GitHub release assets.
+Install ai-agent-manager from GitHub release assets.
 
 Usage:
   install-release.sh [options]
@@ -27,11 +27,11 @@ Options:
   -h, --help          Show this help.
 
 Environment:
-  AI_SESSION_VIEWER_REPO
-  AI_SESSION_VIEWER_VERSION
-  AI_SESSION_VIEWER_INSTALL_HOOKS=1
-  AI_SESSION_VIEWER_AGENTS=all|codex|claude|gemini
-  AI_SESSION_VIEWER_HOOK_SCOPE=user|project
+  AI_AGENT_MANAGER_REPO
+  AI_AGENT_MANAGER_VERSION
+  AI_AGENT_MANAGER_INSTALL_HOOKS=1
+  AI_AGENT_MANAGER_AGENTS=all|codex|claude|gemini
+  AI_AGENT_MANAGER_HOOK_SCOPE=user|project
   BIN_DIR
 EOF
 }

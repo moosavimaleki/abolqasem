@@ -1,9 +1,9 @@
 {
-  "name": "ai-session-viewer-legacy-manifest",
+  "name": "ai-agent-manager-legacy-manifest",
   "version": "2.0.0",
-  "description": "Legacy Codex plugin manifest. Preferred installation path is the ai-session-viewer binary and local hooks.",
+  "description": "Legacy Codex plugin manifest. Preferred installation path is the ai-agent-manager binary and local hooks.",
   "interface": {
-    "displayName": "AI Session Viewer",
+    "displayName": "AI Agent Manager",
     "shortDescription": "Legacy manifest for the zero-token local session viewer.",
     "category": "Productivity"
   }

@@ -11,7 +11,7 @@ import (
 
 const (
 	DefaultPort    = 9090
-	BaseURLEnvName = "AI_SESSION_VIEWER_BASE_URL"
+	BaseURLEnvName = "AI_AGENT_MANAGER_BASE_URL"
 )
 
 type ServerConfig struct {

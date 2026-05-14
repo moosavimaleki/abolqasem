@@ -7,7 +7,7 @@
 bin/
 dist/
 /codex-rtl
-/ai-session-viewer
+/ai-agent-manager
 
 # Test binary, built with `go test -c`
 *.test

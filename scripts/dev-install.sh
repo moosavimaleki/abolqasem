@@ -3,7 +3,7 @@
 set -eu
 
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-APP="ai-session-viewer"
+APP="ai-agent-manager"
 BIN_DIR="$HOME/.local/bin"
 DIST_DIR="$ROOT_DIR/dist"
 OUT="$DIST_DIR/$APP"
@@ -18,7 +18,7 @@ command -v go >/dev/null 2>&1 || {
 
 printf 'Building %s...\n' "$APP"
 mkdir -p "$DIST_DIR"
-CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "$OUT" ./cmd/ai-session-viewer
+CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "$OUT" ./cmd/ai-agent-manager
 
 printf 'Installing to %s...\n' "$INSTALL_PATH"
 mkdir -p "$BIN_DIR"

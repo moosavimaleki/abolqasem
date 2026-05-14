@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"ai-session-viewer/internal/adapters"
+	"ai-agent-manager/internal/adapters"
 )
 
 func TestInstallAndUninstallHookPreservesConfig(t *testing.T) {
@@ -74,7 +74,7 @@ codex_hooks = true
 [[hooks.Stop]]
 [[hooks.Stop.hooks]]
 type = "command"
-command = "/old/bin/ai-session-viewer hook --agent codex"
+command = "/old/bin/ai-agent-manager hook --agent codex"
 timeout = 1
 `
 	if err := os.WriteFile(configPath, []byte(original), 0o644); err != nil {
@@ -100,7 +100,7 @@ timeout = 1
 	if strings.Contains(config, "codex_hooks") {
 		t.Fatalf("expected deprecated feature to be removed: %s", config)
 	}
-	if strings.Contains(config, "/old/bin/ai-session-viewer") {
+	if strings.Contains(config, "/old/bin/ai-agent-manager") {
 		t.Fatalf("expected stale hook command to be repaired: %s", config)
 	}
 	if !strings.Contains(config, " hook --agent codex") {

@@ -1,8 +1,8 @@
 package codex
 
 import (
-	"ai-session-viewer/internal/adapters"
-	"ai-session-viewer/internal/state"
+	"ai-agent-manager/internal/adapters"
+	"ai-agent-manager/internal/state"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -147,7 +147,7 @@ func (a *CodexAdapter) NormalizeHookInput(input []byte) (state.HookEvent, error)
 func ensureCodexHook(blocks []map[string]any) ([]map[string]any, bool) {
 	command, err := adapters.ShellCommand("codex")
 	if err != nil {
-		command = "ai-session-viewer hook --agent codex"
+		command = "ai-agent-manager hook --agent codex"
 	}
 	for _, block := range blocks {
 		entries := ensureHookEntries(block["hooks"])

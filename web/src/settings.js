@@ -1,4 +1,4 @@
-const STORAGE_KEY = "ai-session-viewer.reader-settings.v3";
+const STORAGE_KEY = "ai-agent-manager.reader-settings.v3";
 
 const DEFAULT_SETTINGS = {
   font: "vazirmatn",

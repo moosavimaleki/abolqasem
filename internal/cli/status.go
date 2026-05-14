@@ -1,8 +1,8 @@
 package cli
 
 import (
-	"ai-session-viewer/internal/adapters"
-	"ai-session-viewer/internal/state"
+	"ai-agent-manager/internal/adapters"
+	"ai-agent-manager/internal/state"
 	"fmt"
 	"time"
 
@@ -19,7 +19,7 @@ var statusCmd = &cobra.Command{
 			return
 		}
 
-		fmt.Println("AI Session Viewer")
+		fmt.Println("AI Agent Manager")
 		if serverHealthy() {
 			fmt.Printf("Server: running (%s)\n", currentBaseURL())
 		} else {
