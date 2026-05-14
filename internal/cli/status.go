@@ -25,6 +25,11 @@ var statusCmd = &cobra.Command{
 		} else {
 			fmt.Printf("Server: stopped (%s)\n", currentBaseURL())
 		}
+		if isServiceInstalled() {
+			fmt.Println("Service: installed")
+		} else {
+			fmt.Println("Service: not installed")
+		}
 		fmt.Printf("State dir: %s\n", state.GetStateDir())
 		fmt.Printf("Sessions: %d\n", len(appState.Sessions))
 		if latest, ok := appState.Sessions[appState.LatestSessionKey]; ok {

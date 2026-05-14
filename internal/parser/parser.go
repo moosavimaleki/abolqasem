@@ -47,6 +47,7 @@ type ParseOptions struct {
 }
 
 type SessionSummary struct {
+	FirstPreview         string
 	LastPreview          string
 	MessageCountEstimate int
 }
@@ -119,6 +120,13 @@ func GetSessionSummary(agent, sessionID, transcriptPath string) (SessionSummary,
 		return SessionSummary{}, err
 	}
 	summary := SessionSummary{MessageCountEstimate: len(messages)}
+	for _, message := range messages {
+		if strings.TrimSpace(message.Text) == "" {
+			continue
+		}
+		summary.FirstPreview = inlinePreview(message.Text)
+		break
+	}
 	for i := len(messages) - 1; i >= 0; i-- {
 		if strings.TrimSpace(messages[i].Text) == "" {
 			continue
@@ -511,11 +519,15 @@ func firstNonEmpty(values ...string) string {
 }
 
 func trimPreview(value string) string {
-	value = strings.TrimSpace(strings.ReplaceAll(value, "\n", " "))
+	value = inlinePreview(value)
 	if len(value) > 160 {
 		return strings.TrimSpace(value[:160]) + "..."
 	}
 	return value
+}
+
+func inlinePreview(value string) string {
+	return strings.TrimSpace(strings.ReplaceAll(value, "\n", " "))
 }
 
 func bytesTrimSpace(value []byte) []byte {

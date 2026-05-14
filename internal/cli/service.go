@@ -7,8 +7,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-
-	"github.com/spf13/cobra"
 )
 
 const (
@@ -17,35 +15,6 @@ const (
 	windowsTaskName   = "AI Agent Manager"
 	serviceCommandUse = "server --auto-port"
 )
-
-var installServiceCmd = &cobra.Command{
-	Use:   "install-service",
-	Short: "Install a persistent background server for the current user",
-	Run: func(cmd *cobra.Command, args []string) {
-		if err := installService(); err != nil {
-			fmt.Printf("Service installation failed: %v\n", err)
-			return
-		}
-		fmt.Println("Successfully installed service")
-	},
-}
-
-var uninstallServiceCmd = &cobra.Command{
-	Use:   "uninstall-service",
-	Short: "Remove the persistent background server for the current user",
-	Run: func(cmd *cobra.Command, args []string) {
-		if err := uninstallService(); err != nil {
-			fmt.Printf("Service uninstallation failed: %v\n", err)
-			return
-		}
-		fmt.Println("Successfully uninstalled service")
-	},
-}
-
-func init() {
-	rootCmd.AddCommand(installServiceCmd)
-	rootCmd.AddCommand(uninstallServiceCmd)
-}
 
 func installService() error {
 	exe, err := os.Executable()
@@ -66,6 +35,29 @@ func installService() error {
 		return installScheduledTask(exe)
 	default:
 		return fmt.Errorf("persistent service is not supported on %s", runtime.GOOS)
+	}
+}
+
+func isServiceInstalled() bool {
+	switch runtime.GOOS {
+	case "linux":
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return false
+		}
+		_, err = os.Stat(filepath.Join(home, ".config", "systemd", "user", serviceName+".service"))
+		return err == nil
+	case "darwin":
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return false
+		}
+		_, err = os.Stat(filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist"))
+		return err == nil
+	case "windows":
+		return exec.Command("schtasks", "/Query", "/TN", windowsTaskName).Run() == nil
+	default:
+		return false
 	}
 }
 

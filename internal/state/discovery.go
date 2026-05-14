@@ -356,6 +356,7 @@ func sameSessionMeta(a, b SessionMeta) bool {
 		a.Cwd == b.Cwd &&
 		a.ProjectName == b.ProjectName &&
 		a.UpdatedAt.Equal(b.UpdatedAt) &&
+		a.FirstPreview == b.FirstPreview &&
 		a.LastPreview == b.LastPreview &&
 		a.MessageCountEstimate == b.MessageCountEstimate &&
 		a.MetadataOnly == b.MetadataOnly &&

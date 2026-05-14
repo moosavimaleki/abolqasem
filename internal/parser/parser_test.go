@@ -96,6 +96,24 @@ func TestParseMessagesMetadataOnly(t *testing.T) {
 	}
 }
 
+func TestGetSessionSummaryIncludesFirstPreview(t *testing.T) {
+	path := writeTranscript(t, strings.Join([]string{
+		`{"type":"event_msg","payload":{"type":"user_message","message":"first prompt text"}}`,
+		`{"type":"event_msg","payload":{"type":"agent_message","message":"assistant answer"}}`,
+	}, "\n"))
+
+	summary, err := GetSessionSummary("codex", "session-1", path)
+	if err != nil {
+		t.Fatalf("GetSessionSummary returned error: %v", err)
+	}
+	if summary.FirstPreview != "first prompt text" {
+		t.Fatalf("expected first preview, got %q", summary.FirstPreview)
+	}
+	if summary.LastPreview != "assistant answer" {
+		t.Fatalf("expected last preview, got %q", summary.LastPreview)
+	}
+}
+
 func writeTranscript(t *testing.T, body string) string {
 	t.Helper()
 	dir := t.TempDir()

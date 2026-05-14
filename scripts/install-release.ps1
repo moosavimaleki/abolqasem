@@ -100,7 +100,7 @@ try {
         }
         Remove-Item Env:AI_AGENT_MANAGER_SUPPRESS_TRUST_NOTICE -ErrorAction SilentlyContinue
     } elseif ($Startup -eq "service") {
-        & $InstallPath install-service
+        & $InstallPath install --startup service --no-hooks
     }
 
     Write-Host ""

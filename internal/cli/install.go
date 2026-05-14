@@ -5,8 +5,11 @@ import (
 	"ai-agent-manager/internal/adapters/claude"
 	"ai-agent-manager/internal/adapters/codex"
 	"ai-agent-manager/internal/adapters/gemini"
+	"bufio"
 	"fmt"
+	"io"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -15,6 +18,7 @@ var installAgent string
 var installScope string
 var installAll bool
 var installStartup string
+var installNoHooks bool
 
 func getAdapter(agent string) (adapters.AgentAdapter, error) {
 	switch agent {
@@ -31,71 +35,80 @@ func getAdapter(agent string) (adapters.AgentAdapter, error) {
 
 var installCmd = &cobra.Command{
 	Use:   "install",
-	Short: "Install the hook into AI agent configuration",
+	Short: "Install AI Agent Manager startup and hooks",
 	Run: func(cmd *cobra.Command, args []string) {
 		scope := adapters.InstallScope(installScope)
 		if scope != adapters.ScopeUser && scope != adapters.ScopeProject {
 			fmt.Println("Invalid scope. Use 'user' or 'project'")
 			return
 		}
-		if installStartup != "hook" && installStartup != "service" {
-			fmt.Println("Invalid startup. Use 'hook' or 'service'")
+
+		agents := selectedInstallAgents()
+		if len(agents) == 0 && !installNoHooks {
+			fmt.Println("No agents selected")
 			return
 		}
-		if installStartup == "service" {
+
+		serviceInstalled := isServiceInstalled()
+		if err := ensureNoStandaloneServer(serviceInstalled); err != nil {
+			fmt.Printf("Installation blocked: %v\n", err)
+			return
+		}
+
+		startup, err := resolveInstallStartup(cmd.InOrStdin(), scope, agents, serviceInstalled)
+		if err != nil {
+			fmt.Printf("Installation failed: %v\n", err)
+			return
+		}
+		if startup == "" {
+			return
+		}
+
+		if startup == "service" {
 			if err := installService(); err != nil {
 				fmt.Printf("Service installation failed: %v\n", err)
 				return
 			}
 			fmt.Println("Successfully installed service")
-		}
-
-		if installAll {
-			successful := []string{}
-			for _, a := range []string{"codex", "claude", "gemini"} {
-				adapter, _ := getAdapter(a)
-				fmt.Printf("Installing %s hook...\n", a)
-				if err := adapter.InstallHook(scope); err != nil {
-					fmt.Printf("Failed for %s: %v\n", a, err)
-				} else {
-					fmt.Printf("Successfully installed %s hook\n", a)
-					successful = append(successful, a)
-				}
+		} else if serviceInstalled {
+			if err := uninstallService(); err != nil {
+				fmt.Printf("Service removal failed: %v\n", err)
+				return
 			}
-			printTrustNotice(successful)
-			return
+			fmt.Println("Successfully removed service")
 		}
 
-		adapter, err := getAdapter(installAgent)
-		if err != nil {
-			fmt.Println(err)
+		if installNoHooks {
 			return
 		}
-
-		if err := adapter.InstallHook(scope); err != nil {
-			fmt.Printf("Installation failed: %v\n", err)
-		} else {
-			fmt.Println("Successfully installed hook")
-			printTrustNotice([]string{installAgent})
-		}
+		successful := installHooks(scope, agents)
+		printTrustNotice(successful)
 	},
 }
 
 var uninstallCmd = &cobra.Command{
 	Use:   "uninstall",
-	Short: "Uninstall the hook from AI agent configuration",
+	Short: "Uninstall AI Agent Manager startup and hooks",
 	Run: func(cmd *cobra.Command, args []string) {
 		scope := adapters.InstallScope(installScope)
-		adapter, err := getAdapter(installAgent)
-		if err != nil {
-			fmt.Println(err)
-			return
+		agents := selectedInstallAgents()
+		for _, agent := range agents {
+			adapter, _ := getAdapter(agent)
+			if err := adapter.UninstallHook(scope); err != nil {
+				if !strings.Contains(err.Error(), "hook not found") {
+					fmt.Printf("Failed to uninstall %s hook: %v\n", agent, err)
+				}
+			} else {
+				fmt.Printf("Successfully uninstalled %s hook\n", agent)
+			}
 		}
 
-		if err := adapter.UninstallHook(scope); err != nil {
-			fmt.Printf("Uninstallation failed: %v\n", err)
-		} else {
-			fmt.Println("Successfully uninstalled hook")
+		if isServiceInstalled() {
+			if err := uninstallService(); err != nil {
+				fmt.Printf("Service uninstallation failed: %v\n", err)
+				return
+			}
+			fmt.Println("Successfully uninstalled service")
 		}
 	},
 }
@@ -104,13 +117,145 @@ func init() {
 	installCmd.Flags().StringVar(&installAgent, "agent", "codex", "Agent type (codex, claude, gemini)")
 	installCmd.Flags().StringVar(&installScope, "scope", "user", "Installation scope (user, project)")
 	installCmd.Flags().BoolVar(&installAll, "all", false, "Install for all supported agents")
-	installCmd.Flags().StringVar(&installStartup, "startup", "hook", "Server startup mode: hook or service")
+	installCmd.Flags().StringVar(&installStartup, "startup", "", "Server startup mode: hook or service. Omit for interactive setup")
+	installCmd.Flags().BoolVar(&installNoHooks, "no-hooks", false, "Install startup only and do not change agent hooks")
 
 	uninstallCmd.Flags().StringVar(&installAgent, "agent", "codex", "Agent type (codex, claude, gemini)")
 	uninstallCmd.Flags().StringVar(&installScope, "scope", "user", "Installation scope (user, project)")
+	uninstallCmd.Flags().BoolVar(&installAll, "all", false, "Uninstall for all supported agents")
 
 	rootCmd.AddCommand(installCmd)
 	rootCmd.AddCommand(uninstallCmd)
+}
+
+func selectedInstallAgents() []string {
+	if installAll {
+		return []string{"codex", "claude", "gemini"}
+	}
+	if _, err := getAdapter(installAgent); err != nil {
+		return nil
+	}
+	return []string{installAgent}
+}
+
+func installHooks(scope adapters.InstallScope, agents []string) []string {
+	successful := []string{}
+	for _, agent := range agents {
+		adapter, _ := getAdapter(agent)
+		fmt.Printf("Installing %s hook...\n", agent)
+		if err := adapter.InstallHook(scope); err != nil {
+			fmt.Printf("Failed for %s: %v\n", agent, err)
+			continue
+		}
+		fmt.Printf("Successfully installed %s hook\n", agent)
+		successful = append(successful, agent)
+	}
+	return successful
+}
+
+func resolveInstallStartup(input io.Reader, scope adapters.InstallScope, agents []string, serviceInstalled bool) (string, error) {
+	if installStartup != "" {
+		if installStartup != "hook" && installStartup != "service" {
+			return "", fmt.Errorf("invalid startup. Use 'hook' or 'service'")
+		}
+		return installStartup, nil
+	}
+	if !isInteractiveInput(input) {
+		return "", fmt.Errorf("interactive install requires a terminal; pass --startup hook or --startup service")
+	}
+
+	hooksInstalled := anyHookInstalled(scope, agents)
+	if serviceInstalled || hooksInstalled {
+		fmt.Printf("Existing installation detected: %s\n", describeInstallMode(serviceInstalled, hooksInstalled))
+		ok, err := promptYesNo(input, "Change install mode? [y/N]: ", false)
+		if err != nil || !ok {
+			return "", err
+		}
+	}
+
+	fmt.Println("Choose startup mode:")
+	fmt.Println("  1) service - persistent background server")
+	fmt.Println("  2) hook    - start server idempotently from agent hooks")
+	return promptStartupMode(input)
+}
+
+func ensureNoStandaloneServer(serviceInstalled bool) error {
+	if serviceInstalled {
+		return nil
+	}
+	if baseURL, ok := discoverRunningServer(); ok {
+		return fmt.Errorf("a standalone server is already running at %s; stop it before installing", baseURL)
+	}
+	return nil
+}
+
+func anyHookInstalled(scope adapters.InstallScope, agents []string) bool {
+	for _, agent := range agents {
+		adapter, _ := getAdapter(agent)
+		installed, err := adapter.IsHookInstalled(scope)
+		if err == nil && installed {
+			return true
+		}
+	}
+	return false
+}
+
+func describeInstallMode(serviceInstalled, hooksInstalled bool) string {
+	switch {
+	case serviceInstalled && hooksInstalled:
+		return "service + hooks"
+	case serviceInstalled:
+		return "service"
+	case hooksInstalled:
+		return "hooks"
+	default:
+		return "none"
+	}
+}
+
+func promptStartupMode(input io.Reader) (string, error) {
+	reader := bufio.NewReader(input)
+	for {
+		fmt.Print("Select 1 or 2: ")
+		answer, err := reader.ReadString('\n')
+		if err != nil && len(answer) == 0 {
+			return "", err
+		}
+		switch strings.TrimSpace(strings.ToLower(answer)) {
+		case "1", "service", "s":
+			return "service", nil
+		case "2", "hook", "h":
+			return "hook", nil
+		default:
+			fmt.Println("Invalid choice.")
+		}
+	}
+}
+
+func promptYesNo(input io.Reader, prompt string, fallback bool) (bool, error) {
+	reader := bufio.NewReader(input)
+	fmt.Print(prompt)
+	answer, err := reader.ReadString('\n')
+	if err != nil && len(answer) == 0 {
+		return false, err
+	}
+	answer = strings.TrimSpace(strings.ToLower(answer))
+	if answer == "" {
+		return fallback, nil
+	}
+	return answer == "y" || answer == "yes", nil
+}
+
+func isInteractiveInput(input io.Reader) bool {
+	file, ok := input.(*os.File)
+	if !ok {
+		return false
+	}
+	stat, err := file.Stat()
+	if err != nil {
+		return false
+	}
+	return stat.Mode()&os.ModeCharDevice != 0
 }
 
 func printTrustNotice(agents []string) {

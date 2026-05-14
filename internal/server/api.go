@@ -169,7 +169,7 @@ func enrichSessionMeta(meta state.SessionMeta) state.SessionMeta {
 	if meta.MetadataOnly {
 		return meta
 	}
-	if meta.LastPreview != "" && meta.MessageCountEstimate > 0 {
+	if meta.FirstPreview != "" && meta.LastPreview != "" && meta.MessageCountEstimate > 0 {
 		return meta
 	}
 
@@ -183,6 +183,7 @@ func enrichSessionMeta(meta state.SessionMeta) state.SessionMeta {
 		}
 		return meta
 	}
+	meta.FirstPreview = summary.FirstPreview
 	meta.LastPreview = summary.LastPreview
 	meta.MessageCountEstimate = summary.MessageCountEstimate
 	return meta

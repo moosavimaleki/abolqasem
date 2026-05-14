@@ -349,7 +349,10 @@ export function createViewerApp() {
 
       const title = document.createElement("span");
       title.className = "session-name";
-      title.textContent = session.project_name || session.session_id || "نشست بدون نام";
+      const sessionLabel = formatSessionListLabel(session);
+      title.textContent = sessionLabel;
+      title.title = sessionLabel;
+      item.title = sessionLabel;
 
       const info = document.createElement("span");
       info.className = "session-info";
@@ -393,6 +396,7 @@ export function createViewerApp() {
       ["وضعیت", sessionStatus(session)],
       ["شروع", formatTime(session.updated_at)],
       ["مسیر", session.cwd || "نامشخص"],
+      ["اولین پیام", summarizeSessionFirstPreview(session)],
       ["آخرین پیام", summarizeSessionPreview(session)],
     ].forEach(([label, value]) => {
       const row = document.createElement("span");
@@ -1027,6 +1031,7 @@ export function createViewerApp() {
       session.session_id,
       session.cwd,
       session.agent,
+      session.first_preview,
       session.last_preview,
     ].some((value) => String(value || "").toLowerCase().includes(query));
   }
@@ -1274,6 +1279,24 @@ export function createViewerApp() {
       return session.metadata_only ? "متن نشست در دسترس نیست." : "پیش‌نمایشی ثبت نشده است.";
     }
     return preview.length > 180 ? `${preview.slice(0, 180)}...` : preview;
+  }
+
+  function summarizeSessionFirstPreview(session) {
+    const preview = normalizeInlineText(session.first_preview);
+    if (!preview) {
+      return session.metadata_only ? "متن نشست در دسترس نیست." : "پیام اولی ثبت نشده است.";
+    }
+    return preview;
+  }
+
+  function formatSessionListLabel(session) {
+    const projectName = normalizeInlineText(session.project_name || session.session_id || "نشست بدون نام");
+    const firstPreview = normalizeInlineText(session.first_preview);
+    return firstPreview ? `${projectName} / ${firstPreview}` : projectName;
+  }
+
+  function normalizeInlineText(value) {
+    return String(value || "").replace(/\s+/g, " ").trim();
   }
 
   function firstLine(text) {

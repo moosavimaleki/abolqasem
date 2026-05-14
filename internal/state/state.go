@@ -31,6 +31,7 @@ type SessionMeta struct {
 	Cwd                  string    `json:"cwd"`
 	ProjectName          string    `json:"project_name"`
 	UpdatedAt            time.Time `json:"updated_at"`
+	FirstPreview         string    `json:"first_preview,omitempty"`
 	LastPreview          string    `json:"last_preview"`
 	MessageCountEstimate int       `json:"message_count_estimate"`
 	MetadataOnly         bool      `json:"metadata_only"`

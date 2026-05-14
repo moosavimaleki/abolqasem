@@ -248,7 +248,7 @@ if [ "$INSTALL_HOOKS" = "1" ]; then
     done
   fi
 elif [ "$STARTUP" = "service" ]; then
-  "$INSTALL_PATH" install-service
+  "$INSTALL_PATH" install --startup service --no-hooks
 fi
 
 print_trust_notice
