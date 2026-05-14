@@ -1,6 +1,7 @@
 param(
     [string]$Repo = $env:AI_AGENT_MANAGER_REPO,
     [string]$Version = $env:AI_AGENT_MANAGER_VERSION,
+    [string]$ReleaseBaseUrl = $env:AI_AGENT_MANAGER_RELEASE_BASE_URL,
     [string]$BinDir = $env:BIN_DIR,
     [string]$Scope = $env:AI_AGENT_MANAGER_HOOK_SCOPE,
     [string]$Agents = $env:AI_AGENT_MANAGER_AGENTS,
@@ -39,9 +40,17 @@ switch ($Arch) {
 $TargetOS = "windows"
 $Asset = "$App-$TargetOS-$TargetArch.zip"
 if ($Version -eq "latest") {
-    $Url = "https://github.com/$Repo/releases/latest/download/$Asset"
+    if ([string]::IsNullOrWhiteSpace($ReleaseBaseUrl)) {
+        $Url = "https://github.com/$Repo/releases/latest/download/$Asset"
+    } else {
+        $Url = "$ReleaseBaseUrl/latest/download/$Asset"
+    }
 } else {
-    $Url = "https://github.com/$Repo/releases/download/$Version/$Asset"
+    if ([string]::IsNullOrWhiteSpace($ReleaseBaseUrl)) {
+        $Url = "https://github.com/$Repo/releases/download/$Version/$Asset"
+    } else {
+        $Url = "$ReleaseBaseUrl/download/$Version/$Asset"
+    }
 }
 
 if ([string]::IsNullOrWhiteSpace($BinDir)) {

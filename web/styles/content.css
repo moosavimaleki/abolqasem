@@ -6,7 +6,7 @@
 }
 
 body[data-reader-font="bzar"] .content-body .persian-run {
-  font-size: calc(1em + 8px);
+  font-size: calc(1em + 10px);
 }
 
 .content-body,

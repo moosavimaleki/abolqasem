@@ -1,6 +1,7 @@
 name: test
 
 on:
+  workflow_call:
   workflow_dispatch:
   pull_request:
   push:
@@ -40,3 +41,196 @@ jobs:
         with:
           go-version: stable
       - run: make build-all
+
+  install-source-unix:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: Run source installer
+        run: BIN_DIR="$RUNNER_TEMP/bin" sh scripts/install.sh
+
+      - name: Verify source installer
+        run: |
+          test -x "$RUNNER_TEMP/bin/ai-agent-manager"
+          "$RUNNER_TEMP/bin/ai-agent-manager" --help >/dev/null
+          grep -q "ai-agent-manager" "$HOME/.codex/config.toml"
+          grep -q "ai-agent-manager" "$HOME/.claude/settings.json"
+          grep -q "ai-agent-manager" "$HOME/.gemini/settings.json"
+
+  install-source-windows:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: Run source installer
+        shell: pwsh
+        run: .\scripts\install.ps1 -BinDir (Join-Path $env:RUNNER_TEMP 'bin')
+
+      - name: Verify source installer
+        shell: pwsh
+        run: |
+          $Binary = Join-Path $env:RUNNER_TEMP "bin\ai-agent-manager.exe"
+          if (!(Test-Path $Binary)) { throw "installed binary not found: $Binary" }
+          & $Binary --help | Out-Null
+          foreach ($Path in @(
+            "$env:USERPROFILE\.codex\config.toml",
+            "$env:USERPROFILE\.claude\settings.json",
+            "$env:USERPROFILE\.gemini\settings.json"
+          )) {
+            if (!(Test-Path $Path)) { throw "hook config not found: $Path" }
+            if (-not (Select-String -Path $Path -Pattern "ai-agent-manager" -SimpleMatch -Quiet)) {
+              throw "hook config does not reference ai-agent-manager: $Path"
+            }
+          }
+
+  install-release-unix:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: Run release installer against local asset server
+        run: |
+          case "$(uname -s)" in
+            Linux) TARGET_OS=linux ;;
+            Darwin) TARGET_OS=darwin ;;
+            *) echo "unsupported OS" >&2; exit 1 ;;
+          esac
+          case "$(uname -m)" in
+            x86_64|amd64) TARGET_ARCH=amd64 ;;
+            arm64|aarch64) TARGET_ARCH=arm64 ;;
+            *) echo "unsupported arch" >&2; exit 1 ;;
+          esac
+
+          WORKDIR="$RUNNER_TEMP/e2e-release"
+          WEBROOT="$WORKDIR/web"
+          PKGROOT="$WORKDIR/pkg"
+          BINDIR="$RUNNER_TEMP/release-bin"
+          ASSET="ai-agent-manager-$TARGET_OS-$TARGET_ARCH.tar.gz"
+
+          mkdir -p "$WEBROOT/releases/latest/download" "$PKGROOT" "$BINDIR"
+          CGO_ENABLED=0 GOOS="$TARGET_OS" GOARCH="$TARGET_ARCH" go build -trimpath -ldflags="-s -w" -o "$PKGROOT/ai-agent-manager" ./cmd/ai-agent-manager
+          tar -C "$PKGROOT" -czf "$WEBROOT/releases/latest/download/$ASSET" ai-agent-manager
+
+          python3 -m http.server 18080 --bind 127.0.0.1 --directory "$WEBROOT" >/tmp/ai-agent-manager-http.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID"' EXIT
+          for _ in 1 2 3 4 5 6 7 8 9 10; do
+            if curl -fsS "http://127.0.0.1:18080/" >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          curl -fsS "http://127.0.0.1:18080/" >/dev/null
+
+          BIN_DIR="$BINDIR" AI_AGENT_MANAGER_RELEASE_BASE_URL="http://127.0.0.1:18080/releases" sh scripts/install-release.sh
+
+      - name: Verify release installer
+        run: |
+          test -x "$RUNNER_TEMP/release-bin/ai-agent-manager"
+          "$RUNNER_TEMP/release-bin/ai-agent-manager" --help >/dev/null
+          grep -q "ai-agent-manager" "$HOME/.codex/config.toml"
+          grep -q "ai-agent-manager" "$HOME/.claude/settings.json"
+          grep -q "ai-agent-manager" "$HOME/.gemini/settings.json"
+
+  install-release-windows:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: Run release installer against local asset server
+        shell: pwsh
+        run: |
+          $Arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
+          switch ($Arch) {
+            "x64" { $TargetArch = "amd64" }
+            "arm64" { $TargetArch = "arm64" }
+            default { throw "Unsupported architecture: $Arch" }
+          }
+
+          $WorkDir = Join-Path $env:RUNNER_TEMP "e2e-release"
+          $WebRoot = Join-Path $WorkDir "web"
+          $PkgRoot = Join-Path $WorkDir "pkg"
+          $BinDir = Join-Path $env:RUNNER_TEMP "release-bin"
+          $Asset = "ai-agent-manager-windows-$TargetArch.zip"
+          $ArchivePath = Join-Path $WebRoot "releases\latest\download\$Asset"
+
+          New-Item -ItemType Directory -Force -Path (Split-Path $ArchivePath) | Out-Null
+          New-Item -ItemType Directory -Force -Path $PkgRoot | Out-Null
+          New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
+
+          $BinaryPath = Join-Path $PkgRoot "ai-agent-manager.exe"
+          $env:CGO_ENABLED = "0"
+          $env:GOOS = "windows"
+          $env:GOARCH = $TargetArch
+          go build -trimpath -ldflags="-s -w" -o $BinaryPath ./cmd/ai-agent-manager
+          Compress-Archive -Path $BinaryPath -DestinationPath $ArchivePath -Force
+
+          $Python = if (Get-Command py -ErrorAction SilentlyContinue) { "py" } elseif (Get-Command python -ErrorAction SilentlyContinue) { "python" } else { throw "Python is required for the local asset server" }
+          $Args = if ($Python -eq "py") { @("-3", "-m", "http.server", "18080", "--bind", "127.0.0.1", "--directory", $WebRoot) } else { @("-m", "http.server", "18080", "--bind", "127.0.0.1", "--directory", $WebRoot) }
+          $Server = Start-Process -FilePath $Python -ArgumentList $Args -PassThru -WindowStyle Hidden
+          try {
+            for ($i = 0; $i -lt 10; $i++) {
+              try {
+                Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:18080/" | Out-Null
+                break
+              }
+              catch {
+                Start-Sleep -Seconds 1
+              }
+            }
+            Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:18080/" | Out-Null
+            $env:BIN_DIR = $BinDir
+            $env:AI_AGENT_MANAGER_RELEASE_BASE_URL = "http://127.0.0.1:18080/releases"
+            .\scripts\install-release.ps1
+          }
+          finally {
+            if ($Server -and !$Server.HasExited) {
+              Stop-Process -Id $Server.Id -Force
+            }
+          }
+
+      - name: Verify release installer
+        shell: pwsh
+        run: |
+          $Binary = Join-Path $env:RUNNER_TEMP "release-bin\ai-agent-manager.exe"
+          if (!(Test-Path $Binary)) { throw "installed binary not found: $Binary" }
+          & $Binary --help | Out-Null
+          foreach ($Path in @(
+            "$env:USERPROFILE\.codex\config.toml",
+            "$env:USERPROFILE\.claude\settings.json",
+            "$env:USERPROFILE\.gemini\settings.json"
+          )) {
+            if (!(Test-Path $Path)) { throw "hook config not found: $Path" }
+            if (-not (Select-String -Path $Path -Pattern "ai-agent-manager" -SimpleMatch -Quiet)) {
+              throw "hook config does not reference ai-agent-manager: $Path"
+            }
+          }

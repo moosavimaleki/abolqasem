@@ -5,6 +5,7 @@ set -eu
 APP="ai-agent-manager"
 REPO="${AI_AGENT_MANAGER_REPO:-moosavimaleki/ai-agent-manager}"
 VERSION="${AI_AGENT_MANAGER_VERSION:-latest}"
+RELEASE_BASE_URL="${AI_AGENT_MANAGER_RELEASE_BASE_URL:-}"
 BIN_DIR="${BIN_DIR:-}"
 INSTALL_HOOKS="${AI_AGENT_MANAGER_INSTALL_HOOKS:-1}"
 HOOK_SCOPE="${AI_AGENT_MANAGER_HOOK_SCOPE:-user}"
@@ -166,9 +167,17 @@ ARCHIVE_EXT="tar.gz"
 
 ASSET="$APP-$TARGET_OS-$TARGET_ARCH.$ARCHIVE_EXT"
 if [ "$VERSION" = "latest" ]; then
-  URL="https://github.com/$REPO/releases/latest/download/$ASSET"
+  if [ -n "$RELEASE_BASE_URL" ]; then
+    URL="$RELEASE_BASE_URL/latest/download/$ASSET"
+  else
+    URL="https://github.com/$REPO/releases/latest/download/$ASSET"
+  fi
 else
-  URL="https://github.com/$REPO/releases/download/$VERSION/$ASSET"
+  if [ -n "$RELEASE_BASE_URL" ]; then
+    URL="$RELEASE_BASE_URL/download/$VERSION/$ASSET"
+  else
+    URL="https://github.com/$REPO/releases/download/$VERSION/$ASSET"
+  fi
 fi
 
 TMP_DIR="$(mktemp -d)"

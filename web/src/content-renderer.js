@@ -7,6 +7,7 @@ export function renderMessageContent(message, mode = "chat", search = "") {
   body.innerHTML = message.html || escapeHTML(message.text || "");
 
   enhanceContent(body);
+  wrapPersianRuns(body);
   if (search) {
     highlightText(body, search);
   }
@@ -135,6 +136,48 @@ function enhanceContent(root) {
 
     pre.parentNode.insertBefore(frame, pre);
     frame.append(pre, action);
+  });
+}
+
+function wrapPersianRuns(root) {
+  const persianPattern = /([\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF\u200C-\u200F]+)/g;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      if (!node.nodeValue || !persianPattern.test(node.nodeValue)) {
+        persianPattern.lastIndex = 0;
+        return NodeFilter.FILTER_REJECT;
+      }
+      persianPattern.lastIndex = 0;
+      if (node.parentElement?.closest("pre, code, kbd, samp, script, style, .persian-run")) {
+        return NodeFilter.FILTER_REJECT;
+      }
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+  const nodes = [];
+
+  while (walker.nextNode()) {
+    nodes.push(walker.currentNode);
+  }
+
+  nodes.forEach((node) => {
+    const text = node.nodeValue || "";
+    const fragment = document.createDocumentFragment();
+    let lastIndex = 0;
+    persianPattern.lastIndex = 0;
+    let match;
+
+    while ((match = persianPattern.exec(text))) {
+      fragment.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
+      const span = document.createElement("span");
+      span.className = "persian-run";
+      span.textContent = match[0];
+      fragment.appendChild(span);
+      lastIndex = match.index + match[0].length;
+    }
+
+    fragment.appendChild(document.createTextNode(text.slice(lastIndex)));
+    node.parentNode.replaceChild(fragment, node);
   });
 }
 
