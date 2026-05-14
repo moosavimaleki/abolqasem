@@ -52,15 +52,12 @@ func (a *CodexAdapter) InstallHook(scope adapters.InstallScope) error {
 	}
 
 	features := ensureMap(cfg, "features")
-	features["codex_hooks"] = true
+	features["hooks"] = true
+	delete(features, "codex_hooks")
 
 	hooks := ensureMap(cfg, "hooks")
 	stopBlocks := ensureHookBlocks(hooks["Stop"])
-	existing, changed := ensureCodexHook(stopBlocks)
-	if !changed {
-		return fmt.Errorf("hook already installed")
-	}
-	hooks["Stop"] = existing
+	hooks["Stop"], _ = ensureCodexHook(stopBlocks)
 
 	if len(data) > 0 {
 		if err := os.WriteFile(configPath+".bak", data, 0o644); err != nil {
@@ -153,9 +150,24 @@ func ensureCodexHook(blocks []map[string]any) ([]map[string]any, bool) {
 		command = "ai-session-viewer hook --agent codex"
 	}
 	for _, block := range blocks {
-		for _, inner := range ensureHookEntries(block["hooks"]) {
+		entries := ensureHookEntries(block["hooks"])
+		block["hooks"] = entries
+		for _, inner := range entries {
 			if adapters.IsCommandMatch(stringValue(inner["command"]), "codex") {
-				return blocks, false
+				changed := false
+				if stringValue(inner["type"]) != "command" {
+					inner["type"] = "command"
+					changed = true
+				}
+				if stringValue(inner["command"]) != command {
+					inner["command"] = command
+					changed = true
+				}
+				if inner["timeout"] != 3 {
+					inner["timeout"] = 3
+					changed = true
+				}
+				return blocks, changed
 			}
 		}
 	}

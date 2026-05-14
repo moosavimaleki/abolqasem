@@ -129,6 +129,8 @@ export function createViewerApp() {
       }
       await loadOlderMessages();
     });
+    els.sessionsList.addEventListener("scroll", hideSessionTooltip);
+    window.addEventListener("resize", hideSessionTooltip);
 
     document.addEventListener("click", (event) => {
       const target = event.target;
@@ -185,11 +187,8 @@ export function createViewerApp() {
     }
   }
 
-  function renderSessions() {
-    renderSessions(getVisibleSessions());
-  }
-
   function renderSessions(sessions) {
+    hideSessionTooltip();
     els.sessionsList.replaceChildren();
 
     if (sessions.length === 0) {
@@ -216,7 +215,9 @@ export function createViewerApp() {
       info.className = "session-info";
       info.dataset.icon = "info";
       info.setAttribute("aria-label", "اطلاعات نشست");
-      info.appendChild(renderSessionTooltip(session));
+      info.addEventListener("mouseenter", () => showSessionTooltip(info, session));
+      info.addEventListener("mousemove", () => positionSessionTooltip(info, getSessionTooltip()));
+      info.addEventListener("mouseleave", hideSessionTooltip);
 
       item.append(info, title);
       item.addEventListener("click", () => {
@@ -228,8 +229,7 @@ export function createViewerApp() {
   }
 
   function renderSessionTooltip(session) {
-    const tooltip = document.createElement("span");
-    tooltip.className = "session-tooltip";
+    const fragment = document.createDocumentFragment();
     [
       ["مدل", agentLabel(session.agent)],
       ["وضعیت", sessionStatus(session)],
@@ -241,9 +241,63 @@ export function createViewerApp() {
       const key = document.createElement("b");
       key.textContent = `${label}:`;
       row.append(key, document.createTextNode(` ${value}`));
-      tooltip.appendChild(row);
+      fragment.appendChild(row);
     });
+    return fragment;
+  }
+
+  function getSessionTooltip() {
+    let tooltip = document.getElementById("session-tooltip");
+    if (!tooltip) {
+      tooltip = document.createElement("span");
+      tooltip.id = "session-tooltip";
+      tooltip.className = "session-tooltip hidden";
+      tooltip.setAttribute("role", "tooltip");
+      tooltip.setAttribute("aria-hidden", "true");
+      els.body.appendChild(tooltip);
+    }
     return tooltip;
+  }
+
+  function showSessionTooltip(anchor, session) {
+    const tooltip = getSessionTooltip();
+    tooltip.replaceChildren(renderSessionTooltip(session));
+    tooltip.classList.remove("hidden", "is-visible", "placed-left", "placed-right");
+    tooltip.setAttribute("aria-hidden", "false");
+    positionSessionTooltip(anchor, tooltip);
+    window.requestAnimationFrame(() => tooltip.classList.add("is-visible"));
+  }
+
+  function hideSessionTooltip() {
+    const tooltip = document.getElementById("session-tooltip");
+    if (!tooltip) {
+      return;
+    }
+    tooltip.classList.add("hidden");
+    tooltip.classList.remove("is-visible", "placed-left", "placed-right");
+    tooltip.setAttribute("aria-hidden", "true");
+  }
+
+  function positionSessionTooltip(anchor, tooltip) {
+    if (!anchor || !tooltip || tooltip.classList.contains("hidden")) {
+      return;
+    }
+
+    const rect = anchor.getBoundingClientRect();
+    const margin = 12;
+    const gap = 16;
+    const width = tooltip.offsetWidth || 320;
+    const height = tooltip.offsetHeight || 160;
+    const placeLeft = rect.left >= width + gap + margin;
+    const left = placeLeft
+      ? rect.left - width - gap
+      : Math.min(window.innerWidth - width - margin, rect.right + gap);
+    const top = Math.max(margin, Math.min(window.innerHeight - height - margin, rect.top + (rect.height / 2) - (height / 2)));
+
+    tooltip.style.left = `${Math.max(margin, left)}px`;
+    tooltip.style.top = `${top}px`;
+    tooltip.classList.toggle("placed-left", placeLeft);
+    tooltip.classList.toggle("placed-right", !placeLeft);
   }
 
   async function loadSession(sessionKey) {

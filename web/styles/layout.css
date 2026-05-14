@@ -98,14 +98,14 @@
 }
 
 .session-tooltip {
-  position: absolute;
-  top: 50%;
-  right: calc(100% + 18px);
-  z-index: 20;
-  width: 230px;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 120;
+  width: min(320px, calc(100vw - 24px));
   pointer-events: none;
   opacity: 0;
-  transform: translateY(-50%) translateX(8px);
+  transform: translate3d(8px, 0, 0);
   border: 1px solid var(--line-strong);
   border-radius: 12px;
   background: rgba(13, 22, 38, 0.96);
@@ -120,10 +120,9 @@
   transition: opacity var(--ease), transform var(--ease);
 }
 
-.session-info:hover .session-tooltip,
-.session-info:focus .session-tooltip {
+.session-tooltip.is-visible {
   opacity: 1;
-  transform: translateY(-50%) translateX(0);
+  transform: translate3d(0, 0, 0);
 }
 
 .session-tooltip::before {
@@ -139,9 +138,25 @@
   background: rgba(13, 22, 38, 0.96);
 }
 
+.session-tooltip.placed-right::before {
+  right: auto;
+  left: -8px;
+  border: 0;
+  border-bottom: 1px solid var(--line-strong);
+  border-left: 1px solid var(--line-strong);
+}
+
 .session-tooltip b {
   color: var(--text);
   font-weight: 600;
+}
+
+.session-list-empty {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  color: var(--text-muted);
+  padding: 18px;
+  line-height: 1.8;
 }
 
 .chat-shell {
@@ -185,7 +200,7 @@
 }
 
 .search-box {
-  width: 260px;
+  width: 370px;
   height: 42px;
   display: inline-flex;
   align-items: center;
@@ -202,6 +217,34 @@
   border-color: transparent;
   background: transparent;
   padding: 0;
+}
+
+.search-box.collapsed .search-scope-chip {
+  display: none;
+}
+
+.search-scope-chip {
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(155, 200, 255, 0.12);
+  color: var(--text);
+  padding: 5px 9px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.search-scope-chip::after {
+  content: "close";
+  font-family: "Material Symbols Outlined";
+  font-weight: 300;
+  font-size: 16px;
+  line-height: 1;
+  -webkit-font-feature-settings: "liga";
+  font-feature-settings: "liga";
 }
 
 .search-box input {
