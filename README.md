@@ -11,25 +11,25 @@
 نصب از releaseهای آماده GitHub، بدون نیاز به Go:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/h-mousavi/codex-rtl-plugin/main/scripts/install-release.sh | sh
+curl -fsSL https://raw.githubusercontent.com/moosavimaleki/ai-agent-manager/main/scripts/install-release.sh | sh
 ```
 
 اگر می‌خواهی همزمان hookها هم نصب شوند:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/h-mousavi/codex-rtl-plugin/main/scripts/install-release.sh | sh -s -- --hooks
+curl -fsSL https://raw.githubusercontent.com/moosavimaleki/ai-agent-manager/main/scripts/install-release.sh | sh -s -- --hooks
 ```
 
 Windows PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/h-mousavi/codex-rtl-plugin/main/scripts/install-release.ps1 | iex
+irm https://raw.githubusercontent.com/moosavimaleki/ai-agent-manager/main/scripts/install-release.ps1 | iex
 ```
 
 Windows PowerShell همراه نصب hookها:
 
 ```powershell
-$env:AI_SESSION_VIEWER_INSTALL_HOOKS="1"; irm https://raw.githubusercontent.com/h-mousavi/codex-rtl-plugin/main/scripts/install-release.ps1 | iex
+$env:AI_SESSION_VIEWER_INSTALL_HOOKS="1"; irm https://raw.githubusercontent.com/moosavimaleki/ai-agent-manager/main/scripts/install-release.ps1 | iex
 ```
 
 برای نصب از سورس:

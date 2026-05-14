@@ -33,6 +33,7 @@ export function createViewerApp() {
     },
     settings: loadSettings(),
     eventSource: null,
+    sessionNoticeTimer: null,
   };
 
   const els = {
@@ -768,8 +769,76 @@ export function createViewerApp() {
             scrollToBottom(els.chat);
           }
         });
+        return;
       }
+      showSessionNotice(event);
     });
+  }
+
+  function getSessionNotice() {
+    let notice = document.getElementById("session-notice");
+    if (notice) {
+      return notice;
+    }
+
+    notice = document.createElement("div");
+    notice.id = "session-notice";
+    notice.className = "session-notice hidden";
+    notice.setAttribute("role", "status");
+
+    const text = document.createElement("span");
+    text.className = "session-notice-text";
+
+    const action = document.createElement("button");
+    action.type = "button";
+    action.className = "session-notice-action";
+    action.textContent = "رفتن به این چت";
+
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "inline-icon session-notice-close";
+    close.dataset.icon = "close";
+    close.setAttribute("aria-label", "بستن اعلان نشست");
+    close.addEventListener("click", hideSessionNotice);
+
+    notice.append(text, action, close);
+    els.body.appendChild(notice);
+    return notice;
+  }
+
+  function showSessionNotice(event) {
+    if (!event?.session_key) {
+      return;
+    }
+
+    const notice = getSessionNotice();
+    const title = event.project_name || event.session_id || "نشست جدید";
+    notice.querySelector(".session-notice-text").textContent = `نشست به‌روزرسانی شد: ${title}`;
+    notice.querySelector(".session-notice-action").onclick = async () => {
+      hideSessionNotice();
+      await loadSessionList({ loadInitial: false });
+      if (state.sessions.some((item) => item.key === event.session_key)) {
+        await loadSession(event.session_key);
+      }
+    };
+
+    notice.classList.remove("hidden");
+    window.requestAnimationFrame(() => notice.classList.add("is-visible"));
+
+    window.clearTimeout(state.sessionNoticeTimer);
+    state.sessionNoticeTimer = window.setTimeout(hideSessionNotice, 12000);
+  }
+
+  function hideSessionNotice() {
+    const notice = document.getElementById("session-notice");
+    if (!notice) {
+      return;
+    }
+    notice.classList.remove("is-visible");
+    window.clearTimeout(state.sessionNoticeTimer);
+    state.sessionNoticeTimer = window.setTimeout(() => {
+      notice.classList.add("hidden");
+    }, 180);
   }
 
   function currentSession() {

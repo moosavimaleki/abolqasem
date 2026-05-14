@@ -11,7 +11,7 @@ $ErrorActionPreference = "Stop"
 
 $App = "ai-session-viewer"
 if ([string]::IsNullOrWhiteSpace($Repo)) {
-    $Repo = "h-mousavi/codex-rtl-plugin"
+    $Repo = "moosavimaleki/ai-agent-manager"
 }
 if ([string]::IsNullOrWhiteSpace($Version)) {
     $Version = "latest"

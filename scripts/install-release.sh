@@ -3,7 +3,7 @@
 set -eu
 
 APP="ai-session-viewer"
-REPO="${AI_SESSION_VIEWER_REPO:-h-mousavi/codex-rtl-plugin}"
+REPO="${AI_SESSION_VIEWER_REPO:-moosavimaleki/ai-agent-manager}"
 VERSION="${AI_SESSION_VIEWER_VERSION:-latest}"
 BIN_DIR="${BIN_DIR:-}"
 INSTALL_HOOKS="${AI_SESSION_VIEWER_INSTALL_HOOKS:-0}"
@@ -18,7 +18,7 @@ Usage:
   install-release.sh [options]
 
 Options:
-  --repo OWNER/REPO   GitHub repository. Default: h-mousavi/codex-rtl-plugin.
+  --repo OWNER/REPO   GitHub repository. Default: moosavimaleki/ai-agent-manager.
   --version TAG       Release tag. Default: latest.
   --bin-dir DIR       Install binary into DIR.
   --hooks             Install hooks after installing the binary.

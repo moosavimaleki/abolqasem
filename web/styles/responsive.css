@@ -58,6 +58,13 @@
     padding: 28px 16px 36px;
   }
 
+  .session-notice {
+    right: 16px;
+    left: 16px;
+    bottom: 16px;
+    width: auto;
+  }
+
   .message-card.assistant {
     padding: 42px 18px 22px;
   }
