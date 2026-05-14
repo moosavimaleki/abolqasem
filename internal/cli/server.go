@@ -5,6 +5,7 @@ import (
 	"ai-agent-manager/internal/server"
 	"ai-agent-manager/internal/state"
 	"log"
+	"net"
 	"net/url"
 	"strconv"
 	"time"
@@ -13,11 +14,17 @@ import (
 )
 
 var port int
+var autoPort bool
 
 var serverCmd = &cobra.Command{
 	Use:   "server",
 	Short: "Start the local HTTP server",
 	Run: func(cmd *cobra.Command, args []string) {
+		listener, actualPort, err := serverListener()
+		if err != nil {
+			log.Fatalf("Server error: %v", err)
+		}
+
 		appState, err := state.LoadState()
 		if err != nil {
 			log.Printf("Warning: failed to load state, continuing with a fresh store: %v", err)
@@ -32,7 +39,7 @@ var serverCmd = &cobra.Command{
 		}
 		if err := state.SaveServerBaseURL((&url.URL{
 			Scheme: "http",
-			Host:   "127.0.0.1:" + strconv.Itoa(port),
+			Host:   "127.0.0.1:" + strconv.Itoa(actualPort),
 		}).String()); err != nil {
 			log.Printf("Warning: failed to persist server URL: %v", err)
 		}
@@ -40,7 +47,7 @@ var serverCmd = &cobra.Command{
 		server.DiscoverSessionsOnce()
 		server.StartDiscoveryLoop(90 * time.Second)
 		server.SetWebFS(viewer.WebAssets)
-		if err := server.Start(port); err != nil {
+		if err := server.Serve(listener); err != nil {
 			log.Fatalf("Server error: %v", err)
 		}
 	},
@@ -48,5 +55,22 @@ var serverCmd = &cobra.Command{
 
 func init() {
 	serverCmd.Flags().IntVarP(&port, "port", "p", 9090, "Port to listen on")
+	serverCmd.Flags().BoolVar(&autoPort, "auto-port", false, "Listen on the first available port starting at 9090")
 	rootCmd.AddCommand(serverCmd)
+}
+
+func serverListener() (net.Listener, int, error) {
+	if autoPort {
+		for {
+			if baseURL, ok := discoverRunningServer(); ok {
+				_ = state.SaveServerBaseURL(baseURL)
+				log.Printf("Server already healthy at %s; waiting before taking over", baseURL)
+				time.Sleep(30 * time.Second)
+				continue
+			}
+			return listenOnAvailablePort()
+		}
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(port))
+	return listener, port, err
 }

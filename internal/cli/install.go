@@ -14,6 +14,7 @@ import (
 var installAgent string
 var installScope string
 var installAll bool
+var installStartup string
 
 func getAdapter(agent string) (adapters.AgentAdapter, error) {
 	switch agent {
@@ -36,6 +37,17 @@ var installCmd = &cobra.Command{
 		if scope != adapters.ScopeUser && scope != adapters.ScopeProject {
 			fmt.Println("Invalid scope. Use 'user' or 'project'")
 			return
+		}
+		if installStartup != "hook" && installStartup != "service" {
+			fmt.Println("Invalid startup. Use 'hook' or 'service'")
+			return
+		}
+		if installStartup == "service" {
+			if err := installService(); err != nil {
+				fmt.Printf("Service installation failed: %v\n", err)
+				return
+			}
+			fmt.Println("Successfully installed service")
 		}
 
 		if installAll {
@@ -92,6 +104,7 @@ func init() {
 	installCmd.Flags().StringVar(&installAgent, "agent", "codex", "Agent type (codex, claude, gemini)")
 	installCmd.Flags().StringVar(&installScope, "scope", "user", "Installation scope (user, project)")
 	installCmd.Flags().BoolVar(&installAll, "all", false, "Install for all supported agents")
+	installCmd.Flags().StringVar(&installStartup, "startup", "hook", "Server startup mode: hook or service")
 
 	uninstallCmd.Flags().StringVar(&installAgent, "agent", "codex", "Agent type (codex, claude, gemini)")
 	uninstallCmd.Flags().StringVar(&installScope, "scope", "user", "Installation scope (user, project)")

@@ -9,7 +9,9 @@ param(
     [switch]$AllAgents,
     [string]$Agent = "",
     [ValidateSet("user", "project")]
-    [string]$Scope = "user"
+    [string]$Scope = "user",
+    [ValidateSet("hook", "service")]
+    [string]$Startup = "hook"
 )
 
 $ErrorActionPreference = "Stop"
@@ -126,11 +128,11 @@ if ($PathParts -notcontains $BinDir) {
 $env:AI_AGENT_MANAGER_SUPPRESS_TRUST_NOTICE = "1"
 $Agents = if ($Agent) { @($Agent) } else { @("codex", "claude", "gemini") }
 if ($Agents.Count -eq 3 -and @("codex", "claude", "gemini") -join "," -eq ($Agents -join ",")) {
-    & $InstallPath install --all --scope $Scope
+    & $InstallPath install --all --scope $Scope --startup $Startup
 } else {
     foreach ($Name in $Agents) {
-        Write-Host "Installing $Name hook with scope=$Scope"
-        & $InstallPath install --agent $Name --scope $Scope
+        Write-Host "Installing $Name hook with scope=$Scope startup=$Startup"
+        & $InstallPath install --agent $Name --scope $Scope --startup $Startup
     }
 }
 Remove-Item Env:AI_AGENT_MANAGER_SUPPRESS_TRUST_NOTICE -ErrorAction SilentlyContinue

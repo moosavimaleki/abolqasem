@@ -25,6 +25,7 @@ func handleAPIState(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, map[string]any{
+		"app":                "ai-agent-manager",
 		"latest_session_key": appState.LatestSessionKey,
 		"latest_session_id":  appState.LatestSessionID,
 		"latest_updated_at":  latestUpdatedAt,

@@ -11,6 +11,7 @@ BUILD="1"
 BUILD_ALL="0"
 AGENTS="codex claude gemini"
 BIN_DIR="${BIN_DIR:-}"
+STARTUP="hook"
 
 usage() {
   cat <<'EOF'
@@ -25,6 +26,9 @@ Options:
   --no-build          Install an existing dist binary for the current OS/arch.
   --build-all         Build release binaries for Linux, macOS, and Windows into dist/.
   --hooks             Install hooks after installing the binary. Default: enabled.
+  --no-hooks          Do not install agent hooks.
+  --startup MODE      Server startup mode: hook or service. Default: hook.
+  --service           Same as --startup service.
   --all-agents        Same as --hooks for codex, claude, and gemini.
   --agent NAME        Install hook only for one agent: codex, claude, or gemini.
   --scope SCOPE       Hook scope: user or project. Default: user.
@@ -85,6 +89,19 @@ while [ "$#" -gt 0 ]; do
     --hooks|--all-agents)
       HOOKS="1"
       AGENTS="codex claude gemini"
+      shift
+      ;;
+    --no-hooks)
+      HOOKS="0"
+      shift
+      ;;
+    --startup)
+      [ "$#" -ge 2 ] || die "--startup requires a value"
+      STARTUP="$2"
+      shift 2
+      ;;
+    --service)
+      STARTUP="service"
       shift
       ;;
     --agent)
@@ -255,13 +272,22 @@ case ":$PATH:" in
     ;;
 esac
 
-if [ "$AGENTS" = "codex claude gemini" ]; then
-  AI_AGENT_MANAGER_SUPPRESS_TRUST_NOTICE=1 "$INSTALL_PATH" install --all --scope "$SCOPE"
-else
-  for agent in $AGENTS; do
-    log "Installing $agent hook with scope=$SCOPE"
-    AI_AGENT_MANAGER_SUPPRESS_TRUST_NOTICE=1 "$INSTALL_PATH" install --agent "$agent" --scope "$SCOPE"
-  done
-fi
+case "$STARTUP" in
+  hook|service) ;;
+  *) die "unsupported startup mode: $STARTUP" ;;
+esac
 
-print_trust_notice
+if [ "$HOOKS" = "1" ]; then
+  if [ "$AGENTS" = "codex claude gemini" ]; then
+    AI_AGENT_MANAGER_SUPPRESS_TRUST_NOTICE=1 "$INSTALL_PATH" install --all --scope "$SCOPE" --startup "$STARTUP"
+  else
+    for agent in $AGENTS; do
+      log "Installing $agent hook with scope=$SCOPE startup=$STARTUP"
+      AI_AGENT_MANAGER_SUPPRESS_TRUST_NOTICE=1 "$INSTALL_PATH" install --agent "$agent" --scope "$SCOPE" --startup "$STARTUP"
+    done
+  fi
+
+  print_trust_notice
+elif [ "$STARTUP" = "service" ]; then
+  "$INSTALL_PATH" install-service
+fi

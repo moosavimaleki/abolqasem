@@ -58,6 +58,8 @@ func (a *CodexAdapter) InstallHook(scope adapters.InstallScope) error {
 	hooks := ensureMap(cfg, "hooks")
 	stopBlocks := ensureHookBlocks(hooks["Stop"])
 	hooks["Stop"], _ = ensureCodexHook(stopBlocks)
+	promptBlocks := ensureHookBlocks(hooks["PromptSubmitted"])
+	hooks["PromptSubmitted"], _ = ensureCodexEnsureServerHook(promptBlocks)
 
 	if len(data) > 0 {
 		if err := os.WriteFile(configPath+".bak", data, 0o644); err != nil {
@@ -91,13 +93,20 @@ func (a *CodexAdapter) UninstallHook(scope adapters.InstallScope) error {
 
 	stopBlocks := ensureHookBlocks(hooks["Stop"])
 	newBlocks, removed := removeCodexHook(stopBlocks)
-	if !removed {
+	promptBlocks := ensureHookBlocks(hooks["PromptSubmitted"])
+	newPromptBlocks, removedPrompt := removeCodexEnsureServerHook(promptBlocks)
+	if !removed && !removedPrompt {
 		return fmt.Errorf("hook not found")
 	}
-	if len(newBlocks) == 0 {
+	if removed && len(newBlocks) == 0 {
 		delete(hooks, "Stop")
-	} else {
+	} else if removed {
 		hooks["Stop"] = newBlocks
+	}
+	if removedPrompt && len(newPromptBlocks) == 0 {
+		delete(hooks, "PromptSubmitted")
+	} else if removedPrompt {
+		hooks["PromptSubmitted"] = newPromptBlocks
 	}
 
 	out, err := toml.Marshal(cfg)
@@ -182,6 +191,44 @@ func ensureCodexHook(blocks []map[string]any) ([]map[string]any, bool) {
 	}), true
 }
 
+func ensureCodexEnsureServerHook(blocks []map[string]any) ([]map[string]any, bool) {
+	command, err := adapters.EnsureServerShellCommand()
+	if err != nil {
+		command = "ai-agent-manager ensure-server"
+	}
+	for _, block := range blocks {
+		entries := ensureHookEntries(block["hooks"])
+		block["hooks"] = entries
+		for _, inner := range entries {
+			if adapters.IsEnsureServerCommandMatch(stringValue(inner["command"])) {
+				changed := false
+				if stringValue(inner["type"]) != "command" {
+					inner["type"] = "command"
+					changed = true
+				}
+				if stringValue(inner["command"]) != command {
+					inner["command"] = command
+					changed = true
+				}
+				if inner["timeout"] != 3 {
+					inner["timeout"] = 3
+					changed = true
+				}
+				return blocks, changed
+			}
+		}
+	}
+	return append(blocks, map[string]any{
+		"hooks": []map[string]any{
+			{
+				"type":    "command",
+				"command": command,
+				"timeout": 3,
+			},
+		},
+	}), true
+}
+
 func removeCodexHook(blocks []map[string]any) ([]map[string]any, bool) {
 	changed := false
 	result := make([]map[string]any, 0, len(blocks))
@@ -190,6 +237,28 @@ func removeCodexHook(blocks []map[string]any) ([]map[string]any, bool) {
 		kept := make([]map[string]any, 0, len(entries))
 		for _, inner := range entries {
 			if adapters.IsCommandMatch(stringValue(inner["command"]), "codex") {
+				changed = true
+				continue
+			}
+			kept = append(kept, inner)
+		}
+		if len(kept) == 0 {
+			continue
+		}
+		block["hooks"] = kept
+		result = append(result, block)
+	}
+	return result, changed
+}
+
+func removeCodexEnsureServerHook(blocks []map[string]any) ([]map[string]any, bool) {
+	changed := false
+	result := make([]map[string]any, 0, len(blocks))
+	for _, block := range blocks {
+		entries := ensureHookEntries(block["hooks"])
+		kept := make([]map[string]any, 0, len(entries))
+		for _, inner := range entries {
+			if adapters.IsEnsureServerCommandMatch(stringValue(inner["command"])) {
 				changed = true
 				continue
 			}

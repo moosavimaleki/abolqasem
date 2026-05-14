@@ -1,0 +1,24 @@
+package cli
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/spf13/cobra"
+)
+
+var ensureServerCmd = &cobra.Command{
+	Use:   "ensure-server",
+	Short: "Start the local server if it is not already running",
+	Run: func(cmd *cobra.Command, args []string) {
+		if err := ensureServerRunning(5 * time.Second); err != nil {
+			fmt.Printf("Failed to ensure server: %v\n", err)
+			return
+		}
+		fmt.Printf("Server ready at %s\n", currentBaseURL())
+	},
+}
+
+func init() {
+	rootCmd.AddCommand(ensureServerCmd)
+}

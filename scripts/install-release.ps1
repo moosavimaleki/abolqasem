@@ -5,6 +5,8 @@ param(
     [string]$BinDir = $env:BIN_DIR,
     [string]$Scope = $env:AI_AGENT_MANAGER_HOOK_SCOPE,
     [string]$Agents = $env:AI_AGENT_MANAGER_AGENTS,
+    [ValidateSet("hook", "service")]
+    [string]$Startup = $env:AI_AGENT_MANAGER_STARTUP,
     [switch]$Hooks
 )
 
@@ -22,6 +24,9 @@ if ([string]::IsNullOrWhiteSpace($Scope)) {
 }
 if ([string]::IsNullOrWhiteSpace($Agents)) {
     $Agents = "all"
+}
+if ([string]::IsNullOrWhiteSpace($Startup)) {
+    $Startup = "hook"
 }
 if ($env:AI_AGENT_MANAGER_INSTALL_HOOKS -ne "0") {
     $Hooks = $true
@@ -86,14 +91,16 @@ try {
     if ($Hooks) {
         if ($Agents -eq "all") {
             $env:AI_AGENT_MANAGER_SUPPRESS_TRUST_NOTICE = "1"
-            & $InstallPath install --all --scope $Scope
+            & $InstallPath install --all --scope $Scope --startup $Startup
         } else {
             foreach ($Agent in ($Agents -split "[,\s]+" | Where-Object { $_ })) {
                 $env:AI_AGENT_MANAGER_SUPPRESS_TRUST_NOTICE = "1"
-                & $InstallPath install --agent $Agent --scope $Scope
+                & $InstallPath install --agent $Agent --scope $Scope --startup $Startup
             }
         }
         Remove-Item Env:AI_AGENT_MANAGER_SUPPRESS_TRUST_NOTICE -ErrorAction SilentlyContinue
+    } elseif ($Startup -eq "service") {
+        & $InstallPath install-service
     }
 
     Write-Host ""

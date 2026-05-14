@@ -10,6 +10,7 @@ BIN_DIR="${BIN_DIR:-}"
 INSTALL_HOOKS="${AI_AGENT_MANAGER_INSTALL_HOOKS:-1}"
 HOOK_SCOPE="${AI_AGENT_MANAGER_HOOK_SCOPE:-user}"
 HOOK_AGENTS="${AI_AGENT_MANAGER_AGENTS:-all}"
+STARTUP="${AI_AGENT_MANAGER_STARTUP:-hook}"
 
 usage() {
   cat <<'EOF'
@@ -23,6 +24,9 @@ Options:
   --version TAG       Release tag. Default: latest.
   --bin-dir DIR       Install binary into DIR.
   --hooks             Install hooks after installing the binary. Default: enabled.
+  --no-hooks          Do not install agent hooks.
+  --startup MODE      Server startup mode: hook or service. Default: hook.
+  --service           Same as --startup service.
   --agent NAME        Install hook for one agent: codex, claude, or gemini.
   --scope SCOPE       Hook scope: user or project. Default: user.
   -h, --help          Show this help.
@@ -31,6 +35,7 @@ Environment:
   AI_AGENT_MANAGER_REPO
   AI_AGENT_MANAGER_VERSION
   AI_AGENT_MANAGER_INSTALL_HOOKS=1
+  AI_AGENT_MANAGER_STARTUP=hook|service
   AI_AGENT_MANAGER_AGENTS=all|codex|claude|gemini
   AI_AGENT_MANAGER_HOOK_SCOPE=user|project
   BIN_DIR
@@ -65,6 +70,19 @@ while [ "$#" -gt 0 ]; do
       ;;
     --hooks)
       INSTALL_HOOKS="1"
+      shift
+      ;;
+    --no-hooks)
+      INSTALL_HOOKS="0"
+      shift
+      ;;
+    --startup)
+      [ "$#" -ge 2 ] || die "--startup requires a value"
+      STARTUP="$2"
+      shift 2
+      ;;
+    --service)
+      STARTUP="service"
       shift
       ;;
     --agent)
@@ -218,13 +236,19 @@ case ":$PATH:" in
 esac
 
 if [ "$INSTALL_HOOKS" = "1" ]; then
+  case "$STARTUP" in
+    hook|service) ;;
+    *) die "unsupported startup mode: $STARTUP" ;;
+  esac
   if [ "$HOOK_AGENTS" = "all" ]; then
-    AI_AGENT_MANAGER_SUPPRESS_TRUST_NOTICE=1 "$INSTALL_PATH" install --all --scope "$HOOK_SCOPE"
+    AI_AGENT_MANAGER_SUPPRESS_TRUST_NOTICE=1 "$INSTALL_PATH" install --all --scope "$HOOK_SCOPE" --startup "$STARTUP"
   else
     for agent in $HOOK_AGENTS; do
-      AI_AGENT_MANAGER_SUPPRESS_TRUST_NOTICE=1 "$INSTALL_PATH" install --agent "$agent" --scope "$HOOK_SCOPE"
+      AI_AGENT_MANAGER_SUPPRESS_TRUST_NOTICE=1 "$INSTALL_PATH" install --agent "$agent" --scope "$HOOK_SCOPE" --startup "$STARTUP"
     done
   fi
+elif [ "$STARTUP" = "service" ]; then
+  "$INSTALL_PATH" install-service
 fi
 
 print_trust_notice

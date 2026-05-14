@@ -29,6 +29,17 @@ func ShellCommand(agent string) (string, error) {
 	return exe + " hook --agent " + agent, nil
 }
 
+func EnsureServerShellCommand() (string, error) {
+	exe, err := ExecutablePath()
+	if err != nil {
+		return "", err
+	}
+	if strings.ContainsRune(exe, ' ') {
+		exe = fmt.Sprintf("%q", exe)
+	}
+	return exe + " ensure-server", nil
+}
+
 func CommandArgs(agent string) (string, []string, error) {
 	exe, err := ExecutablePath()
 	if err != nil {
@@ -50,4 +61,9 @@ func IsCommandMatch(command, agent string) bool {
 		return true
 	}
 	return false
+}
+
+func IsEnsureServerCommandMatch(command string) bool {
+	command = strings.TrimSpace(command)
+	return strings.HasSuffix(command, " ensure-server") || strings.Contains(command, " ensure-server")
 }

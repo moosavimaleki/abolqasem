@@ -42,11 +42,6 @@ var hookCmd = &cobra.Command{
 		event = state.NormalizeAndValidateEvent(event)
 
 		payload, _ := json.Marshal(event)
-		if postHookEvent(payload) {
-			emitGeminiAck(hookAgent)
-			return
-		}
-
 		if err := ensureServerRunning(5 * time.Second); err == nil && postHookEvent(payload) {
 			emitGeminiAck(hookAgent)
 			return
