@@ -10,8 +10,7 @@ import (
 )
 
 func TestInstallAndUninstallHookPreservesConfig(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := testHome(t)
 	configPath := filepath.Join(home, ".codex", "config.toml")
 	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -64,8 +63,7 @@ command = "echo keep"
 }
 
 func TestInstallHookIsIdempotentAndMigratesDeprecatedFeature(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := testHome(t)
 	configPath := filepath.Join(home, ".codex", "config.toml")
 	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -111,4 +109,14 @@ timeout = 1
 	if !strings.Contains(config, "timeout = 3") {
 		t.Fatalf("expected timeout to be repaired: %s", config)
 	}
+}
+
+func testHome(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("HOMEDRIVE", "")
+	t.Setenv("HOMEPATH", "")
+	return home
 }

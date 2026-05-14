@@ -10,8 +10,7 @@ import (
 )
 
 func TestInstallAndUninstallHookPreservesOtherHooks(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := testHome(t)
 	configPath := filepath.Join(home, ".gemini", "settings.json")
 	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -57,8 +56,7 @@ func TestInstallAndUninstallHookPreservesOtherHooks(t *testing.T) {
 }
 
 func TestInstallHookIsIdempotentAndRepairsExistingHooks(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := testHome(t)
 	configPath := filepath.Join(home, ".gemini", "settings.json")
 	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -114,4 +112,14 @@ func TestInstallHookIsIdempotentAndRepairsExistingHooks(t *testing.T) {
 	if !strings.Contains(config, " hook --agent gemini") {
 		t.Fatalf("expected gemini hook command: %s", config)
 	}
+}
+
+func testHome(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("HOMEDRIVE", "")
+	t.Setenv("HOMEPATH", "")
+	return home
 }
