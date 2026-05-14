@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/url"
 	"strconv"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -36,6 +37,8 @@ var serverCmd = &cobra.Command{
 			log.Printf("Warning: failed to persist server URL: %v", err)
 		}
 
+		server.DiscoverSessionsOnce()
+		server.StartDiscoveryLoop(90 * time.Second)
 		server.SetWebFS(viewer.WebAssets)
 		if err := server.Start(port); err != nil {
 			log.Fatalf("Server error: %v", err)

@@ -62,6 +62,8 @@ var (
 	cache   = map[string]cacheEntry{}
 )
 
+const maxStructuredJSONBytes = 64 * 1024 * 1024
+
 func ParseMessages(agent, sessionID, transcriptPath string, opts ParseOptions) (*ParseResult, error) {
 	if strings.TrimSpace(transcriptPath) == "" {
 		return &ParseResult{
@@ -172,6 +174,11 @@ func loadMessages(agent, sessionID, transcriptPath string) ([]Message, error) {
 			return nil, err
 		}
 	}
+	if len(messages) == 0 && shouldTryStructuredJSON(transcriptPath, info.Size()) {
+		if structured, err := loadStructuredJSONMessages(agent, sessionID, transcriptPath); err == nil {
+			messages = structured
+		}
+	}
 
 	cacheMu.Lock()
 	cache[cacheKey] = cacheEntry{
@@ -181,6 +188,52 @@ func loadMessages(agent, sessionID, transcriptPath string) ([]Message, error) {
 	}
 	cacheMu.Unlock()
 	return messages, nil
+}
+
+func shouldTryStructuredJSON(transcriptPath string, size int64) bool {
+	if size <= 0 || size > maxStructuredJSONBytes {
+		return false
+	}
+	ext := strings.ToLower(filepath.Ext(transcriptPath))
+	return ext == ".json"
+}
+
+func loadStructuredJSONMessages(agent, sessionID, transcriptPath string) ([]Message, error) {
+	data, err := os.ReadFile(transcriptPath)
+	if err != nil {
+		return nil, err
+	}
+
+	var raw any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, err
+	}
+
+	messages := make([]Message, 0, 64)
+	collectStructuredMessages(agent, sessionID, raw, &messages, 0)
+	return messages, nil
+}
+
+func collectStructuredMessages(agent, sessionID string, value any, messages *[]Message, depth int) {
+	if depth > 8 {
+		return
+	}
+	switch typed := value.(type) {
+	case []any:
+		for _, item := range typed {
+			collectStructuredMessages(agent, sessionID, item, messages, depth+1)
+		}
+	case map[string]any:
+		if msg := extractMessage(agent, typed, sessionID, len(*messages)+1); msg != nil {
+			*messages = append(*messages, *msg)
+			return
+		}
+		for _, key := range []string{"messages", "history", "turns", "contents", "conversation", "entries", "items", "curatedHistory"} {
+			if child, ok := typed[key]; ok {
+				collectStructuredMessages(agent, sessionID, child, messages, depth+1)
+			}
+		}
+	}
 }
 
 func sliceRange(messages []Message, opts ParseOptions) (int, int) {
@@ -306,9 +359,10 @@ func extractClaudeMessage(raw map[string]any, sessionID string, index int) *Mess
 }
 
 func extractGeminiMessage(raw map[string]any, sessionID string, index int) *Message {
-	role := firstNonEmpty(stringValue(raw["role"]), stringValue(raw["speaker"]))
+	role := normalizeRole(firstNonEmpty(stringValue(raw["role"]), stringValue(raw["speaker"])))
 	kind := "message"
 	text := firstNonEmpty(
+		flattenText(raw["parts"]),
 		flattenText(raw["content"]),
 		flattenText(raw["response"]),
 		flattenText(raw["prompt"]),
@@ -324,6 +378,16 @@ func extractGeminiMessage(raw map[string]any, sessionID string, index int) *Mess
 		kind = "tool"
 	}
 	return newMessage(sessionID, index, role, kind, text, extractTimestamp(raw))
+}
+
+func normalizeRole(role string) string {
+	role = strings.ToLower(strings.TrimSpace(role))
+	switch role {
+	case "model":
+		return "assistant"
+	default:
+		return role
+	}
 }
 
 func extractGenericMessage(raw map[string]any, sessionID string, index int) *Message {
@@ -397,6 +461,7 @@ func flattenText(value any) string {
 			flattenText(typed["text"]),
 			flattenText(typed["message"]),
 			flattenText(typed["content"]),
+			flattenText(typed["parts"]),
 			flattenText(typed["output"]),
 			flattenText(typed["input"]),
 		); text != "" {

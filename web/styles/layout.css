@@ -160,6 +160,15 @@
   line-height: 1.8;
 }
 
+.session-list-footer {
+  border: 1px dashed color-mix(in srgb, var(--line) 80%, transparent);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  padding: 9px 12px;
+  text-align: center;
+}
+
 .chat-shell {
   position: relative;
   grid-column: 1;

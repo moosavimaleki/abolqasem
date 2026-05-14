@@ -66,6 +66,26 @@ func TestParseMessagesGeminiAndPagination(t *testing.T) {
 	}
 }
 
+func TestParseMessagesGeminiStructuredJSON(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "session-2026-05-14.json")
+	body := `{"history":[{"role":"user","parts":[{"text":"hello"}]},{"role":"model","parts":[{"text":"answer"}]}]}`
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("write transcript: %v", err)
+	}
+
+	result, err := ParseMessages("gemini", "gemini-session", path, ParseOptions{Limit: 10})
+	if err != nil {
+		t.Fatalf("ParseMessages returned error: %v", err)
+	}
+	if len(result.Items) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(result.Items))
+	}
+	if result.Items[1].Role != "assistant" || result.Items[1].Text != "answer" {
+		t.Fatalf("unexpected structured message: %+v", result.Items[1])
+	}
+}
+
 func TestParseMessagesMetadataOnly(t *testing.T) {
 	result, err := ParseMessages("gemini", "missing", "", ParseOptions{Limit: 10})
 	if err == nil {

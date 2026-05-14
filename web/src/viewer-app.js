@@ -13,9 +13,15 @@ import {
   sessionStatus,
 } from "./utils.js";
 
+const SESSION_PAGE_SIZE = 100;
+
 export function createViewerApp() {
   const state = {
     sessions: [],
+    sessionsNextOffset: 0,
+    sessionsHasMore: true,
+    sessionsLoading: false,
+    sessionsTotal: 0,
     messages: [],
     visibleMessages: [],
     currentSessionKey: "",
@@ -140,7 +146,10 @@ export function createViewerApp() {
       }
       await loadOlderMessages();
     });
-    els.sessionsList.addEventListener("scroll", hideSessionTooltip);
+    els.sessionsList.addEventListener("scroll", () => {
+      hideSessionTooltip();
+      maybeLoadMoreSessions();
+    });
     window.addEventListener("resize", hideSessionTooltip);
 
     document.addEventListener("click", (event) => {
@@ -179,11 +188,36 @@ export function createViewerApp() {
   }
 
   async function loadSessionList(options = {}) {
-    try {
-      const data = await fetchSessions();
-      state.sessions = data.items || [];
+    if (state.sessionsLoading) {
+      return;
+    }
+    const reset = options.reset !== false;
+    const offset = reset ? 0 : state.sessionsNextOffset;
+    if (!reset && !state.sessionsHasMore) {
+      return;
+    }
+
+    state.sessionsLoading = true;
+    if (reset) {
+      state.sessionsNextOffset = 0;
+      state.sessionsHasMore = true;
+    } else {
       renderSessions(getVisibleSessions());
-      els.sessionCount.textContent = `${state.sessions.length} نشست`;
+    }
+
+    let failed = false;
+    try {
+      const data = await fetchSessions({
+        limit: SESSION_PAGE_SIZE,
+        offset,
+      });
+      const page = data.items || [];
+      state.sessions = reset ? page : mergeSessionPages(state.sessions, page);
+      state.sessionsNextOffset = Number(data.next_offset || 0);
+      state.sessionsHasMore = state.sessionsNextOffset > 0;
+      state.sessionsTotal = Number(data.total || state.sessions.length);
+      renderSessions(getVisibleSessions());
+      syncSessionCount();
 
       if (options.loadInitial !== false && !state.currentSessionKey && state.sessions.length > 0) {
         await loadSession(state.sessions[0].key);
@@ -192,10 +226,50 @@ export function createViewerApp() {
         renderEmptyState("هنوز نشستی ثبت نشده است.", "ai-agent-manager install --all --scope user");
       }
     } catch (error) {
+      failed = true;
       console.error(error);
       els.sessionCount.textContent = "خطا";
       renderEmptyState("نشست‌ها بارگذاری نشدند.", "ai-agent-manager server");
+    } finally {
+      state.sessionsLoading = false;
+      if (!failed) {
+        renderSessions(getVisibleSessions());
+        syncSessionCount();
+      }
     }
+  }
+
+  async function loadMoreSessions() {
+    await loadSessionList({ reset: false, loadInitial: false });
+  }
+
+  function maybeLoadMoreSessions() {
+    if (state.sessionsLoading || !state.sessionsHasMore) {
+      return;
+    }
+    const distanceFromBottom = els.sessionsList.scrollHeight - els.sessionsList.scrollTop - els.sessionsList.clientHeight;
+    if (distanceFromBottom < 280) {
+      loadMoreSessions();
+    }
+  }
+
+  function mergeSessionPages(existing, incoming) {
+    const merged = new Map();
+    existing.forEach((session) => merged.set(session.key, session));
+    incoming.forEach((session) => merged.set(session.key, session));
+    return [...merged.values()].sort((a, b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0));
+  }
+
+  function syncSessionCount() {
+    if (state.sessionsLoading && state.sessions.length === 0) {
+      els.sessionCount.textContent = "در حال بارگذاری";
+      return;
+    }
+    const loaded = state.sessions.length;
+    const total = Math.max(state.sessionsTotal || loaded, loaded);
+    els.sessionCount.textContent = state.sessionsHasMore
+      ? `${loaded} از ${total} نشست`
+      : `${total} نشست`;
   }
 
   async function refreshCurrentSession() {
@@ -260,6 +334,24 @@ export function createViewerApp() {
       });
       els.sessionsList.appendChild(item);
     });
+    renderSessionListFooter();
+  }
+
+  function renderSessionListFooter() {
+    if (state.sessions.length === 0) {
+      return;
+    }
+
+    const footer = document.createElement("div");
+    footer.className = "session-list-footer";
+    if (state.sessionsLoading) {
+      footer.textContent = "در حال بارگذاری نشست‌های بیشتر...";
+    } else if (state.sessionsHasMore) {
+      footer.textContent = "برای نشست‌های بیشتر اسکرول کنید";
+    } else {
+      footer.textContent = "همه نشست‌ها بارگذاری شد";
+    }
+    els.sessionsList.appendChild(footer);
   }
 
   function renderSessionTooltip(session) {
@@ -773,7 +865,7 @@ export function createViewerApp() {
   function handleSessionEvent(event) {
     const shouldStick = isNearBottom(els.chat);
     loadSessionList().then(() => {
-      if (event.session_key === state.currentSessionKey) {
+      if (event.session_key && event.session_key === state.currentSessionKey) {
         loadSession(state.currentSessionKey).then(() => {
           if (shouldStick) {
             scrollToBottom(els.chat);

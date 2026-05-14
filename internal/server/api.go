@@ -42,6 +42,9 @@ func handleAPISessions(w http.ResponseWriter, r *http.Request) {
 
 	projectFilter := strings.TrimSpace(r.URL.Query().Get("project"))
 	limit := parsePositiveInt(r.URL.Query().Get("limit"), 50)
+	if limit <= 0 {
+		limit = 50
+	}
 	offset := parsePositiveInt(r.URL.Query().Get("offset"), 0)
 
 	items := make([]state.SessionMeta, 0, len(appState.Sessions))
@@ -49,7 +52,7 @@ func handleAPISessions(w http.ResponseWriter, r *http.Request) {
 		if projectFilter != "" && !strings.Contains(strings.ToLower(meta.ProjectName), strings.ToLower(projectFilter)) {
 			continue
 		}
-		items = append(items, enrichSessionMeta(meta))
+		items = append(items, meta)
 	}
 
 	sort.Slice(items, func(i, j int) bool {
@@ -57,6 +60,7 @@ func handleAPISessions(w http.ResponseWriter, r *http.Request) {
 	})
 
 	nextOffset := 0
+	total := len(items)
 	if offset < len(items) {
 		end := offset + limit
 		if end > len(items) {
@@ -69,10 +73,14 @@ func handleAPISessions(w http.ResponseWriter, r *http.Request) {
 	} else {
 		items = []state.SessionMeta{}
 	}
+	for i := range items {
+		items[i] = enrichSessionMeta(items[i])
+	}
 
 	writeJSON(w, map[string]any{
 		"items":       items,
 		"next_offset": nextOffset,
+		"total":       total,
 	})
 }
 

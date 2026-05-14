@@ -107,16 +107,28 @@ func UpsertSession(appState *AppState, event HookEvent) SessionMeta {
 			updatedAt = parsed
 		}
 	}
+	staleEvent := ok && !existing.UpdatedAt.IsZero() && updatedAt.Before(existing.UpdatedAt)
+	if staleEvent {
+		updatedAt = existing.UpdatedAt
+	}
 
 	meta := existing
 	meta.Key = key
 	meta.Agent = event.Agent
 	meta.SessionID = event.SessionID
-	meta.Cwd = event.Cwd
-	meta.ProjectName = event.ProjectName
+	if event.Cwd != "" && !staleEvent {
+		meta.Cwd = event.Cwd
+	}
+	if event.ProjectName != "" && event.ProjectName != "unknown" && !staleEvent {
+		meta.ProjectName = event.ProjectName
+	} else if meta.ProjectName == "" {
+		meta.ProjectName = deriveProjectName(meta.Cwd, firstNonEmptyString(event.TranscriptPath, meta.TranscriptPath))
+	}
 	meta.UpdatedAt = updatedAt
-	meta.MetadataOnly = event.MetadataOnly
-	meta.InvalidReason = event.InvalidReason
+	if !staleEvent || (meta.MetadataOnly && event.TranscriptPath != "" && !event.MetadataOnly) {
+		meta.MetadataOnly = event.MetadataOnly
+		meta.InvalidReason = event.InvalidReason
+	}
 	if event.TranscriptPath != "" {
 		meta.TranscriptPath = event.TranscriptPath
 	}
@@ -125,9 +137,22 @@ func UpsertSession(appState *AppState, event HookEvent) SessionMeta {
 	}
 
 	appState.Sessions[key] = meta
-	appState.LatestSessionKey = key
-	appState.LatestSessionID = event.SessionID
+	if shouldMarkLatest(appState, meta) {
+		appState.LatestSessionKey = key
+		appState.LatestSessionID = event.SessionID
+	}
 	return meta
+}
+
+func shouldMarkLatest(appState *AppState, meta SessionMeta) bool {
+	if appState.LatestSessionKey == "" {
+		return true
+	}
+	latest, ok := appState.Sessions[appState.LatestSessionKey]
+	if !ok || latest.UpdatedAt.IsZero() {
+		return true
+	}
+	return !meta.UpdatedAt.Before(latest.UpdatedAt)
 }
 
 func normalizePath(path string) string {
@@ -135,7 +160,12 @@ func normalizePath(path string) string {
 	if path == "" {
 		return ""
 	}
-	if strings.HasPrefix(path, "~/") {
+	if path == "~" {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			path = home
+		}
+	} else if strings.HasPrefix(path, "~/") || strings.HasPrefix(path, `~\`) {
 		home, err := os.UserHomeDir()
 		if err == nil {
 			path = filepath.Join(home, path[2:])
@@ -161,6 +191,15 @@ func deriveProjectName(cwd, transcriptPath string) string {
 		}
 	}
 	return "unknown"
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func sanitizePreview(value string) string {

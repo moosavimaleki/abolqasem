@@ -1,7 +1,10 @@
-export async function fetchSessions(project = "") {
-  const params = new URLSearchParams({ limit: "100" });
-  if (project) {
-    params.set("project", project);
+export async function fetchSessions(options = {}) {
+  const params = new URLSearchParams({
+    limit: String(options.limit || 100),
+    offset: String(options.offset || 0),
+  });
+  if (options.project) {
+    params.set("project", options.project);
   }
 
   const response = await fetch(`/api/sessions?${params.toString()}`);
