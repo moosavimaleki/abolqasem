@@ -25,11 +25,14 @@ builds:
 
 archives:
   - id: default
+    name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
     format_overrides:
       - goos: windows
         format: zip
     files:
       - README.md
+      - scripts/install-release.sh
+      - scripts/install-release.ps1
 
 checksum:
   name_template: "checksums.txt"

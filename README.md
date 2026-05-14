@@ -8,17 +8,39 @@
 
 ## Install
 
-پیش‌نیاز فقط Go 1.22+ است.
+نصب از releaseهای آماده GitHub، بدون نیاز به Go:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/h-mousavi/codex-rtl-plugin/main/scripts/install-release.sh | sh
+```
+
+اگر می‌خواهی همزمان hookها هم نصب شوند:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/h-mousavi/codex-rtl-plugin/main/scripts/install-release.sh | sh -s -- --hooks
+```
+
+Windows PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/h-mousavi/codex-rtl-plugin/main/scripts/install-release.ps1 | iex
+```
+
+Windows PowerShell همراه نصب hookها:
+
+```powershell
+$env:AI_SESSION_VIEWER_INSTALL_HOOKS="1"; irm https://raw.githubusercontent.com/h-mousavi/codex-rtl-plugin/main/scripts/install-release.ps1 | iex
+```
+
+برای نصب از سورس:
 
 ```bash
 git clone <repo-url>
 cd codex-rtl-plugin
-make build
-mkdir -p ~/.local/bin
-install -m 0755 dist/ai-session-viewer ~/.local/bin/ai-session-viewer
+scripts/install.sh
 ```
 
-برای نصب hookها:
+برای نصب hookها بعد از نصب binary:
 
 ```bash
 ai-session-viewer install --agent codex --scope user
@@ -31,6 +53,8 @@ ai-session-viewer install --agent gemini --scope user
 ```bash
 ai-session-viewer install --all --scope user
 ```
+
+`install` امن و idempotent است؛ اجرای دوباره آن hookهای موجود را خراب نمی‌کند و مسیر binary را repair می‌کند.
 
 ## Run
 
