@@ -118,6 +118,8 @@ function enhanceContent(root) {
       return;
     }
 
+    highlightCode(pre);
+
     const frame = document.createElement("div");
     frame.className = "code-frame";
 
@@ -134,4 +136,17 @@ function enhanceContent(root) {
     pre.parentNode.insertBefore(frame, pre);
     frame.append(pre, action);
   });
+}
+
+function highlightCode(pre) {
+  const target = pre.querySelector("code") || pre;
+  if (!target.textContent.trim() || !window.hljs) {
+    return;
+  }
+
+  try {
+    window.hljs.highlightElement(target);
+  } catch (error) {
+    console.warn("Code highlighting failed", error);
+  }
 }

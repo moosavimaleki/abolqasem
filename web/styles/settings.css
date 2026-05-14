@@ -159,6 +159,14 @@
   --theme-swatch: #102039;
 }
 
+.theme-options button[data-value="charcoal"] {
+  --theme-swatch: #1f222a;
+}
+
+.theme-options button[data-value="teal"] {
+  --theme-swatch: #0b4f4a;
+}
+
 .theme-options button[data-value="sepia"] {
   --theme-swatch: #f0c28b;
 }

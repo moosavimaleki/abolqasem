@@ -20,7 +20,7 @@
   height: calc(100dvh - var(--header-height));
   border-right: 1px solid rgba(255, 255, 255, 0.02);
   border-left: 1px solid var(--line);
-  background: rgba(7, 16, 29, 0.42);
+  background: var(--rail-bg);
   backdrop-filter: blur(18px);
   display: grid;
   grid-template-rows: minmax(0, 1fr);
@@ -71,8 +71,8 @@
 
 .session-item:hover,
 .session-item.active {
-  background: linear-gradient(135deg, rgba(88, 128, 200, 0.24), rgba(88, 128, 200, 0.09));
-  border-color: rgba(155, 200, 255, 0.08);
+  background: var(--rail-active);
+  border-color: var(--rail-active-border);
   color: var(--text);
 }
 
@@ -88,8 +88,9 @@
   position: relative;
   width: 24px;
   height: 24px;
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: var(--text-soft);
   display: inline-grid;
   place-items: center;

@@ -91,11 +91,13 @@
 .content-body :not(pre) > code {
   direction: ltr;
   unicode-bidi: plaintext;
-  background: var(--surface-soft);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 2px 7px;
-  font-size: 0.92em;
+  font-family: var(--code-font-family);
+  background: color-mix(in srgb, var(--code-bg) 42%, transparent);
+  border: 0;
+  border-radius: 6px;
+  padding: 1px 5px;
+  font-size: 0.88em;
+  color: var(--code-text);
 }
 
 .table-wrap {
@@ -126,27 +128,74 @@
 
 .code-frame {
   position: relative;
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+  border-radius: 9px;
   overflow: hidden;
   background: var(--code-bg);
 }
 
 .code-frame pre {
   margin: 0;
-  padding: 18px 20px;
+  padding: 16px 18px;
   white-space: pre;
   overflow-x: auto;
-  color: var(--text);
-  font-size: 0.92em;
-  line-height: 1.7;
+  color: var(--code-text);
+  font-family: var(--code-font-family);
+  font-size: 0.88em;
+  line-height: 1.62;
+}
+
+.code-frame code {
+  font-family: inherit;
 }
 
 .code-frame .inline-icon {
   position: absolute;
-  top: 10px;
-  right: 10px;
+  top: 8px;
+  right: 8px;
   left: auto;
+  background: color-mix(in srgb, var(--code-bg) 86%, var(--text) 14%);
+}
+
+.hljs {
+  background: transparent;
+  color: var(--code-text);
+}
+
+.hljs-comment,
+.hljs-quote {
+  color: color-mix(in srgb, var(--text-muted) 82%, transparent);
+  font-style: italic;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-built_in,
+.hljs-name {
+  color: var(--accent);
+}
+
+.hljs-string,
+.hljs-title,
+.hljs-section,
+.hljs-attribute,
+.hljs-literal,
+.hljs-template-tag,
+.hljs-template-variable {
+  color: color-mix(in srgb, var(--success) 86%, var(--text));
+}
+
+.hljs-number,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-variable {
+  color: color-mix(in srgb, var(--accent-strong) 82%, var(--text));
+}
+
+.hljs-meta,
+.hljs-selector-attr,
+.hljs-selector-pseudo {
+  color: color-mix(in srgb, var(--text-soft) 92%, var(--accent));
 }
 
 mark {

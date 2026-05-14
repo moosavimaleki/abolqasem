@@ -50,11 +50,11 @@ export function clampFontSize(value) {
 
 function fontStack(font) {
   switch (font) {
-    case "estedad":
-      return '"Estedad", "Vazirmatn", "Noto Sans Arabic", Tahoma, sans-serif';
-    case "noto":
-      return '"Noto Sans Arabic", "Vazirmatn", Tahoma, sans-serif';
+    case "bzar":
+      return '"BZarLocal", "VazirLocal", Tahoma, sans-serif';
+    case "iranian-sans":
+      return '"IranianSansLocal", "VazirLocal", Tahoma, sans-serif';
     default:
-      return '"Vazirmatn", "Estedad", "Noto Sans Arabic", Tahoma, sans-serif';
+      return '"VazirLocal", Tahoma, sans-serif';
   }
 }
