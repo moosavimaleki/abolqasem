@@ -266,17 +266,20 @@ function renderMermaidBlock(pre, code) {
   label.className = "mermaid-label";
   label.textContent = "Mermaid";
 
-  const action = document.createElement("button");
-  action.type = "button";
-  action.className = "inline-icon";
-  action.dataset.icon = "content_copy";
-  action.setAttribute("aria-label", "کپی نمودار Mermaid");
-  action.addEventListener("click", (event) => {
+  let viewer = null;
+  const actions = document.createElement("div");
+  actions.className = "mermaid-actions";
+  const copyAction = mermaidAction("content_copy", "کپی نمودار Mermaid", (event) => {
     event.stopPropagation();
     copyText(source);
   });
+  const zoomOutAction = mermaidAction("zoom_out", "کوچک‌تر کردن نمودار", () => viewer?.zoomBy(0.82));
+  const resetAction = mermaidAction("center_focus_strong", "بازنشانی نمای نمودار", () => viewer?.reset());
+  const zoomInAction = mermaidAction("zoom_in", "بزرگ‌تر کردن نمودار", () => viewer?.zoomBy(1.18));
+  const fullscreenAction = mermaidAction("fullscreen", "تمام‌صفحه کردن نمودار", () => viewer?.toggleFullscreen());
 
-  header.append(label, action);
+  actions.append(copyAction, zoomOutAction, resetAction, zoomInAction, fullscreenAction);
+  header.append(label, actions);
 
   const canvas = document.createElement("div");
   canvas.className = "mermaid-canvas";
@@ -296,14 +299,153 @@ function renderMermaidBlock(pre, code) {
   window.mermaid
     .render(renderId, source)
     .then(({ svg, bindFunctions }) => {
-      canvas.innerHTML = svg;
-      canvas.classList.add("is-ready");
+      canvas.replaceChildren();
+      const viewport = document.createElement("div");
+      viewport.className = "mermaid-viewport";
+      viewport.innerHTML = svg;
+      canvas.appendChild(viewport);
+      canvas.classList.add("is-ready", "is-interactive");
       bindFunctions?.(canvas);
+      const renderedSVG = viewport.querySelector("svg");
+      if (renderedSVG) {
+        viewer = setupMermaidViewer(frame, canvas, renderedSVG, fullscreenAction);
+      }
     })
     .catch((error) => {
       console.warn("Mermaid rendering failed", error);
       showMermaidFallback(canvas, pre, "رندر Mermaid ناموفق بود.");
     });
+}
+
+function mermaidAction(icon, label, handler) {
+  const action = document.createElement("button");
+  action.type = "button";
+  action.className = "inline-icon";
+  action.dataset.icon = icon;
+  action.setAttribute("aria-label", label);
+  action.title = label;
+  action.addEventListener("click", (event) => {
+    event.stopPropagation();
+    handler(event);
+  });
+  return action;
+}
+
+function setupMermaidViewer(frame, canvas, svg, fullscreenAction) {
+  const state = {
+    scale: 1,
+    x: 0,
+    y: 0,
+    dragging: false,
+    dragX: 0,
+    dragY: 0,
+    originX: 0,
+    originY: 0,
+  };
+  svg.classList.add("mermaid-svg");
+
+  const apply = () => {
+    svg.style.setProperty("--mermaid-zoom", String(state.scale));
+    svg.style.setProperty("--mermaid-pan-x", `${state.x}px`);
+    svg.style.setProperty("--mermaid-pan-y", `${state.y}px`);
+  };
+  const zoomAt = (factor, x, y) => {
+    const previous = state.scale;
+    const next = clamp(previous * factor, 0.25, 5);
+    if (next === previous) {
+      return;
+    }
+    const ratio = next / previous;
+    state.x = x - (x - state.x) * ratio;
+    state.y = y - (y - state.y) * ratio;
+    state.scale = next;
+    apply();
+  };
+  const syncFullscreenIcon = () => {
+    const active = document.fullscreenElement === frame || frame.classList.contains("is-expanded");
+    fullscreenAction.dataset.icon = active ? "fullscreen_exit" : "fullscreen";
+    fullscreenAction.setAttribute("aria-label", active ? "خروج از تمام‌صفحه" : "تمام‌صفحه کردن نمودار");
+  };
+
+  canvas.addEventListener("wheel", (event) => {
+    event.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const factor = Math.exp(-event.deltaY * 0.001);
+    zoomAt(factor, event.clientX - rect.left, event.clientY - rect.top);
+  }, { passive: false });
+
+  canvas.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) {
+      return;
+    }
+    state.dragging = true;
+    state.dragX = event.clientX;
+    state.dragY = event.clientY;
+    state.originX = state.x;
+    state.originY = state.y;
+    canvas.classList.add("is-panning");
+    canvas.setPointerCapture?.(event.pointerId);
+  });
+
+  canvas.addEventListener("pointermove", (event) => {
+    if (!state.dragging) {
+      return;
+    }
+    state.x = state.originX + event.clientX - state.dragX;
+    state.y = state.originY + event.clientY - state.dragY;
+    apply();
+  });
+
+  const stopPan = (event) => {
+    if (!state.dragging) {
+      return;
+    }
+    state.dragging = false;
+    canvas.classList.remove("is-panning");
+    canvas.releasePointerCapture?.(event.pointerId);
+  };
+  canvas.addEventListener("pointerup", stopPan);
+  canvas.addEventListener("pointercancel", stopPan);
+  document.addEventListener("fullscreenchange", syncFullscreenIcon);
+
+  apply();
+  syncFullscreenIcon();
+  return {
+    zoomBy(factor) {
+      const rect = canvas.getBoundingClientRect();
+      zoomAt(factor, rect.width / 2, rect.height / 2);
+    },
+    reset() {
+      state.scale = 1;
+      state.x = 0;
+      state.y = 0;
+      apply();
+    },
+    toggleFullscreen() {
+      if (document.fullscreenElement === frame) {
+        document.exitFullscreen?.();
+        return;
+      }
+      if (frame.classList.contains("is-expanded")) {
+        frame.classList.remove("is-expanded");
+        syncFullscreenIcon();
+        return;
+      }
+      if (frame.requestFullscreen) {
+        frame.requestFullscreen().catch(() => {
+          frame.classList.add("is-expanded");
+          syncFullscreenIcon();
+        });
+        return;
+      }
+      frame.classList.add("is-expanded");
+      syncFullscreenIcon();
+    },
+  };
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
 }
 
 function ensureMermaidConfigured() {

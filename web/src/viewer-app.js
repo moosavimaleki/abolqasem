@@ -1,5 +1,6 @@
 import { connectSessionEvents, fetchFilePreview, fetchMessages, fetchSessions } from "./api.js";
-import { buildReaderTOC, renderMessageContent } from "./content-renderer.js";
+import { renderMessageContent } from "./content-renderer.js";
+import { renderReaderDocument } from "./reader-renderer.js";
 import { applySettings, clampFontSize, loadSettings, saveSettings, syncSettingsUI } from "./settings.js";
 import {
   agentLabel,
@@ -666,21 +667,14 @@ export function createViewerApp() {
       return;
     }
 
-    els.readerContent.replaceChildren();
-    const article = document.createElement("article");
-    article.className = "reader-article";
-
-    const hasPrimaryHeading = /<h1\b/i.test(message.html || "");
-    if (!hasPrimaryHeading) {
-      const title = document.createElement("h1");
-      title.textContent = state.currentSessionName || "حالت خواندن";
-      article.appendChild(title);
-    }
-
-    article.appendChild(renderMessageContent(message, "reader", state.reader.search));
-    els.readerContent.appendChild(article);
-    buildReaderTOC(els.readerContent, els.readerTocList);
-    els.readerScroll.scrollTop = 0;
+    renderReaderDocument({
+      contentRoot: els.readerContent,
+      tocRoot: els.readerTocList,
+      scrollRoot: els.readerScroll,
+      message,
+      title: state.currentSessionName || "حالت خواندن",
+      search: state.reader.search,
+    });
   }
 
   function handleContentLinkClick(event) {
@@ -787,6 +781,7 @@ export function createViewerApp() {
 
   function showFilePreviewLoading(reference) {
     syncFilePreviewMode();
+    els.filePreview.classList.remove("is-markdown");
     els.filePreviewTitle.textContent = filePreviewTitle(reference.path, reference.line);
     els.filePreviewMeta.textContent = reference.path;
     els.filePreviewBody.replaceChildren();
@@ -803,6 +798,57 @@ export function createViewerApp() {
     els.filePreviewTitle.textContent = filePreviewTitle(preview.path, preview.line);
     els.filePreviewMeta.textContent = preview.line ? `${preview.path}:${preview.line}` : preview.path;
     els.filePreviewBody.replaceChildren();
+
+    if (shouldRenderMarkdownPreview(preview)) {
+      renderMarkdownFilePreview(preview);
+      return;
+    }
+    renderCodeFilePreview(preview);
+  }
+
+  function shouldRenderMarkdownPreview(preview) {
+    return state.filePreviewFromRoute && preview.language === "markdown" && preview.html;
+  }
+
+  function renderMarkdownFilePreview(preview) {
+    els.filePreview.classList.add("is-markdown");
+
+    const layout = document.createElement("div");
+    layout.className = "reader-layout file-preview-reader-layout";
+
+    const toc = document.createElement("aside");
+    toc.className = "reader-toc file-preview-reader-toc";
+    toc.setAttribute("aria-label", "فهرست بخش‌ها");
+    const tocTitle = document.createElement("p");
+    tocTitle.textContent = "فهرست";
+    const tocList = document.createElement("nav");
+    toc.append(tocTitle, tocList);
+
+    const scroll = document.createElement("main");
+    scroll.className = "reader-scroll file-preview-reader-scroll";
+
+    const content = document.createElement("div");
+    content.className = "reader-content file-preview-reader-content";
+
+    scroll.appendChild(content);
+    layout.append(scroll, toc);
+    els.filePreviewBody.appendChild(layout);
+
+    renderReaderDocument({
+      contentRoot: content,
+      tocRoot: tocList,
+      scrollRoot: scroll,
+      title: baseName(preview.path),
+      message: {
+      role: "assistant",
+      text: "",
+      html: preview.html,
+      },
+    });
+  }
+
+  function renderCodeFilePreview(preview) {
+    els.filePreview.classList.remove("is-markdown");
 
     const code = document.createElement("div");
     code.className = "file-preview-code";
@@ -865,6 +911,7 @@ export function createViewerApp() {
 
   function showFilePreviewError(message) {
     syncFilePreviewMode();
+    els.filePreview.classList.remove("is-markdown");
     els.filePreviewBody.replaceChildren();
     const error = document.createElement("p");
     error.className = "file-preview-error";

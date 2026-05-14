@@ -1,6 +1,7 @@
 package server
 
 import (
+	"ai-agent-manager/internal/render"
 	"ai-agent-manager/internal/state"
 	"bufio"
 	"errors"
@@ -31,6 +32,7 @@ type filePreviewResponse struct {
 	StartLine int               `json:"start_line"`
 	EndLine   int               `json:"end_line"`
 	Language  string            `json:"language"`
+	HTML      string            `json:"html,omitempty"`
 	Lines     []filePreviewLine `json:"lines"`
 }
 
@@ -118,15 +120,20 @@ func buildFilePreview(rootPaths []string, requestedPath string, line int, option
 		return filePreviewResponse{}, errFilePreviewNotFound
 	}
 
-	return filePreviewResponse{
+	language := languageForPath(targetPath)
+	response := filePreviewResponse{
 		Path:      targetPath,
 		Line:      line,
 		Full:      options.Full,
 		StartLine: lines[0].Number,
 		EndLine:   lines[len(lines)-1].Number,
-		Language:  languageForPath(targetPath),
+		Language:  language,
 		Lines:     lines,
-	}, nil
+	}
+	if options.Full && language == "markdown" {
+		response.HTML = render.MarkdownToHTML(joinPreviewLines(lines))
+	}
+	return response, nil
 }
 
 func resolvePreviewPath(rootPaths []string, requestedPath string) (string, error) {
@@ -209,6 +216,14 @@ func readPreviewLines(path string, targetLine int, options filePreviewOptions) (
 		return nil, errFilePreviewUnsupported
 	}
 	return lines, nil
+}
+
+func joinPreviewLines(lines []filePreviewLine) string {
+	parts := make([]string, 0, len(lines))
+	for _, line := range lines {
+		parts = append(parts, line.Text)
+	}
+	return strings.Join(parts, "\n")
 }
 
 func previewRootsFromState(appState *state.AppState) []string {

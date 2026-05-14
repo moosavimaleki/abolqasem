@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -51,6 +52,26 @@ func TestBuildFilePreviewReturnsFullFile(t *testing.T) {
 	}
 	if !preview.Lines[2].Highlight {
 		t.Fatalf("expected target line highlighted, got %+v", preview.Lines[2])
+	}
+}
+
+func TestBuildFilePreviewRendersMarkdownHTML(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "readme.md")
+	body := "# Title\n\n```mermaid\nflowchart TD\n    A --> B\n```\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	preview, err := buildFilePreview([]string{root}, path, 0, filePreviewOptions{Full: true})
+	if err != nil {
+		t.Fatalf("buildFilePreview returned error: %v", err)
+	}
+	if preview.Language != "markdown" {
+		t.Fatalf("expected markdown language, got %q", preview.Language)
+	}
+	if !strings.Contains(preview.HTML, "<h1") || !strings.Contains(preview.HTML, "language-mermaid") {
+		t.Fatalf("expected rendered markdown html with mermaid class, got %s", preview.HTML)
 	}
 }
 

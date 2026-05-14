@@ -274,6 +274,23 @@
   direction: ltr;
 }
 
+.file-preview.is-markdown .file-preview-body {
+  overflow: hidden;
+  background: transparent;
+}
+
+.file-preview-reader-layout {
+  height: 100%;
+}
+
+.file-preview-reader-scroll {
+  padding: 54px clamp(32px, 8vw, 130px) 72px;
+}
+
+.file-preview-reader-toc {
+  padding-top: 90px;
+}
+
 .file-preview-code {
   min-width: max-content;
   padding: 16px 0 38px;
