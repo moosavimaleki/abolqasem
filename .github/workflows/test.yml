@@ -22,4 +22,19 @@ jobs:
         with:
           go-version: ${{ matrix.go }}
 
+      - run: gofmt -l . | tee /tmp/gofmt.out && test ! -s /tmp/gofmt.out
+        if: runner.os != 'Windows'
+      - run: gofmt -l . > gofmt.out; if ((Get-Content gofmt.out | Measure-Object -Line).Lines -gt 0) { Get-Content gofmt.out; exit 1 }
+        if: runner.os == 'Windows'
+      - run: go vet ./...
       - run: go test ./...
+      - run: go build -trimpath -o dist/ai-session-viewer ./cmd/ai-session-viewer
+
+  build-all:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - run: make build-all

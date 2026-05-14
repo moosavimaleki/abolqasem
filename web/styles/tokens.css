@@ -1,0 +1,69 @@
+:root {
+  --reader-font-family: "Vazirmatn", "Estedad", "Noto Sans Arabic", Tahoma, sans-serif;
+  --code-font-family: "Iosevka", "JetBrains Mono", "Cascadia Mono", monospace;
+  --content-font-size: 18px;
+  --reader-line-height: 1.9;
+  --rail-width: 336px;
+  --header-height: 72px;
+  --radius-xl: 24px;
+  --radius-lg: 18px;
+  --radius-md: 14px;
+  --ease: 160ms ease;
+}
+
+body[data-theme="night"] {
+  --bg: #07101d;
+  --bg-2: #0c1728;
+  --surface: rgba(19, 30, 49, 0.72);
+  --surface-strong: rgba(26, 39, 63, 0.9);
+  --surface-soft: rgba(255, 255, 255, 0.045);
+  --line: rgba(200, 215, 242, 0.14);
+  --line-strong: rgba(210, 224, 250, 0.26);
+  --text: #e9eef8;
+  --text-soft: #b6c0d2;
+  --text-muted: #76849a;
+  --accent: #9bc8ff;
+  --accent-strong: #64a6ff;
+  --success: #36da8c;
+  --code-bg: rgba(12, 20, 35, 0.92);
+  --shadow: 0 24px 70px rgba(0, 0, 0, 0.34);
+  --glow: radial-gradient(circle at 45% 0%, rgba(79, 128, 204, 0.2), transparent 34%);
+}
+
+body[data-theme="paper"] {
+  --bg: #f5f1e8;
+  --bg-2: #fbf8f1;
+  --surface: rgba(255, 255, 255, 0.74);
+  --surface-strong: rgba(255, 255, 255, 0.92);
+  --surface-soft: rgba(30, 26, 20, 0.045);
+  --line: rgba(50, 45, 36, 0.13);
+  --line-strong: rgba(50, 45, 36, 0.24);
+  --text: #22201d;
+  --text-soft: #5e5a53;
+  --text-muted: #8a8378;
+  --accent: #805f34;
+  --accent-strong: #68481e;
+  --success: #178d55;
+  --code-bg: rgba(241, 235, 224, 0.96);
+  --shadow: 0 20px 60px rgba(74, 60, 42, 0.12);
+  --glow: radial-gradient(circle at 45% 0%, rgba(179, 138, 82, 0.14), transparent 36%);
+}
+
+body[data-theme="sepia"] {
+  --bg: #1d1714;
+  --bg-2: #2a211d;
+  --surface: rgba(58, 45, 38, 0.72);
+  --surface-strong: rgba(67, 51, 42, 0.92);
+  --surface-soft: rgba(255, 224, 196, 0.055);
+  --line: rgba(232, 190, 150, 0.16);
+  --line-strong: rgba(232, 190, 150, 0.3);
+  --text: #f1e6dc;
+  --text-soft: #cbb7a6;
+  --text-muted: #927b6b;
+  --accent: #f0c28b;
+  --accent-strong: #e59d5d;
+  --success: #8dd59e;
+  --code-bg: rgba(35, 27, 24, 0.94);
+  --shadow: 0 24px 70px rgba(0, 0, 0, 0.32);
+  --glow: radial-gradient(circle at 45% 0%, rgba(206, 139, 78, 0.18), transparent 34%);
+}

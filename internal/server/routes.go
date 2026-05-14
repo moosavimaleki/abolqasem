@@ -1,8 +1,8 @@
 package server
 
 import (
-	"net/http"
 	"io/fs"
+	"net/http"
 )
 
 var webFS fs.FS

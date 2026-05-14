@@ -1,40 +1,125 @@
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Session Viewer</title>
-    <link rel="stylesheet" href="/styles.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>نمایشگر نشست‌های هوش مصنوعی</title>
+  <link rel="stylesheet" href="/styles.css">
 </head>
-<body>
-    <div id="app">
-        <aside id="sidebar">
-            <div class="sidebar-header">
-                <h2>Sessions</h2>
-            </div>
-            <div id="sessions-list" class="sessions-list">
-                <!-- Session items go here -->
-            </div>
-        </aside>
-        <main id="chat-view">
-            <div id="chat-header" class="chat-header">
-                <h3 id="current-project-name">انتخاب یک سشن...</h3>
-            </div>
-            <div id="chat-messages" class="chat-messages">
-                <!-- Messages go here -->
-            </div>
-        </main>
-    </div>
-    
-    <!-- Notification Toast -->
-    <div id="notification-toast" class="toast hidden">
-        <p>سشن جدیدی فعال شد. تا <span id="toast-countdown">5</span> ثانیه دیگر منتقل می‌شوید.</p>
-        <div class="toast-actions">
-            <button id="toast-cancel">لغو</button>
-            <button id="toast-go">همین الان برو</button>
-        </div>
-    </div>
+<body data-theme="night">
+  <div id="app" class="app-shell">
+    <header class="app-header">
+      <button id="open-sessions" class="icon-button mobile-only" type="button" data-icon="menu" aria-label="باز کردن فهرست نشست‌ها"></button>
 
-    <script src="/app.js"></script>
+      <h1 id="session-title" class="session-title">نمایشگر نشست‌ها</h1>
+
+      <div class="header-actions">
+        <button id="active-session-info" class="icon-button" type="button" data-icon="info" aria-label="اطلاعات نشست فعال"></button>
+        <div id="message-search-shell" class="search-box collapsed">
+          <button id="message-search-toggle" class="icon-button" type="button" data-icon="search" aria-label="جست‌وجو در پیام‌ها"></button>
+          <button id="search-scope-chip" class="search-scope-chip" type="button" aria-label="حذف محدودیت جست‌وجو به همین نشست">همین نشست</button>
+          <input id="message-search" type="search" placeholder="جست‌وجو در همین نشست" autocomplete="off" aria-label="جست‌وجو در همین نشست">
+        </div>
+        <button id="open-settings" class="icon-button" type="button" data-icon="settings" aria-label="تنظیمات خواندن"></button>
+      </div>
+    </header>
+
+    <div class="app-body">
+      <main class="chat-shell">
+        <section id="chat-messages" class="chat-messages" aria-live="polite">
+          <div class="empty-state">
+            <p>برای شروع یک نشست را از سمت راست انتخاب کنید.</p>
+            <code>ai-session-viewer server</code>
+          </div>
+        </section>
+      </main>
+
+      <aside id="sessions-rail" class="sessions-rail" aria-label="فهرست نشست‌ها">
+        <header class="rail-header mobile-only">
+          <span id="session-count" class="muted-text">در حال بارگذاری</span>
+          <button id="close-sessions" class="icon-button" type="button" data-icon="close" aria-label="بستن فهرست نشست‌ها"></button>
+        </header>
+        <nav id="sessions-list" class="sessions-list" aria-label="نشست‌های ذخیره‌شده"></nav>
+      </aside>
+    </div>
+  </div>
+
+  <div id="session-info-popover" class="session-info-popover hidden" role="dialog" aria-labelledby="session-info-title" aria-hidden="true">
+    <header class="session-info-header">
+      <strong id="session-info-title">اطلاعات نشست</strong>
+      <button id="close-session-info" class="icon-button subtle" type="button" data-icon="close" aria-label="بستن اطلاعات نشست"></button>
+    </header>
+    <div id="session-info-body" class="session-info-body"></div>
+  </div>
+
+  <section id="reader-page" class="reader-page hidden" aria-hidden="true">
+    <header class="reader-topbar">
+      <button id="close-reader" class="icon-button" type="button" data-icon="close" aria-label="بستن حالت خواندن"></button>
+
+      <div class="reader-tools">
+        <div id="reader-search-shell" class="search-box collapsed">
+          <button id="reader-search-toggle" class="icon-button" type="button" data-icon="search" aria-label="جست‌وجو در متن"></button>
+          <input id="reader-search" type="search" placeholder="جست‌وجو در متن" autocomplete="off" aria-label="جست‌وجو در متن">
+        </div>
+        <button id="reader-settings" class="icon-button" type="button" data-icon="tune" aria-label="تنظیمات خواندن"></button>
+      </div>
+    </header>
+
+    <div class="reader-layout">
+      <aside id="reader-toc" class="reader-toc" aria-label="فهرست بخش‌ها">
+        <p>فهرست</p>
+        <nav id="reader-toc-list"></nav>
+      </aside>
+
+      <main id="reader-scroll" class="reader-scroll">
+        <article id="reader-content" class="reader-content"></article>
+      </main>
+    </div>
+  </section>
+
+  <div id="settings-popover" class="settings-popover hidden" role="dialog" aria-labelledby="settings-title" aria-hidden="true">
+    <header class="settings-popover-header">
+      <strong id="settings-title">تنظیمات خواندن</strong>
+      <button id="close-settings" class="icon-button subtle" type="button" data-icon="close" aria-label="بستن تنظیمات"></button>
+    </header>
+
+    <section class="settings-row">
+      <span>فونت</span>
+      <div class="segmented-control" data-setting="font">
+        <button type="button" data-value="vazirmatn">وزیر</button>
+        <button type="button" data-value="estedad">استعداد</button>
+        <button type="button" data-value="noto">نوتو</button>
+      </div>
+    </section>
+
+    <section class="settings-row">
+      <span>اندازه</span>
+      <div class="stepper-control">
+        <button id="font-size-decrease" type="button" aria-label="کوچک‌تر کردن متن">A-</button>
+        <strong id="font-size-value">18</strong>
+        <button id="font-size-increase" type="button" aria-label="بزرگ‌تر کردن متن">A+</button>
+      </div>
+    </section>
+
+    <section class="settings-row">
+      <span>فاصله خطوط</span>
+      <div class="segmented-control" data-setting="lineHeight">
+        <button type="button" data-value="1.65">کم</button>
+        <button type="button" data-value="1.9">معمولی</button>
+        <button type="button" data-value="2.15">زیاد</button>
+      </div>
+    </section>
+
+    <section class="settings-row">
+      <span>رنگ‌بندی</span>
+      <div class="theme-options" data-setting="theme">
+        <button type="button" data-value="paper" aria-label="تم روشن"></button>
+        <button type="button" data-value="sepia" aria-label="تم سپیا"></button>
+        <button type="button" data-value="night" aria-label="تم شب"></button>
+      </div>
+    </section>
+  </div>
+
+  <script type="module" src="/app.js"></script>
 </body>
 </html>

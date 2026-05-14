@@ -8,7 +8,7 @@ import (
 
 func Start(port int) error {
 	mux := http.NewServeMux()
-	
+
 	setupRoutes(mux)
 
 	addr := fmt.Sprintf("127.0.0.1:%d", port)

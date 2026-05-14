@@ -7,21 +7,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
+
+	toml "github.com/pelletier/go-toml/v2"
 )
-
-const markerStart = "# BEGIN ai-session-viewer"
-const markerEnd = "# END ai-session-viewer"
-const hookConfig = `
-[features]
-codex_hooks = true
-
-[[hooks.Stop]]
-[[hooks.Stop.hooks]]
-type = "command"
-command = "ai-session-viewer hook --agent codex"
-timeout = 3
-`
 
 type CodexAdapter struct{}
 
@@ -44,25 +32,47 @@ func (a *CodexAdapter) getConfigPath(scope adapters.InstallScope) string {
 
 func (a *CodexAdapter) InstallHook(scope adapters.InstallScope) error {
 	configPath := a.getConfigPath(scope)
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		os.MkdirAll(filepath.Dir(configPath), 0755)
-		os.WriteFile(configPath, []byte(""), 0644)
-	}
-
-	data, err := os.ReadFile(configPath)
-	if err != nil {
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
 		return err
 	}
 
-	content := string(data)
-	if strings.Contains(content, markerStart) {
-		return fmt.Errorf("hook already installed")
+	data, err := os.ReadFile(configPath)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if len(data) == 0 {
+		data = []byte{}
 	}
 
-	os.WriteFile(configPath+".bak", data, 0644)
+	cfg := map[string]any{}
+	if len(data) > 0 {
+		if err := toml.Unmarshal(data, &cfg); err != nil {
+			return fmt.Errorf("failed to parse %s: %w", configPath, err)
+		}
+	}
 
-	newContent := content + "\n" + markerStart + hookConfig + markerEnd + "\n"
-	return os.WriteFile(configPath, []byte(newContent), 0644)
+	features := ensureMap(cfg, "features")
+	features["codex_hooks"] = true
+
+	hooks := ensureMap(cfg, "hooks")
+	stopBlocks := ensureHookBlocks(hooks["Stop"])
+	existing, changed := ensureCodexHook(stopBlocks)
+	if !changed {
+		return fmt.Errorf("hook already installed")
+	}
+	hooks["Stop"] = existing
+
+	if len(data) > 0 {
+		if err := os.WriteFile(configPath+".bak", data, 0o644); err != nil {
+			return err
+		}
+	}
+
+	out, err := toml.Marshal(cfg)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(configPath, out, 0o644)
 }
 
 func (a *CodexAdapter) UninstallHook(scope adapters.InstallScope) error {
@@ -72,18 +82,60 @@ func (a *CodexAdapter) UninstallHook(scope adapters.InstallScope) error {
 		return err
 	}
 
-	content := string(data)
-	if !strings.Contains(content, markerStart) {
+	cfg := map[string]any{}
+	if err := toml.Unmarshal(data, &cfg); err != nil {
+		return fmt.Errorf("failed to parse %s: %w", configPath, err)
+	}
+
+	hooks, ok := cfg["hooks"].(map[string]any)
+	if !ok {
 		return fmt.Errorf("hook not found")
 	}
 
-	startIdx := strings.Index(content, markerStart)
-	endIdx := strings.Index(content, markerEnd) + len(markerEnd)
+	stopBlocks := ensureHookBlocks(hooks["Stop"])
+	newBlocks, removed := removeCodexHook(stopBlocks)
+	if !removed {
+		return fmt.Errorf("hook not found")
+	}
+	if len(newBlocks) == 0 {
+		delete(hooks, "Stop")
+	} else {
+		hooks["Stop"] = newBlocks
+	}
 
-	newContent := content[:startIdx] + content[endIdx:]
-	newContent = strings.ReplaceAll(newContent, "\n\n\n", "\n\n")
+	out, err := toml.Marshal(cfg)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(configPath, out, 0o644)
+}
 
-	return os.WriteFile(configPath, []byte(newContent), 0644)
+func (a *CodexAdapter) IsHookInstalled(scope adapters.InstallScope) (bool, error) {
+	configPath := a.getConfigPath(scope)
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	cfg := map[string]any{}
+	if err := toml.Unmarshal(data, &cfg); err != nil {
+		return false, err
+	}
+	hooks, ok := cfg["hooks"].(map[string]any)
+	if !ok {
+		return false, nil
+	}
+	for _, block := range ensureHookBlocks(hooks["Stop"]) {
+		for _, inner := range ensureHookEntries(block["hooks"]) {
+			if adapters.IsCommandMatch(stringValue(inner["command"]), "codex") {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 func (a *CodexAdapter) NormalizeHookInput(input []byte) (state.HookEvent, error) {
@@ -91,10 +143,108 @@ func (a *CodexAdapter) NormalizeHookInput(input []byte) (state.HookEvent, error)
 	if err := json.Unmarshal(input, &event); err != nil {
 		return event, err
 	}
-
 	event.Agent = "codex"
-	if event.SessionID == "" && event.TranscriptPath != "" {
-		event.SessionID = filepath.Base(filepath.Dir(event.TranscriptPath))
+	return state.NormalizeAndValidateEvent(event), nil
+}
+
+func ensureCodexHook(blocks []map[string]any) ([]map[string]any, bool) {
+	command, err := adapters.ShellCommand("codex")
+	if err != nil {
+		command = "ai-session-viewer hook --agent codex"
 	}
-	return event, nil
+	for _, block := range blocks {
+		for _, inner := range ensureHookEntries(block["hooks"]) {
+			if adapters.IsCommandMatch(stringValue(inner["command"]), "codex") {
+				return blocks, false
+			}
+		}
+	}
+	return append(blocks, map[string]any{
+		"hooks": []map[string]any{
+			{
+				"type":    "command",
+				"command": command,
+				"timeout": 3,
+			},
+		},
+	}), true
+}
+
+func removeCodexHook(blocks []map[string]any) ([]map[string]any, bool) {
+	changed := false
+	result := make([]map[string]any, 0, len(blocks))
+	for _, block := range blocks {
+		entries := ensureHookEntries(block["hooks"])
+		kept := make([]map[string]any, 0, len(entries))
+		for _, inner := range entries {
+			if adapters.IsCommandMatch(stringValue(inner["command"]), "codex") {
+				changed = true
+				continue
+			}
+			kept = append(kept, inner)
+		}
+		if len(kept) == 0 {
+			continue
+		}
+		block["hooks"] = kept
+		result = append(result, block)
+	}
+	return result, changed
+}
+
+func ensureMap(target map[string]any, key string) map[string]any {
+	if value, ok := target[key].(map[string]any); ok {
+		return value
+	}
+	child := map[string]any{}
+	target[key] = child
+	return child
+}
+
+func ensureHookBlocks(value any) []map[string]any {
+	switch typed := value.(type) {
+	case []map[string]any:
+		return typed
+	case []any:
+		out := make([]map[string]any, 0, len(typed))
+		for _, item := range typed {
+			if asMap, ok := item.(map[string]any); ok {
+				out = append(out, asMap)
+			}
+		}
+		return out
+	case nil:
+		return []map[string]any{}
+	default:
+		return []map[string]any{}
+	}
+}
+
+func ensureHookEntries(value any) []map[string]any {
+	switch typed := value.(type) {
+	case []map[string]any:
+		return typed
+	case []any:
+		out := make([]map[string]any, 0, len(typed))
+		for _, item := range typed {
+			if asMap, ok := item.(map[string]any); ok {
+				out = append(out, asMap)
+			}
+		}
+		return out
+	case nil:
+		return []map[string]any{}
+	default:
+		return []map[string]any{}
+	}
+}
+
+func stringValue(value any) string {
+	if value == nil {
+		return ""
+	}
+	if text, ok := value.(string); ok {
+		return text
+	}
+	return ""
 }

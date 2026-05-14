@@ -8,9 +8,12 @@ clean:
 	rm -rf $(DIST)
 
 test:
+	gofmt -l . | (! grep .)
+	go vet ./...
 	go test ./...
 
 build:
+	mkdir -p $(DIST)
 	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o $(DIST)/$(APP) $(PKG)
 
 build-all: clean

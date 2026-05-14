@@ -6,8 +6,8 @@
 *.dylib
 bin/
 dist/
-codex-rtl
-ai-session-viewer
+/codex-rtl
+/ai-session-viewer
 
 # Test binary, built with `go test -c`
 *.test

@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 )
 
+const hookName = "ai-session-viewer-claude-stop"
+
 type ClaudeAdapter struct{}
 
 func New() adapters.AgentAdapter {
@@ -30,198 +32,193 @@ func (a *ClaudeAdapter) getConfigPath(scope adapters.InstallScope) string {
 
 func (a *ClaudeAdapter) InstallHook(scope adapters.InstallScope) error {
 	configPath := a.getConfigPath(scope)
-	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
-		return err
-	}
-
-	data, err := os.ReadFile(configPath)
-	if err != nil && !os.IsNotExist(err) {
-		return err
-	}
-
-	var settings map[string]interface{}
-	if len(data) > 0 {
-		if err := json.Unmarshal(data, &settings); err != nil {
-			return fmt.Errorf("failed to parse %s: %v", configPath, err)
-		}
-	} else {
-		settings = make(map[string]interface{})
-	}
-
-	// Check if already installed
-	if data != nil {
-		strData := string(data)
-		if filepath.Base(os.Args[0]) == "ai-session-viewer" {
-			// Basic check to see if command is already there
-			if len(strData) > 0 {
-				// Very loose check, if it causes false positives we can tighten it
-			}
-		}
-	}
-
-	// Helper for navigating map
-	ensureMap := func(m map[string]interface{}, key string) map[string]interface{} {
-		if val, ok := m[key]; ok {
-			if vm, ok2 := val.(map[string]interface{}); ok2 {
-				return vm
-			}
-		}
-		newMap := make(map[string]interface{})
-		m[key] = newMap
-		return newMap
-	}
-
-	hooks := ensureMap(settings, "hooks")
-
-	// Claude's Stop hook is an array of objects
-	var stopArr []interface{}
-	if val, ok := hooks["Stop"]; ok {
-		if arr, ok2 := val.([]interface{}); ok2 {
-			stopArr = arr
-		}
-	}
-
-	// Check if already in the array
-	alreadyInstalled := false
-	for _, hookObj := range stopArr {
-		if hm, ok := hookObj.(map[string]interface{}); ok {
-			if innerHooks, ok := hm["hooks"].([]interface{}); ok {
-				for _, ih := range innerHooks {
-					if ihm, ok := ih.(map[string]interface{}); ok {
-						if cmd, ok := ihm["command"].(string); ok && cmd == "ai-session-viewer" {
-							alreadyInstalled = true
-						}
-					}
-				}
-			}
-		}
-	}
-
-	if alreadyInstalled {
-		return fmt.Errorf("hook already installed")
-	}
-
-	// Create new hook block
-	newHook := map[string]interface{}{
-		"hooks": []interface{}{
-			map[string]interface{}{
-				"type":    "command",
-				"command": "ai-session-viewer",
-				"args":    []string{"hook", "--agent", "claude"},
-				"timeout": 3,
-			},
-		},
-	}
-
-	stopArr = append(stopArr, newHook)
-	hooks["Stop"] = stopArr
-
-	// Write backup
-	if len(data) > 0 {
-		os.WriteFile(configPath+".bak", data, 0644)
-	}
-
-	out, err := json.MarshalIndent(settings, "", "  ")
+	settings, raw, err := loadSettings(configPath)
 	if err != nil {
 		return err
 	}
 
-	return os.WriteFile(configPath, out, 0644)
+	hooks := ensureMap(settings, "hooks")
+	stopBlocks := ensureBlocks(hooks["Stop"])
+	command, args, err := adapters.CommandArgs("claude")
+	if err != nil {
+		return err
+	}
+
+	for _, block := range stopBlocks {
+		for _, entry := range ensureBlocks(block["hooks"]) {
+			if isEntryMatch(entry) {
+				return fmt.Errorf("hook already installed")
+			}
+		}
+	}
+
+	stopBlocks = append(stopBlocks, map[string]any{
+		"hooks": []map[string]any{
+			{
+				"name":    hookName,
+				"type":    "command",
+				"command": command,
+				"args":    args,
+				"timeout": 3,
+			},
+		},
+	})
+	hooks["Stop"] = stopBlocks
+	return saveSettings(configPath, raw, settings)
 }
 
 func (a *ClaudeAdapter) UninstallHook(scope adapters.InstallScope) error {
 	configPath := a.getConfigPath(scope)
-	data, err := os.ReadFile(configPath)
+	settings, _, err := loadSettings(configPath)
 	if err != nil {
 		return err
 	}
 
-	var settings map[string]interface{}
-	if err := json.Unmarshal(data, &settings); err != nil {
-		return fmt.Errorf("failed to parse json: %v", err)
-	}
-
-	hooks, ok := settings["hooks"].(map[string]interface{})
+	hooks, ok := settings["hooks"].(map[string]any)
 	if !ok {
 		return fmt.Errorf("hook not found")
 	}
 
-	stopArr, ok := hooks["Stop"].([]interface{})
-	if !ok {
+	stopBlocks := ensureBlocks(hooks["Stop"])
+	changed := false
+	keptBlocks := make([]map[string]any, 0, len(stopBlocks))
+	for _, block := range stopBlocks {
+		entries := ensureBlocks(block["hooks"])
+		keptEntries := make([]map[string]any, 0, len(entries))
+		for _, entry := range entries {
+			if isEntryMatch(entry) {
+				changed = true
+				continue
+			}
+			keptEntries = append(keptEntries, entry)
+		}
+		if len(keptEntries) == 0 {
+			continue
+		}
+		block["hooks"] = keptEntries
+		keptBlocks = append(keptBlocks, block)
+	}
+	if !changed {
 		return fmt.Errorf("hook not found")
 	}
+	if len(keptBlocks) == 0 {
+		delete(hooks, "Stop")
+	} else {
+		hooks["Stop"] = keptBlocks
+	}
+	return saveSettings(configPath, nil, settings)
+}
 
-	var newStopArr []interface{}
-	found := false
-
-	for _, hookObj := range stopArr {
-		keep := true
-		if hm, ok := hookObj.(map[string]interface{}); ok {
-			if innerHooks, ok := hm["hooks"].([]interface{}); ok {
-				for _, ih := range innerHooks {
-					if ihm, ok := ih.(map[string]interface{}); ok {
-						if cmd, ok := ihm["command"].(string); ok && cmd == "ai-session-viewer" {
-							keep = false
-							found = true
-						}
-					}
-				}
+func (a *ClaudeAdapter) IsHookInstalled(scope adapters.InstallScope) (bool, error) {
+	configPath := a.getConfigPath(scope)
+	settings, _, err := loadSettings(configPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	hooks, ok := settings["hooks"].(map[string]any)
+	if !ok {
+		return false, nil
+	}
+	for _, block := range ensureBlocks(hooks["Stop"]) {
+		for _, entry := range ensureBlocks(block["hooks"]) {
+			if isEntryMatch(entry) {
+				return true, nil
 			}
 		}
-		if keep {
-			newStopArr = append(newStopArr, hookObj)
-		}
 	}
-
-	if !found {
-		return fmt.Errorf("hook not found")
-	}
-
-	hooks["Stop"] = newStopArr
-
-	out, err := json.MarshalIndent(settings, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	return os.WriteFile(configPath, out, 0644)
+	return false, nil
 }
 
 func (a *ClaudeAdapter) NormalizeHookInput(input []byte) (state.HookEvent, error) {
-	var raw map[string]interface{}
+	var raw map[string]any
 	if err := json.Unmarshal(input, &raw); err != nil {
 		return state.HookEvent{}, err
 	}
 
 	event := state.HookEvent{
-		Agent: "claude",
+		Agent:          "claude",
+		SessionID:      stringValue(raw["session_id"]),
+		TranscriptPath: stringValue(raw["transcript_path"]),
+		Cwd:            stringValue(raw["cwd"]),
+		LastPreview:    stringValue(raw["last_assistant_message"]),
 	}
+	return state.NormalizeAndValidateEvent(event), nil
+}
 
-	if sID, ok := raw["session_id"].(string); ok {
-		event.SessionID = sID
+func loadSettings(path string) (map[string]any, []byte, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, nil, err
 	}
-	if tp, ok := raw["transcript_path"].(string); ok {
-		// Expand path if necessary (e.g. starting with ~)
-		if len(tp) > 2 && tp[:2] == "~/" {
-			home, _ := os.UserHomeDir()
-			tp = filepath.Join(home, tp[2:])
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return map[string]any{}, nil, nil
 		}
-		event.TranscriptPath = tp
+		return nil, nil, err
 	}
-	if c, ok := raw["cwd"].(string); ok {
-		event.Cwd = c
+	if len(data) == 0 {
+		return map[string]any{}, data, nil
 	}
+	settings := map[string]any{}
+	if err := json.Unmarshal(data, &settings); err != nil {
+		return nil, nil, fmt.Errorf("failed to parse %s: %w", path, err)
+	}
+	return settings, data, nil
+}
 
-	// Fallback for session ID
-	if event.SessionID == "" {
-		if event.TranscriptPath != "" {
-			event.SessionID = filepath.Base(filepath.Dir(event.TranscriptPath))
-		} else if event.Cwd != "" {
-			event.SessionID = filepath.Base(event.Cwd) + "-session"
-		} else {
-			event.SessionID = "unknown-session"
+func saveSettings(path string, raw []byte, settings map[string]any) error {
+	if len(raw) > 0 {
+		if err := os.WriteFile(path+".bak", raw, 0o644); err != nil {
+			return err
 		}
 	}
+	out, err := json.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, out, 0o644)
+}
 
-	return event, nil
+func ensureMap(target map[string]any, key string) map[string]any {
+	if value, ok := target[key].(map[string]any); ok {
+		return value
+	}
+	child := map[string]any{}
+	target[key] = child
+	return child
+}
+
+func ensureBlocks(value any) []map[string]any {
+	switch typed := value.(type) {
+	case []map[string]any:
+		return typed
+	case []any:
+		out := make([]map[string]any, 0, len(typed))
+		for _, item := range typed {
+			if asMap, ok := item.(map[string]any); ok {
+				out = append(out, asMap)
+			}
+		}
+		return out
+	default:
+		return []map[string]any{}
+	}
+}
+
+func isEntryMatch(entry map[string]any) bool {
+	if stringValue(entry["name"]) == hookName {
+		return true
+	}
+	command := stringValue(entry["command"])
+	return adapters.IsCommandMatch(command, "claude")
+}
+
+func stringValue(value any) string {
+	if text, ok := value.(string); ok {
+		return text
+	}
+	return ""
 }

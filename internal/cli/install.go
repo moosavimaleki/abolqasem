@@ -87,7 +87,7 @@ func init() {
 	installCmd.Flags().StringVar(&installAgent, "agent", "codex", "Agent type (codex, claude, gemini)")
 	installCmd.Flags().StringVar(&installScope, "scope", "user", "Installation scope (user, project)")
 	installCmd.Flags().BoolVar(&installAll, "all", false, "Install for all supported agents")
-	
+
 	uninstallCmd.Flags().StringVar(&installAgent, "agent", "codex", "Agent type (codex, claude, gemini)")
 	uninstallCmd.Flags().StringVar(&installScope, "scope", "user", "Installation scope (user, project)")
 

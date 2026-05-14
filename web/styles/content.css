@@ -1,0 +1,157 @@
+.content-body {
+  font-size: var(--content-font-size);
+  line-height: var(--reader-line-height);
+  color: inherit;
+  word-break: break-word;
+}
+
+.content-body,
+.content-body.rtl,
+.content-body.auto,
+.content-body.ltr {
+  direction: rtl;
+  text-align: right;
+}
+
+.content-body pre,
+.content-body table,
+.code-frame {
+  direction: ltr;
+  text-align: left;
+  unicode-bidi: plaintext;
+}
+
+.content-body p,
+.content-body ul,
+.content-body ol,
+.content-body blockquote,
+.content-body table,
+.content-body pre,
+.content-body h1,
+.content-body h2,
+.content-body h3,
+.content-body h4 {
+  margin-top: 0;
+  margin-bottom: 1.05em;
+}
+
+.content-body :last-child {
+  margin-bottom: 0;
+}
+
+.content-body h1,
+.content-body h2,
+.content-body h3,
+.content-body h4 {
+  color: var(--text);
+  line-height: 1.35;
+}
+
+.content-body h1 {
+  font-size: clamp(2rem, 4vw, 3.1rem);
+  margin-bottom: 1.2em;
+}
+
+.content-body h2 {
+  font-size: clamp(1.45rem, 2.4vw, 2rem);
+  margin-top: 1.65em;
+}
+
+.content-body h3 {
+  font-size: clamp(1.16rem, 1.8vw, 1.42rem);
+  margin-top: 1.35em;
+}
+
+.content-body p {
+  color: color-mix(in srgb, var(--text) 88%, transparent);
+}
+
+.content-body ul,
+.content-body ol {
+  padding-inline-start: 1.5rem;
+}
+
+.content-body li + li {
+  margin-top: 0.45rem;
+}
+
+.content-body a {
+  color: var(--accent);
+  text-underline-offset: 4px;
+}
+
+.content-body blockquote {
+  border-right: 3px solid var(--accent);
+  background: var(--surface-soft);
+  margin-inline: 0;
+  padding: 14px 18px;
+  border-radius: var(--radius-md);
+}
+
+.content-body :not(pre) > code {
+  direction: ltr;
+  unicode-bidi: plaintext;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 2px 7px;
+  font-size: 0.92em;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.content-body table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.94em;
+}
+
+.content-body th,
+.content-body td {
+  border: 1px solid var(--line);
+  padding: 13px 16px;
+  vertical-align: top;
+}
+
+.content-body th {
+  color: var(--text);
+  font-weight: 800;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.code-frame {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--code-bg);
+}
+
+.code-frame pre {
+  margin: 0;
+  padding: 18px 20px;
+  white-space: pre;
+  overflow-x: auto;
+  color: var(--text);
+  font-size: 0.92em;
+  line-height: 1.7;
+}
+
+.code-frame .inline-icon {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  left: auto;
+}
+
+mark {
+  background: rgba(155, 200, 255, 0.28);
+  color: inherit;
+  border-radius: 4px;
+  padding-inline: 2px;
+}

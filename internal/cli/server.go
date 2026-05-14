@@ -5,6 +5,8 @@ import (
 	"ai-session-viewer/internal/server"
 	"ai-session-viewer/internal/state"
 	"log"
+	"net/url"
+	"strconv"
 
 	"github.com/spf13/cobra"
 )
@@ -17,11 +19,21 @@ var serverCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		appState, err := state.LoadState()
 		if err != nil {
-			log.Fatalf("Failed to load state: %v", err)
+			log.Printf("Warning: failed to load state, continuing with a fresh store: %v", err)
+			appState = &state.AppState{Sessions: map[string]state.SessionMeta{}}
 		}
 
 		if err := state.ProcessPendingEvents(appState); err != nil {
 			log.Printf("Warning: Failed to process pending events: %v", err)
+		}
+		if err := state.SaveState(appState); err != nil {
+			log.Printf("Warning: failed to persist migrated state: %v", err)
+		}
+		if err := state.SaveServerBaseURL((&url.URL{
+			Scheme: "http",
+			Host:   "127.0.0.1:" + strconv.Itoa(port),
+		}).String()); err != nil {
+			log.Printf("Warning: failed to persist server URL: %v", err)
 		}
 
 		server.SetWebFS(viewer.WebAssets)

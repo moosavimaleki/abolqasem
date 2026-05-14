@@ -11,10 +11,10 @@ func DetectDirection(text string) string {
 	if codeRegex.MatchString(strings.TrimSpace(text)) {
 		return "ltr"
 	}
-	
+
 	persianCount := 0
 	latinCount := 0
-	
+
 	for _, r := range text {
 		if r >= '\u0600' && r <= '\u06FF' {
 			persianCount++
@@ -22,7 +22,7 @@ func DetectDirection(text string) string {
 			latinCount++
 		}
 	}
-	
+
 	if persianCount > latinCount {
 		return "rtl"
 	}

@@ -1,10 +1,6 @@
 package cli
 
 import (
-	"ai-session-viewer/internal/adapters"
-	"ai-session-viewer/internal/adapters/claude"
-	"ai-session-viewer/internal/adapters/codex"
-	"ai-session-viewer/internal/adapters/gemini"
 	"ai-session-viewer/internal/state"
 	"bytes"
 	"encoding/json"
@@ -12,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -28,52 +26,47 @@ var hookCmd = &cobra.Command{
 			os.Exit(0) // Exit 0 to avoid crashing agent
 		}
 
-		var adapter adapters.AgentAdapter
-		switch hookAgent {
-		case "codex":
-			adapter = codex.New()
-		case "claude":
-			adapter = claude.New()
-		case "gemini":
-			adapter = gemini.New()
-		default:
-			fmt.Fprintf(os.Stderr, "Unknown agent: %s\n", hookAgent)
+		adapter, err := getAdapter(strings.ToLower(hookAgent))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			emitGeminiAck(hookAgent)
 			os.Exit(0)
 		}
 
 		event, err := adapter.NormalizeHookInput(input)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error parsing hook input: %v\n", err)
+			emitGeminiAck(hookAgent)
 			os.Exit(0)
 		}
+		event = state.NormalizeAndValidateEvent(event)
 
-		// Try to send to local server
 		payload, _ := json.Marshal(event)
-		resp, err := http.Post("http://127.0.0.1:9090/api/hook", "application/json", bytes.NewBuffer(payload))
+		client := &http.Client{Timeout: 750 * time.Millisecond}
+		resp, err := client.Post(state.LoadServerBaseURL()+"/api/hook", "application/json", bytes.NewBuffer(payload))
 		if err == nil {
 			resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
-				// Successfully delivered
-				// If Gemini, output empty JSON to stdout
-				if hookAgent == "gemini" {
-					fmt.Println("{}")
-				}
+				emitGeminiAck(hookAgent)
 				return
 			}
 		}
 
-		// Server is down or returned error, save as pending
 		if err := state.SavePendingEvent(event); err != nil {
 			fmt.Fprintf(os.Stderr, "Error saving pending event: %v\n", err)
 		}
 
-		if hookAgent == "gemini" {
-			fmt.Println("{}")
-		}
+		emitGeminiAck(hookAgent)
 	},
 }
 
 func init() {
 	hookCmd.Flags().StringVar(&hookAgent, "agent", "codex", "Agent type (codex, claude, gemini)")
 	rootCmd.AddCommand(hookCmd)
+}
+
+func emitGeminiAck(agent string) {
+	if strings.EqualFold(agent, "gemini") {
+		fmt.Println("{}")
+	}
 }

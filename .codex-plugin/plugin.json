@@ -1,11 +1,10 @@
 {
-  "name": "rtl-viewer",
-  "version": "1.0.0",
-  "description": "Renders the current session in a beautiful RTL HTML view.",
-  "skills": "./skills/",
+  "name": "ai-session-viewer-legacy-manifest",
+  "version": "2.0.0",
+  "description": "Legacy Codex plugin manifest. Preferred installation path is the ai-session-viewer binary and local hooks.",
   "interface": {
-    "displayName": "RTL HTML Viewer",
-    "shortDescription": "View your chat in a browser with RTL support.",
+    "displayName": "AI Session Viewer",
+    "shortDescription": "Legacy manifest for the zero-token local session viewer.",
     "category": "Productivity"
   }
 }

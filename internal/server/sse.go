@@ -8,6 +8,8 @@ import (
 )
 
 type SSEEvent struct {
+	EventKey    string `json:"event_key"`
+	SessionKey  string `json:"session_key"`
 	SessionID   string `json:"session_id"`
 	ProjectName string `json:"project_name"`
 	UpdatedAt   string `json:"updated_at"`
@@ -37,8 +39,12 @@ func (b *Broker) RemoveClient(client chan []byte) {
 
 func (b *Broker) Broadcast(event SSEEvent) {
 	data, _ := json.Marshal(event)
-	msg := []byte(fmt.Sprintf("data: %s\n\n", string(data)))
-	
+	idLine := ""
+	if event.EventKey != "" {
+		idLine = fmt.Sprintf("id: %s\n", event.EventKey)
+	}
+	msg := []byte(fmt.Sprintf("%sdata: %s\n\n", idLine, string(data)))
+
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	for client := range b.clients {

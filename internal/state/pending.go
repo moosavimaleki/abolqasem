@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"time"
 )
 
 func GetPendingEventsFilePath() string {
@@ -16,6 +15,7 @@ func SavePendingEvent(event HookEvent) error {
 	mu.Lock()
 	defer mu.Unlock()
 
+	event = NormalizeAndValidateEvent(event)
 	data, err := json.Marshal(event)
 	if err != nil {
 		return err
@@ -54,23 +54,11 @@ func ProcessPendingEvents(appState *AppState) error {
 		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
 			continue // skip invalid lines
 		}
-
-		// Update state
-		appState.LatestSessionID = event.SessionID
-		
-		projectName := filepath.Base(event.Cwd)
-		if projectName == "." || projectName == "/" {
-			projectName = "unknown"
-		}
-
-		appState.Sessions[event.SessionID] = SessionMeta{
-			SessionID:      event.SessionID,
-			TranscriptPath: event.TranscriptPath,
-			Cwd:            event.Cwd,
-			ProjectName:    projectName,
-			UpdatedAt:      time.Now(),
-		}
+		UpsertSession(appState, event)
 		modified = true
+	}
+	if err := scanner.Err(); err != nil {
+		return err
 	}
 
 	if modified {
