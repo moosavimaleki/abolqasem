@@ -85,12 +85,15 @@ try {
 
     if ($Hooks) {
         if ($Agents -eq "all") {
+            $env:AI_AGENT_MANAGER_SUPPRESS_TRUST_NOTICE = "1"
             & $InstallPath install --all --scope $Scope
         } else {
             foreach ($Agent in ($Agents -split "[,\s]+" | Where-Object { $_ })) {
+                $env:AI_AGENT_MANAGER_SUPPRESS_TRUST_NOTICE = "1"
                 & $InstallPath install --agent $Agent --scope $Scope
             }
         }
+        Remove-Item Env:AI_AGENT_MANAGER_SUPPRESS_TRUST_NOTICE -ErrorAction SilentlyContinue
     }
 
     Write-Host ""

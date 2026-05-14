@@ -255,9 +255,13 @@ case ":$PATH:" in
     ;;
 esac
 
-for agent in $AGENTS; do
-  log "Installing $agent hook with scope=$SCOPE"
-  "$INSTALL_PATH" install --agent "$agent" --scope "$SCOPE"
-done
+if [ "$AGENTS" = "codex claude gemini" ]; then
+  AI_AGENT_MANAGER_SUPPRESS_TRUST_NOTICE=1 "$INSTALL_PATH" install --all --scope "$SCOPE"
+else
+  for agent in $AGENTS; do
+    log "Installing $agent hook with scope=$SCOPE"
+    AI_AGENT_MANAGER_SUPPRESS_TRUST_NOTICE=1 "$INSTALL_PATH" install --agent "$agent" --scope "$SCOPE"
+  done
+fi
 
 print_trust_notice

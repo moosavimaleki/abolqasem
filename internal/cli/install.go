@@ -6,6 +6,7 @@ import (
 	"ai-agent-manager/internal/adapters/codex"
 	"ai-agent-manager/internal/adapters/gemini"
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 )
@@ -101,6 +102,9 @@ func init() {
 
 func printTrustNotice(agents []string) {
 	if len(agents) == 0 {
+		return
+	}
+	if os.Getenv("AI_AGENT_MANAGER_SUPPRESS_TRUST_NOTICE") == "1" {
 		return
 	}
 	fmt.Println("")

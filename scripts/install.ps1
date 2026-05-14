@@ -123,10 +123,16 @@ if ($PathParts -notcontains $BinDir) {
     Write-Host "  $BinDir"
 }
 
+$env:AI_AGENT_MANAGER_SUPPRESS_TRUST_NOTICE = "1"
 $Agents = if ($Agent) { @($Agent) } else { @("codex", "claude", "gemini") }
-foreach ($Name in $Agents) {
-    Write-Host "Installing $Name hook with scope=$Scope"
-    & $InstallPath install --agent $Name --scope $Scope
+if ($Agents.Count -eq 3 -and @("codex", "claude", "gemini") -join "," -eq ($Agents -join ",")) {
+    & $InstallPath install --all --scope $Scope
+} else {
+    foreach ($Name in $Agents) {
+        Write-Host "Installing $Name hook with scope=$Scope"
+        & $InstallPath install --agent $Name --scope $Scope
+    }
 }
+Remove-Item Env:AI_AGENT_MANAGER_SUPPRESS_TRUST_NOTICE -ErrorAction SilentlyContinue
 
 Write-TrustNotice

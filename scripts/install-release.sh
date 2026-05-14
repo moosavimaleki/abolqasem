@@ -219,10 +219,10 @@ esac
 
 if [ "$INSTALL_HOOKS" = "1" ]; then
   if [ "$HOOK_AGENTS" = "all" ]; then
-    "$INSTALL_PATH" install --all --scope "$HOOK_SCOPE"
+    AI_AGENT_MANAGER_SUPPRESS_TRUST_NOTICE=1 "$INSTALL_PATH" install --all --scope "$HOOK_SCOPE"
   else
     for agent in $HOOK_AGENTS; do
-      "$INSTALL_PATH" install --agent "$agent" --scope "$HOOK_SCOPE"
+      AI_AGENT_MANAGER_SUPPRESS_TRUST_NOTICE=1 "$INSTALL_PATH" install --agent "$agent" --scope "$HOOK_SCOPE"
     done
   fi
 fi
