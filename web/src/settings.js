@@ -41,7 +41,8 @@ export function syncSettingsUI(settings, root) {
 
   const fontSizeValue = root.querySelector("#font-size-value");
   if (fontSizeValue) {
-    fontSizeValue.textContent = String(settings.fontSize);
+    const displayedSize = settings.font === "bzar" ? settings.fontSize + 2 : settings.fontSize;
+    fontSizeValue.textContent = String(displayedSize);
   }
 }
 

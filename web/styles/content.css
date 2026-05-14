@@ -6,7 +6,7 @@
 }
 
 body[data-reader-font="bzar"] .content-body .persian-run {
-  font-size: calc(1em + 10px);
+  font-size: calc(1em + 3px);
 }
 
 .content-body,
@@ -64,6 +64,21 @@ body[data-reader-font="bzar"] .content-body .persian-run {
 .content-body h3 {
   font-size: clamp(1.16rem, 1.8vw, 1.42rem);
   margin-top: 1.35em;
+}
+
+.content-body[data-mode="chat"] h1 {
+  font-size: clamp(1.12rem, 1.45vw, 1.38rem);
+  margin-bottom: 0.85em;
+}
+
+.content-body[data-mode="chat"] h2 {
+  font-size: clamp(1.05rem, 1.25vw, 1.22rem);
+  margin-top: 1.25em;
+}
+
+.content-body[data-mode="chat"] h3 {
+  font-size: clamp(1rem, 1.1vw, 1.1rem);
+  margin-top: 1em;
 }
 
 .content-body p {
