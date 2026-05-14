@@ -22,7 +22,10 @@ if ([string]::IsNullOrWhiteSpace($Scope)) {
 if ([string]::IsNullOrWhiteSpace($Agents)) {
     $Agents = "all"
 }
-if ($env:AI_AGENT_MANAGER_INSTALL_HOOKS -eq "1") {
+if ($env:AI_AGENT_MANAGER_INSTALL_HOOKS -ne "0") {
+    $Hooks = $true
+}
+if (-not $PSBoundParameters.ContainsKey("Hooks")) {
     $Hooks = $true
 }
 
@@ -81,8 +84,11 @@ try {
         }
     }
 
-    Write-Host "Run the server with:"
-    Write-Host "  $App server"
+    Write-Host ""
+    Write-Host "Next step:"
+    Write-Host "  Open Codex, Claude Code, and Gemini CLI once."
+    Write-Host "  If any of them asks you to trust or approve the installed hook command, accept it."
+    Write-Host "  No manual config editing should be needed."
 }
 finally {
     Remove-Item -Path $TempDir -Recurse -Force -ErrorAction SilentlyContinue

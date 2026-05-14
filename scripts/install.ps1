@@ -5,7 +5,7 @@ param(
     [string]$BinDir = "$env:LOCALAPPDATA\ai-agent-manager\bin",
     [switch]$NoBuild,
     [switch]$BuildAll,
-    [switch]$Hooks,
+    [switch]$Hooks = $true,
     [switch]$AllAgents,
     [string]$Agent = "",
     [ValidateSet("user", "project")]
@@ -55,9 +55,44 @@ function Build-AllTargets {
     Build-Target "windows" "arm64"
 }
 
-if (!(Get-Command go -ErrorAction SilentlyContinue)) {
-    throw "Go 1.22+ is required and was not found in PATH"
+function Install-GoIfMissing {
+    if (Get-Command go -ErrorAction SilentlyContinue) {
+        return
+    }
+
+    Write-Host "Go was not found in PATH. Attempting automatic installation."
+    if (Get-Command winget -ErrorAction SilentlyContinue) {
+        winget install --id GoLang.Go --exact --accept-source-agreements --accept-package-agreements
+    } elseif (Get-Command choco -ErrorAction SilentlyContinue) {
+        choco install golang -y
+    } elseif (Get-Command scoop -ErrorAction SilentlyContinue) {
+        scoop install go
+    } else {
+        throw "Automatic Go installation requires winget, choco, or scoop"
+    }
+
+    $goCommand = Get-Command go -ErrorAction SilentlyContinue
+    if (-not $goCommand) {
+        $Candidate = Join-Path ${env:ProgramFiles} "Go\bin\go.exe"
+        if (Test-Path $Candidate) {
+            $env:PATH = (Split-Path $Candidate) + ";" + $env:PATH
+            $goCommand = Get-Command go -ErrorAction SilentlyContinue
+        }
+    }
+    if (-not $goCommand) {
+        throw "Go installation finished but 'go' is still not available in PATH"
+    }
 }
+
+function Write-TrustNotice {
+    Write-Host ""
+    Write-Host "Next step:"
+    Write-Host "  Open Codex, Claude Code, and Gemini CLI once."
+    Write-Host "  If any of them asks you to trust or approve the installed hook command, accept it."
+    Write-Host "  No manual config editing should be needed."
+}
+
+Install-GoIfMissing
 
 if ($Agent -and @("codex", "claude", "gemini") -notcontains $Agent) {
     throw "Unsupported agent: $Agent"
@@ -88,16 +123,10 @@ if ($PathParts -notcontains $BinDir) {
     Write-Host "  $BinDir"
 }
 
-if ($Hooks -or $AllAgents -or $Agent) {
-    $Agents = if ($Agent) { @($Agent) } else { @("codex", "claude", "gemini") }
-    foreach ($Name in $Agents) {
-        Write-Host "Installing $Name hook with scope=$Scope"
-        & $InstallPath install --agent $Name --scope $Scope
-    }
-} else {
-    Write-Host "Hook install skipped. To install hooks later:"
-    Write-Host "  ai-agent-manager install --all --scope user"
+$Agents = if ($Agent) { @($Agent) } else { @("codex", "claude", "gemini") }
+foreach ($Name in $Agents) {
+    Write-Host "Installing $Name hook with scope=$Scope"
+    & $InstallPath install --agent $Name --scope $Scope
 }
 
-Write-Host "Run the server with:"
-Write-Host "  ai-agent-manager server"
+Write-TrustNotice

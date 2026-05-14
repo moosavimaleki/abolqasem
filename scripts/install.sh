@@ -6,7 +6,7 @@ APP="ai-agent-manager"
 PKG="./cmd/ai-agent-manager"
 DIST="dist"
 SCOPE="user"
-HOOKS="0"
+HOOKS="1"
 BUILD="1"
 BUILD_ALL="0"
 AGENTS="codex claude gemini"
@@ -24,7 +24,7 @@ Options:
   --prefix DIR        Install binary into DIR/bin.
   --no-build          Install an existing dist binary for the current OS/arch.
   --build-all         Build release binaries for Linux, macOS, and Windows into dist/.
-  --hooks             Install hooks after installing the binary.
+  --hooks             Install hooks after installing the binary. Default: enabled.
   --all-agents        Same as --hooks for codex, claude, and gemini.
   --agent NAME        Install hook only for one agent: codex, claude, or gemini.
   --scope SCOPE       Hook scope: user or project. Default: user.
@@ -48,6 +48,18 @@ die() {
 
 log() {
   printf '%s\n' "$1"
+}
+
+run_privileged() {
+  if [ "$(id -u)" -eq 0 ]; then
+    "$@"
+    return
+  fi
+  if command -v sudo >/dev/null 2>&1; then
+    sudo "$@"
+    return
+  fi
+  die "need elevated privileges to install Go, but sudo is not available"
 }
 
 while [ "$#" -gt 0 ]; do
@@ -96,8 +108,6 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-command -v go >/dev/null 2>&1 || die "Go 1.22+ is required and was not found in PATH"
-
 detect_os() {
   case "$(uname -s 2>/dev/null || printf unknown)" in
     Linux*) printf 'linux' ;;
@@ -133,6 +143,51 @@ default_bin_dir() {
       printf '%s/.local/bin' "$HOME"
       ;;
   esac
+}
+
+install_go_if_missing() {
+  if command -v go >/dev/null 2>&1; then
+    return
+  fi
+
+  log "Go was not found in PATH. Attempting automatic installation."
+  case "$TARGET_OS" in
+    darwin)
+      command -v brew >/dev/null 2>&1 || die "Homebrew is required to auto-install Go on macOS"
+      brew install go
+      ;;
+    linux)
+      if command -v apt-get >/dev/null 2>&1; then
+        run_privileged apt-get update
+        run_privileged apt-get install -y golang-go
+      elif command -v dnf >/dev/null 2>&1; then
+        run_privileged dnf install -y golang
+      elif command -v yum >/dev/null 2>&1; then
+        run_privileged yum install -y golang
+      elif command -v pacman >/dev/null 2>&1; then
+        run_privileged pacman -Sy --noconfirm go
+      elif command -v zypper >/dev/null 2>&1; then
+        run_privileged zypper --non-interactive install go
+      elif command -v apk >/dev/null 2>&1; then
+        run_privileged apk add --no-cache go
+      else
+        die "unsupported Linux package manager for automatic Go installation"
+      fi
+      ;;
+    *)
+      die "automatic Go installation is not supported on this platform"
+      ;;
+  esac
+
+  command -v go >/dev/null 2>&1 || die "Go installation finished but 'go' is still not available in PATH"
+}
+
+print_trust_notice() {
+  log ""
+  log "Next step:"
+  log "  Open Codex, Claude Code, and Gemini CLI once."
+  log "  If any of them asks you to trust or approve the installed hook command, accept it."
+  log "  No manual config editing should be needed."
 }
 
 build_target() {
@@ -177,6 +232,8 @@ TARGET_BIN="$DIST/$APP-$TARGET_OS-$TARGET_ARCH$TARGET_SUFFIX"
 INSTALL_DIR="$(default_bin_dir)"
 INSTALL_PATH="$INSTALL_DIR/$APP$TARGET_SUFFIX"
 
+install_go_if_missing
+
 if [ "$BUILD_ALL" = "1" ]; then
   build_all_targets
 else
@@ -198,15 +255,9 @@ case ":$PATH:" in
     ;;
 esac
 
-if [ "$HOOKS" = "1" ]; then
-  for agent in $AGENTS; do
-    log "Installing $agent hook with scope=$SCOPE"
-    "$INSTALL_PATH" install --agent "$agent" --scope "$SCOPE"
-  done
-else
-  log "Hook install skipped. To install hooks later:"
-  log "  $APP install --all --scope user"
-fi
+for agent in $AGENTS; do
+  log "Installing $agent hook with scope=$SCOPE"
+  "$INSTALL_PATH" install --agent "$agent" --scope "$SCOPE"
+done
 
-log "Run the server with:"
-log "  $APP server"
+print_trust_notice

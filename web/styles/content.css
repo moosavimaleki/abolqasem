@@ -5,6 +5,10 @@
   word-break: break-word;
 }
 
+body[data-reader-font="bzar"] .content-body .persian-run {
+  font-size: calc(1em + 8px);
+}
+
 .content-body,
 .content-body.rtl,
 .content-body.auto,

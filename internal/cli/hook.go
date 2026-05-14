@@ -42,14 +42,14 @@ var hookCmd = &cobra.Command{
 		event = state.NormalizeAndValidateEvent(event)
 
 		payload, _ := json.Marshal(event)
-		client := &http.Client{Timeout: 750 * time.Millisecond}
-		resp, err := client.Post(state.LoadServerBaseURL()+"/api/hook", "application/json", bytes.NewBuffer(payload))
-		if err == nil {
-			resp.Body.Close()
-			if resp.StatusCode == http.StatusOK {
-				emitGeminiAck(hookAgent)
-				return
-			}
+		if postHookEvent(payload) {
+			emitGeminiAck(hookAgent)
+			return
+		}
+
+		if err := ensureServerRunning(5 * time.Second); err == nil && postHookEvent(payload) {
+			emitGeminiAck(hookAgent)
+			return
 		}
 
 		if err := state.SavePendingEvent(event); err != nil {
@@ -69,4 +69,14 @@ func emitGeminiAck(agent string) {
 	if strings.EqualFold(agent, "gemini") {
 		fmt.Println("{}")
 	}
+}
+
+func postHookEvent(payload []byte) bool {
+	client := &http.Client{Timeout: 750 * time.Millisecond}
+	resp, err := client.Post(state.LoadServerBaseURL()+"/api/hook", "application/json", bytes.NewBuffer(payload))
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
 }

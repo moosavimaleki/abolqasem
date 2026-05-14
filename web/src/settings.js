@@ -25,6 +25,7 @@ export function saveSettings(settings) {
 
 export function applySettings(settings) {
   document.body.dataset.theme = settings.theme;
+  document.body.dataset.readerFont = settings.font;
   document.documentElement.style.setProperty("--reader-font-family", fontStack(settings.font));
   document.documentElement.style.setProperty("--content-font-size", `${settings.fontSize}px`);
   document.documentElement.style.setProperty("--reader-line-height", String(settings.lineHeight));

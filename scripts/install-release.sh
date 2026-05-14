@@ -6,7 +6,7 @@ APP="ai-agent-manager"
 REPO="${AI_AGENT_MANAGER_REPO:-moosavimaleki/ai-agent-manager}"
 VERSION="${AI_AGENT_MANAGER_VERSION:-latest}"
 BIN_DIR="${BIN_DIR:-}"
-INSTALL_HOOKS="${AI_AGENT_MANAGER_INSTALL_HOOKS:-0}"
+INSTALL_HOOKS="${AI_AGENT_MANAGER_INSTALL_HOOKS:-1}"
 HOOK_SCOPE="${AI_AGENT_MANAGER_HOOK_SCOPE:-user}"
 HOOK_AGENTS="${AI_AGENT_MANAGER_AGENTS:-all}"
 
@@ -21,7 +21,7 @@ Options:
   --repo OWNER/REPO   GitHub repository. Default: moosavimaleki/ai-agent-manager.
   --version TAG       Release tag. Default: latest.
   --bin-dir DIR       Install binary into DIR.
-  --hooks             Install hooks after installing the binary.
+  --hooks             Install hooks after installing the binary. Default: enabled.
   --agent NAME        Install hook for one agent: codex, claude, or gemini.
   --scope SCOPE       Hook scope: user or project. Default: user.
   -h, --help          Show this help.
@@ -150,6 +150,14 @@ install_file() {
   fi
 }
 
+print_trust_notice() {
+  log ""
+  log "Next step:"
+  log "  Open Codex, Claude Code, and Gemini CLI once."
+  log "  If any of them asks you to trust or approve the installed hook command, accept it."
+  log "  No manual config editing should be needed."
+}
+
 TARGET_OS="$(detect_os)"
 TARGET_ARCH="$(detect_arch)"
 TARGET_SUFFIX=""
@@ -210,5 +218,4 @@ if [ "$INSTALL_HOOKS" = "1" ]; then
   fi
 fi
 
-log "Run the server with:"
-log "  $APP server"
+print_trust_notice

@@ -14,22 +14,10 @@
 curl -fsSL https://raw.githubusercontent.com/moosavimaleki/ai-agent-manager/main/scripts/install-release.sh | sh
 ```
 
-اگر می‌خواهی همزمان hookها هم نصب شوند:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/moosavimaleki/ai-agent-manager/main/scripts/install-release.sh | sh -s -- --hooks
-```
-
 Windows PowerShell:
 
 ```powershell
 irm https://raw.githubusercontent.com/moosavimaleki/ai-agent-manager/main/scripts/install-release.ps1 | iex
-```
-
-Windows PowerShell همراه نصب hookها:
-
-```powershell
-$env:AI_AGENT_MANAGER_INSTALL_HOOKS="1"; irm https://raw.githubusercontent.com/moosavimaleki/ai-agent-manager/main/scripts/install-release.ps1 | iex
 ```
 
 برای نصب از سورس:
@@ -40,58 +28,13 @@ cd ai-agent-manager
 scripts/install.sh
 ```
 
-برای نصب hookها بعد از نصب binary:
+اسکریپت‌های نصب به صورت پیش‌فرض این کارها را انجام می‌دهند:
 
-```bash
-ai-agent-manager install --agent codex --scope user
-ai-agent-manager install --agent claude --scope user
-ai-agent-manager install --agent gemini --scope user
-```
+- binary را نصب می‌کنند
+- hookهای Codex، Claude Code و Gemini CLI را نصب می‌کنند
+- در نصب از سورس، اگر `go` در PATH نباشد، تلاش می‌کنند آن را خودکار نصب کنند
+- در انتها به تو یادآوری می‌کنند داخل agentها trust/approve را انجام دهی اگر prompt نشان داده شد
 
-برای همه agentها:
-
-```bash
-ai-agent-manager install --all --scope user
-```
-
-`install` امن و idempotent است؛ اجرای دوباره آن hookهای موجود را خراب نمی‌کند و مسیر binary را repair می‌کند.
-
-## Run
-
-server را بالا بیاور:
-
-```bash
-ai-agent-manager server
-```
-
-viewer را در مرورگر باز کن:
-
-```bash
-ai-agent-manager open
-```
-
-اگر server بالا نیست:
-
-```bash
-ai-agent-manager open --start-server
-```
-
-وضعیت server و hookها:
-
-```bash
-ai-agent-manager status
-```
-
-## CLI
-
-```text
-ai-agent-manager server
-ai-agent-manager hook --agent codex|claude|gemini
-ai-agent-manager install --agent codex|claude|gemini --scope user|project
-ai-agent-manager uninstall --agent codex|claude|gemini --scope user|project
-ai-agent-manager open [--start-server]
-ai-agent-manager status
-```
 
 ## Architecture
 
@@ -100,28 +43,3 @@ ai-agent-manager status
 - اگر server پایین باشد، event در `~/.cache/ai-agent-manager/pending-events.jsonl` ذخیره می‌شود.
 - server روی `127.0.0.1` UI و API را serve می‌کند.
 - transcriptها parse و cache می‌شوند و پیام‌ها به صورت pagination شده به UI می‌رسند.
-
-## Notes About Legacy Files
-
-این repo قبلاً نسخه‌ای skill/python-based داشت. آن مسیر دیگر implementation اصلی نیست. فایل‌های legacy فقط برای compatibility سبک نگه داشته شده‌اند و نباید مسیر اصلی نصب یا استفاده باشند.
-
-## Development
-
-فرمان‌های اصلی:
-
-```bash
-gofmt -w .
-go vet ./...
-go test ./...
-make build
-make build-all
-```
-
-برای تست build تمیز:
-
-```bash
-tmp=$(mktemp -d)
-git archive HEAD | tar -x -C "$tmp"
-cd "$tmp"
-make build
-```

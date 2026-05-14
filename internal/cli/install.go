@@ -38,6 +38,7 @@ var installCmd = &cobra.Command{
 		}
 
 		if installAll {
+			successful := []string{}
 			for _, a := range []string{"codex", "claude", "gemini"} {
 				adapter, _ := getAdapter(a)
 				fmt.Printf("Installing %s hook...\n", a)
@@ -45,8 +46,10 @@ var installCmd = &cobra.Command{
 					fmt.Printf("Failed for %s: %v\n", a, err)
 				} else {
 					fmt.Printf("Successfully installed %s hook\n", a)
+					successful = append(successful, a)
 				}
 			}
+			printTrustNotice(successful)
 			return
 		}
 
@@ -60,6 +63,7 @@ var installCmd = &cobra.Command{
 			fmt.Printf("Installation failed: %v\n", err)
 		} else {
 			fmt.Println("Successfully installed hook")
+			printTrustNotice([]string{installAgent})
 		}
 	},
 }
@@ -93,4 +97,38 @@ func init() {
 
 	rootCmd.AddCommand(installCmd)
 	rootCmd.AddCommand(uninstallCmd)
+}
+
+func printTrustNotice(agents []string) {
+	if len(agents) == 0 {
+		return
+	}
+	fmt.Println("")
+	fmt.Println("Next step:")
+	fmt.Printf("  Open %s once.\n", humanAgentList(agents))
+	fmt.Println("  If the agent asks you to trust or approve the installed hook command, accept it.")
+	fmt.Println("  No manual config editing should be needed.")
+}
+
+func humanAgentList(agents []string) string {
+	names := make([]string, 0, len(agents))
+	for _, agent := range agents {
+		switch agent {
+		case "codex":
+			names = append(names, "Codex")
+		case "claude":
+			names = append(names, "Claude Code")
+		case "gemini":
+			names = append(names, "Gemini CLI")
+		default:
+			names = append(names, agent)
+		}
+	}
+	if len(names) == 1 {
+		return names[0]
+	}
+	if len(names) == 2 {
+		return names[0] + " and " + names[1]
+	}
+	return names[0] + ", " + names[1] + ", and " + names[2]
 }

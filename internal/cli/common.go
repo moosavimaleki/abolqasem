@@ -2,6 +2,7 @@ package cli
 
 import (
 	"ai-agent-manager/internal/state"
+	"fmt"
 	"net/http"
 	"net/url"
 	"os"
@@ -24,6 +25,30 @@ func serverHealthy() bool {
 	return resp.StatusCode == http.StatusOK
 }
 
+func waitForServer(timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if serverHealthy() {
+			return true
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	return serverHealthy()
+}
+
+func ensureServerRunning(timeout time.Duration) error {
+	if serverHealthy() {
+		return nil
+	}
+	if err := startServerInBackground(configuredPort()); err != nil {
+		return err
+	}
+	if waitForServer(timeout) {
+		return nil
+	}
+	return fmt.Errorf("server did not become healthy at %s", currentBaseURL())
+}
+
 func startServerInBackground(port int) error {
 	exe, err := os.Executable()
 	if err != nil {
@@ -36,7 +61,12 @@ func startServerInBackground(port int) error {
 	cmd := exec.Command(exe, "server", "--port", strconv.Itoa(port))
 	cmd.Stdout = devNull
 	cmd.Stderr = devNull
-	return cmd.Start()
+	err = cmd.Start()
+	closeErr := devNull.Close()
+	if err != nil {
+		return err
+	}
+	return closeErr
 }
 
 func configuredPort() int {
