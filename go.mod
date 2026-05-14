@@ -1,4 +1,4 @@
-module codex-rtl
+module ai-session-viewer
 
 go 1.22.2
 

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"ai-session-viewer/internal/platform"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -14,9 +15,13 @@ var openCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("Opening browser...")
 		if startServer {
-			fmt.Println("Also starting server...")
+			fmt.Println("Starting server is not yet integrated with the open command.")
 		}
-		// TODO: Implement open logic (check if server is running, use platform-specific open command)
+		
+		err := platform.OpenBrowser("http://127.0.0.1:9090")
+		if err != nil {
+			fmt.Printf("Failed to open browser: %v\n", err)
+		}
 	},
 }
 

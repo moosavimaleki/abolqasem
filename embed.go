@@ -1,4 +1,4 @@
-package codexrtl
+package viewer
 
 import "embed"
 

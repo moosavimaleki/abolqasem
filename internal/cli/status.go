@@ -10,7 +10,7 @@ var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show the status of the server and hook",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("Codex RTL Viewer Status:")
+		fmt.Println("AI Session Viewer Status:")
 		// TODO: Implement status logic (check server, check config, read state)
 	},
 }

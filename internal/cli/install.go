@@ -1,91 +1,96 @@
 package cli
 
 import (
+	"ai-session-viewer/internal/adapters"
+	"ai-session-viewer/internal/adapters/claude"
+	"ai-session-viewer/internal/adapters/codex"
+	"ai-session-viewer/internal/adapters/gemini"
 	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/spf13/cobra"
 )
 
-const markerStart = "# BEGIN codex-rtl-viewer"
-const markerEnd = "# END codex-rtl-viewer"
-const hookConfig = `
-[features]
-codex_hooks = true
+var installAgent string
+var installScope string
+var installAll bool
 
-[[hooks.Stop]]
-[[hooks.Stop.hooks]]
-type = "command"
-command = "codex-rtl hook"
-timeout = 3
-`
-
-func getConfigPath() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".codex", "config.toml")
+func getAdapter(agent string) (adapters.AgentAdapter, error) {
+	switch agent {
+	case "codex":
+		return codex.New(), nil
+	case "claude":
+		return claude.New(), nil
+	case "gemini":
+		return gemini.New(), nil
+	default:
+		return nil, fmt.Errorf("unknown agent: %s", agent)
+	}
 }
 
 var installCmd = &cobra.Command{
 	Use:   "install",
-	Short: "Install the hook into Codex configuration",
+	Short: "Install the hook into AI agent configuration",
 	Run: func(cmd *cobra.Command, args []string) {
-		configPath := getConfigPath()
-		if _, err := os.Stat(configPath); os.IsNotExist(err) {
-			os.MkdirAll(filepath.Dir(configPath), 0755)
-			os.WriteFile(configPath, []byte(""), 0644)
+		scope := adapters.InstallScope(installScope)
+		if scope != adapters.ScopeUser && scope != adapters.ScopeProject {
+			fmt.Println("Invalid scope. Use 'user' or 'project'")
+			return
 		}
 
-		data, err := os.ReadFile(configPath)
+		if installAll {
+			for _, a := range []string{"codex", "claude", "gemini"} {
+				adapter, _ := getAdapter(a)
+				fmt.Printf("Installing %s hook...\n", a)
+				if err := adapter.InstallHook(scope); err != nil {
+					fmt.Printf("Failed for %s: %v\n", a, err)
+				} else {
+					fmt.Printf("Successfully installed %s hook\n", a)
+				}
+			}
+			return
+		}
+
+		adapter, err := getAdapter(installAgent)
 		if err != nil {
-			fmt.Printf("Error reading config: %v\n", err)
+			fmt.Println(err)
 			return
 		}
 
-		content := string(data)
-		if strings.Contains(content, markerStart) {
-			fmt.Println("Hook already installed.")
-			return
+		if err := adapter.InstallHook(scope); err != nil {
+			fmt.Printf("Installation failed: %v\n", err)
+		} else {
+			fmt.Println("Successfully installed hook")
 		}
-
-		os.WriteFile(configPath+".bak", data, 0644)
-
-		newContent := content + "\n" + markerStart + hookConfig + markerEnd + "\n"
-		os.WriteFile(configPath, []byte(newContent), 0644)
-		fmt.Println("Successfully installed codex-rtl hook to config.toml")
 	},
 }
 
 var uninstallCmd = &cobra.Command{
 	Use:   "uninstall",
-	Short: "Uninstall the hook from Codex configuration",
+	Short: "Uninstall the hook from AI agent configuration",
 	Run: func(cmd *cobra.Command, args []string) {
-		configPath := getConfigPath()
-		data, err := os.ReadFile(configPath)
+		scope := adapters.InstallScope(installScope)
+		adapter, err := getAdapter(installAgent)
 		if err != nil {
-			fmt.Printf("Error reading config: %v\n", err)
+			fmt.Println(err)
 			return
 		}
 
-		content := string(data)
-		if !strings.Contains(content, markerStart) {
-			fmt.Println("Hook not found in config.")
-			return
+		if err := adapter.UninstallHook(scope); err != nil {
+			fmt.Printf("Uninstallation failed: %v\n", err)
+		} else {
+			fmt.Println("Successfully uninstalled hook")
 		}
-
-		startIdx := strings.Index(content, markerStart)
-		endIdx := strings.Index(content, markerEnd) + len(markerEnd)
-		
-		newContent := content[:startIdx] + content[endIdx:]
-		newContent = strings.ReplaceAll(newContent, "\n\n\n", "\n\n")
-		
-		os.WriteFile(configPath, []byte(newContent), 0644)
-		fmt.Println("Successfully uninstalled codex-rtl hook from config.toml")
 	},
 }
 
 func init() {
+	installCmd.Flags().StringVar(&installAgent, "agent", "codex", "Agent type (codex, claude, gemini)")
+	installCmd.Flags().StringVar(&installScope, "scope", "user", "Installation scope (user, project)")
+	installCmd.Flags().BoolVar(&installAll, "all", false, "Install for all supported agents")
+	
+	uninstallCmd.Flags().StringVar(&installAgent, "agent", "codex", "Agent type (codex, claude, gemini)")
+	uninstallCmd.Flags().StringVar(&installScope, "scope", "user", "Installation scope (user, project)")
+
 	rootCmd.AddCommand(installCmd)
 	rootCmd.AddCommand(uninstallCmd)
 }

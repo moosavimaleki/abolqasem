@@ -1,8 +1,8 @@
 package server
 
 import (
-    "codex-rtl/internal/parser"
-    "codex-rtl/internal/state"
+    "ai-session-viewer/internal/parser"
+    "ai-session-viewer/internal/state"
     "encoding/json"
     "net/http"
     "path/filepath"

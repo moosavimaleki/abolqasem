@@ -1,9 +1,9 @@
 package cli
 
 import (
-	"codex-rtl"
-	"codex-rtl/internal/server"
-	"codex-rtl/internal/state"
+	viewer "ai-session-viewer"
+	"ai-session-viewer/internal/server"
+	"ai-session-viewer/internal/state"
 	"log"
 
 	"github.com/spf13/cobra"
@@ -24,7 +24,7 @@ var serverCmd = &cobra.Command{
 			log.Printf("Warning: Failed to process pending events: %v", err)
 		}
 
-		server.SetWebFS(codexrtl.WebAssets)
+		server.SetWebFS(viewer.WebAssets)
 		if err := server.Start(port); err != nil {
 			log.Fatalf("Server error: %v", err)
 		}

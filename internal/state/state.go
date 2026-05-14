@@ -4,6 +4,7 @@ import "time"
 
 // HookEvent is the payload received from Codex Hook
 type HookEvent struct {
+	Agent          string `json:"agent"`
 	SessionID      string `json:"session_id"`
 	TranscriptPath string `json:"transcript_path"`
 	Cwd            string `json:"cwd"`
@@ -11,6 +12,7 @@ type HookEvent struct {
 
 // SessionMeta holds metadata for a single session
 type SessionMeta struct {
+	Agent          string    `json:"agent"`
 	SessionID      string    `json:"session_id"`
 	TranscriptPath string    `json:"transcript_path"`
 	Cwd            string    `json:"cwd"`

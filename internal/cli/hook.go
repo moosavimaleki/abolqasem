@@ -1,42 +1,50 @@
 package cli
 
 import (
+	"ai-session-viewer/internal/adapters"
+	"ai-session-viewer/internal/adapters/claude"
+	"ai-session-viewer/internal/adapters/codex"
+	"ai-session-viewer/internal/adapters/gemini"
+	"ai-session-viewer/internal/state"
 	"bytes"
-	"codex-rtl/internal/state"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
 )
 
+var hookAgent string
+
 var hookCmd = &cobra.Command{
 	Use:   "hook",
-	Short: "Process a Codex hook event",
+	Short: "Process an AI agent hook event",
 	Run: func(cmd *cobra.Command, args []string) {
 		input, err := io.ReadAll(os.Stdin)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error reading stdin: %v\n", err)
-			os.Exit(0) // Exit 0 to avoid crashing codex
+			os.Exit(0) // Exit 0 to avoid crashing agent
 		}
 
-		var event state.HookEvent
-		if err := json.Unmarshal(input, &event); err != nil {
-			fmt.Fprintf(os.Stderr, "Error parsing JSON: %v\n", err)
+		var adapter adapters.AgentAdapter
+		switch hookAgent {
+		case "codex":
+			adapter = codex.New()
+		case "claude":
+			adapter = claude.New()
+		case "gemini":
+			adapter = gemini.New()
+		default:
+			fmt.Fprintf(os.Stderr, "Unknown agent: %s\n", hookAgent)
 			os.Exit(0)
 		}
 
-		if event.TranscriptPath == "" {
-			fmt.Fprintln(os.Stderr, "Invalid event: transcript_path is empty")
+		event, err := adapter.NormalizeHookInput(input)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error parsing hook input: %v\n", err)
 			os.Exit(0)
-		}
-
-		// Fallback for session_id if missing
-		if event.SessionID == "" {
-			event.SessionID = filepath.Base(filepath.Dir(event.TranscriptPath))
 		}
 
 		// Try to send to local server
@@ -46,6 +54,10 @@ var hookCmd = &cobra.Command{
 			resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
 				// Successfully delivered
+				// If Gemini, output empty JSON to stdout
+				if hookAgent == "gemini" {
+					fmt.Println("{}")
+				}
 				return
 			}
 		}
@@ -54,9 +66,14 @@ var hookCmd = &cobra.Command{
 		if err := state.SavePendingEvent(event); err != nil {
 			fmt.Fprintf(os.Stderr, "Error saving pending event: %v\n", err)
 		}
+
+		if hookAgent == "gemini" {
+			fmt.Println("{}")
+		}
 	},
 }
 
 func init() {
+	hookCmd.Flags().StringVar(&hookAgent, "agent", "codex", "Agent type (codex, claude, gemini)")
 	rootCmd.AddCommand(hookCmd)
 }

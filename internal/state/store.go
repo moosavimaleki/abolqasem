@@ -18,7 +18,7 @@ func init() {
 	if err != nil {
 		panic(fmt.Sprintf("could not get home dir: %v", err))
 	}
-	stateDir = filepath.Join(home, ".cache", "codex-rtl")
+	stateDir = filepath.Join(home, ".cache", "ai-session-viewer")
 	os.MkdirAll(stateDir, 0755)
 }
 

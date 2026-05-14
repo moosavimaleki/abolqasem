@@ -8,11 +8,10 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "codex-rtl",
-	Short: "Codex RTL Viewer - A local web viewer for Codex sessions with RTL support",
-	Long: `Codex RTL Viewer is a lightweight, zero-token, local tool designed to 
-display Codex TUI sessions in a browser with proper Right-to-Left (RTL) 
-rendering for Persian and other RTL languages.`,
+	Use:   "ai-session-viewer",
+	Short: "AI Session Viewer - A local web viewer for AI coding agents",
+	Long: `AI Session Viewer is a lightweight, zero-token, local tool designed to 
+display sessions from AI agents like Claude Code, Gemini CLI, and Codex in a browser.`,
 }
 
 func Execute() {
