@@ -147,14 +147,58 @@ body[data-reader-font="bzar"] .content-body .persian-run {
 }
 
 .code-frame {
-  position: relative;
   border: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
-  border-radius: 9px;
+  border-radius: 12px;
   overflow: hidden;
   background: var(--code-bg);
+  margin-bottom: 1.05em;
 }
 
-.code-frame pre {
+.mermaid-frame {
+  border: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+  border-radius: 12px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--surface-soft) 84%, var(--surface));
+}
+
+.code-toolbar,
+.mermaid-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+}
+
+.code-label,
+.mermaid-label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.code-toolbar .inline-icon,
+.mermaid-toolbar .inline-icon {
+  position: static;
+}
+
+.code-toolbar .inline-icon {
+  background: color-mix(in srgb, var(--code-bg) 80%, var(--text) 20%);
+}
+
+.mermaid-toolbar .inline-icon {
+  background: color-mix(in srgb, var(--surface) 80%, var(--text) 20%);
+}
+
+.code-canvas {
+  overflow-x: auto;
+}
+
+.code-canvas pre {
   margin: 0;
   padding: 16px 18px;
   white-space: pre;
@@ -165,46 +209,8 @@ body[data-reader-font="bzar"] .content-body .persian-run {
   line-height: 1.62;
 }
 
-.code-frame code {
+.code-canvas code {
   font-family: inherit;
-}
-
-.code-frame .inline-icon {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  left: auto;
-  background: color-mix(in srgb, var(--code-bg) 86%, var(--text) 14%);
-}
-
-.mermaid-frame {
-  border: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
-  border-radius: 12px;
-  overflow: hidden;
-  background: color-mix(in srgb, var(--surface-soft) 84%, var(--surface));
-}
-
-.mermaid-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 12px;
-  border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
-}
-
-.mermaid-label {
-  font-size: 0.82rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
-.mermaid-toolbar .inline-icon {
-  position: static;
-  background: color-mix(in srgb, var(--surface) 80%, var(--text) 20%);
 }
 
 .mermaid-canvas {

@@ -133,6 +133,13 @@ function enhanceContent(root) {
     const frame = document.createElement("div");
     frame.className = "code-frame";
 
+    const header = document.createElement("div");
+    header.className = "code-toolbar";
+
+    const label = document.createElement("span");
+    label.className = "code-label";
+    label.textContent = detectCodeLanguage(code);
+
     const action = document.createElement("button");
     action.type = "button";
     action.className = "inline-icon";
@@ -143,8 +150,13 @@ function enhanceContent(root) {
       copyText(pre.innerText);
     });
 
+    const body = document.createElement("div");
+    body.className = "code-canvas";
+
+    header.append(label, action);
     pre.parentNode.insertBefore(frame, pre);
-    frame.append(pre, action);
+    body.appendChild(pre);
+    frame.append(header, body);
   });
 }
 
@@ -153,6 +165,39 @@ function isMermaidBlock(code) {
     return false;
   }
   return /(^|\s)language-mermaid(\s|$)/.test(code.className);
+}
+
+function detectCodeLanguage(code) {
+  const className = code?.className || "";
+  const match = className.match(/(?:^|\s)language-([a-z0-9_+-]+)(?:\s|$)/i);
+  const lang = (match?.[1] || "").toLowerCase();
+
+  switch (lang) {
+    case "js":
+      return "JavaScript";
+    case "ts":
+      return "TypeScript";
+    case "jsx":
+      return "JSX";
+    case "tsx":
+      return "TSX";
+    case "sh":
+    case "shell":
+    case "bash":
+    case "zsh":
+      return "Shell";
+    case "ps1":
+    case "powershell":
+      return "PowerShell";
+    case "yml":
+      return "YAML";
+    case "md":
+      return "Markdown";
+    case "":
+      return "Code";
+    default:
+      return lang.toUpperCase();
+  }
 }
 
 function renderMermaidBlock(pre, code) {
