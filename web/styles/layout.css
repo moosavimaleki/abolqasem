@@ -161,6 +161,7 @@
 }
 
 .chat-shell {
+  position: relative;
   grid-column: 1;
   height: calc(100dvh - var(--header-height));
   min-width: 0;
@@ -309,10 +310,10 @@
 .session-notice-action {
   --notice-progress: 1;
   min-width: 128px;
-  border: 1px solid transparent;
+  border: 2px solid transparent;
   border-radius: 999px;
   background:
-    linear-gradient(color-mix(in srgb, var(--surface-strong) 96%, var(--success) 4%), color-mix(in srgb, var(--surface-strong) 96%, var(--success) 4%)) padding-box,
+    linear-gradient(var(--surface-strong), var(--surface-strong)) padding-box,
     conic-gradient(var(--success) calc(var(--notice-progress) * 1turn), color-mix(in srgb, var(--line) 80%, transparent) 0) border-box;
   color: var(--text);
   padding: 7px 12px;
@@ -321,10 +322,44 @@
 }
 
 .session-notice-action:hover {
-  background: color-mix(in srgb, var(--success) 16%, transparent);
+  background:
+    linear-gradient(var(--surface-strong), var(--surface-strong)) padding-box,
+    conic-gradient(var(--success) calc(var(--notice-progress) * 1turn), color-mix(in srgb, var(--line-strong) 90%, transparent) 0) border-box;
 }
 
 .session-notice-close {
   width: 32px;
   height: 32px;
+}
+
+.jump-to-end {
+  position: absolute;
+  left: clamp(24px, 8vw, 128px);
+  bottom: 26px;
+  z-index: 20;
+  width: 42px;
+  height: 42px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-strong) 92%, var(--bg));
+  box-shadow: var(--shadow);
+  color: var(--text);
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  line-height: 1;
+  backdrop-filter: blur(16px);
+}
+
+.jump-to-end::before {
+  content: attr(data-icon);
+  font-family: "Material Symbols Outlined";
+  font-size: 26px;
+  line-height: 1;
+  -webkit-font-feature-settings: "liga";
+  font-feature-settings: "liga";
+}
+
+.jump-to-end:hover {
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface-strong));
 }

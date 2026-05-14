@@ -65,6 +65,11 @@
     width: auto;
   }
 
+  .jump-to-end {
+    left: 18px;
+    bottom: 18px;
+  }
+
   .message-card.assistant {
     padding: 42px 18px 22px;
   }

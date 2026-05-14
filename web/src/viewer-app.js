@@ -46,6 +46,7 @@ export function createViewerApp() {
     chat: document.getElementById("chat-messages"),
     openSessions: document.getElementById("open-sessions"),
     closeSessions: document.getElementById("close-sessions"),
+    jumpToEnd: document.getElementById("jump-to-end"),
     messageSearchShell: document.getElementById("message-search-shell"),
     messageSearchToggle: document.getElementById("message-search-toggle"),
     searchScopeChip: document.getElementById("search-scope-chip"),
@@ -101,6 +102,10 @@ export function createViewerApp() {
       els.messageSearch.focus();
     });
     els.refreshSession.addEventListener("click", refreshCurrentSession);
+    els.jumpToEnd.addEventListener("click", () => {
+      scrollToBottom(els.chat);
+      syncJumpToEnd();
+    });
 
     els.activeSessionInfo.addEventListener("click", () => {
       toggleSessionInfoPopover();
@@ -126,6 +131,7 @@ export function createViewerApp() {
     }, 120));
 
     els.chat.addEventListener("scroll", async () => {
+      syncJumpToEnd();
       if (!state.currentSessionKey || !state.hasMoreBefore || state.loadingOlder || state.search) {
         return;
       }
@@ -418,6 +424,7 @@ export function createViewerApp() {
 
     if (options.stickBottom) {
       scrollToBottom(els.chat);
+      syncJumpToEnd();
     }
   }
 
@@ -559,6 +566,12 @@ export function createViewerApp() {
     empty.className = "empty-state";
     empty.innerHTML = code ? `<p>${text}</p><code>${code}</code>` : `<p>${text}</p>`;
     els.chat.appendChild(empty);
+    syncJumpToEnd();
+  }
+
+  function syncJumpToEnd() {
+    const shouldShow = state.currentSessionKey && !isNearBottom(els.chat, 260) && els.chat.scrollHeight > els.chat.clientHeight + 260;
+    els.jumpToEnd.classList.toggle("hidden", !shouldShow);
   }
 
   function toggleSearch(shell, input) {

@@ -19,7 +19,8 @@ body[data-reader-font="bzar"] .content-body .persian-run {
 
 .content-body pre,
 .content-body table,
-.code-frame {
+.code-frame,
+.mermaid-frame {
   direction: ltr;
   text-align: left;
   unicode-bidi: plaintext;
@@ -174,6 +175,66 @@ body[data-reader-font="bzar"] .content-body .persian-run {
   right: 8px;
   left: auto;
   background: color-mix(in srgb, var(--code-bg) 86%, var(--text) 14%);
+}
+
+.mermaid-frame {
+  border: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+  border-radius: 12px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--surface-soft) 84%, var(--surface));
+}
+
+.mermaid-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+}
+
+.mermaid-label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.mermaid-toolbar .inline-icon {
+  position: static;
+  background: color-mix(in srgb, var(--surface) 80%, var(--text) 20%);
+}
+
+.mermaid-canvas {
+  overflow-x: auto;
+  padding: 18px;
+  min-height: 96px;
+}
+
+.mermaid-canvas.is-ready {
+  display: flex;
+  justify-content: center;
+}
+
+.mermaid-canvas svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.mermaid-canvas.has-error {
+  display: block;
+}
+
+.mermaid-error {
+  margin-bottom: 12px;
+  color: color-mix(in srgb, var(--danger, #c62828) 80%, var(--text));
+  font-weight: 700;
+}
+
+.mermaid-source {
+  margin: 0;
 }
 
 .hljs {

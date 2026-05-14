@@ -1,5 +1,8 @@
 import { copyText, escapeHTML, escapeRegExp } from "./utils.js";
 
+let mermaidReady = false;
+let mermaidSequence = 0;
+
 export function renderMessageContent(message, mode = "chat", search = "") {
   const body = document.createElement("div");
   body.className = `content-body ${contentDirection(message)}`;
@@ -119,6 +122,12 @@ function enhanceContent(root) {
       return;
     }
 
+    const code = pre.querySelector("code");
+    if (isMermaidBlock(code)) {
+      renderMermaidBlock(pre, code);
+      return;
+    }
+
     highlightCode(pre);
 
     const frame = document.createElement("div");
@@ -137,6 +146,109 @@ function enhanceContent(root) {
     pre.parentNode.insertBefore(frame, pre);
     frame.append(pre, action);
   });
+}
+
+function isMermaidBlock(code) {
+  if (!code) {
+    return false;
+  }
+  return /(^|\s)language-mermaid(\s|$)/.test(code.className);
+}
+
+function renderMermaidBlock(pre, code) {
+  const source = code.textContent?.trim() || "";
+  if (!source) {
+    return;
+  }
+
+  const frame = document.createElement("div");
+  frame.className = "mermaid-frame";
+
+  const header = document.createElement("div");
+  header.className = "mermaid-toolbar";
+
+  const label = document.createElement("span");
+  label.className = "mermaid-label";
+  label.textContent = "Mermaid";
+
+  const action = document.createElement("button");
+  action.type = "button";
+  action.className = "inline-icon";
+  action.dataset.icon = "content_copy";
+  action.setAttribute("aria-label", "کپی نمودار Mermaid");
+  action.addEventListener("click", (event) => {
+    event.stopPropagation();
+    copyText(source);
+  });
+
+  header.append(label, action);
+
+  const canvas = document.createElement("div");
+  canvas.className = "mermaid-canvas";
+  canvas.textContent = "در حال رندر نمودار...";
+
+  frame.append(header, canvas);
+  pre.parentNode.insertBefore(frame, pre);
+  pre.remove();
+
+  ensureMermaidConfigured();
+  if (!window.mermaid?.render) {
+    showMermaidFallback(canvas, pre, "کتابخانه Mermaid بارگذاری نشد.");
+    return;
+  }
+
+  const renderId = `mermaid-diagram-${mermaidSequence++}`;
+  window.mermaid
+    .render(renderId, source)
+    .then(({ svg, bindFunctions }) => {
+      canvas.innerHTML = svg;
+      canvas.classList.add("is-ready");
+      bindFunctions?.(canvas);
+    })
+    .catch((error) => {
+      console.warn("Mermaid rendering failed", error);
+      showMermaidFallback(canvas, pre, "رندر Mermaid ناموفق بود.");
+    });
+}
+
+function ensureMermaidConfigured() {
+  if (mermaidReady || !window.mermaid?.initialize) {
+    return;
+  }
+  mermaidReady = true;
+
+  const styles = getComputedStyle(document.body);
+  window.mermaid.initialize({
+    startOnLoad: false,
+    securityLevel: "strict",
+    theme: "base",
+    fontFamily: styles.getPropertyValue("--font-family").trim() || "sans-serif",
+    themeVariables: {
+      primaryColor: colorOr(styles, "--surface-soft", "#f3f4f6"),
+      primaryTextColor: colorOr(styles, "--text", "#111827"),
+      primaryBorderColor: colorOr(styles, "--line-strong", "#cbd5e1"),
+      lineColor: colorOr(styles, "--accent", "#2563eb"),
+      secondaryColor: colorOr(styles, "--code-bg", "#e5e7eb"),
+      tertiaryColor: colorOr(styles, "--surface", "#ffffff"),
+      background: colorOr(styles, "--surface", "#ffffff"),
+    },
+  });
+}
+
+function colorOr(styles, variableName, fallback) {
+  return styles.getPropertyValue(variableName).trim() || fallback;
+}
+
+function showMermaidFallback(canvas, pre, message) {
+  canvas.replaceChildren();
+  canvas.classList.add("has-error");
+
+  const note = document.createElement("p");
+  note.className = "mermaid-error";
+  note.textContent = message;
+
+  pre.classList.add("mermaid-source");
+  canvas.append(note, pre);
 }
 
 function wrapPersianRuns(root) {
