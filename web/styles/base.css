@@ -85,6 +85,16 @@ pre {
   background: var(--surface-soft);
 }
 
+.icon-button.is-loading::before {
+  animation: icon-spin 700ms linear infinite;
+}
+
 .mobile-only {
   display: none;
+}
+
+@keyframes icon-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }

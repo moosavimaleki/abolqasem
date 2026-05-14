@@ -82,17 +82,10 @@
 
   .reader-topbar {
     padding: 0 16px;
-    grid-template-columns: 44px minmax(0, 1fr);
-  }
-
-  #close-reader {
-    grid-column: 1;
   }
 
   .reader-tools {
-    grid-column: 2;
     margin-right: 0;
-    height: 100%;
   }
 
   .reader-article > h1 {

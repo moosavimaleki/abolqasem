@@ -45,9 +45,17 @@ func (a *ClaudeAdapter) InstallHook(scope adapters.InstallScope) error {
 	}
 
 	for _, block := range stopBlocks {
-		for _, entry := range ensureBlocks(block["hooks"]) {
+		entries := ensureBlocks(block["hooks"])
+		block["hooks"] = entries
+		for _, entry := range entries {
 			if isEntryMatch(entry) {
-				return fmt.Errorf("hook already installed")
+				entry["name"] = hookName
+				entry["type"] = "command"
+				entry["command"] = command
+				entry["args"] = args
+				entry["timeout"] = 3
+				hooks["Stop"] = stopBlocks
+				return saveSettings(configPath, raw, settings)
 			}
 		}
 	}

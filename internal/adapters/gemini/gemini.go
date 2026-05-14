@@ -46,11 +46,7 @@ func (a *GeminiAdapter) InstallHook(scope adapters.InstallScope) error {
 		return err
 	}
 
-	var changed bool
-	hooks["AfterAgent"], changed = ensureNamedHook(ensureBlocks(hooks["AfterAgent"]), afterAgentHookName, command)
-	if !changed {
-		return fmt.Errorf("hook already installed")
-	}
+	hooks["AfterAgent"], _ = ensureNamedHook(ensureBlocks(hooks["AfterAgent"]), afterAgentHookName, command)
 	hooks["SessionEnd"], _ = ensureNamedHook(ensureBlocks(hooks["SessionEnd"]), sessionEndHookName, command)
 	return saveSettings(configPath, raw, settings)
 }
@@ -188,9 +184,24 @@ func ensureBlocks(value any) []map[string]any {
 
 func ensureNamedHook(blocks []map[string]any, hookName, command string) ([]map[string]any, bool) {
 	for _, block := range blocks {
-		for _, entry := range ensureBlocks(block["hooks"]) {
+		entries := ensureBlocks(block["hooks"])
+		block["hooks"] = entries
+		for _, entry := range entries {
 			if stringValue(entry["name"]) == hookName || adapters.IsCommandMatch(stringValue(entry["command"]), "gemini") {
-				return blocks, false
+				changed := false
+				if stringValue(entry["name"]) != hookName {
+					entry["name"] = hookName
+					changed = true
+				}
+				if stringValue(entry["type"]) != "command" {
+					entry["type"] = "command"
+					changed = true
+				}
+				if stringValue(entry["command"]) != command {
+					entry["command"] = command
+					changed = true
+				}
+				return blocks, changed
 			}
 		}
 	}

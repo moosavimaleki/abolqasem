@@ -23,6 +23,7 @@ export function createViewerApp() {
     oldestCursor: "",
     hasMoreBefore: false,
     loadingOlder: false,
+    loadRequestId: 0,
     search: "",
     searchScope: "session",
     reader: {
@@ -47,6 +48,7 @@ export function createViewerApp() {
     messageSearchToggle: document.getElementById("message-search-toggle"),
     searchScopeChip: document.getElementById("search-scope-chip"),
     messageSearch: document.getElementById("message-search"),
+    refreshSession: document.getElementById("refresh-session"),
     activeSessionInfo: document.getElementById("active-session-info"),
     sessionInfoPopover: document.getElementById("session-info-popover"),
     sessionInfoBody: document.getElementById("session-info-body"),
@@ -96,6 +98,7 @@ export function createViewerApp() {
       runSearch();
       els.messageSearch.focus();
     });
+    els.refreshSession.addEventListener("click", refreshCurrentSession);
 
     els.activeSessionInfo.addEventListener("click", () => {
       toggleSessionInfoPopover();
@@ -167,14 +170,14 @@ export function createViewerApp() {
     });
   }
 
-  async function loadSessionList() {
+  async function loadSessionList(options = {}) {
     try {
       const data = await fetchSessions();
       state.sessions = data.items || [];
       renderSessions(getVisibleSessions());
       els.sessionCount.textContent = `${state.sessions.length} نشست`;
 
-      if (!state.currentSessionKey && state.sessions.length > 0) {
+      if (options.loadInitial !== false && !state.currentSessionKey && state.sessions.length > 0) {
         await loadSession(state.sessions[0].key);
       }
       if (state.sessions.length === 0) {
@@ -184,6 +187,29 @@ export function createViewerApp() {
       console.error(error);
       els.sessionCount.textContent = "خطا";
       renderEmptyState("نشست‌ها بارگذاری نشدند.", "ai-session-viewer server");
+    }
+  }
+
+  async function refreshCurrentSession() {
+    if (els.refreshSession.disabled) {
+      return;
+    }
+
+    const sessionKey = state.currentSessionKey;
+    els.refreshSession.disabled = true;
+    els.refreshSession.classList.add("is-loading");
+    try {
+      await loadSessionList({ loadInitial: false });
+      if (sessionKey && state.sessions.some((item) => item.key === sessionKey)) {
+        await loadSession(sessionKey);
+        return;
+      }
+      if (state.sessions.length > 0) {
+        await loadSession(state.sessions[0].key);
+      }
+    } finally {
+      els.refreshSession.disabled = false;
+      els.refreshSession.classList.remove("is-loading");
     }
   }
 
@@ -301,6 +327,7 @@ export function createViewerApp() {
   }
 
   async function loadSession(sessionKey) {
+    const requestId = ++state.loadRequestId;
     const session = state.sessions.find((item) => item.key === sessionKey);
     state.currentSessionKey = sessionKey;
     state.currentSessionName = session?.project_name || session?.session_id || "نشست بدون نام";
@@ -320,6 +347,9 @@ export function createViewerApp() {
 
     try {
       const data = await fetchMessages(sessionKey, { limit: 40 });
+      if (requestId !== state.loadRequestId) {
+        return;
+      }
       if (data.status === "metadata_only") {
         renderEmptyState("متن این نشست در دسترس نیست.", "");
         return;
@@ -329,6 +359,9 @@ export function createViewerApp() {
       state.hasMoreBefore = Boolean(data.has_more_before);
       renderMessages({ stickBottom: true });
     } catch (error) {
+      if (requestId !== state.loadRequestId) {
+        return;
+      }
       console.error(error);
       renderEmptyState("پیام‌های نشست بارگذاری نشدند.", "");
     }
