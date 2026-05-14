@@ -1,0 +1,11 @@
+{
+  "name": "rtl-viewer",
+  "version": "1.0.0",
+  "description": "Renders the current session in a beautiful RTL HTML view.",
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "RTL HTML Viewer",
+    "shortDescription": "View your chat in a browser with RTL support.",
+    "category": "Productivity"
+  }
+}

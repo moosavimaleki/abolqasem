@@ -1,0 +1,26 @@
+package cli
+
+import (
+	"fmt"
+
+	"github.com/spf13/cobra"
+)
+
+var startServer bool
+
+var openCmd = &cobra.Command{
+	Use:   "open",
+	Short: "Open the viewer in the default browser",
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Println("Opening browser...")
+		if startServer {
+			fmt.Println("Also starting server...")
+		}
+		// TODO: Implement open logic (check if server is running, use platform-specific open command)
+	},
+}
+
+func init() {
+	openCmd.Flags().BoolVar(&startServer, "start-server", false, "Start the server if it is not running")
+	rootCmd.AddCommand(openCmd)
+}
