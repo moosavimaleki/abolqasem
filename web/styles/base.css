@@ -73,12 +73,118 @@ body {
 }
 
 body {
+  --scrollbar-size: 11px;
+  --scrollbar-track: color-mix(in srgb, var(--bg) 72%, transparent);
+  --scrollbar-thumb: color-mix(in srgb, var(--text-muted) 54%, transparent);
+  --scrollbar-thumb-hover: color-mix(in srgb, var(--accent) 58%, var(--text-muted));
+
   background:
     var(--glow),
     linear-gradient(135deg, var(--bg-2), var(--bg) 58%);
   color: var(--text);
   font-family: var(--reader-font-family);
   transition: background var(--ease), color var(--ease);
+}
+
+.chat-messages,
+.sessions-list,
+.reader-scroll,
+.reader-toc,
+.settings-popover,
+.session-info-body,
+.file-preview-body,
+.table-wrap,
+.code-canvas,
+.code-canvas pre,
+.mermaid-canvas {
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  scrollbar-width: thin;
+}
+
+.chat-messages,
+.sessions-list,
+.reader-scroll,
+.reader-toc,
+.settings-popover,
+.session-info-body,
+.file-preview-body {
+  scrollbar-gutter: stable;
+}
+
+.chat-messages::-webkit-scrollbar,
+.sessions-list::-webkit-scrollbar,
+.reader-scroll::-webkit-scrollbar,
+.reader-toc::-webkit-scrollbar,
+.settings-popover::-webkit-scrollbar,
+.session-info-body::-webkit-scrollbar,
+.file-preview-body::-webkit-scrollbar,
+.table-wrap::-webkit-scrollbar,
+.code-canvas::-webkit-scrollbar,
+.code-canvas pre::-webkit-scrollbar,
+.mermaid-canvas::-webkit-scrollbar {
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
+}
+
+.chat-messages::-webkit-scrollbar-track,
+.sessions-list::-webkit-scrollbar-track,
+.reader-scroll::-webkit-scrollbar-track,
+.reader-toc::-webkit-scrollbar-track,
+.settings-popover::-webkit-scrollbar-track,
+.session-info-body::-webkit-scrollbar-track,
+.file-preview-body::-webkit-scrollbar-track,
+.table-wrap::-webkit-scrollbar-track,
+.code-canvas::-webkit-scrollbar-track,
+.code-canvas pre::-webkit-scrollbar-track,
+.mermaid-canvas::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+  border-radius: 999px;
+}
+
+.chat-messages::-webkit-scrollbar-thumb,
+.sessions-list::-webkit-scrollbar-thumb,
+.reader-scroll::-webkit-scrollbar-thumb,
+.reader-toc::-webkit-scrollbar-thumb,
+.settings-popover::-webkit-scrollbar-thumb,
+.session-info-body::-webkit-scrollbar-thumb,
+.file-preview-body::-webkit-scrollbar-thumb,
+.table-wrap::-webkit-scrollbar-thumb,
+.code-canvas::-webkit-scrollbar-thumb,
+.code-canvas pre::-webkit-scrollbar-thumb,
+.mermaid-canvas::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, var(--scrollbar-thumb-hover), var(--scrollbar-thumb));
+  background-clip: padding-box;
+  border: 3px solid transparent;
+  border-radius: 999px;
+}
+
+.chat-messages::-webkit-scrollbar-thumb:hover,
+.sessions-list::-webkit-scrollbar-thumb:hover,
+.reader-scroll::-webkit-scrollbar-thumb:hover,
+.reader-toc::-webkit-scrollbar-thumb:hover,
+.settings-popover::-webkit-scrollbar-thumb:hover,
+.session-info-body::-webkit-scrollbar-thumb:hover,
+.file-preview-body::-webkit-scrollbar-thumb:hover,
+.table-wrap::-webkit-scrollbar-thumb:hover,
+.code-canvas::-webkit-scrollbar-thumb:hover,
+.code-canvas pre::-webkit-scrollbar-thumb:hover,
+.mermaid-canvas::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+  background-clip: padding-box;
+}
+
+.chat-messages::-webkit-scrollbar-corner,
+.sessions-list::-webkit-scrollbar-corner,
+.reader-scroll::-webkit-scrollbar-corner,
+.reader-toc::-webkit-scrollbar-corner,
+.settings-popover::-webkit-scrollbar-corner,
+.session-info-body::-webkit-scrollbar-corner,
+.file-preview-body::-webkit-scrollbar-corner,
+.table-wrap::-webkit-scrollbar-corner,
+.code-canvas::-webkit-scrollbar-corner,
+.code-canvas pre::-webkit-scrollbar-corner,
+.mermaid-canvas::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 button,

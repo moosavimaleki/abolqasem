@@ -27,6 +27,21 @@ export async function fetchMessages(sessionKey, options = {}) {
   return response.json();
 }
 
+export async function fetchFilePreview(options = {}) {
+  const params = new URLSearchParams({
+    session_key: options.sessionKey || "",
+    path: options.path || "",
+    line: String(options.line || 1),
+  });
+
+  const response = await fetch(`/api/file-preview?${params.toString()}`);
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(detail.trim() || "Failed to fetch file preview");
+  }
+  return response.json();
+}
+
 export function connectSessionEvents(onEvent) {
   const source = new EventSource("/api/events");
   source.onmessage = (event) => {

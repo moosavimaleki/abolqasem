@@ -1,10 +1,11 @@
-import { connectSessionEvents, fetchMessages, fetchSessions } from "./api.js";
+import { connectSessionEvents, fetchFilePreview, fetchMessages, fetchSessions } from "./api.js";
 import { buildReaderTOC, renderMessageContent } from "./content-renderer.js";
 import { applySettings, clampFontSize, loadSettings, saveSettings, syncSettingsUI } from "./settings.js";
 import {
   agentLabel,
   copyText,
   debounce,
+  escapeHTML,
   formatClock,
   formatTime,
   isNearBottom,
@@ -41,6 +42,7 @@ export function createViewerApp() {
     eventSource: null,
     sessionNoticeTimer: null,
     sessionNoticeInterval: null,
+    filePreviewRequestId: 0,
   };
 
   const els = {
@@ -65,6 +67,11 @@ export function createViewerApp() {
     openSettings: document.getElementById("open-settings"),
     settingsPopover: document.getElementById("settings-popover"),
     closeSettings: document.getElementById("close-settings"),
+    filePreview: document.getElementById("file-preview"),
+    filePreviewTitle: document.getElementById("file-preview-title"),
+    filePreviewMeta: document.getElementById("file-preview-meta"),
+    filePreviewBody: document.getElementById("file-preview-body"),
+    closeFilePreview: document.getElementById("close-file-preview"),
     readerPage: document.getElementById("reader-page"),
     readerScroll: document.getElementById("reader-scroll"),
     readerContent: document.getElementById("reader-content"),
@@ -135,6 +142,12 @@ export function createViewerApp() {
       state.reader.search = els.readerSearch.value.trim();
       renderReader();
     }, 120));
+    els.closeFilePreview.addEventListener("click", closeFilePreview);
+    els.filePreview.addEventListener("click", (event) => {
+      if (event.target === els.filePreview) {
+        closeFilePreview();
+      }
+    });
 
     els.chat.addEventListener("scroll", async () => {
       syncJumpToEnd();
@@ -146,6 +159,8 @@ export function createViewerApp() {
       }
       await loadOlderMessages();
     });
+    els.chat.addEventListener("click", handleContentLinkClick);
+    els.readerContent.addEventListener("click", handleContentLinkClick);
     els.sessionsList.addEventListener("scroll", () => {
       hideSessionTooltip();
       maybeLoadMoreSessions();
@@ -177,6 +192,10 @@ export function createViewerApp() {
       }
       if (!els.sessionInfoPopover.classList.contains("hidden")) {
         closeSessionInfoPopover();
+        return;
+      }
+      if (!els.filePreview.classList.contains("hidden")) {
+        closeFilePreview();
         return;
       }
       if (state.reader.open) {
@@ -650,6 +669,172 @@ export function createViewerApp() {
     els.readerContent.appendChild(article);
     buildReaderTOC(els.readerContent, els.readerTocList);
     els.readerScroll.scrollTop = 0;
+  }
+
+  function handleContentLinkClick(event) {
+    const link = event.target.closest("a");
+    if (!link) {
+      return;
+    }
+
+    const reference = parseLocalFileReference(link.href);
+    if (!reference) {
+      return;
+    }
+
+    event.preventDefault();
+    openFilePreview(reference);
+  }
+
+  function parseLocalFileReference(href) {
+    let url;
+    try {
+      url = new URL(href, window.location.href);
+    } catch {
+      return null;
+    }
+
+    const host = url.hostname.toLowerCase();
+    const isLoopback = host === "127.0.0.1" || host === "localhost" || host === "::1" || host === "[::1]";
+    if (!isLoopback || url.port !== window.location.port) {
+      return null;
+    }
+
+    let path = decodeURIComponent(url.pathname);
+    const match = path.match(/^(.+):(\d+)(?::\d+)?$/);
+    if (!match) {
+      return null;
+    }
+
+    path = match[1];
+    if (/^\/[a-zA-Z]:\//.test(path)) {
+      path = path.slice(1);
+    }
+
+    return {
+      path,
+      line: Number(match[2]),
+    };
+  }
+
+  async function openFilePreview(reference) {
+    const requestId = ++state.filePreviewRequestId;
+    showFilePreviewLoading(reference);
+
+    if (!state.currentSessionKey) {
+      showFilePreviewError("برای نمایش فایل باید یک نشست فعال انتخاب شده باشد.");
+      return;
+    }
+
+    try {
+      const preview = await fetchFilePreview({
+        sessionKey: state.currentSessionKey,
+        path: reference.path,
+        line: reference.line,
+      });
+      if (requestId !== state.filePreviewRequestId) {
+        return;
+      }
+      renderFilePreview(preview);
+    } catch (error) {
+      if (requestId !== state.filePreviewRequestId) {
+        return;
+      }
+      console.error(error);
+      showFilePreviewError(filePreviewErrorMessage(error));
+    }
+  }
+
+  function showFilePreviewLoading(reference) {
+    els.filePreviewTitle.textContent = `${baseName(reference.path)}:${reference.line}`;
+    els.filePreviewMeta.textContent = reference.path;
+    els.filePreviewBody.replaceChildren();
+    const loading = document.createElement("p");
+    loading.className = "file-preview-loading";
+    loading.textContent = "در حال خواندن چند خط از فایل...";
+    els.filePreviewBody.appendChild(loading);
+    els.filePreview.classList.remove("hidden");
+    els.filePreview.setAttribute("aria-hidden", "false");
+  }
+
+  function renderFilePreview(preview) {
+    els.filePreviewTitle.textContent = `${baseName(preview.path)}:${preview.line}`;
+    els.filePreviewMeta.textContent = `${preview.path}:${preview.line}`;
+    els.filePreviewBody.replaceChildren();
+
+    const code = document.createElement("div");
+    code.className = "file-preview-code";
+    (preview.lines || []).forEach((line) => {
+      const row = document.createElement("div");
+      row.className = "file-preview-line";
+      row.classList.toggle("is-highlighted", Boolean(line.highlight));
+
+      const number = document.createElement("span");
+      number.className = "file-preview-line-number";
+      number.textContent = String(line.number);
+
+      const content = document.createElement("span");
+      content.className = "file-preview-line-code";
+      content.innerHTML = highlightPreviewLine(line.text || "", preview.language);
+
+      row.append(number, content);
+      code.appendChild(row);
+    });
+
+    els.filePreviewBody.appendChild(code);
+  }
+
+  function highlightPreviewLine(text, language) {
+    if (!window.hljs) {
+      return escapeHTML(text);
+    }
+    try {
+      if (language && language !== "plaintext" && window.hljs.getLanguage?.(language)) {
+        return window.hljs.highlight(text, { language, ignoreIllegals: true }).value;
+      }
+      return escapeHTML(text);
+    } catch (error) {
+      console.warn("File preview highlighting failed", error);
+      return escapeHTML(text);
+    }
+  }
+
+  function closeFilePreview() {
+    state.filePreviewRequestId += 1;
+    els.filePreview.classList.add("hidden");
+    els.filePreview.setAttribute("aria-hidden", "true");
+    els.filePreviewBody.replaceChildren();
+  }
+
+  function showFilePreviewError(message) {
+    els.filePreviewBody.replaceChildren();
+    const error = document.createElement("p");
+    error.className = "file-preview-error";
+    error.textContent = message;
+    els.filePreviewBody.appendChild(error);
+    els.filePreview.classList.remove("hidden");
+    els.filePreview.setAttribute("aria-hidden", "false");
+  }
+
+  function filePreviewErrorMessage(error) {
+    const message = String(error?.message || "");
+    if (message.includes("not allowed")) {
+      return "این فایل خارج از مسیر پروژه همین نشست است و برای امنیت نمایش داده نمی‌شود.";
+    }
+    if (message.includes("too large")) {
+      return "این فایل برای preview خیلی بزرگ است.";
+    }
+    if (message.includes("supported text/code")) {
+      return "این مسیر جزو فایل‌های متنی/کدی مجاز برای preview نیست.";
+    }
+    if (message.includes("not found")) {
+      return "فایل یا خط مورد نظر پیدا نشد.";
+    }
+    return "نمایش فایل ناموفق بود.";
+  }
+
+  function baseName(path) {
+    return String(path || "").split(/[\\/]/).filter(Boolean).pop() || "file";
   }
 
   function renderEmptyState(text, code) {

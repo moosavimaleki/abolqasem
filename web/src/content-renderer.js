@@ -2,6 +2,7 @@ import { copyText, escapeHTML, escapeRegExp } from "./utils.js";
 
 let mermaidReady = false;
 let mermaidSequence = 0;
+const localFileURLPattern = /\bhttps?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?\/[^\s<>"`]+?:\d+(?::\d+)?/gi;
 
 export function renderMessageContent(message, mode = "chat", search = "") {
   const body = document.createElement("div");
@@ -9,6 +10,7 @@ export function renderMessageContent(message, mode = "chat", search = "") {
   body.dataset.mode = mode;
   body.innerHTML = message.html || escapeHTML(message.text || "");
 
+  linkifyLocalFileReferences(body);
   enhanceContent(body);
   wrapPersianRuns(body);
   if (search) {
@@ -94,6 +96,54 @@ export function highlightText(root, query) {
       mark.textContent = match[0];
       fragment.appendChild(mark);
       lastIndex = match.index + match[0].length;
+    }
+
+    fragment.appendChild(document.createTextNode(text.slice(lastIndex)));
+    node.parentNode.replaceChild(fragment, node);
+  });
+}
+
+function linkifyLocalFileReferences(root) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      if (!node.nodeValue || !localFileURLPattern.test(node.nodeValue)) {
+        localFileURLPattern.lastIndex = 0;
+        return NodeFilter.FILTER_REJECT;
+      }
+      localFileURLPattern.lastIndex = 0;
+      if (node.parentElement?.closest("a, pre, code, kbd, samp, script, style")) {
+        return NodeFilter.FILTER_REJECT;
+      }
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+  const nodes = [];
+
+  while (walker.nextNode()) {
+    nodes.push(walker.currentNode);
+  }
+
+  nodes.forEach((node) => {
+    const text = node.nodeValue || "";
+    const fragment = document.createDocumentFragment();
+    let lastIndex = 0;
+    localFileURLPattern.lastIndex = 0;
+    let match;
+
+    while ((match = localFileURLPattern.exec(text))) {
+      const rawURL = match[0];
+      const trimmedURL = rawURL.replace(/[)\].,;!?]+$/g, "");
+      const trailing = rawURL.slice(trimmedURL.length);
+      fragment.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
+
+      const link = document.createElement("a");
+      link.href = trimmedURL;
+      link.textContent = trimmedURL;
+      fragment.appendChild(link);
+      if (trailing) {
+        fragment.appendChild(document.createTextNode(trailing));
+      }
+      lastIndex = match.index + rawURL.length;
     }
 
     fragment.appendChild(document.createTextNode(text.slice(lastIndex)));

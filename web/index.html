@@ -124,6 +124,19 @@
     </section>
   </div>
 
+  <section id="file-preview" class="file-preview hidden" role="dialog" aria-labelledby="file-preview-title" aria-hidden="true">
+    <div class="file-preview-panel">
+      <header class="file-preview-header">
+        <div>
+          <strong id="file-preview-title">نمایش فایل</strong>
+          <code id="file-preview-meta"></code>
+        </div>
+        <button id="close-file-preview" class="icon-button subtle" type="button" data-icon="close" aria-label="بستن نمایش فایل"></button>
+      </header>
+      <div id="file-preview-body" class="file-preview-body"></div>
+    </div>
+  </section>
+
   <script src="/vendor/highlight/highlight.min.js"></script>
   <script src="/vendor/mermaid/mermaid.min.js"></script>
   <script type="module" src="/app.js"></script>

@@ -63,7 +63,8 @@
 .message-card.user {
   width: fit-content;
   max-width: min(58%, 460px);
-  margin-inline-start: auto;
+  margin-inline-start: 0;
+  margin-inline-end: auto;
   border-radius: 14px;
   padding: 14px 18px 10px;
   background: rgba(255, 255, 255, 0.07);
