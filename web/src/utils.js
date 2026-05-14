@@ -101,19 +101,23 @@ export function copyText(text) {
 }
 
 export function scrollToBottom(element) {
+  element.scrollTop = element.scrollHeight;
   let frame = 0;
   const pin = () => {
-    element.scrollTo({ top: element.scrollHeight, behavior: "auto" });
+    element.scrollTop = element.scrollHeight;
     frame += 1;
-    if (frame < 6) {
+    if (frame < 12) {
       requestAnimationFrame(pin);
     }
   };
 
   requestAnimationFrame(pin);
   window.setTimeout(() => {
-    element.scrollTo({ top: element.scrollHeight, behavior: "auto" });
+    element.scrollTop = element.scrollHeight;
   }, 120);
+  window.setTimeout(() => {
+    element.scrollTop = element.scrollHeight;
+  }, 320);
 }
 
 export function isNearBottom(element, threshold = 120) {

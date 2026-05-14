@@ -450,7 +450,7 @@ export function createViewerApp() {
     card.appendChild(content);
 
     if (message.role === "assistant") {
-      card.appendChild(renderAssistantActions(message, "bottom"));
+      card.appendChild(renderAssistantActions(message));
     }
 
     if (message.role === "user" && message.createdAtLabel) {
@@ -463,9 +463,9 @@ export function createViewerApp() {
     return card;
   }
 
-  function renderAssistantActions(message, position) {
+  function renderAssistantActions(message) {
     const actions = document.createElement("div");
-    actions.className = `message-card-actions ${position}`;
+    actions.className = "message-card-actions";
     actions.append(
       iconAction("content_copy", "کپی پاسخ", () => copyText(message.text)),
       iconAction("menu_book", "حالت خواندن", () => openReader(message.id)),
@@ -822,7 +822,7 @@ export function createViewerApp() {
     };
     const updateCountdown = () => {
       action.textContent = `رفتن به این چت (${remainingSeconds})`;
-      notice.style.setProperty("--notice-progress", String(Math.max(0, remainingSeconds / durationSeconds)));
+      action.style.setProperty("--notice-progress", String(Math.max(0, remainingSeconds / durationSeconds)));
     };
 
     notice.querySelector(".session-notice-text").textContent = `نشست به‌روزرسانی شد: ${title}`;

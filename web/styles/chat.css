@@ -83,9 +83,6 @@
   display: flex;
   gap: 6px;
   opacity: 0.72;
-}
-
-.message-card-actions.bottom {
   position: static;
   direction: ltr;
   justify-content: flex-start;
