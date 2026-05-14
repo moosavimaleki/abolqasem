@@ -29,10 +29,17 @@ export async function fetchMessages(sessionKey, options = {}) {
 
 export async function fetchFilePreview(options = {}) {
   const params = new URLSearchParams({
-    session_key: options.sessionKey || "",
     path: options.path || "",
-    line: String(options.line || 1),
   });
+  if (options.sessionKey) {
+    params.set("session_key", options.sessionKey);
+  }
+  if (options.line) {
+    params.set("line", String(options.line));
+  }
+  if (options.full) {
+    params.set("full", "1");
+  }
 
   const response = await fetch(`/api/file-preview?${params.toString()}`);
   if (!response.ok) {

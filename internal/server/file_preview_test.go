@@ -16,7 +16,7 @@ func TestBuildFilePreviewReturnsSmallWindow(t *testing.T) {
 		t.Fatalf("write file: %v", err)
 	}
 
-	preview, err := buildFilePreview(root, path, 6)
+	preview, err := buildFilePreview([]string{root}, path, 6, filePreviewOptions{})
 	if err != nil {
 		t.Fatalf("buildFilePreview returned error: %v", err)
 	}
@@ -31,6 +31,29 @@ func TestBuildFilePreviewReturnsSmallWindow(t *testing.T) {
 	}
 }
 
+func TestBuildFilePreviewReturnsFullFile(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "service.py")
+	body := "line 1\nline 2\nline 3\nline 4\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	preview, err := buildFilePreview([]string{root}, path, 3, filePreviewOptions{Full: true})
+	if err != nil {
+		t.Fatalf("buildFilePreview returned error: %v", err)
+	}
+	if !preview.Full {
+		t.Fatal("expected full preview")
+	}
+	if len(preview.Lines) != 4 {
+		t.Fatalf("expected full file, got %d lines", len(preview.Lines))
+	}
+	if !preview.Lines[2].Highlight {
+		t.Fatalf("expected target line highlighted, got %+v", preview.Lines[2])
+	}
+}
+
 func TestBuildFilePreviewRejectsOutsideRoot(t *testing.T) {
 	root := t.TempDir()
 	outside := filepath.Join(t.TempDir(), "secret.py")
@@ -38,7 +61,7 @@ func TestBuildFilePreviewRejectsOutsideRoot(t *testing.T) {
 		t.Fatalf("write outside file: %v", err)
 	}
 
-	_, err := buildFilePreview(root, outside, 1)
+	_, err := buildFilePreview([]string{root}, outside, 1, filePreviewOptions{})
 	if !errors.Is(err, errFilePreviewForbidden) {
 		t.Fatalf("expected forbidden, got %v", err)
 	}
@@ -59,7 +82,7 @@ func TestBuildFilePreviewRejectsSymlinkEscape(t *testing.T) {
 		t.Fatalf("create symlink: %v", err)
 	}
 
-	_, err := buildFilePreview(root, link, 1)
+	_, err := buildFilePreview([]string{root}, link, 1, filePreviewOptions{})
 	if !errors.Is(err, errFilePreviewForbidden) {
 		t.Fatalf("expected forbidden symlink escape, got %v", err)
 	}
@@ -72,8 +95,18 @@ func TestBuildFilePreviewRejectsSensitiveName(t *testing.T) {
 		t.Fatalf("write file: %v", err)
 	}
 
-	_, err := buildFilePreview(root, path, 1)
+	_, err := buildFilePreview([]string{root}, path, 1, filePreviewOptions{})
 	if !errors.Is(err, errFilePreviewUnsupported) {
 		t.Fatalf("expected unsupported sensitive file, got %v", err)
+	}
+}
+
+func TestSafePreviewRootRejectsHome(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skipf("home unavailable: %v", err)
+	}
+	if _, ok := safePreviewRoot(home); ok {
+		t.Fatalf("expected home root to be rejected: %s", home)
 	}
 }

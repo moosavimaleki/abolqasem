@@ -2,7 +2,7 @@ import { copyText, escapeHTML, escapeRegExp } from "./utils.js";
 
 let mermaidReady = false;
 let mermaidSequence = 0;
-const localFileURLPattern = /\bhttps?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?\/[^\s<>"`]+?:\d+(?::\d+)?/gi;
+const localFileURLPattern = /\bhttps?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?\/[^\s<>"`]+(?::\d+(?::\d+)?)?/gi;
 
 export function renderMessageContent(message, mode = "chat", search = "") {
   const body = document.createElement("div");

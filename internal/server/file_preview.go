@@ -13,7 +13,7 @@ import (
 
 const (
 	filePreviewContextLines = 8
-	maxFilePreviewBytes     = 2 * 1024 * 1024
+	maxFilePreviewBytes     = 4 * 1024 * 1024
 	maxFilePreviewLineBytes = 1024 * 1024
 )
 
@@ -27,10 +27,15 @@ var (
 type filePreviewResponse struct {
 	Path      string            `json:"path"`
 	Line      int               `json:"line"`
+	Full      bool              `json:"full"`
 	StartLine int               `json:"start_line"`
 	EndLine   int               `json:"end_line"`
 	Language  string            `json:"language"`
 	Lines     []filePreviewLine `json:"lines"`
+}
+
+type filePreviewOptions struct {
+	Full bool
 }
 
 type filePreviewLine struct {
@@ -47,9 +52,10 @@ func handleAPIFilePreview(w http.ResponseWriter, r *http.Request) {
 
 	sessionKey := strings.TrimSpace(r.URL.Query().Get("session_key"))
 	requestedPath := strings.TrimSpace(r.URL.Query().Get("path"))
-	line := parsePositiveInt(r.URL.Query().Get("line"), 1)
-	if sessionKey == "" || requestedPath == "" {
-		http.Error(w, "session_key and path are required", http.StatusBadRequest)
+	line := parsePositiveInt(r.URL.Query().Get("line"), 0)
+	options := filePreviewOptions{Full: isTruthyQueryValue(r.URL.Query().Get("full"))}
+	if requestedPath == "" {
+		http.Error(w, "path is required", http.StatusBadRequest)
 		return
 	}
 
@@ -58,13 +64,18 @@ func handleAPIFilePreview(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	sessionMeta, ok := appState.Sessions[sessionKey]
-	if !ok {
-		http.Error(w, "Session not found", http.StatusNotFound)
-		return
+	roots := []string{}
+	if sessionKey != "" {
+		sessionMeta, ok := appState.Sessions[sessionKey]
+		if !ok {
+			http.Error(w, "Session not found", http.StatusNotFound)
+			return
+		}
+		roots = append(roots, sessionMeta.Cwd)
 	}
+	roots = append(roots, previewRootsFromState(appState)...)
 
-	preview, err := buildFilePreview(sessionMeta.Cwd, requestedPath, line)
+	preview, err := buildFilePreview(roots, requestedPath, line, options)
 	if err != nil {
 		http.Error(w, err.Error(), filePreviewStatus(err))
 		return
@@ -72,12 +83,12 @@ func handleAPIFilePreview(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, preview)
 }
 
-func buildFilePreview(rootPath, requestedPath string, line int) (filePreviewResponse, error) {
-	if line <= 0 {
+func buildFilePreview(rootPaths []string, requestedPath string, line int, options filePreviewOptions) (filePreviewResponse, error) {
+	if line <= 0 && !options.Full {
 		line = 1
 	}
 
-	targetPath, err := resolvePreviewPath(rootPath, requestedPath)
+	targetPath, err := resolvePreviewPath(rootPaths, requestedPath)
 	if err != nil {
 		return filePreviewResponse{}, err
 	}
@@ -99,7 +110,7 @@ func buildFilePreview(rootPath, requestedPath string, line int) (filePreviewResp
 		return filePreviewResponse{}, errFilePreviewTooLarge
 	}
 
-	lines, err := readPreviewLines(targetPath, line)
+	lines, err := readPreviewLines(targetPath, line, options)
 	if err != nil {
 		return filePreviewResponse{}, err
 	}
@@ -110,6 +121,7 @@ func buildFilePreview(rootPath, requestedPath string, line int) (filePreviewResp
 	return filePreviewResponse{
 		Path:      targetPath,
 		Line:      line,
+		Full:      options.Full,
 		StartLine: lines[0].Number,
 		EndLine:   lines[len(lines)-1].Number,
 		Language:  languageForPath(targetPath),
@@ -117,19 +129,9 @@ func buildFilePreview(rootPath, requestedPath string, line int) (filePreviewResp
 	}, nil
 }
 
-func resolvePreviewPath(rootPath, requestedPath string) (string, error) {
-	rootPath = strings.TrimSpace(rootPath)
+func resolvePreviewPath(rootPaths []string, requestedPath string) (string, error) {
 	requestedPath = cleanRequestedPreviewPath(requestedPath)
-	if rootPath == "" || requestedPath == "" || !filepath.IsAbs(requestedPath) {
-		return "", errFilePreviewForbidden
-	}
-
-	rootAbs, err := filepath.Abs(rootPath)
-	if err != nil {
-		return "", errFilePreviewForbidden
-	}
-	rootEval, err := filepath.EvalSymlinks(rootAbs)
-	if err != nil {
+	if requestedPath == "" || !filepath.IsAbs(requestedPath) {
 		return "", errFilePreviewForbidden
 	}
 	targetEval, err := filepath.EvalSymlinks(requestedPath)
@@ -140,11 +142,17 @@ func resolvePreviewPath(rootPath, requestedPath string) (string, error) {
 		return "", err
 	}
 
-	rel, err := filepath.Rel(rootEval, targetEval)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
-		return "", errFilePreviewForbidden
+	for _, rootPath := range rootPaths {
+		rootEval, ok := safePreviewRoot(rootPath)
+		if !ok {
+			continue
+		}
+		rel, err := filepath.Rel(rootEval, targetEval)
+		if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel) {
+			return targetEval, nil
+		}
 	}
-	return targetEval, nil
+	return "", errFilePreviewForbidden
 }
 
 func cleanRequestedPreviewPath(path string) string {
@@ -158,13 +166,7 @@ func cleanRequestedPreviewPath(path string) string {
 	return filepath.Clean(path)
 }
 
-func readPreviewLines(path string, targetLine int) ([]filePreviewLine, error) {
-	start := targetLine - filePreviewContextLines
-	if start < 1 {
-		start = 1
-	}
-	end := targetLine + filePreviewContextLines
-
+func readPreviewLines(path string, targetLine int, options filePreviewOptions) ([]filePreviewLine, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -177,26 +179,95 @@ func readPreviewLines(path string, targetLine int) ([]filePreviewLine, error) {
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 0, 64*1024), maxFilePreviewLineBytes)
 
-	lines := make([]filePreviewLine, 0, (end-start)+1)
+	start := 1
+	end := 0
+	if !options.Full {
+		start = targetLine - filePreviewContextLines
+		if start < 1 {
+			start = 1
+		}
+		end = targetLine + filePreviewContextLines
+	}
+
+	lines := make([]filePreviewLine, 0, 256)
 	number := 0
 	for scanner.Scan() {
 		number++
 		if number < start {
 			continue
 		}
-		if number > end {
+		if end > 0 && number > end {
 			break
 		}
 		lines = append(lines, filePreviewLine{
 			Number:    number,
 			Text:      scanner.Text(),
-			Highlight: number == targetLine,
+			Highlight: targetLine > 0 && number == targetLine,
 		})
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, errFilePreviewUnsupported
 	}
 	return lines, nil
+}
+
+func previewRootsFromState(appState *state.AppState) []string {
+	roots := make([]string, 0, len(appState.Sessions))
+	seen := map[string]bool{}
+	for _, meta := range appState.Sessions {
+		rootEval, ok := safePreviewRoot(meta.Cwd)
+		if !ok || seen[rootEval] {
+			continue
+		}
+		seen[rootEval] = true
+		roots = append(roots, rootEval)
+	}
+	return roots
+}
+
+func safePreviewRoot(rootPath string) (string, bool) {
+	rootPath = strings.TrimSpace(rootPath)
+	if rootPath == "" {
+		return "", false
+	}
+	rootAbs, err := filepath.Abs(rootPath)
+	if err != nil {
+		return "", false
+	}
+	rootEval, err := filepath.EvalSymlinks(rootAbs)
+	if err != nil {
+		return "", false
+	}
+	if isBroadPreviewRoot(rootEval) {
+		return "", false
+	}
+	return rootEval, true
+}
+
+func isBroadPreviewRoot(rootPath string) bool {
+	clean := filepath.Clean(rootPath)
+	if clean == string(filepath.Separator) || clean == "." {
+		return true
+	}
+	if volume := filepath.VolumeName(clean); volume != "" && clean == volume+string(filepath.Separator) {
+		return true
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		homeEval, evalErr := filepath.EvalSymlinks(home)
+		if evalErr == nil && filepath.Clean(homeEval) == clean {
+			return true
+		}
+	}
+	return false
+}
+
+func isTruthyQueryValue(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "on", "full":
+		return true
+	default:
+		return false
+	}
 }
 
 func filePreviewStatus(err error) int {

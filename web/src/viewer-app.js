@@ -43,6 +43,8 @@ export function createViewerApp() {
     sessionNoticeTimer: null,
     sessionNoticeInterval: null,
     filePreviewRequestId: 0,
+    filePreviewDirectURL: "",
+    filePreviewFromRoute: false,
   };
 
   const els = {
@@ -71,6 +73,7 @@ export function createViewerApp() {
     filePreviewTitle: document.getElementById("file-preview-title"),
     filePreviewMeta: document.getElementById("file-preview-meta"),
     filePreviewBody: document.getElementById("file-preview-body"),
+    openFilePreviewLink: document.getElementById("open-file-preview-link"),
     closeFilePreview: document.getElementById("close-file-preview"),
     readerPage: document.getElementById("reader-page"),
     readerScroll: document.getElementById("reader-scroll"),
@@ -90,6 +93,7 @@ export function createViewerApp() {
       bindEvents();
       loadSessionList();
       state.eventSource = connectSessionEvents(handleSessionEvent);
+      openInitialFileRoute();
     },
   };
 
@@ -142,9 +146,14 @@ export function createViewerApp() {
       state.reader.search = els.readerSearch.value.trim();
       renderReader();
     }, 120));
+    els.openFilePreviewLink.addEventListener("click", () => {
+      if (state.filePreviewDirectURL) {
+        window.open(state.filePreviewDirectURL, "_blank", "noopener,noreferrer");
+      }
+    });
     els.closeFilePreview.addEventListener("click", closeFilePreview);
     els.filePreview.addEventListener("click", (event) => {
-      if (event.target === els.filePreview) {
+      if (!state.filePreviewFromRoute && event.target === els.filePreview) {
         closeFilePreview();
       }
     });
@@ -194,8 +203,11 @@ export function createViewerApp() {
         closeSessionInfoPopover();
         return;
       }
-      if (!els.filePreview.classList.contains("hidden")) {
+      if (!els.filePreview.classList.contains("hidden") && !state.filePreviewFromRoute) {
         closeFilePreview();
+        return;
+      }
+      if (!els.filePreview.classList.contains("hidden")) {
         return;
       }
       if (state.reader.open) {
@@ -683,7 +695,7 @@ export function createViewerApp() {
     }
 
     event.preventDefault();
-    openFilePreview(reference);
+    openFilePreview(reference, { sessionKey: state.currentSessionKey });
   }
 
   function parseLocalFileReference(href) {
@@ -696,41 +708,69 @@ export function createViewerApp() {
 
     const host = url.hostname.toLowerCase();
     const isLoopback = host === "127.0.0.1" || host === "localhost" || host === "::1" || host === "[::1]";
-    if (!isLoopback || url.port !== window.location.port) {
+    if (!isLoopback || normalizePort(url) !== normalizePort(window.location)) {
       return null;
     }
 
     let path = decodeURIComponent(url.pathname);
+    let line = 0;
     const match = path.match(/^(.+):(\d+)(?::\d+)?$/);
-    if (!match) {
-      return null;
+    if (match) {
+      path = match[1];
+      line = Number(match[2]);
     }
 
-    path = match[1];
     if (/^\/[a-zA-Z]:\//.test(path)) {
       path = path.slice(1);
+    }
+    if (!looksLikeLocalFilePath(path)) {
+      return null;
     }
 
     return {
       path,
-      line: Number(match[2]),
+      line,
+      directURL: buildLocalFileURL(path, line),
     };
   }
 
-  async function openFilePreview(reference) {
-    const requestId = ++state.filePreviewRequestId;
-    showFilePreviewLoading(reference);
+  function normalizePort(locationLike) {
+    if (locationLike.port) {
+      return locationLike.port;
+    }
+    return locationLike.protocol === "https:" ? "443" : "80";
+  }
 
-    if (!state.currentSessionKey) {
-      showFilePreviewError("برای نمایش فایل باید یک نشست فعال انتخاب شده باشد.");
+  function looksLikeLocalFilePath(path) {
+    return /^\/(home|Users|tmp|var)\//.test(path) || /^[a-zA-Z]:\//.test(path);
+  }
+
+  function buildLocalFileURL(path, line = 0) {
+    const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+    const suffix = line ? `:${line}` : "";
+    return `${window.location.origin}${encodeURI(normalizedPath)}${suffix}`;
+  }
+
+  function openInitialFileRoute() {
+    const reference = parseLocalFileReference(window.location.href);
+    if (!reference) {
       return;
     }
+    openFilePreview(reference, { fromRoute: true });
+  }
+
+  async function openFilePreview(reference, options = {}) {
+    const requestId = ++state.filePreviewRequestId;
+    state.filePreviewFromRoute = Boolean(options.fromRoute);
+    state.filePreviewDirectURL = reference.directURL || buildLocalFileURL(reference.path, reference.line);
+    showFilePreviewLoading(reference);
 
     try {
       const preview = await fetchFilePreview({
-        sessionKey: state.currentSessionKey,
+        sessionKey: options.sessionKey || "",
         path: reference.path,
         line: reference.line,
+        full: true,
       });
       if (requestId !== state.filePreviewRequestId) {
         return;
@@ -746,28 +786,34 @@ export function createViewerApp() {
   }
 
   function showFilePreviewLoading(reference) {
-    els.filePreviewTitle.textContent = `${baseName(reference.path)}:${reference.line}`;
+    syncFilePreviewMode();
+    els.filePreviewTitle.textContent = filePreviewTitle(reference.path, reference.line);
     els.filePreviewMeta.textContent = reference.path;
     els.filePreviewBody.replaceChildren();
     const loading = document.createElement("p");
     loading.className = "file-preview-loading";
-    loading.textContent = "در حال خواندن چند خط از فایل...";
+    loading.textContent = "در حال خواندن فایل...";
     els.filePreviewBody.appendChild(loading);
     els.filePreview.classList.remove("hidden");
     els.filePreview.setAttribute("aria-hidden", "false");
   }
 
   function renderFilePreview(preview) {
-    els.filePreviewTitle.textContent = `${baseName(preview.path)}:${preview.line}`;
-    els.filePreviewMeta.textContent = `${preview.path}:${preview.line}`;
+    syncFilePreviewMode();
+    els.filePreviewTitle.textContent = filePreviewTitle(preview.path, preview.line);
+    els.filePreviewMeta.textContent = preview.line ? `${preview.path}:${preview.line}` : preview.path;
     els.filePreviewBody.replaceChildren();
 
     const code = document.createElement("div");
     code.className = "file-preview-code";
+    let highlightedRow = null;
     (preview.lines || []).forEach((line) => {
       const row = document.createElement("div");
       row.className = "file-preview-line";
       row.classList.toggle("is-highlighted", Boolean(line.highlight));
+      if (line.highlight) {
+        highlightedRow = row;
+      }
 
       const number = document.createElement("span");
       number.className = "file-preview-line-number";
@@ -782,6 +828,11 @@ export function createViewerApp() {
     });
 
     els.filePreviewBody.appendChild(code);
+    if (highlightedRow) {
+      window.requestAnimationFrame(() => {
+        highlightedRow.scrollIntoView({ block: "center" });
+      });
+    }
   }
 
   function highlightPreviewLine(text, language) {
@@ -800,13 +851,20 @@ export function createViewerApp() {
   }
 
   function closeFilePreview() {
+    if (state.filePreviewFromRoute) {
+      return;
+    }
     state.filePreviewRequestId += 1;
+    state.filePreviewFromRoute = false;
+    state.filePreviewDirectURL = "";
+    syncFilePreviewMode();
     els.filePreview.classList.add("hidden");
     els.filePreview.setAttribute("aria-hidden", "true");
     els.filePreviewBody.replaceChildren();
   }
 
   function showFilePreviewError(message) {
+    syncFilePreviewMode();
     els.filePreviewBody.replaceChildren();
     const error = document.createElement("p");
     error.className = "file-preview-error";
@@ -816,10 +874,18 @@ export function createViewerApp() {
     els.filePreview.setAttribute("aria-hidden", "false");
   }
 
+  function syncFilePreviewMode() {
+    const routeMode = Boolean(state.filePreviewFromRoute);
+    els.filePreview.classList.toggle("is-route", routeMode);
+    els.filePreview.classList.toggle("is-modal", !routeMode);
+    els.openFilePreviewLink.classList.toggle("hidden", routeMode);
+    els.closeFilePreview.classList.toggle("hidden", routeMode);
+  }
+
   function filePreviewErrorMessage(error) {
     const message = String(error?.message || "");
     if (message.includes("not allowed")) {
-      return "این فایل خارج از مسیر پروژه همین نشست است و برای امنیت نمایش داده نمی‌شود.";
+      return "این فایل خارج از مسیر پروژه‌های شناخته‌شده است و برای امنیت نمایش داده نمی‌شود.";
     }
     if (message.includes("too large")) {
       return "این فایل برای preview خیلی بزرگ است.";
@@ -835,6 +901,10 @@ export function createViewerApp() {
 
   function baseName(path) {
     return String(path || "").split(/[\\/]/).filter(Boolean).pop() || "file";
+  }
+
+  function filePreviewTitle(path, line) {
+    return line ? `${baseName(path)}:${line}` : baseName(path);
   }
 
   function renderEmptyState(text, code) {
