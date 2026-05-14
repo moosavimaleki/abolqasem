@@ -85,13 +85,6 @@
   opacity: 0.72;
 }
 
-.message-card-actions.top {
-  position: absolute;
-  top: 16px;
-  left: 18px;
-  right: auto;
-}
-
 .message-card-actions.bottom {
   position: static;
   direction: ltr;
@@ -106,9 +99,10 @@
 }
 
 .inline-icon {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
 }
 
 .inline-icon:hover {

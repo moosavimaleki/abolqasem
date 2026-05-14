@@ -21,6 +21,8 @@
   white-space: nowrap;
   word-wrap: normal;
   direction: ltr;
+  margin: 0;
+  transform: translateZ(0);
   -webkit-font-feature-settings: "liga";
   font-feature-settings: "liga";
   font-variation-settings:

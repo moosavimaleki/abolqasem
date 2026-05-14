@@ -439,10 +439,6 @@ export function createViewerApp() {
     card.className = `message-card ${message.roleClass}`;
     card.id = message.domId;
 
-    if (message.role === "assistant") {
-      card.appendChild(renderAssistantActions(message, "top"));
-    }
-
     if (message.role === "system") {
       const label = document.createElement("p");
       label.className = "message-label";
