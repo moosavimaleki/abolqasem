@@ -16,6 +16,7 @@ const (
 
 type ServerConfig struct {
 	BaseURL string `json:"base_url"`
+	PID     int    `json:"pid,omitempty"`
 }
 
 func GetServerConfigPath() string {
@@ -52,11 +53,34 @@ func LoadServerBaseURL() string {
 }
 
 func SaveServerBaseURL(baseURL string) error {
+	return SaveServerRuntime(baseURL, 0)
+}
+
+func LoadServerPID() int {
+	data, err := os.ReadFile(GetServerConfigPath())
+	if err != nil {
+		return 0
+	}
+
+	var cfg ServerConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return 0
+	}
+	if cfg.PID < 0 {
+		return 0
+	}
+	return cfg.PID
+}
+
+func SaveServerRuntime(baseURL string, pid int) error {
 	baseURL = strings.TrimSpace(baseURL)
 	if baseURL == "" {
 		baseURL = DefaultBaseURL(DefaultPort)
 	}
-	data, err := json.MarshalIndent(ServerConfig{BaseURL: baseURL}, "", "  ")
+	if pid < 0 {
+		pid = 0
+	}
+	data, err := json.MarshalIndent(ServerConfig{BaseURL: baseURL, PID: pid}, "", "  ")
 	if err != nil {
 		return err
 	}

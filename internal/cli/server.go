@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"net/url"
+	"os"
 	"strconv"
 	"time"
 
@@ -39,10 +40,10 @@ var serverCmd = &cobra.Command{
 		if err := state.SaveState(appState); err != nil {
 			log.Printf("Warning: failed to persist migrated state: %v", err)
 		}
-		if err := state.SaveServerBaseURL((&url.URL{
+		if err := state.SaveServerRuntime((&url.URL{
 			Scheme: "http",
 			Host:   "127.0.0.1:" + strconv.Itoa(actualPort),
-		}).String()); err != nil {
+		}).String(), os.Getpid()); err != nil {
 			log.Printf("Warning: failed to persist server URL: %v", err)
 		}
 
@@ -64,8 +65,8 @@ func init() {
 func serverListener() (net.Listener, int, error) {
 	if autoPort {
 		for {
-			if baseURL, ok := discoverRunningServer(); ok {
-				_ = state.SaveServerBaseURL(baseURL)
+			if baseURL, info, ok := discoverRunningServerInfo(); ok {
+				_ = state.SaveServerRuntime(baseURL, info.PID)
 				log.Printf("Server already healthy at %s; waiting before taking over", baseURL)
 				time.Sleep(30 * time.Second)
 				continue

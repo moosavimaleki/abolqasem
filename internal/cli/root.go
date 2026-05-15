@@ -22,5 +22,5 @@ func Execute() {
 }
 
 func init() {
-	// Root flags can be added here
+	rootCmd.CompletionOptions.DisableDefaultCmd = true
 }

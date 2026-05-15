@@ -13,6 +13,11 @@ import (
 
 type CodexAdapter struct{}
 
+const (
+	promptSubmitHookEvent       = "UserPromptSubmit"
+	legacyPromptSubmitHookEvent = "PromptSubmitted"
+)
+
 func New() adapters.AgentAdapter {
 	return &CodexAdapter{}
 }
@@ -58,8 +63,14 @@ func (a *CodexAdapter) InstallHook(scope adapters.InstallScope) error {
 	hooks := ensureMap(cfg, "hooks")
 	stopBlocks := ensureHookBlocks(hooks["Stop"])
 	hooks["Stop"], _ = ensureCodexHook(stopBlocks)
-	promptBlocks := ensureHookBlocks(hooks["PromptSubmitted"])
-	hooks["PromptSubmitted"], _ = ensureCodexEnsureServerHook(promptBlocks)
+	legacyPromptBlocks, removedLegacyPrompt := removeCodexEnsureServerHook(ensureHookBlocks(hooks[legacyPromptSubmitHookEvent]))
+	if removedLegacyPrompt && len(legacyPromptBlocks) == 0 {
+		delete(hooks, legacyPromptSubmitHookEvent)
+	} else if removedLegacyPrompt {
+		hooks[legacyPromptSubmitHookEvent] = legacyPromptBlocks
+	}
+	promptBlocks := ensureHookBlocks(hooks[promptSubmitHookEvent])
+	hooks[promptSubmitHookEvent], _ = ensureCodexEnsureServerHook(promptBlocks)
 
 	if len(data) > 0 {
 		if err := os.WriteFile(configPath+".bak", data, 0o644); err != nil {
@@ -93,9 +104,11 @@ func (a *CodexAdapter) UninstallHook(scope adapters.InstallScope) error {
 
 	stopBlocks := ensureHookBlocks(hooks["Stop"])
 	newBlocks, removed := removeCodexHook(stopBlocks)
-	promptBlocks := ensureHookBlocks(hooks["PromptSubmitted"])
+	promptBlocks := ensureHookBlocks(hooks[promptSubmitHookEvent])
 	newPromptBlocks, removedPrompt := removeCodexEnsureServerHook(promptBlocks)
-	if !removed && !removedPrompt {
+	legacyPromptBlocks := ensureHookBlocks(hooks[legacyPromptSubmitHookEvent])
+	newLegacyPromptBlocks, removedLegacyPrompt := removeCodexEnsureServerHook(legacyPromptBlocks)
+	if !removed && !removedPrompt && !removedLegacyPrompt {
 		return fmt.Errorf("hook not found")
 	}
 	if removed && len(newBlocks) == 0 {
@@ -104,9 +117,14 @@ func (a *CodexAdapter) UninstallHook(scope adapters.InstallScope) error {
 		hooks["Stop"] = newBlocks
 	}
 	if removedPrompt && len(newPromptBlocks) == 0 {
-		delete(hooks, "PromptSubmitted")
+		delete(hooks, promptSubmitHookEvent)
 	} else if removedPrompt {
-		hooks["PromptSubmitted"] = newPromptBlocks
+		hooks[promptSubmitHookEvent] = newPromptBlocks
+	}
+	if removedLegacyPrompt && len(newLegacyPromptBlocks) == 0 {
+		delete(hooks, legacyPromptSubmitHookEvent)
+	} else if removedLegacyPrompt {
+		hooks[legacyPromptSubmitHookEvent] = newLegacyPromptBlocks
 	}
 
 	out, err := toml.Marshal(cfg)

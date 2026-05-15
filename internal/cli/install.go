@@ -50,11 +50,6 @@ var installCmd = &cobra.Command{
 		}
 
 		serviceInstalled := isServiceInstalled()
-		if err := ensureNoStandaloneServer(serviceInstalled); err != nil {
-			fmt.Printf("Installation blocked: %v\n", err)
-			return
-		}
-
 		startup, err := resolveInstallStartup(cmd.InOrStdin(), scope, agents, serviceInstalled)
 		if err != nil {
 			fmt.Printf("Installation failed: %v\n", err)
@@ -177,16 +172,6 @@ func resolveInstallStartup(input io.Reader, scope adapters.InstallScope, agents 
 	fmt.Println("  1) service - persistent background server")
 	fmt.Println("  2) hook    - start server idempotently from agent hooks")
 	return promptStartupMode(input)
-}
-
-func ensureNoStandaloneServer(serviceInstalled bool) error {
-	if serviceInstalled {
-		return nil
-	}
-	if baseURL, ok := discoverRunningServer(); ok {
-		return fmt.Errorf("a standalone server is already running at %s; stop it before installing", baseURL)
-	}
-	return nil
 }
 
 func anyHookInstalled(scope adapters.InstallScope, agents []string) bool {

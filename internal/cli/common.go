@@ -20,6 +20,11 @@ const (
 	autoPortEnd   = state.DefaultPort + 99
 )
 
+type serverRuntimeInfo struct {
+	App string `json:"app"`
+	PID int    `json:"pid"`
+}
+
 func currentBaseURL() string {
 	return state.LoadServerBaseURL()
 }
@@ -29,22 +34,25 @@ func serverHealthy() bool {
 }
 
 func serverHealthyAt(baseURL string) bool {
+	info, ok := serverRuntimeInfoAt(baseURL)
+	return ok && info.App == "ai-agent-manager"
+}
+
+func serverRuntimeInfoAt(baseURL string) (serverRuntimeInfo, bool) {
 	client := &http.Client{Timeout: 500 * time.Millisecond}
 	resp, err := client.Get(baseURL + "/api/state")
 	if err != nil {
-		return false
+		return serverRuntimeInfo{}, false
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return false
+		return serverRuntimeInfo{}, false
 	}
-	var payload struct {
-		App string `json:"app"`
-	}
+	var payload serverRuntimeInfo
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return false
+		return serverRuntimeInfo{}, false
 	}
-	return payload.App == "ai-agent-manager"
+	return payload, payload.App == "ai-agent-manager"
 }
 
 func waitForServer(timeout time.Duration) bool {
@@ -73,8 +81,8 @@ func ensureServerRunningForHook(timeout time.Duration) error {
 }
 
 func ensureServerRunningInternal(timeout time.Duration, openOnStart bool) (bool, error) {
-	if baseURL, ok := discoverRunningServer(); ok {
-		_ = state.SaveServerBaseURL(baseURL)
+	if baseURL, info, ok := discoverRunningServerInfo(); ok {
+		_ = state.SaveServerRuntime(baseURL, info.PID)
 		return false, nil
 	}
 
@@ -128,16 +136,23 @@ func startServerInBackground(port int) error {
 }
 
 func discoverRunningServer() (string, bool) {
+	baseURL, _, ok := discoverRunningServerInfo()
+	return baseURL, ok
+}
+
+func discoverRunningServerInfo() (string, serverRuntimeInfo, bool) {
 	if baseURL := currentBaseURL(); serverHealthyAt(baseURL) {
-		return baseURL, true
+		info, _ := serverRuntimeInfoAt(baseURL)
+		return baseURL, info, true
 	}
 	for port := autoPortStart; port <= autoPortEnd; port++ {
 		baseURL := state.DefaultBaseURL(port)
 		if serverHealthyAt(baseURL) {
-			return baseURL, true
+			info, _ := serverRuntimeInfoAt(baseURL)
+			return baseURL, info, true
 		}
 	}
-	return "", false
+	return "", serverRuntimeInfo{}, false
 }
 
 func canListen(port int) bool {

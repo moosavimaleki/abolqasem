@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"ai-agent-manager/internal/state"
 	"fmt"
 	"os"
 	"os/exec"
@@ -125,6 +126,77 @@ func startService() error {
 	}
 }
 
+func serviceStatus() (string, error) {
+	switch runtime.GOOS {
+	case "linux":
+		status, statusErr := commandOutput("systemctl", "--user", "status", serviceName+".service", "--no-pager")
+		logs, logsErr := commandOutput("journalctl", "--user", "-u", serviceName+".service", "-n", "80", "--no-pager")
+		if statusErr != nil && logsErr != nil {
+			return "", statusErr
+		}
+		if logsErr != nil {
+			return status, nil
+		}
+		if statusErr != nil {
+			return logs, nil
+		}
+		return status + "\n\nRecent logs:\n" + logs, nil
+	case "darwin":
+		uid := fmt.Sprintf("%d", os.Getuid())
+		status, statusErr := commandOutput("launchctl", "print", "gui/"+uid+"/"+launchAgentLabel)
+		return appendServiceLogFiles(status, statusErr)
+	case "windows":
+		status, statusErr := commandOutput("schtasks", "/Query", "/TN", windowsTaskName, "/V", "/FO", "LIST")
+		return appendServiceLogFiles(status, statusErr)
+	default:
+		return "", fmt.Errorf("persistent service is not supported on %s", runtime.GOOS)
+	}
+}
+
+func requireServiceInstalled() bool {
+	if isServiceInstalled() {
+		return true
+	}
+	fmt.Println("Startup mode is hook. Service commands are not needed.")
+	return false
+}
+
+func serviceLogPaths() (string, string) {
+	dir := state.GetStateDir()
+	return filepath.Join(dir, "service.log"), filepath.Join(dir, "service.err.log")
+}
+
+func appendServiceLogFiles(status string, statusErr error) (string, error) {
+	outLog, errLog := serviceLogPaths()
+	sections := []string{}
+	if strings.TrimSpace(status) != "" {
+		sections = append(sections, status)
+	}
+	if text := readRecentFile(outLog, 120); text != "" {
+		sections = append(sections, "Recent stdout:\n"+text)
+	}
+	if text := readRecentFile(errLog, 120); text != "" {
+		sections = append(sections, "Recent stderr:\n"+text)
+	}
+	return strings.Join(sections, "\n\n"), statusErr
+}
+
+func readRecentFile(path string, maxLines int) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	text := strings.TrimSpace(string(data))
+	if text == "" {
+		return ""
+	}
+	lines := strings.Split(text, "\n")
+	if len(lines) > maxLines {
+		lines = lines[len(lines)-maxLines:]
+	}
+	return strings.Join(lines, "\n")
+}
+
 func installSystemdUserService(exe string) error {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -186,6 +258,7 @@ func installLaunchAgent(exe string) error {
 	if err := os.MkdirAll(agentDir, 0o755); err != nil {
 		return err
 	}
+	outLog, errLog := serviceLogPaths()
 	plistPath := filepath.Join(agentDir, launchAgentLabel+".plist")
 	plist := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -203,9 +276,13 @@ func installLaunchAgent(exe string) error {
   <true/>
   <key>KeepAlive</key>
   <true/>
+  <key>StandardOutPath</key>
+  <string>%s</string>
+  <key>StandardErrorPath</key>
+  <string>%s</string>
 </dict>
 </plist>
-`, launchAgentLabel, xmlEscape(exe))
+`, launchAgentLabel, xmlEscape(exe), xmlEscape(outLog), xmlEscape(errLog))
 	if err := os.WriteFile(plistPath, []byte(plist), 0o644); err != nil {
 		return err
 	}
@@ -227,7 +304,8 @@ func uninstallLaunchAgent() error {
 }
 
 func installScheduledTask(exe string) error {
-	taskCommand := fmt.Sprintf(`"%s" %s`, exe, serviceCommandUse)
+	outLog, errLog := serviceLogPaths()
+	taskCommand := fmt.Sprintf(`cmd /c ""%s" %s >> "%s" 2>> "%s""`, exe, serviceCommandUse, outLog, errLog)
 	if err := runCommand("schtasks", "/Create", "/TN", windowsTaskName, "/SC", "ONLOGON", "/TR", taskCommand, "/F"); err != nil {
 		return err
 	}
@@ -246,6 +324,16 @@ func runCommand(name string, args ...string) error {
 		return fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, strings.TrimSpace(string(output)))
 	}
 	return nil
+}
+
+func commandOutput(name string, args ...string) (string, error) {
+	cmd := exec.Command(name, args...)
+	output, err := cmd.CombinedOutput()
+	text := strings.TrimSpace(string(output))
+	if err != nil {
+		return text, fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, text)
+	}
+	return text, nil
 }
 
 func systemdQuote(value string) string {

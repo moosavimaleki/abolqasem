@@ -35,4 +35,4 @@ printf 'Verifying installed binary...\n'
 printf 'Installed: %s\n' "$INSTALL_PATH"
 printf 'Run: %s install\n' "$APP"
 
-ai-agent-manager service restart
+ai-agent-manager restart

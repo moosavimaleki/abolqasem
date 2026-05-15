@@ -46,7 +46,7 @@ command = "echo keep"
 	if !strings.Contains(string(installed), "echo keep") {
 		t.Fatalf("expected existing hook to remain: %s", string(installed))
 	}
-	if !strings.Contains(string(installed), "PromptSubmitted") || !strings.Contains(string(installed), " __ensure-server") {
+	if !strings.Contains(string(installed), "UserPromptSubmit") || !strings.Contains(string(installed), " __ensure-server") {
 		t.Fatalf("expected prompt hook to ensure server startup: %s", string(installed))
 	}
 
@@ -82,6 +82,12 @@ codex_hooks = true
 type = "command"
 command = "/old/bin/ai-agent-manager hook --agent codex"
 timeout = 1
+
+[[hooks.PromptSubmitted]]
+[[hooks.PromptSubmitted.hooks]]
+type = "command"
+command = "/old/bin/ai-agent-manager __ensure-server"
+timeout = 1
 `
 	if err := os.WriteFile(configPath, []byte(original), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -111,6 +117,12 @@ timeout = 1
 	}
 	if !strings.Contains(config, " hook --agent codex") {
 		t.Fatalf("expected codex hook command: %s", config)
+	}
+	if !strings.Contains(config, "UserPromptSubmit") {
+		t.Fatalf("expected codex user prompt submit hook: %s", config)
+	}
+	if strings.Contains(config, "PromptSubmitted") {
+		t.Fatalf("expected legacy prompt hook to be removed: %s", config)
 	}
 	if !strings.Contains(config, "timeout = 3") {
 		t.Fatalf("expected timeout to be repaired: %s", config)

@@ -15,8 +15,7 @@ var serviceRestartCmd = &cobra.Command{
 	Use:   "restart",
 	Short: "Restart the persistent background server",
 	Run: func(cmd *cobra.Command, args []string) {
-		if !isServiceInstalled() {
-			fmt.Println("Service is not installed. Run: ai-agent-manager install")
+		if !requireServiceInstalled() {
 			return
 		}
 		if err := restartService(); err != nil {
@@ -31,8 +30,7 @@ var serviceStopCmd = &cobra.Command{
 	Use:   "stop",
 	Short: "Stop the persistent background server",
 	Run: func(cmd *cobra.Command, args []string) {
-		if !isServiceInstalled() {
-			fmt.Println("Service is not installed.")
+		if !requireServiceInstalled() {
 			return
 		}
 		if err := stopService(); err != nil {
@@ -47,8 +45,7 @@ var serviceStartCmd = &cobra.Command{
 	Use:   "start",
 	Short: "Start the persistent background server",
 	Run: func(cmd *cobra.Command, args []string) {
-		if !isServiceInstalled() {
-			fmt.Println("Service is not installed. Run: ai-agent-manager install")
+		if !requireServiceInstalled() {
 			return
 		}
 		if err := startService(); err != nil {
@@ -59,9 +56,29 @@ var serviceStartCmd = &cobra.Command{
 	},
 }
 
+var serviceStatusCmd = &cobra.Command{
+	Use:   "status",
+	Short: "Show service status and recent logs",
+	Run: func(cmd *cobra.Command, args []string) {
+		if !requireServiceInstalled() {
+			return
+		}
+		output, err := serviceStatus()
+		if err != nil {
+			fmt.Printf("Service status failed: %v\n", err)
+			if output != "" {
+				fmt.Println(output)
+			}
+			return
+		}
+		fmt.Println(output)
+	},
+}
+
 func init() {
 	serviceCmd.AddCommand(serviceRestartCmd)
 	serviceCmd.AddCommand(serviceStopCmd)
 	serviceCmd.AddCommand(serviceStartCmd)
+	serviceCmd.AddCommand(serviceStatusCmd)
 	rootCmd.AddCommand(serviceCmd)
 }
