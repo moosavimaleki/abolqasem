@@ -136,6 +136,10 @@ body.reader-active .app-shell {
   margin: 0 auto;
 }
 
+body[data-reader-width="full"] .reader-article {
+  width: 100%;
+}
+
 .reader-article > h1 {
   margin: 0 0 44px;
   text-align: center;

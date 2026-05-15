@@ -37,7 +37,7 @@ func EnsureServerShellCommand() (string, error) {
 	if strings.ContainsRune(exe, ' ') {
 		exe = fmt.Sprintf("%q", exe)
 	}
-	return exe + " ensure-server", nil
+	return exe + " __ensure-server", nil
 }
 
 func CommandArgs(agent string) (string, []string, error) {
@@ -65,5 +65,8 @@ func IsCommandMatch(command, agent string) bool {
 
 func IsEnsureServerCommandMatch(command string) bool {
 	command = strings.TrimSpace(command)
-	return strings.HasSuffix(command, " ensure-server") || strings.Contains(command, " ensure-server")
+	return strings.HasSuffix(command, " __ensure-server") ||
+		strings.Contains(command, " __ensure-server") ||
+		strings.HasSuffix(command, " ensure-server") ||
+		strings.Contains(command, " ensure-server")
 }

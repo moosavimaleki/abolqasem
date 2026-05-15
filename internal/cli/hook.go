@@ -17,8 +17,9 @@ import (
 var hookAgent string
 
 var hookCmd = &cobra.Command{
-	Use:   "hook",
-	Short: "Process an AI agent hook event",
+	Use:    "hook",
+	Hidden: true,
+	Short:  "Process an AI agent hook event",
 	Run: func(cmd *cobra.Command, args []string) {
 		input, err := io.ReadAll(os.Stdin)
 		if err != nil {
@@ -42,7 +43,7 @@ var hookCmd = &cobra.Command{
 		event = state.NormalizeAndValidateEvent(event)
 
 		payload, _ := json.Marshal(event)
-		if err := ensureServerRunning(5 * time.Second); err == nil && postHookEvent(payload) {
+		if err := ensureServerRunningForHook(5 * time.Second); err == nil && postHookEvent(payload) {
 			emitGeminiAck(hookAgent)
 			return
 		}

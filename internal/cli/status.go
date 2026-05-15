@@ -26,9 +26,9 @@ var statusCmd = &cobra.Command{
 			fmt.Printf("Server: stopped (%s)\n", currentBaseURL())
 		}
 		if isServiceInstalled() {
-			fmt.Println("Service: installed")
+			fmt.Println("Startup mode: service")
 		} else {
-			fmt.Println("Service: not installed")
+			fmt.Println("Startup mode: hook or manual")
 		}
 		fmt.Printf("State dir: %s\n", state.GetStateDir())
 		fmt.Printf("Sessions: %d\n", len(appState.Sessions))

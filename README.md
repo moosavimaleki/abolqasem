@@ -39,7 +39,8 @@ scripts/install.sh
 ## Architecture
 
 - Hook محلی event را از stdin می‌گیرد.
-- اگر server بالا باشد، event به `POST /api/hook` فرستاده می‌شود.
-- اگر server پایین باشد، event در `~/.cache/ai-agent-manager/pending-events.jsonl` ذخیره می‌شود.
-- server روی `127.0.0.1` UI و API را serve می‌کند.
+- در حالت hook، رابط داخلی برنامه سرور را idempotent روی اولین پورت آزاد از `9090` به بعد بالا می‌آورد و base URL واقعی را ذخیره می‌کند.
+- اگر سرور تازه توسط hook بالا آمده باشد، مرورگر پیش‌فرض روی همان base URL باز می‌شود.
+- اگر سرور پایین بماند، event در `~/.cache/ai-agent-manager/pending-events.jsonl` ذخیره می‌شود.
+- در حالت service، سرویس دائمی سیستم‌عامل همین سرور داخلی را مدیریت می‌کند.
 - transcriptها parse و cache می‌شوند و پیام‌ها به صورت pagination شده به UI می‌رسند.

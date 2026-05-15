@@ -46,7 +46,7 @@ command = "echo keep"
 	if !strings.Contains(string(installed), "echo keep") {
 		t.Fatalf("expected existing hook to remain: %s", string(installed))
 	}
-	if !strings.Contains(string(installed), "PromptSubmitted") || !strings.Contains(string(installed), " ensure-server") {
+	if !strings.Contains(string(installed), "PromptSubmitted") || !strings.Contains(string(installed), " __ensure-server") {
 		t.Fatalf("expected prompt hook to ensure server startup: %s", string(installed))
 	}
 

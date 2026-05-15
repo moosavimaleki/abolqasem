@@ -13,7 +13,7 @@ const (
 	serviceName       = "ai-agent-manager"
 	launchAgentLabel  = "com.ai-agent-manager"
 	windowsTaskName   = "AI Agent Manager"
-	serviceCommandUse = "server --auto-port"
+	serviceCommandUse = "__server --auto-port"
 )
 
 func installService() error {
@@ -74,6 +74,57 @@ func uninstallService() error {
 	}
 }
 
+func restartService() error {
+	switch runtime.GOOS {
+	case "linux":
+		return restartSystemdUserService()
+	case "darwin":
+		if err := uninstallLaunchAgent(); err != nil {
+			return err
+		}
+		return installService()
+	case "windows":
+		_ = runCommand("schtasks", "/End", "/TN", windowsTaskName)
+		return runCommand("schtasks", "/Run", "/TN", windowsTaskName)
+	default:
+		return fmt.Errorf("persistent service is not supported on %s", runtime.GOOS)
+	}
+}
+
+func stopService() error {
+	switch runtime.GOOS {
+	case "linux":
+		return runCommand("systemctl", "--user", "stop", serviceName+".service")
+	case "darwin":
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return err
+		}
+		return runCommand("launchctl", "unload", filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist"))
+	case "windows":
+		return runCommand("schtasks", "/End", "/TN", windowsTaskName)
+	default:
+		return fmt.Errorf("persistent service is not supported on %s", runtime.GOOS)
+	}
+}
+
+func startService() error {
+	switch runtime.GOOS {
+	case "linux":
+		return runCommand("systemctl", "--user", "start", serviceName+".service")
+	case "darwin":
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return err
+		}
+		return runCommand("launchctl", "load", "-w", filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist"))
+	case "windows":
+		return runCommand("schtasks", "/Run", "/TN", windowsTaskName)
+	default:
+		return fmt.Errorf("persistent service is not supported on %s", runtime.GOOS)
+	}
+}
+
 func installSystemdUserService(exe string) error {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -90,7 +141,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=%s server --auto-port
+ExecStart=%s __server --auto-port
 Restart=on-failure
 RestartSec=3
 
@@ -119,6 +170,13 @@ func uninstallSystemdUserService() error {
 	return runCommand("systemctl", "--user", "daemon-reload")
 }
 
+func restartSystemdUserService() error {
+	if err := runCommand("systemctl", "--user", "daemon-reload"); err != nil {
+		return err
+	}
+	return runCommand("systemctl", "--user", "restart", serviceName+".service")
+}
+
 func installLaunchAgent(exe string) error {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -138,7 +196,7 @@ func installLaunchAgent(exe string) error {
   <key>ProgramArguments</key>
   <array>
     <string>%s</string>
-    <string>server</string>
+    <string>__server</string>
     <string>--auto-port</string>
   </array>
   <key>RunAtLoad</key>

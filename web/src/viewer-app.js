@@ -261,7 +261,7 @@ export function createViewerApp() {
       failed = true;
       console.error(error);
       els.sessionCount.textContent = "خطا";
-      renderEmptyState("نشست‌ها بارگذاری نشدند.", "ai-agent-manager server");
+      renderEmptyState("نشست‌ها بارگذاری نشدند.", "ai-agent-manager install");
     } finally {
       state.sessionsLoading = false;
       if (!failed) {

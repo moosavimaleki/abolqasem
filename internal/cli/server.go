@@ -17,8 +17,10 @@ var port int
 var autoPort bool
 
 var serverCmd = &cobra.Command{
-	Use:   "server",
-	Short: "Start the local HTTP server",
+	Use:     "__server",
+	Aliases: []string{"server"},
+	Hidden:  true,
+	Short:   "Internal: start the local HTTP server",
 	Run: func(cmd *cobra.Command, args []string) {
 		listener, actualPort, err := serverListener()
 		if err != nil {

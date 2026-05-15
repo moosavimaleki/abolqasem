@@ -194,7 +194,7 @@ func ensureCodexHook(blocks []map[string]any) ([]map[string]any, bool) {
 func ensureCodexEnsureServerHook(blocks []map[string]any) ([]map[string]any, bool) {
 	command, err := adapters.EnsureServerShellCommand()
 	if err != nil {
-		command = "ai-agent-manager ensure-server"
+		command = "ai-agent-manager __ensure-server"
 	}
 	for _, block := range blocks {
 		entries := ensureHookEntries(block["hooks"])

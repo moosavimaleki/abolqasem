@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"ai-agent-manager/internal/platform"
 	"ai-agent-manager/internal/state"
 	"encoding/json"
 	"fmt"
@@ -62,9 +63,19 @@ func waitForServerAt(baseURL string, timeout time.Duration) bool {
 }
 
 func ensureServerRunning(timeout time.Duration) error {
+	_, err := ensureServerRunningInternal(timeout, false)
+	return err
+}
+
+func ensureServerRunningForHook(timeout time.Duration) error {
+	_, err := ensureServerRunningInternal(timeout, true)
+	return err
+}
+
+func ensureServerRunningInternal(timeout time.Duration, openOnStart bool) (bool, error) {
 	if baseURL, ok := discoverRunningServer(); ok {
 		_ = state.SaveServerBaseURL(baseURL)
-		return nil
+		return false, nil
 	}
 
 	var lastErr error
@@ -74,20 +85,23 @@ func ensureServerRunning(timeout time.Duration) error {
 		}
 		baseURL := state.DefaultBaseURL(port)
 		if err := state.SaveServerBaseURL(baseURL); err != nil {
-			return err
+			return false, err
 		}
 		if err := startServerInBackground(port); err != nil {
 			lastErr = err
 			continue
 		}
 		if waitForServerAt(baseURL, timeout) {
-			return nil
+			if openOnStart {
+				_ = platform.OpenBrowser(baseURL)
+			}
+			return true, nil
 		}
 	}
 	if lastErr != nil {
-		return lastErr
+		return false, lastErr
 	}
-	return fmt.Errorf("server did not become healthy on ports %d-%d", autoPortStart, autoPortEnd)
+	return false, fmt.Errorf("server did not become healthy on ports %d-%d", autoPortStart, autoPortEnd)
 }
 
 func startServerInBackground(port int) error {
@@ -99,7 +113,7 @@ func startServerInBackground(port int) error {
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command(exe, "server", "--port", strconv.Itoa(port))
+	cmd := exec.Command(exe, "__server", "--port", strconv.Itoa(port))
 	cmd.Stdout = devNull
 	cmd.Stderr = devNull
 	if runtime.GOOS != "windows" {

@@ -166,7 +166,7 @@ func resolveInstallStartup(input io.Reader, scope adapters.InstallScope, agents 
 
 	hooksInstalled := anyHookInstalled(scope, agents)
 	if serviceInstalled || hooksInstalled {
-		fmt.Printf("Existing installation detected: %s\n", describeInstallMode(serviceInstalled, hooksInstalled))
+		printInstallState(serviceInstalled, hooksInstalled)
 		ok, err := promptYesNo(input, "Change install mode? [y/N]: ", false)
 		if err != nil || !ok {
 			return "", err
@@ -201,15 +201,22 @@ func anyHookInstalled(scope adapters.InstallScope, agents []string) bool {
 }
 
 func describeInstallMode(serviceInstalled, hooksInstalled bool) string {
-	switch {
-	case serviceInstalled && hooksInstalled:
-		return "service + hooks"
-	case serviceInstalled:
+	if serviceInstalled {
 		return "service"
-	case hooksInstalled:
-		return "hooks"
-	default:
-		return "none"
+	}
+	if hooksInstalled {
+		return "hook"
+	}
+	return "not installed"
+}
+
+func printInstallState(serviceInstalled, hooksInstalled bool) {
+	fmt.Printf("Existing installation detected. Startup mode: %s\n", describeInstallMode(serviceInstalled, hooksInstalled))
+	if hooksInstalled {
+		fmt.Println("Agent hooks: installed")
+		fmt.Println("Note: hooks record sessions; they can be used together with service startup.")
+	} else {
+		fmt.Println("Agent hooks: not installed")
 	}
 }
 

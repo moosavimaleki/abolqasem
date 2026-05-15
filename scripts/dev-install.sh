@@ -33,4 +33,6 @@ printf 'Verifying installed binary...\n'
 "$INSTALL_PATH" --help >/dev/null
 
 printf 'Installed: %s\n' "$INSTALL_PATH"
-printf 'Run: %s server\n' "$APP"
+printf 'Run: %s install\n' "$APP"
+
+ai-agent-manager service restart
