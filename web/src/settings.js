@@ -5,6 +5,7 @@ const DEFAULT_SETTINGS = {
   fontSize: 18,
   lineHeight: 1.9,
   theme: "night",
+  contentWidth: "contained",
 };
 
 export function loadSettings() {
@@ -26,6 +27,7 @@ export function saveSettings(settings) {
 export function applySettings(settings) {
   document.body.dataset.theme = settings.theme;
   document.body.dataset.readerFont = settings.font;
+  document.body.dataset.readerWidth = settings.contentWidth;
   document.documentElement.style.setProperty("--reader-font-family", fontStack(settings.font));
   document.documentElement.style.setProperty("--content-font-size", `${settings.fontSize}px`);
   document.documentElement.style.setProperty("--reader-line-height", String(settings.lineHeight));
@@ -41,7 +43,7 @@ export function syncSettingsUI(settings, root) {
 
   const fontSizeValue = root.querySelector("#font-size-value");
   if (fontSizeValue) {
-    const displayedSize = settings.font === "bzar" ? settings.fontSize + 4 : settings.fontSize;
+    const displayedSize = settings.font === "bzar" ? settings.fontSize + 6 : settings.fontSize;
     fontSizeValue.textContent = String(displayedSize);
   }
 }
