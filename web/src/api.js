@@ -27,6 +27,20 @@ export async function fetchMessages(sessionKey, options = {}) {
   return response.json();
 }
 
+export async function fetchSessionSearch(query, options = {}) {
+  const params = new URLSearchParams({
+    q: query || "",
+    limit: String(options.limit || 100),
+    offset: String(options.offset || 0),
+  });
+
+  const response = await fetch(`/api/search?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error("Failed to search sessions");
+  }
+  return response.json();
+}
+
 export async function fetchFilePreview(options = {}) {
   const params = new URLSearchParams({
     path: options.path || "",

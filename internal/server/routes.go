@@ -18,6 +18,7 @@ func SetWebFS(f fs.FS) {
 func setupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/state", handleAPIState)
 	mux.HandleFunc("/api/sessions", handleAPISessions)
+	mux.HandleFunc("/api/search", handleAPISearch)
 	mux.HandleFunc("/api/hook", handleAPIHook)
 	mux.HandleFunc("/api/session/", handleAPISessionMessages)
 	mux.HandleFunc("/api/file-preview", handleAPIFilePreview)

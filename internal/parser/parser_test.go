@@ -114,6 +114,29 @@ func TestGetSessionSummaryIncludesFirstPreview(t *testing.T) {
 	}
 }
 
+func TestSearchMessagesStreamsMatches(t *testing.T) {
+	path := writeTranscript(t, strings.Join([]string{
+		`{"type":"event_msg","payload":{"type":"user_message","message":"first prompt text"}}`,
+		`{"type":"event_msg","payload":{"type":"agent_message","message":"assistant has needle inside a longer answer"}}`,
+		`{"type":"event_msg","payload":{"type":"agent_message","message":"another needle answer"}}`,
+	}, "\n"))
+
+	result, err := SearchMessages("codex", "session-1", path, SearchOptions{
+		Query:        "needle",
+		Limit:        1,
+		SnippetRunes: 40,
+	})
+	if err != nil {
+		t.Fatalf("SearchMessages returned error: %v", err)
+	}
+	if len(result.Matches) != 1 {
+		t.Fatalf("expected 1 match, got %d", len(result.Matches))
+	}
+	if result.Matches[0].Role != "assistant" || !strings.Contains(result.Matches[0].Snippet, "needle") {
+		t.Fatalf("unexpected match: %+v", result.Matches[0])
+	}
+}
+
 func writeTranscript(t *testing.T, body string) string {
 	t.Helper()
 	dir := t.TempDir()

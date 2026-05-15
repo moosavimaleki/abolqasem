@@ -52,6 +52,25 @@ type SessionSummary struct {
 	MessageCountEstimate int
 }
 
+type SearchOptions struct {
+	Query        string
+	Limit        int
+	SnippetRunes int
+}
+
+type SearchResult struct {
+	SessionID string        `json:"session_id"`
+	Matches   []SearchMatch `json:"matches"`
+}
+
+type SearchMatch struct {
+	MessageID string     `json:"message_id"`
+	Role      string     `json:"role"`
+	Index     int        `json:"index"`
+	Snippet   string     `json:"snippet"`
+	CreatedAt *time.Time `json:"created_at"`
+}
+
 type cacheEntry struct {
 	mtime    time.Time
 	size     int64
@@ -135,6 +154,144 @@ func GetSessionSummary(agent, sessionID, transcriptPath string) (SessionSummary,
 		break
 	}
 	return summary, nil
+}
+
+func SearchMessages(agent, sessionID, transcriptPath string, opts SearchOptions) (SearchResult, error) {
+	result := SearchResult{
+		SessionID: sessionID,
+		Matches:   []SearchMatch{},
+	}
+	query := strings.TrimSpace(opts.Query)
+	if query == "" {
+		return result, nil
+	}
+	if strings.TrimSpace(transcriptPath) == "" {
+		return result, ErrTranscriptUnavailable
+	}
+	if opts.Limit <= 0 {
+		opts.Limit = 3
+	}
+	if opts.SnippetRunes <= 0 {
+		opts.SnippetRunes = 180
+	}
+
+	info, err := os.Stat(transcriptPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return result, ErrTranscriptUnavailable
+		}
+		return result, err
+	}
+
+	queryLower := strings.ToLower(query)
+	if shouldTryStructuredJSON(transcriptPath, info.Size()) {
+		messages, err := loadStructuredJSONMessages(agent, sessionID, transcriptPath)
+		if err == nil {
+			for _, message := range messages {
+				if appendSearchMatch(&result, message, queryLower, opts) {
+					break
+				}
+			}
+			return result, nil
+		}
+	}
+
+	file, err := os.Open(transcriptPath)
+	if err != nil {
+		return result, err
+	}
+	defer file.Close()
+
+	reader := bufio.NewReader(file)
+	lineIndex := 0
+	for {
+		line, err := reader.ReadBytes('\n')
+		if len(line) > 0 {
+			lineIndex++
+			raw := map[string]any{}
+			if decodeErr := json.Unmarshal(bytesTrimSpace(line), &raw); decodeErr == nil {
+				if msg := extractMessage(agent, raw, sessionID, lineIndex); msg != nil {
+					if appendSearchMatch(&result, *msg, queryLower, opts) {
+						break
+					}
+				}
+			}
+		}
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return result, err
+		}
+	}
+	return result, nil
+}
+
+func appendSearchMatch(result *SearchResult, message Message, queryLower string, opts SearchOptions) bool {
+	if !strings.Contains(strings.ToLower(message.Text), queryLower) {
+		return false
+	}
+	result.Matches = append(result.Matches, SearchMatch{
+		MessageID: message.ID,
+		Role:      message.Role,
+		Index:     message.Index,
+		Snippet:   searchSnippet(message.Text, queryLower, opts.SnippetRunes),
+		CreatedAt: message.CreatedAt,
+	})
+	return len(result.Matches) >= opts.Limit
+}
+
+func searchSnippet(text, queryLower string, maxRunes int) string {
+	textRunes := []rune(strings.TrimSpace(text))
+	if len(textRunes) <= maxRunes {
+		return string(textRunes)
+	}
+
+	index := indexRunes([]rune(strings.ToLower(string(textRunes))), []rune(queryLower))
+	if index < 0 {
+		index = 0
+	}
+	start := index - (maxRunes / 3)
+	if start < 0 {
+		start = 0
+	}
+	end := start + maxRunes
+	if end > len(textRunes) {
+		end = len(textRunes)
+		start = end - maxRunes
+		if start < 0 {
+			start = 0
+		}
+	}
+
+	prefix := ""
+	if start > 0 {
+		prefix = "..."
+	}
+	suffix := ""
+	if end < len(textRunes) {
+		suffix = "..."
+	}
+	return prefix + string(textRunes[start:end]) + suffix
+}
+
+func indexRunes(haystack, needle []rune) int {
+	if len(needle) == 0 || len(needle) > len(haystack) {
+		return -1
+	}
+	for i := 0; i <= len(haystack)-len(needle); i++ {
+		matched := true
+		for j := range needle {
+			if haystack[i+j] != needle[j] {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return i
+		}
+	}
+	return -1
 }
 
 func loadMessages(agent, sessionID, transcriptPath string) ([]Message, error) {

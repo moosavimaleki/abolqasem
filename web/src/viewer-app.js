@@ -1,4 +1,4 @@
-import { connectSessionEvents, fetchFilePreview, fetchMessages, fetchSessions } from "./api.js";
+import { connectSessionEvents, fetchFilePreview, fetchMessages, fetchSessionSearch, fetchSessions } from "./api.js";
 import { renderMessageContent } from "./content-renderer.js";
 import { renderReaderDocument } from "./reader-renderer.js";
 import { applySettings, clampFontSize, loadSettings, saveSettings, syncSettingsUI } from "./settings.js";
@@ -24,6 +24,12 @@ export function createViewerApp() {
     sessionsHasMore: true,
     sessionsLoading: false,
     sessionsTotal: 0,
+    searchResults: [],
+    searchResultsNextOffset: 0,
+    searchResultsHasMore: false,
+    searchResultsLoading: false,
+    searchResultsTotal: 0,
+    searchRequestId: 0,
     messages: [],
     visibleMessages: [],
     currentSessionKey: "",
@@ -46,6 +52,8 @@ export function createViewerApp() {
     filePreviewRequestId: 0,
     filePreviewDirectURL: "",
     filePreviewFromRoute: false,
+    stickyReaderFrame: 0,
+    stickyReaderMessageId: "",
   };
 
   const els = {
@@ -55,6 +63,7 @@ export function createViewerApp() {
     sessionCount: document.getElementById("session-count"),
     sessionTitle: document.getElementById("session-title"),
     chat: document.getElementById("chat-messages"),
+    stickyReaderAction: document.getElementById("sticky-reader-action"),
     openSessions: document.getElementById("open-sessions"),
     closeSessions: document.getElementById("close-sessions"),
     jumpToEnd: document.getElementById("jump-to-end"),
@@ -113,16 +122,20 @@ export function createViewerApp() {
       state.search = els.messageSearch.value.trim().toLowerCase();
       runSearch();
     }, 120));
+    els.messageSearch.addEventListener("keydown", handleMessageSearchKeydown);
     els.searchScopeChip.addEventListener("click", () => {
-      state.searchScope = "all";
-      syncSearchScope();
-      runSearch();
-      els.messageSearch.focus();
+      removeSessionSearchScope();
     });
     els.refreshSession.addEventListener("click", refreshCurrentSession);
     els.jumpToEnd.addEventListener("click", () => {
       scrollToBottom(els.chat);
       syncJumpToEnd();
+      syncStickyReaderActions();
+    });
+    els.stickyReaderAction.addEventListener("click", () => {
+      if (state.stickyReaderMessageId) {
+        openReader(state.stickyReaderMessageId);
+      }
     });
 
     els.activeSessionInfo.addEventListener("click", () => {
@@ -161,6 +174,7 @@ export function createViewerApp() {
 
     els.chat.addEventListener("scroll", async () => {
       syncJumpToEnd();
+      scheduleStickyReaderSync();
       if (!state.currentSessionKey || !state.hasMoreBefore || state.loadingOlder || state.search) {
         return;
       }
@@ -175,7 +189,10 @@ export function createViewerApp() {
       hideSessionTooltip();
       maybeLoadMoreSessions();
     });
-    window.addEventListener("resize", hideSessionTooltip);
+    window.addEventListener("resize", () => {
+      hideSessionTooltip();
+      scheduleStickyReaderSync();
+    });
 
     document.addEventListener("click", (event) => {
       const target = event.target;
@@ -272,11 +289,84 @@ export function createViewerApp() {
   }
 
   async function loadMoreSessions() {
+    if (isGlobalSearchActive()) {
+      await loadGlobalSearchResults({ reset: false });
+      return;
+    }
     await loadSessionList({ reset: false, loadInitial: false });
   }
 
+  async function loadGlobalSearchResults(options = {}) {
+    const query = state.search;
+    if (!query) {
+      resetGlobalSearchResults();
+      renderSessions(getVisibleSessions());
+      syncSessionCount();
+      return;
+    }
+    if (state.searchResultsLoading) {
+      return;
+    }
+    const reset = options.reset !== false;
+    const offset = reset ? 0 : state.searchResultsNextOffset;
+    if (!reset && !state.searchResultsHasMore) {
+      return;
+    }
+
+    const requestId = reset ? state.searchRequestId + 1 : state.searchRequestId;
+    state.searchRequestId = requestId;
+    state.searchResultsLoading = true;
+    if (reset) {
+      state.searchResults = [];
+      state.searchResultsNextOffset = 0;
+      state.searchResultsHasMore = false;
+      state.searchResultsTotal = 0;
+      renderSessions([]);
+      renderGlobalSearchState();
+      syncSessionCount();
+    } else {
+      renderSessions(getVisibleSessions());
+    }
+
+    try {
+      const data = await fetchSessionSearch(query, {
+        limit: SESSION_PAGE_SIZE,
+        offset,
+      });
+      if (requestId !== state.searchRequestId || query !== state.search) {
+        return;
+      }
+      const page = data.items || [];
+      state.searchResults = reset ? page : mergeSessionPages(state.searchResults, page);
+      state.sessions = mergeSessionPages(state.sessions, page);
+      state.searchResultsNextOffset = Number(data.next_offset || 0);
+      state.searchResultsHasMore = state.searchResultsNextOffset > 0;
+      state.searchResultsTotal = Number(data.total || state.searchResults.length);
+      state.searchResultsLoading = false;
+      renderSessions(getVisibleSessions());
+      renderGlobalSearchState();
+      syncSessionCount();
+    } catch (error) {
+      if (requestId === state.searchRequestId) {
+        console.error(error);
+        renderGlobalSearchError();
+      }
+    } finally {
+      if (requestId === state.searchRequestId) {
+        state.searchResultsLoading = false;
+        renderSessions(getVisibleSessions());
+        renderGlobalSearchState();
+        syncSessionCount();
+      }
+    }
+  }
+
   function maybeLoadMoreSessions() {
-    if (state.sessionsLoading || !state.sessionsHasMore) {
+    if (isGlobalSearchActive()) {
+      if (state.searchResultsLoading || !state.searchResultsHasMore) {
+        return;
+      }
+    } else if (state.sessionsLoading || !state.sessionsHasMore) {
       return;
     }
     const distanceFromBottom = els.sessionsList.scrollHeight - els.sessionsList.scrollTop - els.sessionsList.clientHeight;
@@ -292,7 +382,27 @@ export function createViewerApp() {
     return [...merged.values()].sort((a, b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0));
   }
 
+  function resetGlobalSearchResults() {
+    state.searchRequestId += 1;
+    state.searchResults = [];
+    state.searchResultsNextOffset = 0;
+    state.searchResultsHasMore = false;
+    state.searchResultsLoading = false;
+    state.searchResultsTotal = 0;
+  }
+
   function syncSessionCount() {
+    if (isGlobalSearchActive()) {
+      if (state.searchResultsLoading && state.searchResults.length === 0) {
+        els.sessionCount.textContent = "در حال جست‌وجو";
+        return;
+      }
+      const loaded = state.searchResults.length;
+      els.sessionCount.textContent = state.searchResultsHasMore
+        ? `${loaded}+ نتیجه`
+        : `${loaded} نتیجه`;
+      return;
+    }
     if (state.sessionsLoading && state.sessions.length === 0) {
       els.sessionCount.textContent = "در حال بارگذاری";
       return;
@@ -334,7 +444,9 @@ export function createViewerApp() {
     if (sessions.length === 0) {
       const empty = document.createElement("div");
       empty.className = "session-list-empty";
-      empty.textContent = state.search && state.searchScope === "all"
+      empty.textContent = state.searchResultsLoading
+        ? "در حال جست‌وجو در متن نشست‌ها..."
+        : state.search && state.searchScope === "all"
         ? "نشستی با این جست‌وجو پیدا نشد."
         : "نشستی وجود ندارد.";
       els.sessionsList.appendChild(empty);
@@ -353,6 +465,7 @@ export function createViewerApp() {
       title.textContent = sessionLabel;
       title.title = sessionLabel;
       item.title = sessionLabel;
+      const searchSnippet = renderSessionSearchSnippet(session);
 
       const info = document.createElement("span");
       info.className = "session-info";
@@ -363,6 +476,9 @@ export function createViewerApp() {
       info.addEventListener("mouseleave", hideSessionTooltip);
 
       item.append(info, title);
+      if (searchSnippet) {
+        item.appendChild(searchSnippet);
+      }
       item.addEventListener("click", () => {
         els.sessionsRail.classList.remove("open");
         loadSession(session.key);
@@ -373,6 +489,22 @@ export function createViewerApp() {
   }
 
   function renderSessionListFooter() {
+    if (isGlobalSearchActive()) {
+      if (state.searchResults.length === 0) {
+        return;
+      }
+      const footer = document.createElement("div");
+      footer.className = "session-list-footer";
+      if (state.searchResultsLoading) {
+        footer.textContent = "در حال جست‌وجوی بیشتر...";
+      } else if (state.searchResultsHasMore) {
+        footer.textContent = "برای نتایج بیشتر اسکرول کنید";
+      } else {
+        footer.textContent = "همه نتایج بارگذاری شد";
+      }
+      els.sessionsList.appendChild(footer);
+      return;
+    }
     if (state.sessions.length === 0) {
       return;
     }
@@ -405,7 +537,26 @@ export function createViewerApp() {
       row.append(key, document.createTextNode(` ${value}`));
       fragment.appendChild(row);
     });
+    (session.search_matches || []).slice(0, 2).forEach((match) => {
+      const row = document.createElement("span");
+      const key = document.createElement("b");
+      key.textContent = "نمونه:";
+      row.append(key, document.createTextNode(` ${match.snippet || ""}`));
+      fragment.appendChild(row);
+    });
     return fragment;
+  }
+
+  function renderSessionSearchSnippet(session) {
+    const match = (session.search_matches || [])[0];
+    if (!match?.snippet) {
+      return null;
+    }
+    const snippet = document.createElement("span");
+    snippet.className = "session-search-snippet";
+    snippet.textContent = match.snippet;
+    snippet.title = match.snippet;
+    return snippet;
   }
 
   function getSessionTooltip() {
@@ -473,6 +624,7 @@ export function createViewerApp() {
     state.hasMoreBefore = false;
     state.search = "";
     state.searchScope = "session";
+    resetGlobalSearchResults();
     els.messageSearch.value = "";
     syncSearchScope();
     collapseSearch(els.messageSearchShell, els.messageSearch);
@@ -554,6 +706,7 @@ export function createViewerApp() {
       scrollToBottom(els.chat);
       syncJumpToEnd();
     }
+    scheduleStickyReaderSync();
   }
 
   function renderLoadMoreButton() {
@@ -573,6 +726,7 @@ export function createViewerApp() {
     const card = document.createElement("article");
     card.className = `message-card ${message.roleClass}`;
     card.id = message.domId;
+    card.dataset.messageId = message.id;
 
     if (message.role === "system") {
       const label = document.createElement("p");
@@ -601,11 +755,83 @@ export function createViewerApp() {
   function renderAssistantActions(message) {
     const actions = document.createElement("div");
     actions.className = "message-card-actions";
+    const copyAction = iconAction("content_copy", "کپی پاسخ", () => copyText(message.text));
+    const readerAction = iconAction("menu_book", "حالت خواندن", () => openReader(message.id));
+    readerAction.classList.add("message-reader-action");
     actions.append(
-      iconAction("content_copy", "کپی پاسخ", () => copyText(message.text)),
-      iconAction("menu_book", "حالت خواندن", () => openReader(message.id)),
+      copyAction,
+      readerAction,
     );
     return actions;
+  }
+
+  function scheduleStickyReaderSync() {
+    if (state.stickyReaderFrame) {
+      return;
+    }
+    state.stickyReaderFrame = window.requestAnimationFrame(() => {
+      state.stickyReaderFrame = 0;
+      syncStickyReaderActions();
+    });
+  }
+
+  function syncStickyReaderActions() {
+    if (!els.chat) {
+      return;
+    }
+    const chatRect = els.chat.getBoundingClientRect();
+    const shellRect = els.chat.parentElement.getBoundingClientRect();
+    const floatingBottom = readPixelVariable(els.chat, "--floating-action-bottom", 44);
+    const actionSize = els.stickyReaderAction.offsetHeight || 42;
+    const actionTop = shellRect.bottom - floatingBottom - actionSize;
+    const actionCenterY = actionTop + (actionSize / 2);
+    let activeMessageId = "";
+    let activeLeft = 0;
+
+    els.chat.querySelectorAll(".message-card.assistant").forEach((card) => {
+      if (activeMessageId) {
+        return;
+      }
+      const readerAction = card.querySelector(".message-reader-action");
+      if (!readerAction) {
+        return;
+      }
+
+      const cardRect = card.getBoundingClientRect();
+      const readerRect = readerAction.getBoundingClientRect();
+      const cardContainsAction = cardRect.top < actionCenterY && cardRect.bottom > actionCenterY;
+      const readerVisible = rectIntersects(readerRect, chatRect, 4);
+      if (!cardContainsAction || readerVisible) {
+        return;
+      }
+
+      activeMessageId = messageIdFromCard(card);
+      activeLeft = Math.max(12, cardRect.left - shellRect.left - actionSize - 16);
+    });
+
+    state.stickyReaderMessageId = activeMessageId;
+    els.stickyReaderAction.style.left = `${activeLeft}px`;
+    els.stickyReaderAction.classList.toggle("hidden", !activeMessageId);
+    els.stickyReaderAction.classList.toggle("is-visible", Boolean(activeMessageId));
+    els.stickyReaderAction.tabIndex = activeMessageId ? 0 : -1;
+    els.stickyReaderAction.setAttribute("aria-hidden", activeMessageId ? "false" : "true");
+  }
+
+  function rectIntersects(rect, containerRect, inset = 0) {
+    return rect.bottom > containerRect.top + inset
+      && rect.top < containerRect.bottom - inset
+      && rect.right > containerRect.left + inset
+      && rect.left < containerRect.right - inset;
+  }
+
+  function readPixelVariable(element, name, fallback) {
+    const raw = getComputedStyle(element).getPropertyValue(name).trim();
+    const value = Number.parseFloat(raw);
+    return Number.isFinite(value) ? value : fallback;
+  }
+
+  function messageIdFromCard(card) {
+    return card.dataset.messageId || "";
   }
 
   function renderToolMessage(message) {
@@ -983,6 +1209,7 @@ export function createViewerApp() {
     if (input === els.messageSearch) {
       state.search = "";
       state.searchScope = "session";
+      resetGlobalSearchResults();
       syncSearchScope();
       renderSessions(getVisibleSessions());
       renderMessages();
@@ -1005,35 +1232,46 @@ export function createViewerApp() {
     els.messageSearch.setAttribute("aria-label", els.messageSearch.placeholder);
   }
 
+  function handleMessageSearchKeydown(event) {
+    if (event.key !== "Backspace" || state.searchScope !== "session" || els.messageSearch.value) {
+      return;
+    }
+    event.preventDefault();
+    removeSessionSearchScope();
+  }
+
+  function removeSessionSearchScope() {
+    state.searchScope = "all";
+    syncSearchScope();
+    runSearch();
+    els.messageSearch.focus();
+  }
+
   function runSearch() {
     if (state.searchScope === "all") {
-      renderSessions(getVisibleSessions());
       if (state.search) {
-        renderGlobalSearchState();
+        loadGlobalSearchResults({ reset: true });
         return;
       }
-    } else {
+      resetGlobalSearchResults();
       renderSessions(getVisibleSessions());
+      renderMessages();
+      return;
     }
+    resetGlobalSearchResults();
+    renderSessions(getVisibleSessions());
     renderMessages();
   }
 
   function getVisibleSessions() {
-    if (!state.search || state.searchScope !== "all") {
-      return state.sessions;
+    if (isGlobalSearchActive()) {
+      return state.searchResults;
     }
-    return state.sessions.filter((session) => sessionMatchesQuery(session, state.search));
+    return state.sessions;
   }
 
-  function sessionMatchesQuery(session, query) {
-    return [
-      session.project_name,
-      session.session_id,
-      session.cwd,
-      session.agent,
-      session.first_preview,
-      session.last_preview,
-    ].some((value) => String(value || "").toLowerCase().includes(query));
+  function isGlobalSearchActive() {
+    return Boolean(state.search && state.searchScope === "all");
   }
 
   function messageMatchesQuery(message, query) {
@@ -1042,10 +1280,24 @@ export function createViewerApp() {
 
   function renderGlobalSearchState() {
     els.chat.replaceChildren();
-    const resultCount = getVisibleSessions().length;
     const empty = document.createElement("div");
     empty.className = "empty-state";
-    empty.textContent = `${resultCount} نشست در جست‌وجوی همه نشست‌ها پیدا شد. نتیجه‌ها در فهرست سمت راست فیلتر شده‌اند.`;
+    if (state.searchResultsLoading) {
+      empty.textContent = "در حال جست‌وجو در متن همه نشست‌ها...";
+    } else {
+      const resultCount = state.searchResults.length;
+      empty.textContent = resultCount === 0
+        ? "نتیجه‌ای در متن نشست‌ها پیدا نشد."
+        : `${resultCount}${state.searchResultsHasMore ? "+" : ""} نشست در متن گفت‌وگوها پیدا شد. نتیجه‌ها در فهرست سمت راست هستند.`;
+    }
+    els.chat.appendChild(empty);
+  }
+
+  function renderGlobalSearchError() {
+    els.chat.replaceChildren();
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "جست‌وجو در متن نشست‌ها انجام نشد.";
     els.chat.appendChild(empty);
   }
 
