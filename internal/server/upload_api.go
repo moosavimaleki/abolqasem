@@ -37,6 +37,10 @@ func handleAPIProjects(w http.ResponseWriter, r *http.Request) {
 		handleAPIUpload(w, r, projectID)
 		return
 	}
+	if strings.HasPrefix(rest, "files/") {
+		handleAPIProjectFile(w, r, projectID, strings.TrimPrefix(rest, "files/"))
+		return
+	}
 	if strings.HasPrefix(rest, "uploads/") {
 		handleAPIUploadedFile(w, r, projectID, strings.TrimPrefix(rest, "uploads/"))
 		return

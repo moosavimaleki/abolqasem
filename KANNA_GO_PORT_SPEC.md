@@ -1396,13 +1396,21 @@ Output:
 - Uploads enforce a 25 MiB limit and detect MIME from headers/content/extension.
 - Uploaded content can be previewed through `.../content` and deleted through the attachment URL without `/content`.
 
-### Task 14.2: Project file serving
+### Task 14.2: Project file serving `[done]`
 
 Acceptance criteria:
 
 - فقط مسیرهای زیر project root قابل serve باشند.
 - path traversal غیرممکن باشد.
 - markdown/code/image/pdf preview کار کند.
+
+Output:
+
+- [project_file_api.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/project_file_api.go)
+- [project_file_api_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/project_file_api_test.go)
+- Project files are served only for registered project roots.
+- Relative paths are normalized, unescaped, and constrained to the registered root before serving.
+- Markdown, JSON/CSV/TSV, known code extensions, image/PDF, and generic binary MIME types are returned for Kanna previews.
 
 ## Milestone 15: Settings
 
