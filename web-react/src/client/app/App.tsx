@@ -196,6 +196,16 @@ export function shouldPlayChatNotificationSound(
   return Boolean(appSettings) && shouldPlayChatSound(preference, doc)
 }
 
+export function applyDocumentLocale(
+  localeValue: string | null | undefined,
+  root: Pick<HTMLElement, "lang" | "dir"> = document.documentElement
+) {
+  const locale = normalizeLocale(localeValue)
+  root.lang = locale
+  root.dir = getLocaleDirection(locale)
+  return locale
+}
+
 function KannaLayout() {
   const location = useLocation()
   const navigate = useNavigate()
@@ -347,9 +357,7 @@ function KannaLayout() {
   }, [state.sidebarData])
 
   useEffect(() => {
-    const locale = normalizeLocale(state.appSettings?.locale)
-    document.documentElement.lang = locale
-    document.documentElement.dir = getLocaleDirection(locale)
+    applyDocumentLocale(state.appSettings?.locale)
   }, [state.appSettings?.locale])
 
   useEffect(() => {

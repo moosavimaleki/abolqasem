@@ -1923,6 +1923,20 @@ Output:
 - [workspace_ws_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_ws_test.go)
 - Backend command routing now has a direct smoke test for the Kanna envelope path, covering both a pure command and a state-mutating project/chat command sequence.
 
+### Task 26.2: Frontend i18n and RTL smoke tests ✅
+
+Acceptance criteria:
+
+- [x] locale normalization در App قابل تست باشد.
+- [x] `fa` روی `documentElement` مقدار `lang=fa` و `dir=rtl` اعمال کند.
+- [x] locale ناشناخته به `en/ltr` برگردد.
+
+Output:
+
+- [App.tsx](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/web-react/src/client/app/App.tsx)
+- [App.test.tsx](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/web-react/src/client/app/App.test.tsx)
+- The document locale side effect is now exposed as a small testable helper, so the App-level i18n/RTL behavior is locked without needing a live WebSocket or full router render.
+
 ### Backend tests
 
 - Protocol parity with Kanna envelope.
@@ -1946,8 +1960,8 @@ Output:
 ### Frontend tests
 
 - Existing Kanna frontend tests should be kept where practical.
-- i18n switch.
-- RTL layout smoke tests.
+- i18n switch. `[done: Task 26.2]`
+- RTL layout smoke tests. `[done: Task 26.2]`
 - composer provider/model controls.
 - sidebar grouping.
 - chat snapshot rendering.

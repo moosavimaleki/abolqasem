@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { getAppAuthStateFromStatus, shouldPlayChatNotificationSound, shouldRedirectToChangelog, shouldRetryAuthStatusRequest } from "./App"
+import { applyDocumentLocale, getAppAuthStateFromStatus, shouldPlayChatNotificationSound, shouldRedirectToChangelog, shouldRetryAuthStatusRequest } from "./App"
 import { getChatNotificationSnapshot, getChatSoundBurstCount, getNotificationTitleCount } from "./chatNotifications"
 import { DEFAULT_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, clampSidebarWidth } from "./KannaSidebar"
 import { isBrowserUnfocused, shouldPlayChatSound } from "../lib/chatSounds"
@@ -25,6 +25,20 @@ describe("shouldRedirectToChangelog", () => {
     expect(shouldRedirectToChangelog("/settings/general", "0.12.0", "0.11.0")).toBe(false)
     expect(shouldRedirectToChangelog("/chat/1", "0.12.0", "0.11.0")).toBe(false)
     expect(shouldRedirectToChangelog("/", "0.12.0", "0.12.0")).toBe(false)
+  })
+})
+
+describe("applyDocumentLocale", () => {
+  test("applies Persian as an RTL document language", () => {
+    const root = { lang: "", dir: "" }
+    expect(applyDocumentLocale("fa", root)).toBe("fa")
+    expect(root).toEqual({ lang: "fa", dir: "rtl" })
+  })
+
+  test("falls back to English LTR for unknown locale values", () => {
+    const root = { lang: "", dir: "" }
+    expect(applyDocumentLocale("de", root)).toBe("en")
+    expect(root).toEqual({ lang: "en", dir: "ltr" })
   })
 })
 
