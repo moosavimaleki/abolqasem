@@ -1869,13 +1869,25 @@ Output:
 - Project file targets are resolved with `EvalSymlinks` and must remain under the canonical project root, so symlinks that escape the project are rejected.
 - Existing file preview security remains root-scoped with the same symlink policy: symlinks are allowed only when their resolved target stays inside an allowed project/session root.
 
-### Task 25.2: Command execution security
+### Task 25.2: Command execution security ✅
 
 Acceptance criteria:
 
-- terminal و agent commandها local-only باشند.
-- approval flow برای عملیات حساس.
-- logs حاوی secret نباشند.
+- [x] terminal و agent commandها local-only باشند.
+- [x] approval flow برای عملیات حساس.
+- [x] logs حاوی secret نباشند.
+
+Output:
+
+- [workspace_ws.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_ws.go)
+- [workspace_terminal_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_terminal_test.go)
+- [codex.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/agent/codex.go)
+- [codex_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/agent/codex_test.go)
+- [approvals_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/providers/codex/approvals_test.go)
+- Workspace terminal creation now requires a registered project and always starts inside that project root instead of the server process cwd.
+- Agent and external commands remain local-only by using argv-based `exec.Command` paths; no remote command endpoint or shell-expanded custom editor command was added.
+- Codex command/file approvals default to decline when no explicit approval handler accepts the request.
+- Codex app-server logs redact prompt payloads, text inputs, API keys, bearer tokens, GitHub tokens and common token formats before writing persistent log files.
 
 ### Task 25.3: Web server security
 

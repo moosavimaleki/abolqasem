@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -25,6 +26,14 @@ var (
 	ErrThreadActive = errors.New("codex thread is already active")
 	requestCounter  atomic.Int64
 )
+
+var codexSecretPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)(authorization\s*[:=]\s*bearer\s+)[^\s"']+`),
+	regexp.MustCompile(`(?i)(api[_-]?key\s*[:=]\s*)[^\s"']+`),
+	regexp.MustCompile(`(?i)(token\s*[:=]\s*)[^\s"']+`),
+	regexp.MustCompile(`sk-[A-Za-z0-9_-]{8,}`),
+	regexp.MustCompile(`gh[pousr]_[A-Za-z0-9_]{8,}`),
+}
 
 type CodexRunError struct {
 	Err     error
@@ -219,7 +228,7 @@ func startCodexClient(ctx context.Context) (*codexClient, error) {
 	stderr := &bytes.Buffer{}
 	logFile, logPath := createCodexLogFile()
 	if logFile != nil {
-		cmd.Stderr = io.MultiWriter(stderr, logFile)
+		cmd.Stderr = io.MultiWriter(stderr, codexRedactingWriter{writer: logFile})
 	} else {
 		cmd.Stderr = stderr
 	}
@@ -420,7 +429,7 @@ func (c *codexClient) write(msg map[string]any) error {
 		return err
 	}
 	data = append(data, '\n')
-	c.logf(">> %s", strings.TrimSpace(string(data)))
+	c.logRPCMessage(">>", msg)
 	_, err = c.stdin.Write(data)
 	return err
 }
@@ -434,14 +443,16 @@ func (c *codexClient) readMessage() (map[string]any, error) {
 		if errText == "" {
 			errText = "codex app-server stopped"
 		}
+		errText = redactCodexLogText(errText)
 		return nil, errors.New(errText)
 	}
 	line := string(c.lines.Bytes())
-	c.logf("<< %s", line)
 	var msg map[string]any
 	if err := json.Unmarshal([]byte(line), &msg); err != nil {
+		c.logf("<< %s", redactCodexLogText(line))
 		return nil, err
 	}
+	c.logRPCMessage("<<", msg)
 	return msg, nil
 }
 
@@ -458,6 +469,96 @@ func (c *codexClient) logf(format string, args ...any) {
 	}
 	line := fmt.Sprintf(format, args...)
 	_, _ = fmt.Fprintf(c.logFile, "%s %s\n", time.Now().Format(time.RFC3339Nano), line)
+}
+
+func (c *codexClient) logRPCMessage(prefix string, msg map[string]any) {
+	if c == nil || c.logFile == nil {
+		return
+	}
+	data, err := json.Marshal(redactCodexLogValue(msg))
+	if err != nil {
+		c.logf("%s %s", prefix, "[unserializable redacted payload]")
+		return
+	}
+	c.logf("%s %s", prefix, string(data))
+}
+
+type codexRedactingWriter struct {
+	writer io.Writer
+}
+
+func (w codexRedactingWriter) Write(p []byte) (int, error) {
+	if w.writer == nil {
+		return len(p), nil
+	}
+	_, err := w.writer.Write([]byte(redactCodexLogText(string(p))))
+	return len(p), err
+}
+
+func redactCodexLogValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		redacted := make(map[string]any, len(typed))
+		for key, item := range typed {
+			if isCodexSensitiveLogKey(key) || isCodexContentLogKey(key) {
+				redacted[key] = "[redacted]"
+				continue
+			}
+			redacted[key] = redactCodexLogValue(item)
+		}
+		return redacted
+	case []any:
+		redacted := make([]any, 0, len(typed))
+		for _, item := range typed {
+			redacted = append(redacted, redactCodexLogValue(item))
+		}
+		return redacted
+	case []map[string]any:
+		redacted := make([]any, 0, len(typed))
+		for _, item := range typed {
+			redacted = append(redacted, redactCodexLogValue(item))
+		}
+		return redacted
+	case string:
+		return redactCodexLogText(typed)
+	default:
+		return typed
+	}
+}
+
+func isCodexSensitiveLogKey(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "apikey", "api_key", "api-key", "authorization", "access_token", "accesstoken", "refresh_token", "refreshtoken", "secret", "password", "token":
+		return true
+	default:
+		return false
+	}
+}
+
+func isCodexContentLogKey(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "input", "text", "text_elements":
+		return true
+	default:
+		return false
+	}
+}
+
+func redactCodexLogText(text string) string {
+	redacted := text
+	for _, pattern := range codexSecretPatterns {
+		redacted = pattern.ReplaceAllStringFunc(redacted, func(match string) string {
+			if strings.Contains(match, " ") || strings.Contains(match, ":") || strings.Contains(match, "=") {
+				for _, separator := range []string{"Bearer ", "bearer ", "=", ":"} {
+					if index := strings.LastIndex(match, separator); index >= 0 {
+						return match[:index+len(separator)] + "[redacted]"
+					}
+				}
+			}
+			return "[redacted]"
+		})
+	}
+	return redacted
 }
 
 func createCodexLogFile() (*os.File, string) {

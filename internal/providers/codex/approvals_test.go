@@ -78,6 +78,26 @@ func TestHandleApprovalRequest(t *testing.T) {
 	}
 }
 
+func TestHandleCommandApprovalDefaultsToDecline(t *testing.T) {
+	_, response, err := HandleServerRequest(ServerRequest{
+		ID:     "approval-default",
+		Method: "item/commandExecution/requestApproval",
+		Params: mustJSON(map[string]any{
+			"threadId": "thread-1",
+			"turnId":   "turn-1",
+			"itemId":   "call-1",
+			"command":  "rm -rf .",
+			"cwd":      "/tmp/project",
+		}),
+	}, RequestHandlers{})
+	if err != nil {
+		t.Fatalf("HandleServerRequest returned error: %v", err)
+	}
+	if response.Result["decision"] != "decline" {
+		t.Fatalf("expected decline, got %#v", response)
+	}
+}
+
 func TestHandleFileChangeApprovalDefaultsToDecline(t *testing.T) {
 	_, response, err := HandleServerRequest(ServerRequest{
 		ID:     "approval-2",

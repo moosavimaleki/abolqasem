@@ -603,6 +603,14 @@ func (h *workspaceTerminalHub) snapshot(terminalID string) *terminal.Snapshot {
 }
 
 func (h *workspaceTerminalHub) create(raw json.RawMessage) (terminal.Snapshot, error) {
+	request, err := workspaceTerminalCreateRequest(raw)
+	if err != nil {
+		return terminal.Snapshot{}, err
+	}
+	return h.manager.Create(context.Background(), request)
+}
+
+func workspaceTerminalCreateRequest(raw json.RawMessage) (terminal.CreateRequest, error) {
 	var payload struct {
 		ProjectID  string `json:"projectId"`
 		TerminalID string `json:"terminalId"`
@@ -611,15 +619,20 @@ func (h *workspaceTerminalHub) create(raw json.RawMessage) (terminal.Snapshot, e
 		Scrollback int    `json:"scrollback"`
 	}
 	if err := json.Unmarshal(raw, &payload); err != nil {
-		return terminal.Snapshot{}, err
+		return terminal.CreateRequest{}, err
 	}
-	return h.manager.Create(context.Background(), terminal.CreateRequest{
+	projectPath, err := workspaceProjectLocalPathRequired(payload.ProjectID)
+	if err != nil {
+		return terminal.CreateRequest{}, err
+	}
+	return terminal.CreateRequest{
 		ProjectID:  payload.ProjectID,
 		TerminalID: payload.TerminalID,
+		CWD:        projectPath,
 		Cols:       payload.Cols,
 		Rows:       payload.Rows,
 		Scrollback: payload.Scrollback,
-	})
+	}, nil
 }
 
 func (h *workspaceTerminalHub) input(raw json.RawMessage) error {
