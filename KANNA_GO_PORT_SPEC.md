@@ -1162,7 +1162,7 @@ Output:
 - Codex and Claude adapters normalize provider events into the shared transcript model.
 - Read models alias the shared transcript type so chat snapshots keep Kanna-compatible JSON.
 
-### Task 10.2: Legacy transcript import
+### Task 10.2: Legacy transcript import `[done]`
 
 شرح:
 
@@ -1174,6 +1174,15 @@ Acceptance criteria:
 - sessionهای قبلی از بین نروند.
 - duplicate sessionها کنترل شوند.
 - user بتواند session قدیمی را open کند.
+
+Output:
+
+- [importer.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/workspace/legacyimport/importer.go)
+- [importer_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/workspace/legacyimport/importer_test.go)
+- Legacy `state.SessionMeta` plus parser messages are converted into Kanna-compatible project/chat/transcript snapshots.
+- Legacy imported chats are marked read-only at the import boundary.
+- Legacy chat IDs are deterministic from agent plus transcript path, so duplicate discovered sessions collapse to the same imported chat identity.
+- Recent-limit pagination metadata is produced for large legacy transcripts.
 
 ## Milestone 11: Tool Approval UI
 
