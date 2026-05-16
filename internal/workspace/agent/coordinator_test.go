@@ -137,6 +137,75 @@ func TestPendingToolSnapshot(t *testing.T) {
 	}
 }
 
+func TestRespondToolForwardsResultAndClearsPendingState(t *testing.T) {
+	store := newFakeStore()
+	turn := &fakeTurn{}
+	coordinator := NewCoordinator(store, TurnStarterFunc(func(context.Context, TurnRequest) (Turn, error) {
+		return turn, nil
+	}), nil)
+
+	if _, err := coordinator.Send(context.Background(), SendCommand{ChatID: "chat-1", Content: "hello"}); err != nil {
+		t.Fatalf("Send returned error: %v", err)
+	}
+	if err := coordinator.SetPendingTool("chat-1", PendingToolRequest{
+		ToolUseID: "tool-1",
+		ToolKind:  "ask_user_question",
+	}); err != nil {
+		t.Fatalf("SetPendingTool returned error: %v", err)
+	}
+
+	result := map[string]any{"answer": "yes"}
+	if err := coordinator.RespondTool(context.Background(), ToolResponseCommand{
+		ChatID:    "chat-1",
+		ToolUseID: "tool-1",
+		Result:    result,
+	}); err != nil {
+		t.Fatalf("RespondTool returned error: %v", err)
+	}
+	if turn.toolResponse.ToolUseID != "tool-1" {
+		t.Fatalf("expected tool response to be forwarded, got %#v", turn.toolResponse)
+	}
+	if coordinator.PendingTool("chat-1") != nil {
+		t.Fatalf("expected pending tool to be cleared")
+	}
+	if got := coordinator.ActiveStatuses()["chat-1"]; got != readmodels.StatusRunning {
+		t.Fatalf("expected running status, got %q", got)
+	}
+}
+
+func TestRespondToolRejectsMismatchedPendingTool(t *testing.T) {
+	store := newFakeStore()
+	turn := &fakeTurn{}
+	coordinator := NewCoordinator(store, TurnStarterFunc(func(context.Context, TurnRequest) (Turn, error) {
+		return turn, nil
+	}), nil)
+
+	if _, err := coordinator.Send(context.Background(), SendCommand{ChatID: "chat-1", Content: "hello"}); err != nil {
+		t.Fatalf("Send returned error: %v", err)
+	}
+	if err := coordinator.SetPendingTool("chat-1", PendingToolRequest{
+		ToolUseID: "tool-1",
+		ToolKind:  "ask_user_question",
+	}); err != nil {
+		t.Fatalf("SetPendingTool returned error: %v", err)
+	}
+
+	err := coordinator.RespondTool(context.Background(), ToolResponseCommand{
+		ChatID:    "chat-1",
+		ToolUseID: "other-tool",
+		Result:    "ignored",
+	})
+	if !errors.Is(err, ErrPendingToolNotFound) {
+		t.Fatalf("expected ErrPendingToolNotFound, got %v", err)
+	}
+	if turn.toolResponse.ToolUseID != "" {
+		t.Fatalf("expected no forwarded response, got %#v", turn.toolResponse)
+	}
+	if coordinator.PendingTool("chat-1") == nil {
+		t.Fatalf("expected original pending tool to remain")
+	}
+}
+
 func TestFinishStartsNextQueuedMessage(t *testing.T) {
 	store := newFakeStore()
 	var startedContents []string
@@ -326,10 +395,16 @@ func (s *fakeStore) RemoveQueuedMessage(chatID string, queuedMessageID string) e
 }
 
 type fakeTurn struct {
-	cancelled bool
+	cancelled    bool
+	toolResponse ToolResponse
 }
 
 func (t *fakeTurn) Cancel() error {
 	t.cancelled = true
+	return nil
+}
+
+func (t *fakeTurn) RespondTool(_ context.Context, response ToolResponse) error {
+	t.toolResponse = response
 	return nil
 }

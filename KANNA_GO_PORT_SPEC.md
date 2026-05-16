@@ -1186,7 +1186,7 @@ Output:
 
 ## Milestone 11: Tool Approval UI
 
-### Task 11.1: Pending tool cards
+### Task 11.1: Pending tool cards `[done]`
 
 Frontend:
 
@@ -1205,6 +1205,14 @@ Acceptance criteria:
 - agent هنگام approval معلق بماند.
 - user response به provider برگردد.
 - timeout/error قابل نمایش باشد.
+
+Output:
+
+- [coordinator.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/workspace/agent/coordinator.go)
+- [coordinator_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/workspace/agent/coordinator_test.go)
+- Kanna frontend already includes `AskUserQuestionMessage`, `ExitPlanModeMessage`, and `chat.respondTool` command dispatch.
+- Go coordinator now stores pending tool state, exposes pending snapshots, forwards `RespondTool` to the active turn, clears pending state, and returns the chat to `running`.
+- Wrong or stale tool IDs are rejected without clearing the real pending tool.
 
 ## Milestone 12: Git Service در Go
 

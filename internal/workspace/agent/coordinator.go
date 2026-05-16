@@ -12,8 +12,10 @@ import (
 )
 
 var (
-	ErrChatAlreadyRunning = errors.New("chat is already running")
-	ErrQueuedNotFound     = errors.New("queued message not found")
+	ErrChatAlreadyRunning      = errors.New("chat is already running")
+	ErrQueuedNotFound          = errors.New("queued message not found")
+	ErrPendingToolNotFound     = errors.New("pending tool not found")
+	ErrToolResponseUnsupported = errors.New("active turn does not support tool responses")
 )
 
 type Store interface {
@@ -38,6 +40,10 @@ type TurnStarter interface {
 
 type Turn interface {
 	Cancel() error
+}
+
+type ToolResponder interface {
+	RespondTool(ctx context.Context, response ToolResponse) error
 }
 
 type TurnStarterFunc func(ctx context.Context, request TurnRequest) (Turn, error)
@@ -118,6 +124,17 @@ type SendResult struct {
 	QueuedMessageID string `json:"queuedMessageId,omitempty"`
 }
 
+type ToolResponseCommand struct {
+	ChatID    string
+	ToolUseID string
+	Result    any
+}
+
+type ToolResponse struct {
+	ToolUseID string
+	Result    any
+}
+
 func NewCoordinator(store Store, starter TurnStarter, onStateChange func(chatID string)) *Coordinator {
 	if starter == nil {
 		starter = TurnStarterFunc(func(context.Context, TurnRequest) (Turn, error) {
@@ -172,6 +189,37 @@ func (c *Coordinator) SetPendingTool(chatID string, request PendingToolRequest) 
 	c.mu.Unlock()
 
 	c.emitStateChange(chatID)
+	return nil
+}
+
+func (c *Coordinator) RespondTool(ctx context.Context, command ToolResponseCommand) error {
+	c.mu.Lock()
+	active := c.active[command.ChatID]
+	if active == nil || active.PendingTool == nil || active.PendingTool.ToolUseID != command.ToolUseID {
+		c.mu.Unlock()
+		return ErrPendingToolNotFound
+	}
+	responder, ok := active.Turn.(ToolResponder)
+	if !ok {
+		c.mu.Unlock()
+		return ErrToolResponseUnsupported
+	}
+	c.mu.Unlock()
+
+	if err := responder.RespondTool(ctx, ToolResponse{
+		ToolUseID: command.ToolUseID,
+		Result:    command.Result,
+	}); err != nil {
+		return err
+	}
+
+	c.mu.Lock()
+	if active = c.active[command.ChatID]; active != nil && active.PendingTool != nil && active.PendingTool.ToolUseID == command.ToolUseID {
+		active.PendingTool = nil
+		active.Status = readmodels.StatusRunning
+	}
+	c.mu.Unlock()
+	c.emitStateChange(command.ChatID)
 	return nil
 }
 
