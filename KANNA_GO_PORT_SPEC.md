@@ -1520,7 +1520,7 @@ Output:
 
 ## Milestone 16: Frontend Integration With Go Protocol
 
-### Task 16.1: اتصال Kanna socket client با کمترین تغییر
+### Task 16.1: اتصال Kanna socket client با کمترین تغییر ✅
 
 شرح:
 
@@ -1530,9 +1530,20 @@ Output:
 
 Acceptance criteria:
 
-- sidebar snapshot از Go بیاید.
-- chat snapshot از Go بیاید.
-- settings snapshot از Go بیاید.
+- sidebar snapshot از Go بیاید. ✅
+- chat snapshot از Go بیاید. ✅
+- settings snapshot از Go بیاید. ✅
+
+Output:
+
+- [workspace_snapshots.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_snapshots.go)
+- [workspace_snapshots_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_snapshots_test.go)
+- [workspace_ws.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_ws.go)
+- Kanna socket client continues to use `/ws` unchanged.
+- Sidebar snapshots now come from the Go event store read model instead of a stub.
+- Local project snapshots now come from the Go event store read model.
+- Chat snapshots now derive runtime, queue, providers, and recent transcript entries from the Go event store.
+- Settings snapshots already come from the Go backend through `settings.readAppSettings` and app-settings subscriptions.
 
 ### Task 16.2: اتصال composer
 

@@ -283,16 +283,9 @@ func (c *workspaceConnection) emitKeybindingsSnapshot(snapshot state.Keybindings
 func workspaceSnapshotForTopic(topic protocol.SubscriptionTopic) (string, any) {
 	switch topic.Type {
 	case protocol.TopicSidebar:
-		return protocol.SnapshotSidebar, map[string]any{"projectGroups": []any{}}
+		return protocol.SnapshotSidebar, workspaceSidebarSnapshot()
 	case protocol.TopicLocalProjects:
-		return protocol.SnapshotLocalProjects, map[string]any{
-			"machine": map[string]any{
-				"id":          "local",
-				"displayName": workspaceMachineName(),
-				"platform":    workspacePlatform(),
-			},
-			"projects": []any{},
-		}
+		return protocol.SnapshotLocalProjects, workspaceLocalProjectsSnapshot()
 	case protocol.TopicUpdate:
 		return protocol.SnapshotUpdate, workspaceUpdateSnapshot()
 	case protocol.TopicKeybindings:
@@ -308,7 +301,7 @@ func workspaceSnapshotForTopic(topic protocol.SubscriptionTopic) (string, any) {
 	case protocol.TopicAppSettings:
 		return protocol.SnapshotAppSettings, workspaceAppSettingsSnapshot()
 	case protocol.TopicChat:
-		return protocol.SnapshotChat, nil
+		return protocol.SnapshotChat, workspaceChatSnapshot(topic.ChatID, subscriptionRecentLimit(topic))
 	case protocol.TopicProjectGit:
 		return protocol.SnapshotProjectGit, nil
 	case protocol.TopicTerminal:
