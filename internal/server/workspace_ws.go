@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 
@@ -16,20 +17,43 @@ import (
 )
 
 var workspaceWSUpgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		origin := r.Header.Get("Origin")
-		if origin == "" {
-			return true
-		}
-		return strings.HasPrefix(origin, "http://127.0.0.1:") ||
-			strings.HasPrefix(origin, "http://localhost:")
-	},
+	CheckOrigin: workspaceWSOriginAllowed,
 }
 
 var workspaceTerminals = newWorkspaceTerminalHub()
 var workspaceAnalyticsReporter analytics.Reporter = analytics.NoopReporter{}
 
 const keybindingsSubscription = "__keybindings__"
+
+func workspaceWSOriginAllowed(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	return isAllowedWorkspaceWSOrigin(r.Header.Get("Origin"))
+}
+
+func isAllowedWorkspaceWSOrigin(origin string) bool {
+	origin = strings.TrimSpace(origin)
+	if origin == "" {
+		return true
+	}
+	parsed, err := url.Parse(origin)
+	if err != nil || parsed.User != nil {
+		return false
+	}
+	if parsed.Scheme != "http" {
+		return false
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") {
+		return false
+	}
+	switch strings.ToLower(parsed.Hostname()) {
+	case "127.0.0.1", "localhost":
+		return true
+	default:
+		return false
+	}
+}
 
 type workspaceConnection struct {
 	conn *websocket.Conn

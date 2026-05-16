@@ -1889,14 +1889,24 @@ Output:
 - Codex command/file approvals default to decline when no explicit approval handler accepts the request.
 - Codex app-server logs redact prompt payloads, text inputs, API keys, bearer tokens, GitHub tokens and common token formats before writing persistent log files.
 
-### Task 25.3: Web server security
+### Task 25.3: Web server security ✅
 
 Acceptance criteria:
 
-- bind default به localhost.
-- CORS بسته باشد.
-- WebSocket origin check داشته باشد.
-- auth جدید برای remote exposure خارج از parity scope است مگر Kanna همان را داشته باشد.
+- [x] bind default به localhost.
+- [x] CORS بسته باشد.
+- [x] WebSocket origin check داشته باشد.
+- [x] auth جدید برای remote exposure خارج از parity scope است مگر Kanna همان را داشته باشد.
+
+Output:
+
+- [server.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/server.go)
+- [workspace_ws.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_ws.go)
+- [server_security_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/server_security_test.go)
+- Server startup binds to `127.0.0.1` through a tested loopback address helper.
+- HTTP routes do not emit permissive CORS headers for foreign origins.
+- WebSocket origin validation now parses the origin URL and allows only same-machine `http://localhost` or `http://127.0.0.1` origins; remote hosts, credentialed origins, HTTPS remote exposure and pathful origins are rejected.
+- Remote authentication is intentionally not added because Kanna parity is local-first and auth for remote exposure is outside current parity scope.
 
 ## Milestone 26: Testing
 

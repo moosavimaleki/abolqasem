@@ -1,19 +1,24 @@
 package server
 
 import (
-	"fmt"
 	"log"
 	"net"
 	"net/http"
+	"strconv"
 )
 
+const localServerHost = "127.0.0.1"
+
 func Start(port int) error {
-	addr := fmt.Sprintf("127.0.0.1:%d", port)
-	listener, err := net.Listen("tcp", addr)
+	listener, err := net.Listen("tcp", localServerAddress(port))
 	if err != nil {
 		return err
 	}
 	return Serve(listener)
+}
+
+func localServerAddress(port int) string {
+	return net.JoinHostPort(localServerHost, strconv.Itoa(port))
 }
 
 func Serve(listener net.Listener) error {
