@@ -25,10 +25,10 @@ Status legend:
 | `agent.ts` | `internal/workspace/agent_coordinator` | `[todo]` | Central runtime owner. |
 | `codex-app-server.ts` | `internal/providers/codex` | `[todo]` | Persistent Codex app-server sessions. |
 | `codex-app-server-protocol.ts` | `internal/providers/codex/protocol` | `[todo]` | JSON-RPC DTOs and event normalization. |
-| `provider-catalog.ts` | `internal/providers/catalog` | `[todo]` | Only `claude` and `codex` for Kanna parity. |
+| `provider-catalog.ts` | `internal/providers/catalog` | `[done]` | Kanna `claude` and `codex` server catalog ported. |
 | `event-store.ts` | `internal/workspace/eventstore` | `[in-progress]` | JSONL append/replay implemented; snapshot compaction remains. |
 | `events.ts` | `internal/workspace/events` | `[done]` | Kanna v2 top-level event shape preserved. |
-| `read-models.ts` | `internal/workspace/readmodels` | `[in-progress]` | Sidebar model implemented; chat/local project models remain. |
+| `read-models.ts` | `internal/workspace/readmodels` | `[done]` | Sidebar, chat, and local project read models implemented. |
 | `ws-router.ts` | `internal/workspace/ws` | `[in-progress]` | Kanna envelope-compatible WS endpoint and initial snapshots implemented. |
 | `diff-store.ts` | `internal/git` | `[todo]` | Diff, branch, commit, GitHub workflows. |
 | `terminal-manager.ts` | `internal/terminal` | `[todo]` | PTY/process management. |

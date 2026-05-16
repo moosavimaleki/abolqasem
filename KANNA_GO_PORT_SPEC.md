@@ -751,7 +751,7 @@ Output:
 
 ## Milestone 5: Provider Catalog
 
-### Task 5.1: Port مستقیم ProviderCatalog Kanna
+### Task 5.1: Port مستقیم ProviderCatalog Kanna `[done]`
 
 Providerهای هدف:
 
@@ -778,6 +778,14 @@ Acceptance criteria:
 - UI بتواند provider/model/reasoning را از backend بخواند.
 - provider ناشناخته fallback امن داشته باشد.
 - provider list با Kanna برابر باشد مگر در migration legacy.
+
+Output:
+
+- [catalog.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/providers/catalog/catalog.go)
+- [catalog_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/providers/catalog/catalog_test.go)
+- Kanna `claude` and `codex` provider catalog ported.
+- Codex server model list matches Kanna hard-coded server catalog.
+- Unknown provider/model fallback is safe and deterministic.
 
 ### Task 5.2: Model options
 

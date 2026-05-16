@@ -3,6 +3,7 @@ package readmodels
 import (
 	"sort"
 
+	"ai-agent-manager/internal/providers/catalog"
 	"ai-agent-manager/internal/workspace/events"
 )
 
@@ -99,40 +100,11 @@ type ChatTranscriptSnapshot struct {
 }
 
 type ChatSnapshot struct {
-	Runtime            ChatRuntime            `json:"runtime"`
-	QueuedMessages     []QueuedChatMessage    `json:"queuedMessages"`
-	Messages           []TranscriptEntry      `json:"messages"`
-	History            ChatHistorySnapshot    `json:"history"`
-	AvailableProviders []ProviderCatalogEntry `json:"availableProviders"`
-}
-
-type ProviderCatalogEntry struct {
-	ID               string                 `json:"id"`
-	Label            string                 `json:"label"`
-	DefaultModel     string                 `json:"defaultModel"`
-	DefaultEffort    string                 `json:"defaultEffort,omitempty"`
-	SupportsPlanMode bool                   `json:"supportsPlanMode"`
-	Models           []ProviderModelOption  `json:"models"`
-	Efforts          []ProviderEffortOption `json:"efforts"`
-}
-
-type ProviderModelOption struct {
-	ID                         string                        `json:"id"`
-	Label                      string                        `json:"label"`
-	SupportsEffort             bool                          `json:"supportsEffort"`
-	Aliases                    []string                      `json:"aliases,omitempty"`
-	ContextWindowOptions       []ProviderContextWindowOption `json:"contextWindowOptions,omitempty"`
-	SupportsMaxReasoningEffort bool                          `json:"supportsMaxReasoningEffort,omitempty"`
-}
-
-type ProviderEffortOption struct {
-	ID    string `json:"id"`
-	Label string `json:"label"`
-}
-
-type ProviderContextWindowOption struct {
-	ID    string `json:"id"`
-	Label string `json:"label"`
+	Runtime            ChatRuntime                    `json:"runtime"`
+	QueuedMessages     []QueuedChatMessage            `json:"queuedMessages"`
+	Messages           []TranscriptEntry              `json:"messages"`
+	History            ChatHistorySnapshot            `json:"history"`
+	AvailableProviders []catalog.ProviderCatalogEntry `json:"availableProviders"`
 }
 
 type DiscoveredProject struct {
@@ -521,7 +493,7 @@ func DeriveChatSnapshot(
 		QueuedMessages:     clonedQueued,
 		Messages:           transcript.Messages,
 		History:            transcript.History,
-		AvailableProviders: ServerProviders(),
+		AvailableProviders: catalog.ServerProviders(),
 	}
 }
 
@@ -667,59 +639,5 @@ func numberAsInt64(value any) (int64, bool) {
 		return int64(typed), true
 	default:
 		return 0, false
-	}
-}
-
-func ServerProviders() []ProviderCatalogEntry {
-	return []ProviderCatalogEntry{
-		{
-			ID:               "claude",
-			Label:            "Claude",
-			DefaultModel:     "claude-sonnet-4-6",
-			DefaultEffort:    "high",
-			SupportsPlanMode: true,
-			Models: []ProviderModelOption{
-				{
-					ID:                         "claude-opus-4-7",
-					Label:                      "Opus 4.7",
-					SupportsEffort:             true,
-					Aliases:                    []string{"opus"},
-					ContextWindowOptions:       []ProviderContextWindowOption{{ID: "200k", Label: "200k"}, {ID: "1m", Label: "1M"}},
-					SupportsMaxReasoningEffort: true,
-				},
-				{
-					ID:                   "claude-sonnet-4-6",
-					Label:                "Sonnet 4.6",
-					SupportsEffort:       true,
-					Aliases:              []string{"sonnet"},
-					ContextWindowOptions: []ProviderContextWindowOption{{ID: "200k", Label: "200k"}, {ID: "1m", Label: "1M"}},
-				},
-				{
-					ID:             "claude-haiku-4-5-20251001",
-					Label:          "Haiku 4.5",
-					SupportsEffort: true,
-					Aliases:        []string{"haiku"},
-				},
-			},
-			Efforts: []ProviderEffortOption{
-				{ID: "low", Label: "Low"},
-				{ID: "medium", Label: "Medium"},
-				{ID: "high", Label: "High"},
-				{ID: "max", Label: "Max"},
-			},
-		},
-		{
-			ID:               "codex",
-			Label:            "Codex",
-			DefaultModel:     "gpt-5.5",
-			SupportsPlanMode: true,
-			Models: []ProviderModelOption{
-				{ID: "gpt-5.5", Label: "GPT-5.5", SupportsEffort: false},
-				{ID: "gpt-5.4", Label: "GPT-5.4", SupportsEffort: false},
-				{ID: "gpt-5.3-codex", Label: "GPT-5.3 Codex", SupportsEffort: false},
-				{ID: "gpt-5.3-codex-spark", Label: "GPT-5.3 Codex Spark", SupportsEffort: false},
-			},
-			Efforts: []ProviderEffortOption{},
-		},
 	}
 }
