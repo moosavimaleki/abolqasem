@@ -372,62 +372,53 @@ func workspaceAppSettingsSnapshot() map[string]any {
 	settings, _ := state.LoadSettings()
 	settings = state.NormalizeSettings(settings)
 	return map[string]any{
-		"analyticsEnabled":        false,
-		"browserSettingsMigrated": true,
+		"analyticsEnabled":        settings.AnalyticsEnabled,
+		"browserSettingsMigrated": settings.BrowserSettingsMigrated,
 		"locale":                  settings.Locale,
-		"theme":                   "system",
-		"chatSoundPreference":     "unfocused",
-		"chatSoundId":             "pop",
+		"theme":                   settings.Theme,
+		"chatSoundPreference":     settings.ChatSoundPreference,
+		"chatSoundId":             settings.ChatSoundID,
 		"terminal": map[string]any{
-			"scrollbackLines": 5000,
-			"minColumnWidth":  8,
+			"scrollbackLines": settings.Terminal.ScrollbackLines,
+			"minColumnWidth":  settings.Terminal.MinColumnWidth,
 		},
 		"editor": map[string]any{
-			"preset":          "custom",
-			"commandTemplate": "",
+			"preset":          settings.Editor.Preset,
+			"commandTemplate": settings.Editor.CommandTemplate,
 		},
-		"defaultProvider": "last_used",
-		"providerDefaults": map[string]any{
-			"claude": map[string]any{
-				"model": "claude-sonnet-4-6",
-				"modelOptions": map[string]any{
-					"reasoningEffort": "none",
-					"contextWindow":   "200k",
-				},
-				"planMode": false,
-			},
-			"codex": map[string]any{
-				"model": "gpt-5.5",
-				"modelOptions": map[string]any{
-					"reasoningEffort": "medium",
-					"fastMode":        false,
-				},
-				"planMode": false,
-			},
-		},
-		"warning":         nil,
-		"filePathDisplay": state.GetSettingsFilePath(),
+		"defaultProvider":  settings.DefaultProvider,
+		"providerDefaults": providerDefaultsSnapshot(settings.ProviderDefaults),
+		"warning":          nil,
+		"filePathDisplay":  state.GetSettingsFilePath(),
 	}
+}
+
+func providerDefaultsSnapshot(defaults map[string]state.ProviderPreference) map[string]any {
+	out := map[string]any{}
+	for provider, preference := range defaults {
+		out[provider] = map[string]any{
+			"model":        preference.Model,
+			"modelOptions": preference.ModelOptions,
+			"planMode":     preference.PlanMode,
+		}
+	}
+	return out
 }
 
 func applyWorkspaceAppSettingsPatch(raw json.RawMessage) (map[string]any, error) {
 	var payload struct {
-		Patch struct {
-			Locale string `json:"locale"`
-		} `json:"patch"`
+		Patch state.AppSettingsPatch `json:"patch"`
 	}
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return nil, err
 	}
-	if payload.Patch.Locale == "fa" || payload.Patch.Locale == "en" {
-		settings, err := state.LoadSettings()
-		if err != nil {
-			return nil, err
-		}
-		settings.Locale = payload.Patch.Locale
-		if err := state.SaveSettings(settings); err != nil {
-			return nil, err
-		}
+	settings, err := state.LoadSettings()
+	if err != nil {
+		return nil, err
+	}
+	settings = state.ApplySettingsPatch(settings, payload.Patch)
+	if err := state.SaveSettings(settings); err != nil {
+		return nil, err
 	}
 	return workspaceAppSettingsSnapshot(), nil
 }

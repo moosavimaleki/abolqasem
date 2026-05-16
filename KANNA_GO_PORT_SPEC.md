@@ -1414,7 +1414,7 @@ Output:
 
 ## Milestone 15: Settings
 
-### Task 15.1: Global settings model
+### Task 15.1: Global settings model `[done]`
 
 تنظیمات:
 
@@ -1437,6 +1437,15 @@ Acceptance criteria:
 - settings از backend خوانده و نوشته شود.
 - settings روی disk persist شود.
 - تغییر locale جهت UI را عوض کند.
+
+Output:
+
+- [settings.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/state/settings.go)
+- [settings_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/state/settings_test.go)
+- [workspace_ws.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_ws.go)
+- App settings now persist locale, theme, provider defaults, editor defaults, terminal defaults, sound settings, analytics, and browser migration state.
+- `settings.writeAppSettingsPatch` applies Kanna-compatible partial patches and returns the updated snapshot.
+- Locale writes are persisted through the same settings patch path used by the React UI.
 
 ### Task 15.2: App management settings
 
