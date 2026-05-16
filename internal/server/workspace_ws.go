@@ -625,6 +625,13 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 		response := protocol.AckEnvelope(envelope.ID, result)
 		return &response
 	case protocol.CommandChatStopDraining:
+		chatID, err := decodeChatID(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		workspaceAgentCoordinator().StopDraining(chatID)
+		workspaceConnections.broadcast(chatID)
 		response := protocol.AckEnvelope(envelope.ID, workspaceAck())
 		return &response
 	case protocol.CommandAppReadManagement:

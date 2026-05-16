@@ -3,9 +3,12 @@ package agent
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
+	"time"
 
 	"ai-agent-manager/internal/workspace/readmodels"
+	"ai-agent-manager/internal/workspace/transcript"
 )
 
 func TestSendStartsTurnAndBlocksConcurrentTurn(t *testing.T) {
@@ -276,13 +279,124 @@ func TestActiveTurnIncludesProjectAndStartedAt(t *testing.T) {
 	}
 }
 
+func TestTurnEventStreamUpdatesTranscriptSessionAndDraining(t *testing.T) {
+	store := newFakeStore()
+	events := make(chan TurnEvent, 4)
+	coordinator := NewCoordinator(store, TurnStarterFunc(func(context.Context, TurnRequest) (Turn, error) {
+		return &fakeTurn{events: events}, nil
+	}), nil)
+
+	if _, err := coordinator.Send(context.Background(), SendCommand{ChatID: "chat-1", Content: "hello"}); err != nil {
+		t.Fatalf("Send returned error: %v", err)
+	}
+	events <- TurnEvent{Type: TurnEventSessionToken, SessionToken: "thread-1"}
+	events <- TurnEvent{Type: TurnEventTranscript, Entry: transcript.New(transcript.KindAssistantText, map[string]any{"text": "done"})}
+	events <- TurnEvent{Type: TurnEventDraining, Draining: true}
+
+	waitForCondition(t, func() bool {
+		store.mu.Lock()
+		token := store.sessionTokens["chat-1"]
+		entryCount := len(store.entries["chat-1"])
+		store.mu.Unlock()
+		return token == "thread-1" && entryCount == 1 && coordinator.DrainingChatIDs()["chat-1"]
+	})
+
+	coordinator.StopDraining("chat-1")
+	if coordinator.DrainingChatIDs()["chat-1"] {
+		t.Fatal("expected StopDraining to clear the draining flag")
+	}
+
+	close(events)
+	waitForCondition(t, func() bool {
+		store.mu.Lock()
+		finished := store.finished
+		store.mu.Unlock()
+		return finished == 1 && len(coordinator.ActiveStatuses()) == 0
+	})
+}
+
+func TestTurnEventStreamStartsQueuedMessageAfterClose(t *testing.T) {
+	store := newFakeStore()
+	firstEvents := make(chan TurnEvent)
+	secondEvents := make(chan TurnEvent)
+	var startedMu sync.Mutex
+	started := 0
+	coordinator := NewCoordinator(store, TurnStarterFunc(func(context.Context, TurnRequest) (Turn, error) {
+		startedMu.Lock()
+		started++
+		current := started
+		startedMu.Unlock()
+		if current == 1 {
+			return &fakeTurn{events: firstEvents}, nil
+		}
+		return &fakeTurn{events: secondEvents}, nil
+	}), nil)
+
+	if _, err := coordinator.Send(context.Background(), SendCommand{ChatID: "chat-1", Content: "first"}); err != nil {
+		t.Fatalf("Send returned error: %v", err)
+	}
+	if _, err := coordinator.Send(context.Background(), SendCommand{ChatID: "chat-1", Content: "second"}); err != nil {
+		t.Fatalf("queued Send returned error: %v", err)
+	}
+
+	close(firstEvents)
+	waitForCondition(t, func() bool {
+		store.mu.Lock()
+		finished := store.finished
+		queuedCount := len(store.queued["chat-1"])
+		store.mu.Unlock()
+		startedMu.Lock()
+		startedCount := started
+		startedMu.Unlock()
+		return finished == 1 && startedCount == 2 && queuedCount == 0
+	})
+	close(secondEvents)
+}
+
+func TestTurnEventStreamPendingToolLifecycle(t *testing.T) {
+	store := newFakeStore()
+	events := make(chan TurnEvent, 1)
+	turn := &fakeTurn{events: events}
+	coordinator := NewCoordinator(store, TurnStarterFunc(func(context.Context, TurnRequest) (Turn, error) {
+		return turn, nil
+	}), nil)
+
+	if _, err := coordinator.Send(context.Background(), SendCommand{ChatID: "chat-1", Content: "hello"}); err != nil {
+		t.Fatalf("Send returned error: %v", err)
+	}
+	events <- TurnEvent{
+		Type: TurnEventPendingTool,
+		PendingTool: &PendingToolRequest{
+			ToolUseID: "tool-1",
+			ToolKind:  "ask_user_question",
+		},
+	}
+	waitForCondition(t, func() bool {
+		return coordinator.ActiveStatuses()["chat-1"] == readmodels.StatusWaitingForUser
+	})
+
+	if err := coordinator.RespondTool(context.Background(), ToolResponseCommand{
+		ChatID:    "chat-1",
+		ToolUseID: "tool-1",
+		Result:    "approved",
+	}); err != nil {
+		t.Fatalf("RespondTool returned error: %v", err)
+	}
+	if turn.toolResponse.Result != "approved" {
+		t.Fatalf("expected response forwarded to turn, got %#v", turn.toolResponse)
+	}
+}
+
 type fakeStore struct {
-	chats     map[string]readmodels.ChatRecord
-	queued    map[string][]readmodels.QueuedChatMessage
-	started   int
-	finished  int
-	cancelled int
-	failed    int
+	mu            sync.Mutex
+	chats         map[string]readmodels.ChatRecord
+	queued        map[string][]readmodels.QueuedChatMessage
+	entries       map[string][]readmodels.TranscriptEntry
+	sessionTokens map[string]string
+	started       int
+	finished      int
+	cancelled     int
+	failed        int
 }
 
 func newFakeStore() *fakeStore {
@@ -296,11 +410,16 @@ func newFakeStore() *fakeStore {
 				UpdatedAt: 1,
 			},
 		},
-		queued: map[string][]readmodels.QueuedChatMessage{},
+		queued:        map[string][]readmodels.QueuedChatMessage{},
+		entries:       map[string][]readmodels.TranscriptEntry{},
+		sessionTokens: map[string]string{},
 	}
 }
 
 func (s *fakeStore) CreateChat(projectID string) (readmodels.ChatRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	chat := readmodels.ChatRecord{
 		ID:        "chat-created",
 		ProjectID: projectID,
@@ -313,6 +432,9 @@ func (s *fakeStore) CreateChat(projectID string) (readmodels.ChatRecord, error) 
 }
 
 func (s *fakeStore) RequireChat(chatID string) (readmodels.ChatRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	chat, ok := s.chats[chatID]
 	if !ok {
 		return readmodels.ChatRecord{}, errors.New("chat not found")
@@ -321,6 +443,9 @@ func (s *fakeStore) RequireChat(chatID string) (readmodels.ChatRecord, error) {
 }
 
 func (s *fakeStore) SetChatProvider(chatID string, provider string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	chat := s.chats[chatID]
 	chat.Provider = &provider
 	s.chats[chatID] = chat
@@ -328,9 +453,23 @@ func (s *fakeStore) SetChatProvider(chatID string, provider string) error {
 }
 
 func (s *fakeStore) SetPlanMode(chatID string, planMode bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	chat := s.chats[chatID]
 	chat.PlanMode = planMode
 	s.chats[chatID] = chat
+	return nil
+}
+
+func (s *fakeStore) SetSessionToken(chatID string, sessionToken string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	chat := s.chats[chatID]
+	chat.SessionToken = &sessionToken
+	s.chats[chatID] = chat
+	s.sessionTokens[chatID] = sessionToken
 	return nil
 }
 
@@ -338,27 +477,50 @@ func (s *fakeStore) AppendUserPrompt(string, string, []readmodels.ChatAttachment
 	return nil
 }
 
+func (s *fakeStore) AppendTranscriptEntry(chatID string, entry readmodels.TranscriptEntry) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.entries[chatID] = append(s.entries[chatID], entry)
+	return nil
+}
+
 func (s *fakeStore) RecordTurnStarted(string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	s.started++
 	return nil
 }
 
 func (s *fakeStore) RecordTurnFinished(string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	s.finished++
 	return nil
 }
 
 func (s *fakeStore) RecordTurnFailed(string, string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	s.failed++
 	return nil
 }
 
 func (s *fakeStore) RecordTurnCancelled(string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	s.cancelled++
 	return nil
 }
 
 func (s *fakeStore) EnqueueMessage(chatID string, message QueueMessageInput) (readmodels.QueuedChatMessage, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	queued := readmodels.QueuedChatMessage{
 		ID:          "queued-" + message.Content,
 		Content:     message.Content,
@@ -370,10 +532,16 @@ func (s *fakeStore) EnqueueMessage(chatID string, message QueueMessageInput) (re
 }
 
 func (s *fakeStore) GetQueuedMessages(chatID string) []readmodels.QueuedChatMessage {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	return append([]readmodels.QueuedChatMessage(nil), s.queued[chatID]...)
 }
 
 func (s *fakeStore) GetQueuedMessage(chatID string, queuedMessageID string) (readmodels.QueuedChatMessage, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	for _, message := range s.queued[chatID] {
 		if message.ID == queuedMessageID {
 			return message, true
@@ -383,6 +551,9 @@ func (s *fakeStore) GetQueuedMessage(chatID string, queuedMessageID string) (rea
 }
 
 func (s *fakeStore) RemoveQueuedMessage(chatID string, queuedMessageID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	existing := s.queued[chatID]
 	next := existing[:0]
 	for _, message := range existing {
@@ -397,6 +568,7 @@ func (s *fakeStore) RemoveQueuedMessage(chatID string, queuedMessageID string) e
 type fakeTurn struct {
 	cancelled    bool
 	toolResponse ToolResponse
+	events       chan TurnEvent
 }
 
 func (t *fakeTurn) Cancel() error {
@@ -407,4 +579,20 @@ func (t *fakeTurn) Cancel() error {
 func (t *fakeTurn) RespondTool(_ context.Context, response ToolResponse) error {
 	t.toolResponse = response
 	return nil
+}
+
+func (t *fakeTurn) Events() <-chan TurnEvent {
+	return t.events
+}
+
+func waitForCondition(t *testing.T, condition func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if condition() {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("condition was not met before timeout")
 }

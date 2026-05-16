@@ -236,6 +236,14 @@ func (s *workspaceEventStore) SetPlanMode(chatID string, planMode bool) error {
 	return s.store.Append(events.StreamChats, event)
 }
 
+func (s *workspaceEventStore) SetSessionToken(chatID string, sessionToken string) error {
+	event, err := events.New(events.TypeSessionTokenSet, map[string]any{"chatId": chatID, "sessionToken": &sessionToken})
+	if err != nil {
+		return err
+	}
+	return s.store.Append(events.StreamTurns, event)
+}
+
 func (s *workspaceEventStore) AppendUserPrompt(chatID string, content string, attachments []readmodels.ChatAttachment, steered bool) error {
 	entry := transcript.New(transcript.KindUserPrompt, map[string]any{
 		"content":     content,

@@ -843,7 +843,7 @@ Output:
 
 ## Milestone 6: Agent Coordinator
 
-### Task 6.1: ساخت coordinator مرکزی `[in-progress]`
+### Task 6.1: ساخت coordinator مرکزی `[done]`
 
 مسئولیت‌ها:
 
@@ -860,10 +860,10 @@ Output:
 
 Acceptance criteria:
 
-- همزمان دو turn روی یک chat اجرا نشود.
-- اگر chat active است، پیام جدید queue شود.
-- cancel status را درست update کند.
-- خطای provider باعث خراب شدن server نشود.
+- [x] همزمان دو turn روی یک chat اجرا نشود.
+- [x] اگر chat active است، پیام جدید queue شود.
+- [x] cancel status را درست update کند.
+- [x] خطای provider باعث خراب شدن server نشود.
 
 Progress:
 
@@ -874,13 +874,18 @@ Progress:
 - Cancel removes active turn immediately and records cancellation.
 - Provider start failure records failed turn and clears active state.
 - Queue deletion and start-next-queued-message after finish are implemented.
+- Provider event stream consumption is implemented through `TurnEventSource`.
+- Tool request/response lifecycle is handled with `TurnEventPendingTool` and `RespondTool`.
+- Draining stream behavior is tracked by coordinator and exposed to chat snapshots.
+- WebSocket commands route send, queue, dequeue, cancel, respondTool, and stopDraining through coordinator.
 
-Remaining:
+Output:
 
-- Provider event stream consumption.
-- Tool request/response lifecycle.
-- Draining stream behavior.
-- Integration with WebSocket command router.
+- [coordinator.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/workspace/agent/coordinator.go)
+- [coordinator_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/workspace/agent/coordinator_test.go)
+- [workspace_composer.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_composer.go)
+- [workspace_snapshots.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_snapshots.go)
+- [workspace_ws.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_ws.go)
 
 ### Task 6.1.1: Coordinator core invariants `[done]`
 

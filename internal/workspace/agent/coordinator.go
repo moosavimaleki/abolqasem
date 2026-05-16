@@ -23,7 +23,9 @@ type Store interface {
 	RequireChat(chatID string) (readmodels.ChatRecord, error)
 	SetChatProvider(chatID string, provider string) error
 	SetPlanMode(chatID string, planMode bool) error
+	SetSessionToken(chatID string, sessionToken string) error
 	AppendUserPrompt(chatID string, content string, attachments []readmodels.ChatAttachment, steered bool) error
+	AppendTranscriptEntry(chatID string, entry readmodels.TranscriptEntry) error
 	RecordTurnStarted(chatID string) error
 	RecordTurnFinished(chatID string) error
 	RecordTurnFailed(chatID string, message string) error
@@ -40,6 +42,10 @@ type TurnStarter interface {
 
 type Turn interface {
 	Cancel() error
+}
+
+type TurnEventSource interface {
+	Events() <-chan TurnEvent
 }
 
 type ToolResponder interface {
@@ -79,6 +85,7 @@ type ActiveTurn struct {
 	StartedAt   time.Time
 	Cancel      context.CancelFunc
 	PendingTool *PendingToolRequest
+	Draining    bool
 }
 
 type PendingToolRequest struct {
@@ -142,6 +149,28 @@ type ToolResponse struct {
 	Result    any
 }
 
+type TurnEventKind string
+
+const (
+	TurnEventTranscript   TurnEventKind = "transcript"
+	TurnEventSessionToken TurnEventKind = "session_token"
+	TurnEventPendingTool  TurnEventKind = "pending_tool"
+	TurnEventDraining     TurnEventKind = "draining"
+	TurnEventFinished     TurnEventKind = "finished"
+	TurnEventFailed       TurnEventKind = "failed"
+	TurnEventCancelled    TurnEventKind = "cancelled"
+)
+
+type TurnEvent struct {
+	Type         TurnEventKind
+	Entry        readmodels.TranscriptEntry
+	SessionToken string
+	PendingTool  *PendingToolRequest
+	Draining     bool
+	Error        error
+	Message      string
+}
+
 func NewCoordinator(store Store, starter TurnStarter, onStateChange func(chatID string)) *Coordinator {
 	if starter == nil {
 		starter = TurnStarterFunc(func(context.Context, TurnRequest) (Turn, error) {
@@ -168,6 +197,19 @@ func (c *Coordinator) ActiveStatuses() map[string]readmodels.KannaStatus {
 		statuses[chatID] = turn.Status
 	}
 	return statuses
+}
+
+func (c *Coordinator) DrainingChatIDs() map[string]bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	draining := map[string]bool{}
+	for chatID, turn := range c.active {
+		if turn.Draining {
+			draining[chatID] = true
+		}
+	}
+	return draining
 }
 
 func (c *Coordinator) PendingTool(chatID string) *PendingToolSnapshot {
@@ -335,6 +377,18 @@ func (c *Coordinator) Cancel(chatID string) error {
 	return nil
 }
 
+func (c *Coordinator) StopDraining(chatID string) {
+	c.mu.Lock()
+	active := c.active[chatID]
+	if active != nil {
+		active.Draining = false
+	}
+	c.mu.Unlock()
+	if active != nil {
+		c.emitStateChange(chatID)
+	}
+}
+
 func (c *Coordinator) maybeStartNextQueuedMessage(ctx context.Context, chatID string) error {
 	if c.isActive(chatID) {
 		return nil
@@ -438,8 +492,140 @@ func (c *Coordinator) startTurn(
 		active.Turn = turn
 	}
 	c.mu.Unlock()
+	if source, ok := turn.(TurnEventSource); ok {
+		if events := source.Events(); events != nil {
+			go c.consumeTurnEvents(turnCtx, chatID, active, events)
+		}
+	}
 	c.emitStateChange(chatID)
 	return nil
+}
+
+func (c *Coordinator) consumeTurnEvents(ctx context.Context, chatID string, active *ActiveTurn, events <-chan TurnEvent) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case event, ok := <-events:
+			if !ok {
+				_ = c.finishFromProvider(chatID, active)
+				return
+			}
+			if !c.activeMatches(chatID, active) {
+				return
+			}
+			if c.handleTurnEvent(chatID, active, event) {
+				return
+			}
+		}
+	}
+}
+
+func (c *Coordinator) handleTurnEvent(chatID string, active *ActiveTurn, event TurnEvent) bool {
+	switch event.Type {
+	case TurnEventTranscript:
+		if event.Entry != nil {
+			if err := c.store.AppendTranscriptEntry(chatID, event.Entry); err != nil {
+				_ = c.failFromProvider(chatID, active, err)
+				return true
+			}
+			c.emitStateChange(chatID)
+		}
+	case TurnEventSessionToken:
+		if event.SessionToken != "" {
+			if err := c.store.SetSessionToken(chatID, event.SessionToken); err != nil {
+				_ = c.failFromProvider(chatID, active, err)
+				return true
+			}
+			c.emitStateChange(chatID)
+		}
+	case TurnEventPendingTool:
+		if event.PendingTool != nil {
+			if err := c.SetPendingTool(chatID, *event.PendingTool); err != nil {
+				_ = c.failFromProvider(chatID, active, err)
+				return true
+			}
+		}
+	case TurnEventDraining:
+		c.setDraining(chatID, active, event.Draining)
+	case TurnEventFinished:
+		_ = c.finishFromProvider(chatID, active)
+		return true
+	case TurnEventFailed:
+		_ = c.failFromProvider(chatID, active, eventError(event))
+		return true
+	case TurnEventCancelled:
+		_ = c.cancelFromProvider(chatID, active)
+		return true
+	}
+	return false
+}
+
+func (c *Coordinator) finishFromProvider(chatID string, active *ActiveTurn) error {
+	if !c.removeActive(chatID, active) {
+		return nil
+	}
+	if err := c.store.RecordTurnFinished(chatID); err != nil {
+		return err
+	}
+	c.emitStateChange(chatID)
+	return c.maybeStartNextQueuedMessage(context.Background(), chatID)
+}
+
+func (c *Coordinator) failFromProvider(chatID string, active *ActiveTurn, err error) error {
+	if !c.removeActive(chatID, active) {
+		return nil
+	}
+	message := "provider failed"
+	if err != nil {
+		message = err.Error()
+	}
+	if err := c.store.RecordTurnFailed(chatID, message); err != nil {
+		return err
+	}
+	c.emitStateChange(chatID)
+	return nil
+}
+
+func (c *Coordinator) cancelFromProvider(chatID string, active *ActiveTurn) error {
+	if !c.removeActive(chatID, active) {
+		return nil
+	}
+	if err := c.store.RecordTurnCancelled(chatID); err != nil {
+		return err
+	}
+	c.emitStateChange(chatID)
+	return nil
+}
+
+func (c *Coordinator) setDraining(chatID string, active *ActiveTurn, draining bool) {
+	c.mu.Lock()
+	if c.active[chatID] == active {
+		active.Draining = draining
+		c.mu.Unlock()
+		c.emitStateChange(chatID)
+		return
+	}
+	c.mu.Unlock()
+}
+
+func (c *Coordinator) activeMatches(chatID string, active *ActiveTurn) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.active[chatID] == active
+}
+
+func (c *Coordinator) removeActive(chatID string, active *ActiveTurn) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.active[chatID] != active {
+		return false
+	}
+	delete(c.active, chatID)
+	if active.Cancel != nil {
+		active.Cancel()
+	}
+	return true
 }
 
 func (c *Coordinator) isActive(chatID string) bool {
@@ -512,6 +698,16 @@ func derefString(value *string) string {
 
 func derefBool(value *bool) bool {
 	return value != nil && *value
+}
+
+func eventError(event TurnEvent) error {
+	if event.Error != nil {
+		return event.Error
+	}
+	if event.Message != "" {
+		return errors.New(event.Message)
+	}
+	return errors.New("provider failed")
 }
 
 type noopTurn struct{}
