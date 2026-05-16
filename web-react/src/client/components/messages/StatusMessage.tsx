@@ -1,17 +1,18 @@
 import { Minimize } from "lucide-react"
 import type { ProcessedStatusMessage } from "./types"
 import { MetaRow, MetaLabel } from "./shared"
+import { useI18n } from "../../i18n/context"
 
 interface Props {
   message: ProcessedStatusMessage
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  compacting: "Compacting...",
-}
-
 export function StatusMessage({ message }: Props) {
-  const label = STATUS_LABELS[message.status] || message.status
+  const { t } = useI18n()
+  const statusLabels: Record<string, string> = {
+    compacting: t.messages.status.compacting,
+  }
+  const label = statusLabels[message.status] || message.status
 
   return (
     <MetaRow className={`grid grid-cols-[auto_1fr] items-center gap-1.5 text-sm animate-pulse`}>

@@ -21,6 +21,7 @@ import { cn } from "../lib/utils"
 import { NewProjectModal } from "./NewProjectModal"
 import { Button } from "./ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip"
+import { useI18n } from "../i18n/context"
 
 interface LocalDevProps {
   connectionStatus: SocketStatus
@@ -176,6 +177,7 @@ export function LocalDev({
   onOpenProject,
   onCreateProject,
 }: LocalDevProps) {
+  const { t } = useI18n()
   const projects = useMemo(() => snapshot?.projects ?? [], [snapshot?.projects])
   const isConnecting = connectionStatus === "connecting" || !ready
   const isConnected = connectionStatus === "connected" && ready
@@ -187,23 +189,23 @@ export function LocalDev({
           <PageHeader
             narrow
             icon={CodeXml}
-            title={isConnecting ? `Connecting ${APP_NAME}` : `Connect ${APP_NAME}`}
+            title={isConnecting ? t.localDev.connectingTitle() : t.localDev.connectTitle()}
             subtitle={isConnecting
-              ? `${APP_NAME} is starting up and loading your local projects.`
-              : `Run ${APP_NAME} directly on your machine with full access to your local files and agent project history.`}
+              ? t.localDev.connectingSubtitle()
+              : t.localDev.disconnectedSubtitle()}
           />
           <div className="max-w-2xl w-full mx-auto pb-12 px-6">
-            <SectionHeader>Status</SectionHeader>
+            <SectionHeader>{t.localDev.status}</SectionHeader>
             <div className="mb-8">
               <InfoCard>
                 <div className="flex items-center gap-3">
                   <Loader2 className="h-4 w-4 text-muted-foreground animate-spin" />
                   <span className="text-sm text-muted-foreground">
                     {isConnecting ? (
-                      `Connecting to your local ${APP_NAME} server...`
+                      t.localDev.connectingServer()
                     ) : (
                       <>
-                        Not connected. Run <code className="bg-background border border-border rounded-md mx-0.5 p-1 font-mono text-xs text-foreground">{getCliInvocation()}</code> from any terminal on this machine.
+                        {t.localDev.notConnectedPrefix} <code className="bg-background border border-border rounded-md mx-0.5 p-1 font-mono text-xs text-foreground">{getCliInvocation()}</code> {t.localDev.notConnectedSuffix}
                       </>
                     )}
                   </span>
@@ -213,14 +215,14 @@ export function LocalDev({
 
             {!isConnecting ? (
               <div className="mb-10">
-              <SectionHeader>How it works</SectionHeader>
+              <SectionHeader>{t.localDev.howItWorks}</SectionHeader>
               <InfoCard>
                 <div className="flex items-center justify-around gap-6 py-4 px-2">
-                  <HowItWorksItem icon={Terminal} title={`${APP_NAME} CLI`} subtitle="On Your Machine" />
+                  <HowItWorksItem icon={Terminal} title={`${APP_NAME} CLI`} subtitle={t.localDev.cliSubtitle} />
                   <HowItWorksConnector />
-                  <HowItWorksItem icon={Monitor} title={`${APP_NAME} Server`} subtitle="Local WebSocket" />
+                  <HowItWorksItem icon={Monitor} title={t.localDev.serverTitle()} subtitle={t.localDev.localWebSocket} />
                   <HowItWorksConnector />
-                  <HowItWorksItem icon={CodeXml} title={`${APP_NAME} UI`} subtitle="Project Chat" />
+                  <HowItWorksItem icon={CodeXml} title={t.localDev.uiTitle()} subtitle={t.localDev.projectChat} />
                 </div>
               </InfoCard>
               </div>
@@ -228,29 +230,29 @@ export function LocalDev({
 
             {!isConnecting ? (
               <div className="mb-10">
-              <SectionHeader>Setup</SectionHeader>
+              <SectionHeader>{t.localDev.setup}</SectionHeader>
               <InfoCard>
                 <div className="space-y-4">
-                  <Step number={1} title={`Start ${APP_NAME}`}>
-                    <p>Run this command in your terminal:</p>
+                  <Step number={1} title={t.localDev.startApp()}>
+                    <p>{t.localDev.runCommand}</p>
                     <CodeBlock>{getCliInvocation()}</CodeBlock>
                   </Step>
 
-                  <Step number={2} title="Open the local UI">
-                    <p>{APP_NAME} serves the app locally and opens the Local Projects page in an app-style browser window.</p>
+                  <Step number={2} title={t.localDev.openLocalUi}>
+                    <p>{t.localDev.openLocalUiDescription()}</p>
                     <CodeBlock>http://localhost:3210/local</CodeBlock>
                   </Step>
 
                   <div className="mt-8">
-                    <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-4">Notes</h3>
+                    <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-4">{t.localDev.notes}</h3>
                     <div className="space-y-3 text-sm">
                       <div className="flex gap-4">
                         <code className="font-mono text-foreground whitespace-nowrap">{getCliInvocation("").trim()}</code>
-                        <span className="text-muted-foreground">Start in the current directory</span>
+                        <span className="text-muted-foreground">{t.localDev.startCurrentDirectory}</span>
                       </div>
                       <div className="flex gap-4">
                         <code className="font-mono text-foreground whitespace-nowrap">{getCliInvocation("--no-open")}</code>
-                        <span className="text-muted-foreground">Start the server without opening the browser</span>
+                        <span className="text-muted-foreground">{t.localDev.startWithoutBrowser}</span>
                       </div>
                     </div>
                   </div>
@@ -263,16 +265,16 @@ export function LocalDev({
       ) : (
         <>
           <PageHeader
-            title={snapshot?.machine.displayName ?? "Local Projects"}
-            subtitle={`${APP_NAME} is connected, choose a project below to get started.`}
+            title={snapshot?.machine.displayName ?? t.localDev.localProjects}
+            subtitle={t.localDev.connectedSubtitle()}
           />
 
           <div className="w-full px-6 mb-10">
             <div className="flex items-baseline justify-between mb-3">
-              <h2 className="text-[13px] font-medium text-muted-foreground uppercase tracking-wider">Projects</h2>
+              <h2 className="text-[13px] font-medium text-muted-foreground uppercase tracking-wider">{t.localDev.projects}</h2>
               <Button variant="default" size="sm" onClick={() => onNewProjectOpenChange(true)}>
                 <Plus className="h-4 w-4 mr-1.5" />
-                Add Project
+                {t.localDev.addProject}
               </Button>
             </div>
             {projects.length > 0 ? (
@@ -291,7 +293,7 @@ export function LocalDev({
             ) : (
               <InfoCard>
                 <p className="text-sm text-muted-foreground">
-                  No local projects discovered yet. Open one with Claude or Codex, or create a new project here.
+                  {t.localDev.noProjects}
                 </p>
               </InfoCard>
             )}

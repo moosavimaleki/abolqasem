@@ -6,6 +6,7 @@ import { stripWorkspacePath } from "../../lib/pathUtils"
 import { AnimatedShinyText } from "../ui/animated-shiny-text"
 import { formatBashCommandTitle, toTitleCase } from "../../lib/formatters"
 import { FileContentView } from "./FileContentView"
+import { useI18n } from "../../i18n/context"
 
 interface Props {
   message: ProcessedToolCall
@@ -84,6 +85,7 @@ export function ReadResultImages({ images }: { images: ReadonlyArray<ReadImageBl
 }
 
 export function ToolCallMessage({ message, isLoading = false, localPath }: Props) {
+  const { t } = useI18n()
   const hasResult = message.result !== undefined
   const showLoadingState = !hasResult && isLoading
 
@@ -106,10 +108,10 @@ export function ToolCallMessage({ message, isLoading = false, localPath }: Props
       return `Find \`${pattern}\` in files`
     }
     if (message.toolKind === "bash") {
-      return message.input.description || (message.input.command ? formatBashCommandTitle(message.input.command) : "Bash")
+      return message.input.description || (message.input.command ? formatBashCommandTitle(message.input.command) : t.messages.bash)
     }
     if (message.toolKind === "web_search") {
-      return message.input.query || "Web Search"
+      return message.input.query || t.messages.webSearch
     }
     if (message.toolKind === "read_file") {
       return `Read ${stripWorkspacePath(message.input.filePath, localPath)}`
@@ -130,7 +132,7 @@ export function ToolCallMessage({ message, isLoading = false, localPath }: Props
       return message.input.subagentType || message.toolName
     }
     return message.toolName
-  }, [message.input, message.toolName, localPath])
+  }, [message.input, message.toolName, localPath, t])
 
   const isAgent = useMemo(() => message.toolKind === "subagent_task", [message.toolKind])
   const description = useMemo(() => {
@@ -206,15 +208,15 @@ export function ToolCallMessage({ message, isLoading = false, localPath }: Props
                 <MetaCodeBlock label={
                   isBashTool ? (
                     <span className="flex items-center gap-2 w-full">
-                      <span>Command</span>
+                      <span>{t.messages.command}</span>
                       {!!message.input.timeoutMs && (
                         <span className="text-muted-foreground">timeout: {String(message.input.timeoutMs)}ms</span>
                       )}
                       {!!message.input.runInBackground && (
-                        <span className="text-muted-foreground">background</span>
+                        <span className="text-muted-foreground">{t.messages.background}</span>
                       )}
                     </span>
-                  ) : isWriteTool ? "Contents" : "Input"
+                  ) : isWriteTool ? t.messages.contents : t.messages.input
                 } copyText={inputText}>
                   {inputText}
                 </MetaCodeBlock>
@@ -222,7 +224,7 @@ export function ToolCallMessage({ message, isLoading = false, localPath }: Props
               {hasResult && isReadTool && !message.isError && (
                 readImages.length > 0 ? (
                   <div>
-                    <span className="font-medium text-muted-foreground">Image</span>
+                    <span className="font-medium text-muted-foreground">{t.messages.image}</span>
                     <div className="mt-1">
                       <ReadResultImages images={readImages} />
                     </div>
@@ -239,7 +241,7 @@ export function ToolCallMessage({ message, isLoading = false, localPath }: Props
                 />
               )}
               {hasResult && !isReadTool && !(isWriteTool && !message.isError) && !(isEditTool && !message.isError) && !(isDeleteTool && !message.isError) && (
-                <MetaCodeBlock label={message.isError ? "Error" : "Result"} copyText={resultText}>
+                <MetaCodeBlock label={message.isError ? t.messages.error : t.messages.result} copyText={resultText}>
                   {resultText}
                 </MetaCodeBlock>
               )}

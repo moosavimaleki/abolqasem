@@ -75,6 +75,7 @@ import { useChatPreferencesStore } from "../stores/chatPreferencesStore"
 import { CHAT_SOUND_OPTIONS, useChatSoundPreferencesStore, type ChatSoundId, type ChatSoundPreference } from "../stores/chatSoundPreferencesStore"
 import type { KannaState } from "./useKannaState"
 import { getDictionary, LOCALE_OPTIONS, normalizeLocale } from "../i18n"
+import { useI18n } from "../i18n/context"
 
 const sidebarItems = [
   {
@@ -116,23 +117,6 @@ export function resolveSettingsSectionId(sectionId: string | undefined): Sidebar
   if (!sectionId) return null
   return sidebarItems.some((item) => item.id === sectionId) ? (sectionId as SidebarPageId) : null
 }
-
-const themeOptions = [
-  { value: "light" as ThemePreference, label: "Light", icon: Sun },
-  { value: "dark" as ThemePreference, label: "Dark", icon: Moon },
-  { value: "system" as ThemePreference, label: "System", icon: Monitor },
-]
-
-const chatSoundPreferenceOptions: { value: ChatSoundPreference; label: string }[] = [
-  { value: "never", label: "Never" },
-  { value: "unfocused", label: "When Unfocused" },
-  { value: "always", label: "Always" },
-]
-
-const analyticsOptions = [
-  { value: "disabled" as const, label: "Off" },
-  { value: "enabled" as const, label: "On" },
-]
 
 const QUICK_RESPONSE_PROVIDER_OPTIONS: Array<{ value: LlmProviderKind; label: string }> = [
   { value: "openai", label: "OpenAI" },
@@ -254,7 +238,8 @@ export function ChangelogSection({
   onInstallUpdate: () => void
   onCheckForUpdates: () => void
 }) {
-  const latestVersion = updateSnapshot?.latestVersion ?? releases[0]?.tag_name ?? "Unknown"
+  const { t } = useI18n()
+  const latestVersion = updateSnapshot?.latestVersion ?? releases[0]?.tag_name ?? t.common.unknown
   const currentVersionLabel = updateSnapshot?.currentVersion ?? currentVersion
   const isChecking = updateSnapshot?.status === "checking"
   const isUpdating = updateSnapshot?.status === "updating" || updateSnapshot?.status === "restart_pending"
@@ -268,7 +253,7 @@ export function ChangelogSection({
         <div className="flex min-h-[180px] items-center justify-center rounded-2xl border border-border bg-card/40 px-6 py-8 text-sm text-muted-foreground">
           <div className="flex items-center gap-3">
             <Loader2 className="h-4 w-4 animate-spin" />
-            <span>Loading release notes…</span>
+            <span>{t.common.loading}…</span>
           </div>
         </div>
       ) : null}
@@ -277,9 +262,9 @@ export function ChangelogSection({
         <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-6 py-5">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <div className="text-sm font-medium text-foreground">Could not load changelog</div>
+              <div className="text-sm font-medium text-foreground">{t.settings.couldNotLoadChangelog}</div>
               <div className="mt-1 text-sm text-muted-foreground">
-                {error ?? "Unable to load changelog."}
+                {error ?? t.settings.unableLoadChangelog}
               </div>
             </div>
             <button
@@ -287,7 +272,7 @@ export function ChangelogSection({
               onClick={onRetry}
               className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground transition-colors hover:bg-muted"
             >
-              Retry
+              {t.common.retry}
             </button>
           </div>
         </div>
@@ -295,7 +280,7 @@ export function ChangelogSection({
 
       {status === "success" && releases.length === 0 ? (
         <div className="rounded-lg border border-border bg-card/30 px-6 py-8">
-          <div className="text-sm font-medium text-foreground">No releases yet</div>
+          <div className="text-sm font-medium text-foreground">{t.settings.changelog}</div>
           <div className="mt-2 text-sm text-muted-foreground">
             GitHub did not return any published releases for this repository.
           </div>
@@ -309,7 +294,7 @@ export function ChangelogSection({
             onClick={onCheckForUpdates}
             disabled={isChecking || isUpdating}
           >
-            {isChecking ? "Checking…" : "Check for updates"}
+            {isChecking ? `${t.common.loading}…` : t.settings.checkForUpdates}
           </SettingsHeaderButton>
         </div>
       ) : null}
@@ -816,7 +801,10 @@ export function SettingsPage() {
   const [changelogError, setChangelogError] = useState<string | null>(null)
   const selectedPage = resolveSettingsSectionId(sectionId) ?? "general"
   const isConnecting = state.connectionStatus === "connecting" || !state.localProjectsReady
-  const machineName = state.localProjects?.machine.displayName ?? "Unavailable"
+  const appSettings = state.appSettings
+  const locale = normalizeLocale(appSettings?.locale)
+  const dictionary = getDictionary(locale)
+  const machineName = state.localProjects?.machine.displayName ?? dictionary.settings.unavailable
   const projectCount = state.localProjects?.projects.length ?? 0
   const appVersion = SDK_CLIENT_APP.split("/")[1] ?? "unknown"
   const scrollbackLines = useTerminalPreferencesStore((store) => store.scrollbackLines)
@@ -832,9 +820,6 @@ export function SettingsPage() {
   const setChatSoundPreference = useChatSoundPreferencesStore((store) => store.setChatSoundPreference)
   const setChatSoundId = useChatSoundPreferencesStore((store) => store.setChatSoundId)
   const keybindings = state.keybindings
-  const appSettings = state.appSettings
-  const locale = normalizeLocale(appSettings?.locale)
-  const dictionary = getDictionary(locale)
   const llmProvider = state.llmProvider
   const defaultProvider = useChatPreferencesStore((store) => store.defaultProvider)
   const providerDefaults = useChatPreferencesStore((store) => store.providerDefaults)
@@ -844,6 +829,30 @@ export function SettingsPage() {
   const setProviderDefaultPlanMode = useChatPreferencesStore((store) => store.setProviderDefaultPlanMode)
   const resolvedKeybindings = useMemo(() => getResolvedKeybindings(keybindings), [keybindings])
   const keybindingsFilePathDisplay = resolvedKeybindings.filePathDisplay || getKeybindingsFilePathDisplay()
+  const localizedSidebarItems = useMemo(() => sidebarItems.map((item) => {
+    const sections = {
+      general: { label: dictionary.settings.general, subtitle: dictionary.settings.generalSubtitle },
+      skills: { label: dictionary.settings.skills, subtitle: dictionary.settings.skillsSubtitle },
+      providers: { label: dictionary.settings.providers, subtitle: dictionary.settings.providersSubtitle },
+      keybindings: { label: dictionary.settings.keybindings, subtitle: dictionary.settings.keybindingsSubtitle },
+      changelog: { label: dictionary.settings.changelog, subtitle: dictionary.settings.changelogSubtitle },
+    } satisfies Record<SidebarPageId, { label: string; subtitle: string }>
+    return { ...item, ...sections[item.id] }
+  }), [dictionary])
+  const localizedThemeOptions = useMemo(() => [
+    { value: "light" as ThemePreference, label: dictionary.settings.options.light, icon: Sun },
+    { value: "dark" as ThemePreference, label: dictionary.settings.options.dark, icon: Moon },
+    { value: "system" as ThemePreference, label: dictionary.settings.options.system, icon: Monitor },
+  ], [dictionary])
+  const localizedChatSoundPreferenceOptions = useMemo(() => [
+    { value: "never" as ChatSoundPreference, label: dictionary.settings.options.never },
+    { value: "unfocused" as ChatSoundPreference, label: dictionary.settings.options.unfocused },
+    { value: "always" as ChatSoundPreference, label: dictionary.settings.options.always },
+  ], [dictionary])
+  const localizedAnalyticsOptions = useMemo(() => [
+    { value: "disabled" as const, label: dictionary.settings.options.off },
+    { value: "enabled" as const, label: dictionary.settings.options.on },
+  ], [dictionary])
   const [scrollbackDraft, setScrollbackDraft] = useState(String(scrollbackLines))
   const [minColumnWidthDraft, setMinColumnWidthDraft] = useState(String(minColumnWidth))
   const [editorCommandDraft, setEditorCommandDraft] = useState(editorCommandTemplate)
@@ -867,18 +876,18 @@ export function SettingsPage() {
   const handleWriteLlmProvider = state.handleWriteLlmProvider
   const handleValidateLlmProvider = state.handleValidateLlmProvider
   const updateStatusLabel = updateSnapshot?.status === "checking"
-    ? "Checking for updates…"
+    ? dictionary.settings.updateChecking
     : updateSnapshot?.status === "updating"
-      ? "Installing update…"
+      ? dictionary.settings.updateInstalling
       : updateSnapshot?.status === "restart_pending"
-        ? "Restarting Kanna…"
+        ? dictionary.settings.updateRestarting
         : updateSnapshot?.status === "available"
-          ? `Update available${updateSnapshot.latestVersion ? `: ${updateSnapshot.latestVersion}` : ""}`
+          ? dictionary.settings.updateAvailable(updateSnapshot.latestVersion ?? undefined)
           : updateSnapshot?.status === "up_to_date"
-            ? "Up to date"
+            ? dictionary.settings.updateUpToDate
             : updateSnapshot?.status === "error"
-              ? "Update check failed"
-              : "Not checked yet"
+              ? dictionary.settings.updateCheckFailed
+              : dictionary.settings.updateNotChecked
 
   useEffect(() => {
     setScrollbackDraft(String(scrollbackLines))
@@ -970,7 +979,7 @@ export function SettingsPage() {
       })
       .catch((error: unknown) => {
         if (cancelled) return
-        setChangelogError(error instanceof Error ? error.message : "Unable to load changelog.")
+        setChangelogError(error instanceof Error ? error.message : dictionary.settings.unableLoadChangelog)
         setChangelogStatus("error")
       })
 
@@ -1196,17 +1205,17 @@ export function SettingsPage() {
     .replaceAll("{column}", "1")
   const analyticsDisclosureEvents = ANALYTICS_STATIC_EVENT_NAMES
   const analyticsSettingValue = appSettings?.analyticsEnabled === false ? "disabled" : "enabled"
-  const selectedSection = sidebarItems.find((item) => item.id === selectedPage) ?? sidebarItems[0]
+  const selectedSection = localizedSidebarItems.find((item) => item.id === selectedPage) ?? localizedSidebarItems[0]
   const selectedSectionSubtitle =
     selectedPage === "keybindings"
-      ? getKeybindingsSubtitle(keybindingsFilePathDisplay)
+      ? dictionary.settings.keybindingsSubtitle
       : selectedSection.subtitle
   const showFooter = !isConnecting
   const llmValidationErrorText = llmValidationError ? JSON.stringify(llmValidationError, null, 2) : ""
   const llmValidationDescription = (
     <>
       <span>
-        Use an OpenAI-compatible API for title and commit message generation before Claude and Codex. Stored in {llmProvider?.filePathDisplay ?? "the active llm-provider.json file"}.
+        {dictionary.settings.quickResponseDescription(llmProvider?.filePathDisplay ?? "the active llm-provider.json file")}
       </span>
       <span
         className={cn(
@@ -1257,9 +1266,9 @@ export function SettingsPage() {
         <aside className={`hidden w-[200px] shrink-0 md:block ${showFooter ? "pb-[89px]" : ""}`}>
           <div className="flex flex-col gap-1 px-4 py-6">
             <div className="px-3 pb-5 text-[22px] font-extrabold tracking-[-0.5px] text-foreground">
-              Settings
+              {dictionary.settings.settings}
             </div>
-            {sidebarItems.map((item) => (
+            {localizedSidebarItems.map((item) => (
               <button
                 key={item.label}
                 type="button"
@@ -1287,7 +1296,7 @@ export function SettingsPage() {
               >
                 <div className="flex items-center gap-2.5">
                   <LogOut className="h-4 w-4 shrink-0" />
-                  <span>{signingOut ? "Signing out..." : "Sign out"}</span>
+                  <span>{signingOut ? dictionary.settings.signingOut : dictionary.settings.signOut}</span>
                 </div>
               </button>
             ) : null}
@@ -1303,13 +1312,13 @@ export function SettingsPage() {
                   type="button"
                   onClick={state.openSidebar}
                   className="flex shrink-0 items-center p-2 text-sm text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
-                  aria-label="Open sidebar"
-                  title="Open sidebar"
+                  aria-label={dictionary.settings.openSidebar}
+                  title={dictionary.settings.openSidebar}
                 >
                   <Menu className="h-4 w-4 shrink-0" />
                 </button>
                 </div>
-                {sidebarItems.map((item) => (
+                {localizedSidebarItems.map((item) => (
                   <button
                     key={item.label}
                     type="button"
@@ -1339,7 +1348,7 @@ export function SettingsPage() {
                     )}
                   >
                     <LogOut className="h-4 w-4 shrink-0" />
-                    <span className="whitespace-nowrap">{signingOut ? "Signing out..." : "Sign out"}</span>
+                    <span className="whitespace-nowrap">{signingOut ? dictionary.settings.signingOut : dictionary.settings.signOut}</span>
                   </button>
                 ) : null}
               </div>
@@ -1351,7 +1360,7 @@ export function SettingsPage() {
               <div className="flex min-h-[240px] items-center justify-center rounded-2xl border border-border bg-card/40 px-4 py-6 text-sm text-muted-foreground">
                 <div className="flex items-center gap-3">
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>Loading machine settings…</span>
+                  <span>{dictionary.settings.loadingMachineSettings}</span>
                 </div>
               </div>
             ) : (
@@ -1366,7 +1375,7 @@ export function SettingsPage() {
                         variant="outline"
                         onClick={() => navigate("/settings/changelog")}
                       >
-                        Check for updates
+                        {dictionary.settings.checkForUpdates}
                       </SettingsHeaderButton>
                     ) : null}
                     {selectedPage === "keybindings" ? (
@@ -1394,7 +1403,7 @@ export function SettingsPage() {
                     ) : null}
                     <div className="border-b border-border">
                       <SettingsRow
-                        title="Application Update"
+                        title={dictionary.settings.applicationUpdate}
                         description={(
                           <>
                             <span>{updateStatusLabel}.</span>
@@ -1414,21 +1423,21 @@ export function SettingsPage() {
                         bordered={false}
                       >
                         <div className="text-right text-sm text-foreground">
-                          <div>Current: {updateSnapshot?.currentVersion ?? appVersion}</div>
+                          <div>{dictionary.settings.current}: {updateSnapshot?.currentVersion ?? appVersion}</div>
                           <div className="text-xs text-muted-foreground">
-                            Latest: {updateSnapshot?.latestVersion ?? "Unknown"}
+                            {dictionary.settings.latest}: {updateSnapshot?.latestVersion ?? dictionary.common.unknown}
                           </div>
                         </div>
                       </SettingsRow>
 
                       <SettingsRow
-                        title="Theme"
-                        description="Choose between light, dark, or system appearance"
+                        title={dictionary.settings.theme}
+                        description={dictionary.settings.themeDescription}
                       >
                         <SegmentedControl
                           value={theme}
                           onValueChange={handleThemeChange}
-                          options={themeOptions}
+                          options={localizedThemeOptions}
                           size="sm"
                         />
                       </SettingsRow>
@@ -1457,8 +1466,8 @@ export function SettingsPage() {
                       </SettingsRow>
 
                       <SettingsRow
-                        title="Chat Sounds"
-                        description="Play a pop when a chat starts waiting on you or the unread chat count increases"
+                        title={dictionary.settings.chatSounds}
+                        description={dictionary.settings.chatSoundsDescription}
                       >
                         <Select
                           value={chatSoundPreference}
@@ -1469,7 +1478,7 @@ export function SettingsPage() {
                           </SelectTrigger>
                           <SelectContent>
                             <SelectGroup>
-                              {chatSoundPreferenceOptions.map((option) => (
+                              {localizedChatSoundPreferenceOptions.map((option) => (
                                 <SelectItem key={option.value} value={option.value}>
                                   {option.label}
                                 </SelectItem>
@@ -1480,8 +1489,8 @@ export function SettingsPage() {
                       </SettingsRow>
 
                       <SettingsRow
-                        title="Chat Sound"
-                        description="The bundled sound used for chat notification playback and previews"
+                        title={dictionary.settings.chatSound}
+                        description={dictionary.settings.chatSoundDescription}
                       >
                         <Select
                           value={chatSoundId}
@@ -1503,8 +1512,8 @@ export function SettingsPage() {
                       </SettingsRow>
 
                       <SettingsRow
-                        title="Default Editor"
-                        description="Used when opening transcript links or files from the git diff menu"
+                        title={dictionary.settings.defaultEditor}
+                        description={dictionary.settings.defaultEditorDescription}
                         alignStart
                       >
                         <Select
@@ -1533,9 +1542,9 @@ export function SettingsPage() {
                         <div className="border-t border-border">
                           <div className="flex justify-between gap-8 py-5 pl-6">
                             <div className="min-w-0 max-w-xl">
-                              <div className="text-sm font-medium text-foreground">Command Template</div>
+                              <div className="text-sm font-medium text-foreground">{dictionary.settings.commandTemplate}</div>
                               <div className="mt-1 text-[13px] text-muted-foreground">
-                                Include {"{path}"} and optionally {"{line}"} and {"{column}"} in your command.
+                                {dictionary.settings.commandTemplateDescription}
                               </div>
                             </div>
                             <div className="flex min-w-0 max-w-[420px] flex-1 flex-col items-stretch gap-2">
@@ -1548,7 +1557,7 @@ export function SettingsPage() {
                                 className="font-mono"
                               />
                               <div className="text-xs text-muted-foreground">
-                                Preview: <span className="font-mono">{customEditorPreview}</span>
+                                {dictionary.settings.preview}: <span className="font-mono">{customEditorPreview}</span>
                               </div>
                             </div>
                           </div>
@@ -1556,8 +1565,8 @@ export function SettingsPage() {
                       ) : null}
 
                       <SettingsRow
-                        title="Terminal Scrollback"
-                        description="Lines retained for embedded terminal history"
+                        title={dictionary.settings.terminalScrollback}
+                        description={dictionary.settings.terminalScrollbackDescription}
                       >
                         <div className="flex w-full min-w-0 flex-col items-stretch gap-2 md:w-auto md:items-end">
                           <Input
@@ -1573,14 +1582,14 @@ export function SettingsPage() {
                           />
                           <div className="text-left text-xs text-muted-foreground md:text-right">
                             {MIN_TERMINAL_SCROLLBACK}-{MAX_TERMINAL_SCROLLBACK} lines
-                            {scrollbackLines === DEFAULT_TERMINAL_SCROLLBACK ? " (default)" : ""}
+                            {scrollbackLines === DEFAULT_TERMINAL_SCROLLBACK ? ` (${dictionary.settings.defaultSuffix})` : ""}
                           </div>
                         </div>
                       </SettingsRow>
 
                       <SettingsRow
-                        title="Terminal Min Column Width"
-                        description="Minimum width for each terminal pane"
+                        title={dictionary.settings.terminalMinColumnWidth}
+                        description={dictionary.settings.terminalMinColumnWidthDescription}
                       >
                         <div className="flex w-full min-w-0 flex-col items-stretch gap-2 md:w-auto md:items-end">
                           <Input
@@ -1596,27 +1605,27 @@ export function SettingsPage() {
                           />
                           <div className="text-left text-xs text-muted-foreground md:text-right">
                             {MIN_TERMINAL_MIN_COLUMN_WIDTH}-{MAX_TERMINAL_MIN_COLUMN_WIDTH} px
-                            {minColumnWidth === DEFAULT_TERMINAL_MIN_COLUMN_WIDTH ? " (default)" : ""}
+                            {minColumnWidth === DEFAULT_TERMINAL_MIN_COLUMN_WIDTH ? ` (${dictionary.settings.defaultSuffix})` : ""}
                           </div>
                         </div>
                       </SettingsRow>
 
                       <SettingsRow
-                        title="Anonymous Analytics"
+                        title={dictionary.settings.analytics}
                         description={(
                           <>
                             <span>
-                              Help improve Kanna with anonymous product analytics. Kanna sends tracked event names plus a small set of event properties like current version, environment, update version info, and launch flags. No message content, prompts, file paths, or provider credentials are sent.
+                              {dictionary.settings.analyticsDescription}
                             </span>
                             <span className="mt-1 block">
-                              Stored in {appSettings?.filePathDisplay ?? "~/.kanna/data/settings.json"}.
+                              {dictionary.settings.storedIn} {appSettings?.filePathDisplay ?? "~/.kanna/data/settings.json"}.
                               {" "}
                               <button
                                 type="button"
                                 onClick={() => setAnalyticsDialogOpen(true)}
                                 className="underline underline-offset-2 text-foreground hover:text-foreground/80"
                               >
-                                View tracked events
+                                {dictionary.settings.viewTrackedEvents}
                               </button>
                             </span>
                             {appSettings?.warning ? (
@@ -1630,7 +1639,7 @@ export function SettingsPage() {
                           onValueChange={(value) => {
                             void handleAnalyticsPreferenceChange(value)
                           }}
-                          options={analyticsOptions}
+                          options={localizedAnalyticsOptions}
                           size="sm"
                         />
                       </SettingsRow>
@@ -1639,8 +1648,8 @@ export function SettingsPage() {
                 ) : selectedPage === "providers" ? (
                   <div className="border-b border-border">
                     <SettingsRow
-                      title="Default Provider"
-                      description="The default harness used for new chats before a provider is locked by an existing session."
+                      title={dictionary.settings.defaultProvider}
+                      description={dictionary.settings.defaultProviderDescription}
                       bordered={false}
                     >
                       <Select
@@ -1653,7 +1662,7 @@ export function SettingsPage() {
                         <SelectContent>
                           <SelectGroup>
                             <SelectItem value="last_used">
-                              Last Used
+                              {dictionary.settings.lastUsed}
                             </SelectItem>
                             {PROVIDERS.map((provider) => (
                               <SelectItem key={provider.id} value={provider.id}>
@@ -1666,8 +1675,8 @@ export function SettingsPage() {
                     </SettingsRow>
 
                     <SettingsRow
-                      title="Claude Code Defaults"
-                      description="Saved defaults when using Claude Code."
+                      title={dictionary.settings.claudeDefaults}
+                      description={dictionary.settings.claudeDefaultsDescription}
                       alignStart
                     >
                       <div className="max-w-[420px]">
@@ -1697,8 +1706,8 @@ export function SettingsPage() {
                     </SettingsRow>
 
                     <SettingsRow
-                      title="Codex Defaults"
-                      description="Saved defaults when using Codex."
+                      title={dictionary.settings.codexDefaults}
+                      description={dictionary.settings.codexDefaultsDescription}
                       alignStart
                     >
                       <div className="max-w-[420px]">
@@ -1728,7 +1737,7 @@ export function SettingsPage() {
                     </SettingsRow>
 
                     <SettingsRow
-                      title="Quick Response SDK"
+                      title={dictionary.settings.quickResponseSdk}
                       description={llmValidationDescription}
                       alignStart
                     >
@@ -1808,7 +1817,7 @@ export function SettingsPage() {
 
                           description={(
                             <>
-                              <span>Comma-separated shortcuts.</span>
+                              <span>{dictionary.settings.commaSeparatedShortcuts}</span>
                               {showRestore ? (
                                 <>
                                   <span> </span>
@@ -1819,7 +1828,7 @@ export function SettingsPage() {
                                     }}
                                     className="inline rounded text-foreground hover:text-foreground/80"
                                   >
-                                    Restore: {defaultValue}
+                                    {dictionary.settings.restore(defaultValue)}
                                   </button>
                                 </>
                               ) : null}
@@ -1886,19 +1895,19 @@ export function SettingsPage() {
           <div className="px-6 py-[14.25px]">
             <div className="grid gap-3 text-xs text-muted-foreground grid-cols-2 lg:grid-cols-4">
               <div>
-                <div className="mb-1 uppercase tracking-wide text-[11px] text-muted-foreground/80">Machine</div>
+                <div className="mb-1 uppercase tracking-wide text-[11px] text-muted-foreground/80">{dictionary.settings.machine}</div>
                 <div className="text-foreground/80">{machineName}</div>
               </div>
               <div className="hidden md:block">
-                <div className="mb-1 uppercase tracking-wide text-[11px] text-muted-foreground/80">Connection</div>
+                <div className="mb-1 uppercase tracking-wide text-[11px] text-muted-foreground/80">{dictionary.settings.connection}</div>
                 <div className="text-foreground/80">{state.connectionStatus}</div>
               </div>
               <div className="hidden md:block">
-                <div className="mb-1 uppercase tracking-wide text-[11px] text-muted-foreground/80">Projects Indexed</div>
+                <div className="mb-1 uppercase tracking-wide text-[11px] text-muted-foreground/80">{dictionary.settings.projectsIndexed}</div>
                 <div className="text-foreground/80">{projectCount}</div>
               </div>
               <div>
-                <div className="mb-1 uppercase tracking-wide text-[11px] text-muted-foreground/80">App Version</div>
+                <div className="mb-1 uppercase tracking-wide text-[11px] text-muted-foreground/80">{dictionary.settings.appVersion}</div>
                 <div className="text-foreground/80">{appVersion}</div>
               </div>
             </div>
@@ -1908,13 +1917,13 @@ export function SettingsPage() {
       <Dialog open={analyticsDialogOpen} onOpenChange={setAnalyticsDialogOpen}>
         <DialogContent size="lg">
           <DialogBody className="space-y-4">
-            <DialogTitle>Tracked Events</DialogTitle>
+            <DialogTitle>{dictionary.settings.trackedEvents}</DialogTitle>
             <div className="text-sm text-muted-foreground">
-              Kanna sends these event names plus the limited property keys below, depending on the event type.
+              {dictionary.settings.trackedEventsDescription}
             </div>
             <div className="max-h-[60vh] overflow-auto rounded-lg border border-border bg-muted/40 p-3">
               <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Event Names
+                {dictionary.settings.eventNames}
               </div>
               <ul className="mt-3 space-y-2 text-sm">
                 {analyticsDisclosureEvents.map((eventName) => (
@@ -1924,7 +1933,7 @@ export function SettingsPage() {
                 ))}
               </ul>
               <div className="mt-6 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Property Keys
+                {dictionary.settings.propertyKeys}
               </div>
               <ul className="mt-3 space-y-2 text-sm">
                 {ANALYTICS_STATIC_PROPERTY_NAMES.map((propertyName) => (
@@ -1937,7 +1946,7 @@ export function SettingsPage() {
           </DialogBody>
           <DialogFooter>
             <Button variant="secondary" size="sm" onClick={() => setAnalyticsDialogOpen(false)}>
-              Close
+              {dictionary.common.close}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1945,14 +1954,14 @@ export function SettingsPage() {
       <Dialog open={llmValidationDialogOpen} onOpenChange={setLlmValidationDialogOpen}>
         <DialogContent size="lg">
           <DialogBody className="space-y-4">
-            <DialogTitle>Validation Error</DialogTitle>
+            <DialogTitle>{dictionary.settings.validationError}</DialogTitle>
             <pre className="max-h-[60vh] overflow-auto rounded-lg border border-border bg-muted p-3 text-xs font-mono whitespace-pre-wrap break-words">
               {llmValidationErrorText}
             </pre>
           </DialogBody>
           <DialogFooter>
             <Button variant="secondary" size="sm" onClick={() => setLlmValidationDialogOpen(false)}>
-              Close
+              {dictionary.common.close}
             </Button>
           </DialogFooter>
         </DialogContent>

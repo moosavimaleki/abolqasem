@@ -8,6 +8,7 @@ import { classifyAttachmentPreview } from "./attachmentPreview"
 import { AttachmentFileCard, AttachmentImageCard } from "./AttachmentCard"
 import { AttachmentPreviewModal } from "./AttachmentPreviewModal"
 import { useTranscriptRenderOptions } from "./render-context"
+import { useI18n } from "../../i18n/context"
 
 interface Props {
   content: string
@@ -28,6 +29,7 @@ function parseSystemMessage(content: string) {
 }
 
 export function UserMessage({ content, attachments = [], steered = false }: Props) {
+  const { t } = useI18n()
   const [selectedAttachmentId, setSelectedAttachmentId] = useState<string | null>(null)
   const renderOptions = useTranscriptRenderOptions()
   const parsedContent = useMemo(() => parseSystemMessage(content), [content])
@@ -88,9 +90,9 @@ export function UserMessage({ content, attachments = [], steered = false }: Prop
           <div className="flex max-w-[85%] items-center gap-2 sm:max-w-[80%]">
             {steered ? (
               <span
-                aria-label="Sent mid-turn"
+                aria-label={t.messages.sentMidTurn}
                 role="img"
-                title="Sent mid-turn"
+                title={t.messages.sentMidTurn}
                 className="shrink-0 text-muted-foreground"
               >
                 <CornerUpLeft className="h-4 w-4" />

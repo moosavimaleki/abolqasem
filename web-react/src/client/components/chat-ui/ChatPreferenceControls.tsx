@@ -15,6 +15,7 @@ import {
 } from "../../../shared/types"
 import { cn } from "../../lib/utils"
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover"
+import { useI18n } from "../../i18n/context"
 
 type IconComponent = ComponentType<SVGProps<SVGSVGElement>>
 
@@ -171,6 +172,7 @@ export function ChatPreferenceControls({
   includePlanMode = true,
   className,
 }: ChatPreferenceControlsProps) {
+  const { t } = useI18n()
   const providerConfig = availableProviders.find((provider) => provider.id === selectedProvider) ?? availableProviders[0]
   const ProviderIcon = PROVIDER_ICONS[selectedProvider]
   const ModelIcon = Box
@@ -310,7 +312,7 @@ export function ChatPreferenceControls({
                   ? <SquareMenu className="h-4 w-4 text-muted-foreground" />
                   : <SquareMinus className="h-4 w-4 text-muted-foreground" />}
                 label={option.label}
-                description={option.id === "1m" ? "Expanded context window" : "Standard context window"}
+                description={option.id === "1m" ? t.preferences.expandedContextWindow : t.preferences.standardContextWindow}
               />
           ))}
         </InputPopover>
@@ -323,7 +325,7 @@ export function ChatPreferenceControls({
               {codexModelOptions?.fastMode
                 ? <Gauge className="h-3.5 w-3.5" />
                 : <Gauge className="h-3.5 w-3.5 -scale-x-100" />}
-              <span>{codexModelOptions?.fastMode ? "Fast Mode" : "Standard"}</span>
+              <span>{codexModelOptions?.fastMode ? t.preferences.fastMode : t.preferences.standard}</span>
             </>
           )}
           triggerClassName={codexModelOptions?.fastMode ? "text-emerald-500 dark:text-emerald-400" : undefined}
@@ -337,7 +339,7 @@ export function ChatPreferenceControls({
                 }}
                 selected={!codexModelOptions?.fastMode}
                 icon={<Gauge className="h-4 w-4 text-muted-foreground -scale-x-100" />}
-                label="Standard"
+                label={t.preferences.standard}
               />
               <PopoverMenuItem
                 onClick={() => {
@@ -346,7 +348,7 @@ export function ChatPreferenceControls({
                 }}
                 selected={Boolean(codexModelOptions?.fastMode)}
                 icon={<Gauge className="h-4 w-4 text-muted-foreground" />}
-                label="Fast Mode"
+                label={t.preferences.fastMode}
               />
             </>
           )}
@@ -358,7 +360,7 @@ export function ChatPreferenceControls({
           trigger={(
             <>
               {planMode ? <ListTodo className="h-3.5 w-3.5" /> : <LockOpen className="h-3.5 w-3.5" />}
-              <span>{planMode ? "Plan Mode" : "Full Access"}</span>
+              <span>{planMode ? t.preferences.planMode : t.preferences.fullAccess}</span>
             </>
           )}
           triggerClassName={planMode ? "text-blue-400 dark:text-blue-300" : undefined}
@@ -372,8 +374,8 @@ export function ChatPreferenceControls({
                 }}
                 selected={!planMode}
                 icon={<LockOpen className="h-4 w-4 text-muted-foreground" />}
-                label="Full Access"
-                description="Execution without approval"
+                label={t.preferences.fullAccess}
+                description={t.preferences.executionWithoutApproval}
               />
               <PopoverMenuItem
                 onClick={() => {
@@ -382,8 +384,8 @@ export function ChatPreferenceControls({
                 }}
                 selected={planMode}
                 icon={<ListTodo className="h-4 w-4 text-muted-foreground" />}
-                label="Plan Mode"
-                description="Review a plan before execution"
+                label={t.preferences.planMode}
+                description={t.preferences.reviewPlanBeforeExecution}
               />
             </>
           )}

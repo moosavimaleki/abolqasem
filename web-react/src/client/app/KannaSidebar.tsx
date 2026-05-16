@@ -19,6 +19,7 @@ import {
   isSidebarModifierShortcut,
   shouldShowSidebarNumberJumpHints,
 } from "./sidebarNumberJump"
+import { useI18n } from "../i18n/context"
 
 const SIDEBAR_WIDTH_STORAGE_KEY = "kanna:sidebar-width"
 export const DEFAULT_SIDEBAR_WIDTH = 275
@@ -104,6 +105,7 @@ function KannaSidebarImpl({
   updateSnapshot,
   onOpenChangelog,
 }: KannaSidebarProps) {
+  const { t } = useI18n()
   const location = useLocation()
   const navigate = useNavigate()
   const scrollContainerRef = useRef<HTMLDivElement>(null)
@@ -346,7 +348,7 @@ function KannaSidebarImpl({
   const isSettingsActive = location.pathname.startsWith("/settings")
   const isUtilityPageActive = isLocalProjectsActive || isSettingsActive
   const isConnecting = connectionStatus === "connecting" || !ready
-  const statusLabel = isConnecting ? "Connecting" : connectionStatus === "connected" ? "Connected" : "Disconnected"
+  const statusLabel = isConnecting ? t.sidebar.connecting : connectionStatus === "connected" ? t.sidebar.connected : t.sidebar.disconnected
   const statusDotClass = connectionStatus === "connected" ? "bg-emerald-500" : "bg-amber-500"
   const showUpdateButton = updateSnapshot?.updateAvailable === true
   const showDevBadge = updateSnapshot
@@ -375,7 +377,7 @@ function KannaSidebarImpl({
               variant="ghost"
               size="icon"
               onClick={onExpand}
-              title="Expand sidebar"
+              title={t.sidebar.expandSidebar}
             >
               <PanelLeft className="h-5 w-5" />
             </Button>
@@ -400,7 +402,7 @@ function KannaSidebarImpl({
               size="icon"
               className="size-10 rounded-lg hover:!border-border/0"
               onClick={onClose}
-              title="Close sidebar"
+              title={t.sidebar.closeSidebar}
             >
               <X className="h-5 w-5" />
             </Button>
@@ -409,7 +411,7 @@ function KannaSidebarImpl({
             <button
               type="button"
               onClick={onCollapse}
-              title="Collapse sidebar"
+              title={t.sidebar.collapseSidebar}
               className="hidden md:flex group/sidebar-collapse relative items-center justify-center h-5 w-5 sm:h-6 sm:w-6"
             >
               <Flower className="absolute inset-0.5 h-4 w-4 sm:h-5 sm:w-5 text-logo transition-all duration-200 ease-out opacity-100 scale-100 group-hover/sidebar-collapse:opacity-0 group-hover/sidebar-collapse:scale-0" />
@@ -427,14 +429,14 @@ function KannaSidebarImpl({
                 onClose()
               }}
               className="size-10 rounded-lg hover:!border-border/0 md:hidden"
-              title="New project"
+              title={t.sidebar.newProject}
             >
               <Plus className="h-5 w-5" />
             </Button>
             {showDevBadge ? (
               <span
                 className="mr-1 hidden md:inline-flex items-center rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] font-bold tracking-wider text-muted-foreground"
-                title="Development build"
+                title={t.sidebar.developmentBuild}
               >
                 DEV
               </span>
@@ -445,10 +447,10 @@ function KannaSidebarImpl({
                 className="hidden md:inline-flex rounded-full !h-auto mr-1 py-0.5 px-2 bg-logo/20 hover:bg-logo text-logo border-logo/20 hover:text-foreground hover:border-logo/20 text-[11px] font-bold tracking-wider"
                 onClick={onOpenChangelog}
                 disabled={isUpdating}
-                title={updateSnapshot?.latestVersion ? `Update to ${updateSnapshot.latestVersion}` : "Update Kanna"}
+                title={updateSnapshot?.latestVersion ? t.sidebar.updateTo(updateSnapshot.latestVersion) : t.sidebar.updateKanna}
               >
                 {isUpdating ? <Loader2 className="mr-1.5 h-3 w-3 animate-spin" /> : null}
-                UPDATE
+                {t.sidebar.update}
               </Button>
             ) : null}
             <Button
@@ -459,7 +461,7 @@ function KannaSidebarImpl({
                 onClose()
               }}
               className="hidden md:inline-flex size-10 rounded-lg hover:!border-border/0"
-              title="New project"
+              title={t.sidebar.newProject}
             >
               <Plus className="size-4" />
             </Button>
@@ -499,7 +501,7 @@ function KannaSidebarImpl({
             ) : null}
 
             {!hasVisibleChats && !isConnecting && data.projectGroups.length === 0 ? (
-              <p className="text-sm text-slate-400 p-2 mt-6 text-center">No conversations yet</p>
+              <p className="text-sm text-slate-400 p-2 mt-6 text-center">{t.sidebar.noConversations}</p>
             ) : null}
 
             <LocalProjectsSection
@@ -544,7 +546,7 @@ function KannaSidebarImpl({
             <div className="flex items- justify-between gap-2">
               <div className="flex items-center gap-2">
                 <Settings className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm">Settings</span>
+                <span className="text-sm">{t.sidebar.settings}</span>
               </div>
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span>{statusLabel}</span>
@@ -561,9 +563,9 @@ function KannaSidebarImpl({
         <div
           role="separator"
           aria-orientation="vertical"
-          aria-label="Resize sidebar"
+          aria-label={t.sidebar.resizeSidebar}
           tabIndex={0}
-          title="Resize sidebar"
+          title={t.sidebar.resizeSidebar}
           className={cn(
             "hidden md:block absolute -right-1 top-3 bottom-3 z-20 w-2 cursor-col-resize rounded-full",
             "focus-visible:outline-none"
@@ -604,7 +606,7 @@ function KannaSidebarImpl({
       >
         <DialogContent size="md">
           <DialogHeader>
-            <DialogTitle>Archived Chats</DialogTitle>
+            <DialogTitle>{t.sidebar.archivedChats}</DialogTitle>
             <DialogDescription>
               {archivedProject?.localPath ?? ""}
             </DialogDescription>
@@ -629,7 +631,7 @@ function KannaSidebarImpl({
                 </button>
               ))
             ) : (
-              <p className="px-1 py-3 text-sm text-muted-foreground">No archived chats</p>
+              <p className="px-1 py-3 text-sm text-muted-foreground">{t.sidebar.noArchivedChats}</p>
             )}
           </DialogBody>
         </DialogContent>

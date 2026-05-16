@@ -5,6 +5,7 @@ import { MetaRow, MetaLabel } from "./shared"
 import { AnimatedShinyText } from "../ui/animated-shiny-text"
 import type { ProcessedToolCall } from "./types"
 import type { HydratedTranscriptMessage } from "../../../shared/types"
+import { useI18n } from "../../i18n/context"
 
 interface ToolCategory {
   key: string
@@ -65,6 +66,7 @@ interface Props {
 }
 
 export function CollapsedToolGroup({ messages, isLoading, localPath, expanded, onExpandedChange }: Props) {
+  const { t } = useI18n()
   const label = useMemo(() => getToolGroupLabel(messages), [messages])
 
   // Check if any tool in the group is still in progress
@@ -112,7 +114,7 @@ export function CollapsedToolGroup({ messages, isLoading, localPath, expanded, o
                   <div className="w-5 h-5 relative flex items-center justify-center">
                     <ChevronRight className="h-4.5 w-4.5 text-muted-icon -rotate-90" />
                   </div>
-                  <MetaLabel className="text-left">Collapse</MetaLabel>
+                  <MetaLabel className="text-left">{t.chat.collapseSidebar}</MetaLabel>
                 </div>
               </button>
             )}

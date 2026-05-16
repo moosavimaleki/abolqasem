@@ -27,6 +27,8 @@ import {
   type TablePreviewData,
 } from "./attachmentPreview"
 import { formatAttachmentSize } from "./AttachmentCard"
+import { useI18n } from "../../i18n/context"
+import type { TranslationDictionary } from "../../i18n"
 
 type PreviewState =
   | { status: "loading" }
@@ -47,6 +49,7 @@ interface Props {
 }
 
 export function AttachmentPreviewModal({ attachment, onOpenChange }: Props) {
+  const { t } = useI18n()
   const [previewCache, setPreviewCache] = useState<Record<string, PreviewState>>({})
   const previewTarget = useMemo(() => {
     return attachment ? classifyAttachmentPreview(attachment) : null
@@ -106,7 +109,7 @@ export function AttachmentPreviewModal({ attachment, onOpenChange }: Props) {
       })
       .catch((error: unknown) => {
         if (cancelled) return
-        const message = error instanceof Error ? error.message : "Unable to load preview."
+        const message = error instanceof Error ? error.message : t.attachments.previewLoadFailed
         setPreviewCache((current) => ({
           ...current,
           [attachment.id]: { status: "error", message },
@@ -122,6 +125,7 @@ export function AttachmentPreviewModal({ attachment, onOpenChange }: Props) {
     attachment?.mimeType,
     previewTarget?.kind,
     previewTarget?.openInNewTab,
+    t,
   ])
 
   async function handleCopyLink() {
@@ -147,7 +151,7 @@ export function AttachmentPreviewModal({ attachment, onOpenChange }: Props) {
               <DialogTitle className="text-md">{attachment.displayName}</DialogTitle>
             </DialogHeader>
             <DialogBody className="bg-muted/20 p-4">
-              {renderAttachmentPreviewBody(attachment, previewTarget.kind, previewState)}
+              {renderAttachmentPreviewBody(attachment, previewTarget.kind, previewState, t)}
             </DialogBody>
             <DialogFooter className="items-center justify-between gap-3 px-4 py-3">
               <DialogDescription className="truncate">
@@ -156,11 +160,11 @@ export function AttachmentPreviewModal({ attachment, onOpenChange }: Props) {
               <div className="flex items-center gap-2">
                 <DialogGhostButton type="button" onClick={handleCopyLink}>
                   <Link2 className="mr-2 h-4 w-4" />
-                  Copy Link
+                  {t.common.copyLink}
                 </DialogGhostButton>
                 <Button type="button" variant="outline" onClick={handleOpenInNewTab}>
                   <ExternalLink className="mr-2 h-4 w-4" />
-                  Open In New Tab
+                  {t.attachments.openInNewTab}
                 </Button>
               </div>
             </DialogFooter>
@@ -175,6 +179,7 @@ function renderAttachmentPreviewBody(
   attachment: ChatAttachment,
   kind: AttachmentPreviewKind,
   previewState?: PreviewState,
+  t?: TranslationDictionary,
 ) {
   if (kind === "image") {
     return (
@@ -199,7 +204,7 @@ function renderAttachmentPreviewBody(
   }
 
   if (!previewState || previewState.status === "loading") {
-    return <div className="flex h-[50vh] items-center justify-center text-sm text-muted-foreground">Loading preview…</div>
+    return <div className="flex h-[50vh] items-center justify-center text-sm text-muted-foreground">{t?.attachments.loadingPreview ?? "Loading preview…"}</div>
   }
 
   if (previewState.status === "error") {
@@ -209,7 +214,7 @@ function renderAttachmentPreviewBody(
   if (previewState.kind === "markdown" && previewState.content !== undefined) {
     return (
       <div className="space-y-3">
-        {previewState.truncated ? <PreviewNotice message="Preview truncated to 1024 KB." /> : null}
+        {previewState.truncated ? <PreviewNotice message={t?.attachments.previewTruncated ?? "Preview truncated to 1024 KB."} /> : null}
         <div className="prose prose-sm max-w-none overflow-auto rounded-xl border border-border bg-background p-4 prose-invert">
           <Markdown remarkPlugins={[remarkGfm]} components={createMarkdownComponents()}>
             {previewState.content}
@@ -223,9 +228,9 @@ function renderAttachmentPreviewBody(
     const hasHeader = previewState.table.rows.length > 0
     const [header, ...bodyRows] = previewState.table.rows
     const notices = [
-      previewState.truncated ? "Preview truncated to 1024 KB." : null,
-      previewState.table.truncatedRows ? `Showing first ${previewState.table.rows.length} of ${previewState.table.rowCount} rows.` : null,
-      previewState.table.truncatedColumns ? `Showing first ${TABLE_PREVIEW_COLUMN_LIMIT} of ${previewState.table.columnCount} columns.` : null,
+      previewState.truncated ? (t?.attachments.previewTruncated ?? "Preview truncated to 1024 KB.") : null,
+      previewState.table.truncatedRows ? (t?.attachments.showingRows(previewState.table.rows.length, previewState.table.rowCount) ?? `Showing first ${previewState.table.rows.length} of ${previewState.table.rowCount} rows.`) : null,
+      previewState.table.truncatedColumns ? (t?.attachments.showingColumns(TABLE_PREVIEW_COLUMN_LIMIT, previewState.table.columnCount) ?? `Showing first ${TABLE_PREVIEW_COLUMN_LIMIT} of ${previewState.table.columnCount} columns.`) : null,
     ].filter(Boolean)
 
     return (
@@ -263,7 +268,7 @@ function renderAttachmentPreviewBody(
 
   return (
     <div className="space-y-3">
-      {previewState.truncated ? <PreviewNotice message="Preview truncated to 1024 KB." /> : null}
+      {previewState.truncated ? <PreviewNotice message={t?.attachments.previewTruncated ?? "Preview truncated to 1024 KB."} /> : null}
       <FileContentView content={previewState.content ?? ""} />
     </div>
   )

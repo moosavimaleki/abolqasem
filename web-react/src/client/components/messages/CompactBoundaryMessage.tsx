@@ -1,3 +1,5 @@
+import { useI18n } from "../../i18n/context"
+
 function ZigZagLine({ size = 4 }: { size?: number }) {
   return (
     <svg className="flex-1" viewBox={`0 0 100 ${size}`} preserveAspectRatio="none" style={{ height: `${size}px` }}>
@@ -10,20 +12,22 @@ function ZigZagLine({ size = 4 }: { size?: number }) {
 }
 
 export function CompactBoundaryMessage() {
+  const { t } = useI18n()
   return (
     <div className="flex items-center gap-3">
       <ZigZagLine />
-      <span className="text-[11px] tracking-widest text-muted-foreground uppercase flex-shrink-0">Compacted</span>
+      <span className="text-[11px] tracking-widest text-muted-foreground uppercase flex-shrink-0">{t.messages.compacted}</span>
       <ZigZagLine />
     </div>
   )
 }
 
 export function ContextClearedMessage() {
+  const { t } = useI18n()
   return (
     <div className="flex items-center gap-3">
       <ZigZagLine />
-      <span className="text-[11px] tracking-widest text-muted-foreground uppercase flex-shrink-0">Context Cleared</span>
+      <span className="text-[11px] tracking-widest text-muted-foreground uppercase flex-shrink-0">{t.messages.contextCleared}</span>
       <ZigZagLine />
     </div>
   )

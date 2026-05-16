@@ -18,7 +18,8 @@ import { LocalProjectsPage } from "./LocalProjectsPage"
 import { SettingsPage } from "./SettingsPage"
 import { useKannaState } from "./useKannaState"
 import type { AppSettingsSnapshot } from "../../shared/types"
-import { getLocaleDirection, normalizeLocale } from "../i18n"
+import { getDictionary, getLocaleDirection, normalizeLocale } from "../i18n"
+import { I18nProvider } from "../i18n/context"
 
 const VERSION_SEEN_STORAGE_KEY = "kanna:last-seen-version"
 const AUTH_STATUS_RETRY_DELAY_MS = 500
@@ -54,6 +55,7 @@ function PasswordScreen({
 }) {
   const [password, setPassword] = useState("")
   const [submitting, setSubmitting] = useState(false)
+  const dictionary = getDictionary(normalizeLocale(document.documentElement.lang))
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -78,7 +80,7 @@ function PasswordScreen({
             </div>
           </div>
           <CardDescription className="leading-6">
-            Enter your password to continue.
+            {dictionary.app.passwordDescription}
           </CardDescription>
         </CardHeader>
         <CardContent className="px-6 pb-6">
@@ -94,7 +96,7 @@ function PasswordScreen({
               autoComplete="current-password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              placeholder="Password"
+              placeholder={dictionary.app.passwordPlaceholder}
               disabled={submitting}
               className="h-11 rounded-2xl bg-background"
             />
@@ -103,7 +105,7 @@ function PasswordScreen({
               disabled={submitting || password.length === 0}
               className="h-11 w-full"
             >
-              {submitting ? "Unlocking..." : "Unlock"}
+              {submitting ? dictionary.app.unlocking : dictionary.app.unlock}
             </Button>
           </form>
         </CardContent>
@@ -171,7 +173,7 @@ function useAppAuthState() {
     })
 
     if (!response.ok) {
-      setState({ status: "locked", error: "Incorrect password. Try again." })
+      setState({ status: "locked", error: getDictionary(normalizeLocale(document.documentElement.lang)).app.incorrectPassword })
       return
     }
 
@@ -215,6 +217,7 @@ function KannaLayout() {
   const chatSoundId = useChatSoundPreferencesStore((store) => store.chatSoundId)
   const showMobileOpenButton = location.pathname === "/"
   const currentVersion = SDK_CLIENT_APP.split("/")[1] ?? "unknown"
+  const locale = normalizeLocale(state.appSettings?.locale)
   const previousSidebarDataRef = useRef<ReturnType<typeof useKannaState>["sidebarData"] | null>(null)
   const handleSidebarCreateChat = useCallback((projectId: string) => {
     void state.handleCreateChat(projectId)
@@ -371,21 +374,23 @@ function KannaLayout() {
   }, [chatSoundId, chatSoundPreference, state.appSettings, state.sidebarData])
 
   return (
-    <div className="flex h-[100dvh] min-h-[100dvh] overflow-hidden">
-      {sidebarElement}
-      <Outlet context={state} />
-      <StandaloneShareDialog
-        open={Boolean(state.standaloneShareUrl)}
-        shareUrl={state.standaloneShareUrl ?? ""}
-        onOpenChange={(open) => {
-          if (!open) {
-            state.handleCloseStandaloneShareDialog()
-          }
-        }}
-        onOpenLink={state.handleOpenStandaloneShareLink}
-        onCopyLink={state.handleCopyStandaloneShareLink}
-      />
-    </div>
+    <I18nProvider locale={locale}>
+      <div className="flex h-[100dvh] min-h-[100dvh] overflow-hidden">
+        {sidebarElement}
+        <Outlet context={state} />
+        <StandaloneShareDialog
+          open={Boolean(state.standaloneShareUrl)}
+          shareUrl={state.standaloneShareUrl ?? ""}
+          onOpenChange={(open) => {
+            if (!open) {
+              state.handleCloseStandaloneShareDialog()
+            }
+          }}
+          onOpenLink={state.handleOpenStandaloneShareLink}
+          onCopyLink={state.handleCopyStandaloneShareLink}
+        />
+      </div>
+    </I18nProvider>
   )
 }
 
@@ -395,7 +400,7 @@ export function App() {
   if (auth.state.status === "checking") {
     return (
       <div className="flex min-h-[100dvh] items-center justify-center bg-background text-sm text-muted-foreground">
-        Checking session…
+        {getDictionary(normalizeLocale(document.documentElement.lang)).app.checkingSession}
       </div>
     )
   }

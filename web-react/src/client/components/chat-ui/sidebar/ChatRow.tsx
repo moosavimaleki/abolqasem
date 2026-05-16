@@ -8,6 +8,7 @@ import { formatSidebarAgeLabel } from "../../../lib/formatters"
 import { getSidebarChatTimestamp } from "../../../lib/sidebarChats"
 import { cn, normalizeChatId } from "../../../lib/utils"
 import { ChatRowMenu } from "./Menus"
+import { useI18n } from "../../../i18n/context"
 
 const loadingStatuses = new Set(["starting", "running"])
 
@@ -40,6 +41,7 @@ function ChatRowImpl({
   onArchiveChat,
   onDeleteChat,
 }: Props) {
+  const { t } = useI18n()
   const ageLabel = formatSidebarAgeLabel(getSidebarChatTimestamp(chat), nowMs)
   const trailingLabel = showShortcutHint && shortcutHint ? shortcutHint : ageLabel
   const showShortcutKeycap = showShortcutHint && Boolean(shortcutHint)
@@ -86,11 +88,11 @@ function ChatRowImpl({
       </span>
       {chat.readOnly && !chat.canResume ? (
         <span className="hidden rounded-full border border-border/70 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground md:inline-flex">
-          Read-only
+          {t.sidebar.readOnly}
         </span>
       ) : chat.canResume ? (
         <span className="hidden rounded-full border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-300 md:inline-flex">
-          Resume
+          {t.sidebar.resume}
         </span>
       ) : null}
       <div className={cn("relative h-7 mr-[2px] shrink-0", chat.canFork ? "w-12" : "w-6")}>
@@ -124,7 +126,7 @@ function ChatRowImpl({
                 event.stopPropagation()
                 onForkChat(chat.chatId)
               }}
-              title="Fork chat"
+              title={t.sidebar.forkChat}
             >
               <Split className="size-3.5" />
             </Button>
@@ -137,7 +139,7 @@ function ChatRowImpl({
               event.stopPropagation()
               onArchiveChat(chat.chatId)
             }}
-            title="Archive chat"
+            title={t.sidebar.archiveChat}
           >
             <Archive className="size-3.5" />
           </Button>

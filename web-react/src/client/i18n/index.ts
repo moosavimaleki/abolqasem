@@ -1,5 +1,5 @@
 import type { AppLocale } from "../../shared/types"
-import { en } from "./en"
+import { en, type TranslationDictionary } from "./en"
 import { fa } from "./fa"
 
 export const DEFAULT_LOCALE: AppLocale = "en"
@@ -9,7 +9,7 @@ export const LOCALE_OPTIONS: Array<{ value: AppLocale; labelKey: "english" | "pe
   { value: "fa", labelKey: "persian" },
 ]
 
-const dictionaries = {
+const dictionaries: Record<AppLocale, TranslationDictionary> = {
   en,
   fa,
 }
@@ -26,3 +26,4 @@ export function getDictionary(locale: AppLocale) {
   return dictionaries[locale]
 }
 
+export type { TranslationDictionary }

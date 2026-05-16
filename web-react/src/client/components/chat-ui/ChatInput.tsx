@@ -25,6 +25,7 @@ import { AttachmentFileCard, AttachmentImageCard } from "../messages/AttachmentC
 import { AttachmentPreviewModal } from "../messages/AttachmentPreviewModal"
 import { classifyAttachmentPreview } from "../messages/attachmentPreview"
 import { overrideContextWindowMaxTokens, type ContextWindowSnapshot } from "../../lib/contextWindow"
+import { useI18n } from "../../i18n/context"
 
 const MAX_FILES_PER_DROP = 50
 const MAX_CONCURRENT_UPLOADS = 3
@@ -184,6 +185,7 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
   contextWindowSnapshot = null,
   previousPrompt = null,
 }, forwardedRef) {
+  const { t } = useI18n()
   const {
     getDraft,
     setDraft,
@@ -436,13 +438,13 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
           if (!response.ok) {
             const payload = await response.json().catch(() => ({}))
-            throw new Error(typeof payload.error === "string" ? payload.error : "Upload failed")
+            throw new Error(typeof payload.error === "string" ? payload.error : t.composer.uploadFailed)
           }
 
           const payload = await response.json() as { attachments: ChatAttachment[] }
           const uploaded = payload.attachments[0]
           if (!uploaded) {
-            throw new Error("Upload failed")
+            throw new Error(t.composer.uploadFailed)
           }
 
           if (generation !== uploadGenerationRef.current) {
@@ -484,11 +486,11 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
         }
       })()
     }
-  }, [projectId])
+  }, [projectId, t])
 
   const enqueueFiles = useCallback((files: File[]) => {
     if (!projectId) {
-      setUploadError("Open a project before uploading files.")
+      setUploadError(t.composer.openProjectBeforeUpload)
       return
     }
 
@@ -497,14 +499,14 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
       queuedAttachmentCount: uploadQueueRef.current.length,
       incomingAttachmentCount: files.length,
     })) {
-      setUploadError(`You can upload up to ${MAX_FILES_PER_DROP} files at a time.`)
+      setUploadError(t.composer.uploadLimit(MAX_FILES_PER_DROP))
       return
     }
 
     uploadQueueRef.current.push(...files)
     setUploadError(null)
     processUploadQueue()
-  }, [processUploadQueue, projectId])
+  }, [processUploadQueue, projectId, t])
 
   useImperativeHandle(forwardedRef, () => ({
     enqueueFiles,
@@ -686,7 +688,7 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
           <div className="flex items-end max-w-[840px] mx-auto border dark:bg-card/40 backdrop-blur-lg border-border rounded-[29px] pr-1.5">
             <label
-              aria-label="Add attachment"
+              aria-label={t.composer.addAttachment}
               className={cn(
                 buttonVariants({ variant: "ghost", size: "icon" }),
                 "relative md:hidden flex-shrink-0 ml-1 mb-1 h-10 w-10 rounded-full text-muted-foreground hover:text-foreground",
@@ -698,7 +700,7 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 type="file"
                 multiple
                 disabled={disabled}
-                aria-label="Add attachment"
+                aria-label={t.composer.addAttachment}
                 className="absolute inset-0 cursor-pointer opacity-0"
                 onChange={(event) => {
                   const files = [...(event.target.files ?? [])]
@@ -711,7 +713,7 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
             </label>
             <Textarea
               ref={setTextareaRefs}
-              placeholder="Build something..."
+              placeholder={t.composer.buildSomething}
               value={value}
               autoFocus
               {...{ [CHAT_INPUT_ATTRIBUTE]: "" }}

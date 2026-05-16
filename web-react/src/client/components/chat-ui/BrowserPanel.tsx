@@ -15,6 +15,7 @@ import { Button } from "../ui/button"
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "../ui/context-menu"
 import { Input } from "../ui/input"
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip"
+import { useI18n } from "../../i18n/context"
 
 function formatOwnerPath(ownerPath: string) {
   const homeMatch = ownerPath.match(/^\/(?:Users|home)\/[^/]+(?=\/|$)/)
@@ -72,6 +73,7 @@ function BrowserToolbarButton({
 }
 
 function BrowserPanelImpl({ projectId, socket, onRunQuickAction }: BrowserPanelProps) {
+  const { t } = useI18n()
   const browserState = useRightSidebarStore((store) => store.projectBrowser[projectId])
   const navigateBrowser = useRightSidebarStore((store) => store.navigateBrowser)
   const setBrowserZoom = useRightSidebarStore((store) => store.setBrowserZoom)
@@ -210,13 +212,13 @@ function BrowserPanelImpl({ projectId, socket, onRunQuickAction }: BrowserPanelP
     <div className="space-y-1.5">
       <div className="flex items-center gap-2 pl-1 text-sm font-medium mb-3">
         <Zap className="h-4 w-4 text-muted-foreground" />
-        <span>Quick Actions</span>
+        <span>{t.browserPanel.quickActions}</span>
         <Button
           type="button"
           variant="ghost"
           size="none"
-          aria-label="Add quick action"
-          title="Add quick action"
+          aria-label={t.browserPanel.addQuickAction}
+          title={t.browserPanel.addQuickAction}
           onClick={() => setIsAddingQuickAction((current) => !current)}
           className="ml-auto h-6 w-6 border-border/0 text-muted-foreground hover:!border-border/0 hover:!bg-transparent hover:text-foreground"
         >
@@ -254,7 +256,7 @@ function BrowserPanelImpl({ projectId, socket, onRunQuickAction }: BrowserPanelP
       ) : null}
       {quickActions.length === 0 ? (
         <div className="rounded-md border border-dashed border-border/70 px-3 py-3 text-xs text-muted-foreground">
-          No quick actions.
+          {t.browserPanel.noQuickActions}
         </div>
       ) : (
         quickActions.map((action) => (
@@ -279,8 +281,8 @@ function BrowserPanelImpl({ projectId, socket, onRunQuickAction }: BrowserPanelP
                   type="button"
                   variant="ghost"
                   size="none"
-                  aria-label="Run quick action"
-                  title="Run quick action"
+                  aria-label={t.browserPanel.runQuickAction}
+                  title={t.browserPanel.runQuickAction}
                   onClick={(event) => {
                     event.stopPropagation()
                     runQuickAction(action.command)
@@ -300,7 +302,7 @@ function BrowserPanelImpl({ projectId, socket, onRunQuickAction }: BrowserPanelP
                 className="text-destructive focus:text-destructive"
               >
                 <Trash2 className="h-3.5 w-3.5" />
-                <span>Delete</span>
+                <span>{t.browserPanel.delete}</span>
               </ContextMenuItem>
             </ContextMenuContent>
           </ContextMenu>
@@ -326,17 +328,17 @@ function BrowserPanelImpl({ projectId, socket, onRunQuickAction }: BrowserPanelP
     <div className="h-full min-h-0 border-l border-border bg-background md:min-w-[370px]">
       <div className="flex h-full min-h-0 flex-col">
         <div className="flex shrink-0 items-center gap-1 border-b border-border px-2 py-2">
-          <BrowserToolbarButton label="Home" onClick={() => navigateBrowser(projectId, "")}>
+          <BrowserToolbarButton label={t.browserPanel.home} onClick={() => navigateBrowser(projectId, "")}>
             <Home className="h-4 w-4" />
           </BrowserToolbarButton>
-          <BrowserToolbarButton label="Refresh" onClick={handleRefresh}>
+          <BrowserToolbarButton label={t.browserPanel.refresh} onClick={handleRefresh}>
             <RefreshCw className="h-4 w-4" />
           </BrowserToolbarButton>
           <form onSubmit={handleAddressSubmit} className="group relative min-w-0 flex-1">
             <Input
               value={addressDraft}
               onChange={(event) => setAddressDraft(event.target.value)}
-              placeholder="Enter a URL"
+              placeholder={t.browserPanel.enterUrl}
               className="h-7 rounded-[9px] px-[28px] text-xs text-muted-foreground focus:text-foreground hover:text-foreground  text-center border-border/0 bg-background hover:bg-card focus:bg-card hover:border-border/50 focus:border-border/50 transition-all"
             />
             {address ? (
@@ -344,8 +346,8 @@ function BrowserPanelImpl({ projectId, socket, onRunQuickAction }: BrowserPanelP
                 type="button"
                 variant="ghost"
                 size="none"
-                title="Open external"
-                aria-label="Open external"
+                title={t.browserPanel.openExternal}
+                aria-label={t.browserPanel.openExternal}
                 onClick={() => window.open(address, "_blank", "noopener,noreferrer")}
                 className="absolute right-1 top-1/2 h-6 w-6 -translate-y-1/2 border-border/0 text-muted-foreground opacity-0 hover:!border-border/0 hover:!bg-transparent hover:text-foreground group-hover:opacity-100 group-focus-within:opacity-100"
               >
@@ -365,10 +367,10 @@ function BrowserPanelImpl({ projectId, socket, onRunQuickAction }: BrowserPanelP
                   setIsZoomTooltipOpen(false)
                 }}
               >
-                <BrowserToolbarButton label="Zoom out" onClick={() => setBrowserZoom(projectId, zoom - 0.1)}>
+                <BrowserToolbarButton label={t.browserPanel.zoomOut} onClick={() => setBrowserZoom(projectId, zoom - 0.1)}>
                   <Minus className="h-4 w-4" />
                 </BrowserToolbarButton>
-                <BrowserToolbarButton label="Zoom in" onClick={() => setBrowserZoom(projectId, zoom + 0.1)}>
+                <BrowserToolbarButton label={t.browserPanel.zoomIn} onClick={() => setBrowserZoom(projectId, zoom + 0.1)}>
                   <Plus className="h-4 w-4" />
                 </BrowserToolbarButton>
               </div>
@@ -384,7 +386,7 @@ function BrowserPanelImpl({ projectId, socket, onRunQuickAction }: BrowserPanelP
               <div className="h-full mx-auto max-w-[450px] flex flex-col" style={{justifyContent: "safe center"}}>
               <div className="pl-1 mb-3 flex items-center gap-2 text-sm font-medium">
                 <Globe className="h-4 w-4 text-muted-foreground" />
-                <span>Local Servers</span>
+                <span>{t.browserPanel.localServers}</span>
               </div>
               <div className="space-y-4">
                 {serverError ? (
@@ -409,7 +411,7 @@ function BrowserPanelImpl({ projectId, socket, onRunQuickAction }: BrowserPanelP
                   </div>
                 ) : localServers.length === 0 ? (
                   <div className="flex h-40 items-center justify-center px-6 text-center text-sm text-muted-foreground">
-                    No local HTTP servers found.
+                    {t.browserPanel.noLocalServers}
                   </div>
                 ) : (
                   <div className="space-y-1.5">
@@ -436,8 +438,8 @@ function BrowserPanelImpl({ projectId, socket, onRunQuickAction }: BrowserPanelP
                                 type="button"
                                 variant="ghost"
                                 size="none"
-                                aria-label="Server actions"
-                                title="Server actions"
+                                aria-label={t.browserPanel.serverActions}
+                                title={t.browserPanel.serverActions}
                                 onClick={openContextMenuFromButton}
                                 className="!h-auto !w-auto shrink-0 border-border/0 text-muted-foreground hover:!border-border/0 hover:!bg-transparent hover:text-foreground"
                               >
@@ -460,7 +462,7 @@ function BrowserPanelImpl({ projectId, socket, onRunQuickAction }: BrowserPanelP
                             }}
                           >
                             <SquareArrowOutUpRight className="h-3.5 w-3.5" />
-                            <span>Open in New Tab</span>
+                            <span>{t.browserPanel.openInNewTab}</span>
                           </ContextMenuItem>
                           <ContextMenuItem
                             onSelect={(event) => {
@@ -470,7 +472,7 @@ function BrowserPanelImpl({ projectId, socket, onRunQuickAction }: BrowserPanelP
                             className="text-destructive focus:text-destructive"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
-                            <span>Kill Process</span>
+                            <span>{t.browserPanel.killProcess}</span>
                           </ContextMenuItem>
                         </ContextMenuContent>
                       </ContextMenu>
@@ -483,7 +485,7 @@ function BrowserPanelImpl({ projectId, socket, onRunQuickAction }: BrowserPanelP
                         onClick={() => setShowOtherServers((current) => !current)}
                         className="h-8 w-fit rounded-md px-2 text-xs text-muted-foreground hover:!bg-muted/40"
                       >
-                        {showOtherServers ? "Hide other projects" : `Other projects (${otherServers.length})`}
+                        {showOtherServers ? t.browserPanel.hideOtherProjects : t.browserPanel.otherProjects(otherServers.length)}
                       </Button>
                     ) : null}
                   </div>
@@ -499,7 +501,7 @@ function BrowserPanelImpl({ projectId, socket, onRunQuickAction }: BrowserPanelP
                 ref={iframeRef}
                 key={`${address}-${iframeVersion}`}
                 src={address}
-                title="Browser panel"
+                title={t.browserPanel.browserPanel}
                 sandbox="allow-downloads allow-forms allow-modals allow-popups allow-same-origin allow-scripts"
                 className="h-full w-full origin-top-left border-0 bg-background"
                 style={{

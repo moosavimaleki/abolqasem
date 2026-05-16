@@ -1,12 +1,14 @@
 import { UserRound } from "lucide-react"
 import type { ProcessedAccountInfoMessage } from "./types"
 import { MetaRow, MetaLabel, ExpandableRow, VerticalLineContainer } from "./shared"
+import { useI18n } from "../../i18n/context"
 
 interface Props {
   message: ProcessedAccountInfoMessage
 }
 
 export function AccountInfoMessage({ message }: Props) {
+  const { t } = useI18n()
   return (
     <MetaRow className="hidden">
       <ExpandableRow
@@ -21,7 +23,7 @@ export function AccountInfoMessage({ message }: Props) {
         <div className="size-5 flex justify-center items-center ">
           <UserRound className="h-4 w-4 text-muted-foreground" />
         </div>
-        <MetaLabel>Account</MetaLabel>
+        <MetaLabel>{t.messages.account}</MetaLabel>
       </ExpandableRow>
     </MetaRow>
   )

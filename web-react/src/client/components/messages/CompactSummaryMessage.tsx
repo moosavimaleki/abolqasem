@@ -3,12 +3,14 @@ import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import type { ProcessedCompactSummaryMessage } from "./types"
 import { MetaRow, MetaLabel, ExpandableRow, VerticalLineContainer, createMarkdownComponents } from "./shared"
+import { useI18n } from "../../i18n/context"
 
 interface Props {
   message: ProcessedCompactSummaryMessage
 }
 
 export function CompactSummaryMessage({ message }: Props) {
+  const { t } = useI18n()
   return (
     <MetaRow>
       <ExpandableRow
@@ -25,7 +27,7 @@ export function CompactSummaryMessage({ message }: Props) {
         <div className="w-5 h-5 relative flex items-center justify-center">
           <Minimize className="h-4.5 w-4.5 text-muted-foreground" />
         </div>
-        <MetaLabel>Summarized</MetaLabel>
+        <MetaLabel>{t.messages.summarized}</MetaLabel>
       </ExpandableRow>
     </MetaRow>
   )

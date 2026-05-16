@@ -19,9 +19,9 @@ import {
 import type { KannaState } from "../useKannaState"
 import {
   CHAT_NAVBAR_OFFSET_PX,
-  EMPTY_STATE_TEXT,
 } from "./utils"
 import type { EditorPreset } from "../../../shared/protocol"
+import { useI18n } from "../../i18n/context"
 
 interface ChatTranscriptViewportProps {
   activeChatId: string | null
@@ -51,6 +51,7 @@ interface ChatTranscriptViewportProps {
   isEmptyStateTypingComplete: boolean
   isPageFileDragActive: boolean
   showEmptyState: boolean
+  emptyStateText: string
   editorPreset?: EditorPreset
   editorCommandTemplate?: string
   platform?: NodeJS.Platform
@@ -85,11 +86,13 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
   isEmptyStateTypingComplete,
   isPageFileDragActive,
   showEmptyState,
+  emptyStateText,
   editorPreset = "cursor",
   editorCommandTemplate,
   platform = "darwin",
   headerOffsetPx = CHAT_NAVBAR_OFFSET_PX,
 }: ChatTranscriptViewportProps) {
+  const { t } = useI18n()
   const previousRowCountRef = useRef(0)
   const localLinkMenuTriggerRef = useRef<HTMLSpanElement | null>(null)
   const [toolGroupExpanded, setToolGroupExpanded] = useState<Record<string, boolean>>({})
@@ -229,9 +232,9 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
           <span className="text-sm translate-y-[-0.5px]">
             <AnimatedShinyText
               animate
-              shimmerWidth={Math.max(20, "Loading more messages...".length * 3)}
+              shimmerWidth={Math.max(20, t.chat.loadingMoreMessages.length * 3)}
             >
-              Loading more messages...
+              {t.chat.loadingMoreMessages}
             </AnimatedShinyText>
           </span>
         </div>
@@ -329,11 +332,11 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
               <Flower strokeWidth={1.5} className="kanna-empty-state-flower size-8 text-muted-foreground" />
               <div
                 className="kanna-empty-state-text flex max-w-xs items-center text-center text-base font-normal text-muted-foreground"
-                aria-label={EMPTY_STATE_TEXT}
+                aria-label={emptyStateText}
               >
                 <span className="relative inline-grid place-items-start">
                   <span className="invisible col-start-1 row-start-1 flex items-center whitespace-pre">
-                    <span>{EMPTY_STATE_TEXT}</span>
+                    <span>{emptyStateText}</span>
                     <span className="kanna-typewriter-cursor-slot" aria-hidden="true" />
                   </span>
                   <span className="col-start-1 row-start-1 flex items-center whitespace-pre">
@@ -359,7 +362,7 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
             <div className="flex h-full items-center justify-center">
               <div className="flex flex-col items-center justify-center gap-3 text-center">
                 <Upload className="mx-auto size-14 text-foreground" strokeWidth={1.75} />
-                <div className="text-xl font-medium text-foreground">Drop up to 10 files</div>
+                <div className="text-xl font-medium text-foreground">{t.chat.dropFiles}</div>
               </div>
             </div>
           </div>

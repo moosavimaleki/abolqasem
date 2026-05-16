@@ -7,6 +7,7 @@ import { HotkeyTooltip, HotkeyTooltipContent, HotkeyTooltipTrigger } from "../ui
 import { cn } from "../../lib/utils"
 import { OpenExternalSelect } from "../open-external-menu"
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "../ui/context-menu"
+import { useI18n } from "../../i18n/context"
 
 function openContextMenuFromButton(event: ReactMouseEvent<HTMLButtonElement>) {
   event.preventDefault()
@@ -36,6 +37,7 @@ function NavbarOverflowMenu({
   isExportingTranscript: boolean
   exportTranscriptComplete: boolean
 }) {
+  const { t } = useI18n()
   if (!onToggleEmbeddedTerminal && !onExportTranscript) return null
 
   return (
@@ -45,7 +47,7 @@ function NavbarOverflowMenu({
           variant="ghost"
           size="none"
           onClick={openContextMenuFromButton}
-          title="More actions"
+          title={t.chat.moreActions}
           className={cn(
             "border border-border/0 hover:!border-border/0 px-1.5 h-9 hover:!bg-transparent",
             showOnDesktop ? "flex" : "flex md:hidden"
@@ -63,7 +65,7 @@ function NavbarOverflowMenu({
             }}
           >
             <Terminal strokeWidth={2} className="h-3.5 w-3.5" />
-            <span className="text-xs font-medium">Toggle Terminal</span>
+            <span className="text-xs font-medium">{t.chat.toggleTerminal}</span>
           </ContextMenuItem>
         ) : null}
         {onExportTranscript ? (
@@ -82,7 +84,7 @@ function NavbarOverflowMenu({
             ) : (
               <UserRoundPlus strokeWidth={2} className="h-3.5 w-3.5" />
             )}
-            <span className="text-xs font-medium">Share Chat</span>
+            <span className="text-xs font-medium">{t.chat.shareChat}</span>
           </ContextMenuItem>
         ) : null}
       </ContextMenuContent>
@@ -145,11 +147,12 @@ export function ChatNavbar({
   hasGitRepo = true,
   gitStatus = "unknown",
 }: Props) {
+  const { t } = useI18n()
   const branchLabel = !hasGitRepo
-    ? "Setup Git"
+    ? t.chat.setupGit
     : gitStatus === "unknown"
       ? null
-      : (branchName ?? "Detached HEAD")
+      : (branchName ?? t.chat.detachedHead)
   const isMac = platform === "darwin"
   const rightPanelVisible = rightPanel !== "hidden"
   const handleCloseRightPanel = rightPanel === "browser" ? onToggleBrowserPanel : rightPanel === "git" ? onToggleGitPanel : undefined
@@ -184,7 +187,7 @@ export function ChatNavbar({
                 size="icon"
                 className="hidden md:flex  hover:!border-border/0 hover:!bg-transparent"
                 onClick={onExpandSidebar}
-                title="Expand sidebar"
+                title={t.sidebar.expandSidebar}
               >
                 <PanelLeft className="size-4" />
               </Button>
@@ -195,7 +198,7 @@ export function ChatNavbar({
             size="icon"
             className="hover:!border-border/0 hover:!bg-transparent"
             onClick={onNewChat}
-            title="Compose"
+            title={t.chat.compose}
           >
             <SquarePen className="size-4" />
           </Button>
@@ -252,8 +255,8 @@ export function ChatNavbar({
                     size="none"
                     onClick={onExportTranscript}
                     disabled={!canExportTranscript || isExportingTranscript}
-                    title="Share chat"
-                    aria-label="Share chat"
+                    title={t.chat.shareChat}
+                    aria-label={t.chat.shareChat}
                     className={cn(
                       rightPanelVisible ? "hidden" : "hidden md:flex",
                       "border border-border/0 hover:!border-border/0 px-1.5 h-9 hover:!bg-transparent disabled:opacity-50"
@@ -273,8 +276,8 @@ export function ChatNavbar({
                     variant="ghost"
                     size="none"
                     onClick={onToggleBrowserPanel}
-                    title="Browser"
-                    aria-label="Browser"
+                    title={t.chat.browser}
+                    aria-label={t.chat.browser}
                     className={cn(
                       "border border-border/0 hover:!border-border/0 px-1.5 h-9 hover:!bg-transparent"
                     )}
@@ -306,8 +309,8 @@ export function ChatNavbar({
                     variant="ghost"
                     size="none"
                     onClick={handleCloseRightPanel}
-                    title="Collapse sidebar"
-                    aria-label="Collapse sidebar"
+                    title={t.chat.collapseSidebar}
+                    aria-label={t.chat.collapseSidebar}
                     className="border border-border/0 hover:!border-border/0 px-1.5 h-9 hover:!bg-transparent text-foreground"
                   >
                     <PanelRight strokeWidth={2.25} className="h-4" />

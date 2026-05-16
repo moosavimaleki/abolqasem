@@ -6,6 +6,7 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from "../../ui/context-menu"
+import { useI18n } from "../../../i18n/context"
 
 export function ProjectSectionMenu({
   editorLabel,
@@ -26,6 +27,7 @@ export function ProjectSectionMenu({
   onHide: () => void
   children: ReactNode
 }) {
+  const { t } = useI18n()
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
@@ -39,7 +41,7 @@ export function ProjectSectionMenu({
           }}
         >
           <Pencil className="h-3.5 w-3.5" />
-          <span className="text-xs font-medium">Rename</span>
+          <span className="text-xs font-medium">{t.common.rename}</span>
         </ContextMenuItem>
         <ContextMenuItem
           onSelect={(event) => {
@@ -48,7 +50,7 @@ export function ProjectSectionMenu({
           }}
         >
           <Copy className="h-3.5 w-3.5" />
-          <span className="text-xs font-medium">Copy Path</span>
+          <span className="text-xs font-medium">{t.common.copyPath}</span>
         </ContextMenuItem>
         <ContextMenuItem
           onSelect={(event) => {
@@ -57,7 +59,7 @@ export function ProjectSectionMenu({
           }}
         >
           <Archive className="h-3.5 w-3.5" />
-          <span className="text-xs font-medium">Show Archived</span>
+          <span className="text-xs font-medium">{t.sidebar.archivedChats}</span>
         </ContextMenuItem>
         <ContextMenuItem
           onSelect={(event) => {
@@ -66,7 +68,7 @@ export function ProjectSectionMenu({
           }}
         >
           <FolderOpen className="h-3.5 w-3.5" />
-          <span className="text-xs font-medium">Show in Finder</span>
+          <span className="text-xs font-medium">{t.openExternal.openIn("Finder")}</span>
         </ContextMenuItem>
         <ContextMenuItem
           onSelect={(event) => {
@@ -75,7 +77,7 @@ export function ProjectSectionMenu({
           }}
         >
           <Code className="h-3.5 w-3.5" />
-          <span className="text-xs font-medium">Open in {editorLabel}</span>
+          <span className="text-xs font-medium">{t.openExternal.openIn(editorLabel)}</span>
         </ContextMenuItem>
         <ContextMenuItem
           onSelect={(event) => {
@@ -84,7 +86,7 @@ export function ProjectSectionMenu({
           }}
         >
           <EyeOff className="h-3.5 w-3.5" />
-          <span className="text-xs font-medium">Hide</span>
+          <span className="text-xs font-medium">{t.common.hide}</span>
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
@@ -110,6 +112,7 @@ export function ChatRowMenu({
   onDelete: () => void
   children: ReactNode
 }) {
+  const { t } = useI18n()
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
@@ -123,7 +126,7 @@ export function ChatRowMenu({
           }}
         >
           <Pencil className="h-3.5 w-3.5" />
-          <span className="text-xs font-medium">Rename</span>
+          <span className="text-xs font-medium">{t.common.rename}</span>
         </ContextMenuItem>
         <ContextMenuItem
           onSelect={(event) => {
@@ -132,7 +135,7 @@ export function ChatRowMenu({
           }}
         >
           <UserRoundPlus className="h-3.5 w-3.5" />
-          <span className="text-xs font-medium">Share</span>
+          <span className="text-xs font-medium">{t.common.share}</span>
         </ContextMenuItem>
         <ContextMenuItem
           onSelect={(event) => {
@@ -141,7 +144,7 @@ export function ChatRowMenu({
           }}
         >
           <FolderOpen className="h-3.5 w-3.5" />
-          <span className="text-xs font-medium">Open in Finder</span>
+          <span className="text-xs font-medium">{t.openExternal.openIn("Finder")}</span>
         </ContextMenuItem>
         <ContextMenuItem
           disabled={!canFork}
@@ -152,7 +155,7 @@ export function ChatRowMenu({
           }}
         >
           <Split className="h-3.5 w-3.5" />
-          <span className="text-xs font-medium">Fork</span>
+          <span className="text-xs font-medium">{t.common.fork}</span>
         </ContextMenuItem>
         <ContextMenuItem
           onSelect={(event) => {
@@ -161,7 +164,7 @@ export function ChatRowMenu({
           }}
         >
           <Archive className="h-3.5 w-3.5" />
-          <span className="text-xs font-medium">Archive</span>
+          <span className="text-xs font-medium">{t.common.archive}</span>
         </ContextMenuItem>
         <ContextMenuItem
           onSelect={(event) => {
@@ -171,7 +174,7 @@ export function ChatRowMenu({
           className="text-destructive dark:text-red-400 hover:bg-destructive/10 focus:bg-destructive/10 dark:hover:bg-red-500/20 dark:focus:bg-red-500/20"
         >
           <Trash2 className="h-3.5 w-3.5" />
-          <span className="text-xs font-medium">Delete</span>
+          <span className="text-xs font-medium">{t.common.delete}</span>
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>

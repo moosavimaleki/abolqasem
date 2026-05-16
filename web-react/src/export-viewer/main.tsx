@@ -179,6 +179,7 @@ function StandaloneTranscriptApp() {
             isEmptyStateTypingComplete
             isPageFileDragActive={false}
             showEmptyState={false}
+            emptyStateText="What are we building?"
             headerOffsetPx={20}
           />
 

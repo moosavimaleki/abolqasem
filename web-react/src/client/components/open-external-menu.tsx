@@ -7,6 +7,8 @@ import { HotkeyTooltip, HotkeyTooltipContent, HotkeyTooltipTrigger } from "./ui/
 import { Button } from "./ui/button"
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger } from "./ui/select"
 import { ContextMenuContent, ContextMenuItem } from "./ui/context-menu"
+import { useI18n } from "../i18n/context"
+import type { TranslationDictionary } from "../i18n"
 
 export type OpenAppValue = "finder" | "terminal" | "preview" | "default" | `editor:${EditorPreset}`
 
@@ -50,6 +52,17 @@ export function getOpenAppLabel(value: OpenAppValue, isMac: boolean) {
   const preset = value.replace("editor:", "") as EditorPreset
   if (preset === "vscode") return "VS Code"
   return EDITOR_OPTIONS.find((option) => option.value === preset)?.label ?? "Editor"
+}
+
+function getOpenAppDisplayLabel(value: OpenAppValue, isMac: boolean, t: TranslationDictionary) {
+  if (value === "finder") return isMac ? "Finder" : t.openExternal.folder
+  if (value === "terminal") return t.openExternal.terminal
+  if (value === "preview") return t.openExternal.preview
+  if (value === "default") return t.openExternal.defaultApp
+  const preset = value.replace("editor:", "") as EditorPreset
+  if (preset === "custom") return t.openExternal.custom
+  if (preset === "vscode") return "VS Code"
+  return EDITOR_OPTIONS.find((option) => option.value === preset)?.label ?? t.openExternal.editor
 }
 
 export function OpenAppIcon({ value, isMac, className }: { value: OpenAppValue; isMac: boolean; className?: string }) {
@@ -164,6 +177,7 @@ export function OpenExternalSelect({
   editorShortcut?: string[]
   onOpenExternal: (action: OpenExternalAction, editor?: EditorOpenSettings) => void
 }) {
+  const { t } = useI18n()
   const fallbackValue = `editor:${editorPreset}` as OpenAppValue
   const [lastValue, setLastValue] = useState<OpenAppValue>(fallbackValue)
 
@@ -193,7 +207,7 @@ export function OpenExternalSelect({
             variant="ghost"
             size="none"
             onClick={() => handleOpenValue(lastValue)}
-            title={`Open in ${getOpenAppLabel(lastValue, isMac)}`}
+            title={t.openExternal.openIn(getOpenAppDisplayLabel(lastValue, isMac, t))}
             className="border-0 p-1 py-[3px] pr-0 hover:!border-border/0 hover:!bg-transparent"
           >
             <OpenAppIcon value={lastValue} isMac={isMac} className="size-5.5" />
@@ -206,7 +220,7 @@ export function OpenExternalSelect({
       </HotkeyTooltip>
       <Select value={undefined} onValueChange={(value) => handleOpenValue(value as OpenAppValue)}>
         <SelectTrigger
-          aria-label="Choose open destination"
+          aria-label={t.openExternal.chooseDestination}
           className="!h-auto !py-0 !pl-0.5 !pr-1 border-0 bg-transparent hover:bg-transparent focus:ring-0 focus:ring-offset-0 [&>svg]:hidden"
         >
           <div className="flex items-center justify-center size-5">
@@ -217,7 +231,7 @@ export function OpenExternalSelect({
           <SelectGroup>
             {items.map((item) => (
               <SelectItem key={item.value} value={item.value} className={OPEN_APP_MENU_ITEM_CLASS_NAME}>
-                <OpenAppMenuItemContent value={item.value} label={item.label} isMac={isMac} />
+                <OpenAppMenuItemContent value={item.value} label={getOpenAppDisplayLabel(item.value, isMac, t)} isMac={isMac} />
               </SelectItem>
             ))}
           </SelectGroup>
@@ -246,6 +260,7 @@ export function OpenExternalContextMenuContent({
   includeDefault?: boolean
   onOpenExternal: (action: OpenExternalAction, editor?: EditorOpenSettings) => void
 }) {
+  const { t } = useI18n()
   const items = getOpenAppItems({
     editorPreset,
     isMac,
@@ -266,7 +281,7 @@ export function OpenExternalContextMenuContent({
             openAppValue({ value: item.value, editorCommandTemplate, onOpenExternal })
           }}
         >
-          <OpenAppMenuItemContent value={item.value} label={item.label} isMac={isMac} />
+          <OpenAppMenuItemContent value={item.value} label={getOpenAppDisplayLabel(item.value, isMac, t)} isMac={isMac} />
         </ContextMenuItem>
       ))}
     </ContextMenuContent>

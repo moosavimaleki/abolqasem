@@ -30,6 +30,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Textarea } from "../ui/textarea"
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip"
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "../ui/dialog"
+import { useI18n } from "../../i18n/context"
 
 type DiffRenderMode = "unified" | "split"
 type DiffFile = ChatDiffSnapshot["files"][number]
@@ -1472,6 +1473,7 @@ function GitPanelImpl({
   onWrapLinesChange,
   onClose,
 }: GitPanelProps) {
+  const { t } = useI18n()
   const fileActions: DiffFileActions = useMemo(() => ({
     onOpenFile,
     onOpenInFinder,
@@ -1747,7 +1749,7 @@ function GitPanelImpl({
                 className="h-7 gap-1.5 px-3 text-xs"
               >
                 <Github className="h-3.5 w-3.5" />
-                <span>Push to GitHub</span>
+                <span>{t.git.pushToGithub}</span>
               </Button>
             ) : syncAction === "publish" ? (
               <Button
@@ -1758,7 +1760,7 @@ function GitPanelImpl({
                 className="h-7 gap-1.5 px-2 text-xs hover:!bg-transparent hover:!border-border/0"
               >
                 {isSyncing ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
-                <span>Publish Branch</span>
+                <span>{t.git.publishBranch}</span>
               </Button>
             ) : (
               <div className="flex items-center gap-1">
@@ -1787,7 +1789,7 @@ function GitPanelImpl({
                     className="h-7 gap-1.5 px-2 text-xs hover:!bg-transparent hover:!border-border/0"
                   >
                     {isSyncing ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-                    <span>Pull</span>
+                    <span>{t.git.pull}</span>
                     <span className="inline-flex min-w-4 items-center justify-center rounded-full bg-muted px-1 text-[10px] text-muted-foreground">
                       {behindCount}
                     </span>
@@ -1802,7 +1804,7 @@ function GitPanelImpl({
                     className="h-7 gap-1.5 px-2 text-xs"
                   >
                     {isSyncing ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
-                    <span>Push</span>
+                    <span>{t.git.push}</span>
                     <span className="inline-flex min-w-4 items-center justify-center rounded-full bg-primary-foreground/15 px-1 text-[10px] text-primary-foreground">
                       {aheadCount}
                     </span>
@@ -1837,17 +1839,17 @@ function GitPanelImpl({
                       mixed={someSelected}
                       label={
                         someSelected
-                          ? "Select all files for commit"
-                          : allSelected
-                            ? "Unselect all files from commit"
-                            : "Select all files for commit"
+                            ? t.git.selectAllFiles
+                            : allSelected
+                              ? t.git.unselectAllFiles
+                              : t.git.selectAllFiles
                       }
                       onClick={() => {
                         if (!projectId || diffs.files.length === 0) return
                         setAllCheckedPaths(projectId, filePaths, someSelected ? true : !allSelected)
                       }}
                     />
-                    <span>{selectedCount} files</span>
+                    <span>{t.git.files(selectedCount)}</span>
                   </div>
                 ) : <div />}
                 <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2">
@@ -1861,8 +1863,8 @@ function GitPanelImpl({
                       size="sm"
                       optionClassName="flex-1 justify-center"
                       options={[
-                        { value: "changes", label: "Changes"},
-                        { value: "history", label: "History" },
+                        { value: "changes", label: t.git.changes},
+                        { value: "history", label: t.git.history },
                       ]}
                     />
                   </div>
@@ -1870,21 +1872,21 @@ function GitPanelImpl({
                 {viewMode === "changes" ? (
                   <div className="flex items-center gap-1">
                     <IconButton
-                      label="Unified diff"
+                      label={t.git.unifiedDiff}
                       active={diffRenderMode === "unified"}
                       onClick={() => onDiffRenderModeChange("unified")}
                     >
                       <Rows3 className="h-4 w-4" />
                     </IconButton>
                     <IconButton
-                      label="Side-by-side diff"
+                      label={t.git.sideBySideDiff}
                       active={diffRenderMode === "split"}
                       onClick={() => onDiffRenderModeChange("split")}
                     >
                       <Columns2 className="h-4 w-4" />
                     </IconButton>
                     <IconButton
-                      label={wrapLines ? "Disable word wrap" : "Enable word wrap"}
+                      label={wrapLines ? t.git.disableWordWrap : t.git.enableWordWrap}
                       active={wrapLines}
                       onClick={() => onWrapLinesChange(!wrapLines)}
                     >
@@ -1899,16 +1901,16 @@ function GitPanelImpl({
             {diffs.status === "no_repo" ? (
               <div className="flex h-full items-center justify-center px-6 py-3 text-center">
                 <div className="flex max-w-[280px] flex-col items-center gap-3">
-                  <p className="text-sm text-muted-foreground">Initialize git here to start tracking branches, diffs, and history.</p>
+                  <p className="text-sm text-muted-foreground">{t.git.initializeHere}</p>
                   <Button size="sm" onClick={() => void onInitializeGit()}>
-                    Init Git
+                    {t.git.initGit}
                   </Button>
                 </div>
               </div>
             ) : viewMode === "history" ? (
               branchHistory.length === 0 ? (
                 <div className="flex h-full items-center justify-center px-6 py-3 text-center">
-                  <p className="text-sm text-muted-foreground">No recent commits on {diffs.branchName ?? "this branch"}.</p>
+                  <p className="text-sm text-muted-foreground">{t.git.noRecentCommits(diffs.branchName ?? t.git.thisBranch)}</p>
                 </div>
               ) : (
                 <div className="space-y-1.5 p-1.5">
@@ -1917,7 +1919,7 @@ function GitPanelImpl({
               )
             ) : diffs.files.length === 0 ? (
               <div className="flex h-full items-center justify-center px-6 py-3 text-center">
-                <p className="text-sm text-muted-foreground">No file changes.</p>
+                <p className="text-sm text-muted-foreground">{t.git.noFileChanges}</p>
               </div>
             ) : (
               <div className="space-y-1.5 p-1.5 pb-10">
@@ -1969,7 +1971,7 @@ function GitPanelImpl({
                             })
                           }}
                           onKeyDown={handleCommitKeyDown}
-                          placeholder="Commit message"
+                          placeholder={t.git.commitMessage}
                           className="rounded-t-xl rounded-b-none px-3 pr-10"
                           disabled={isBusy || diffs.status !== "ready"}
                         />
@@ -1977,7 +1979,7 @@ function GitPanelImpl({
                           <TooltipTrigger asChild>
                             <button
                               type="button"
-                              aria-label="Generate commit message"
+                              aria-label={t.git.generateCommitMessage}
                               className="absolute right-1.5 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
                               disabled={!canGenerate}
                               onClick={() => void handleGenerate()}
@@ -1989,7 +1991,7 @@ function GitPanelImpl({
                               )}
                             </button>
                           </TooltipTrigger>
-                          <TooltipContent>Generate commit message</TooltipContent>
+                          <TooltipContent>{t.git.generateCommitMessage}</TooltipContent>
                         </Tooltip>
                       </div>
                       <Textarea
@@ -2002,7 +2004,7 @@ function GitPanelImpl({
                           })
                         }}
                         onKeyDown={handleCommitKeyDown}
-                        placeholder="Description"
+                        placeholder={t.git.description}
                         rows={5}
                         className="-mt-px rounded-t-none rounded-b-xl px-3 outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 focus-visible:border-border mb-2"
                         disabled={isBusy || diffs.status !== "ready"}

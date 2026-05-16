@@ -10,6 +10,7 @@ import {
 } from "./ui/dialog"
 import { Input } from "./ui/input"
 import { SegmentedControl } from "./ui/segmented-control"
+import { useI18n } from "../i18n/context"
 
 interface Props {
   open: boolean
@@ -29,6 +30,7 @@ function toKebab(str: string): string {
 }
 
 export function NewProjectModal({ open, onOpenChange, onConfirm }: Props) {
+  const { t } = useI18n()
   const [tab, setTab] = useState<Tab>("new")
   const [name, setName] = useState("")
   const [existingPath, setExistingPath] = useState("")
@@ -74,14 +76,14 @@ export function NewProjectModal({ open, onOpenChange, onConfirm }: Props) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="sm">
         <DialogBody className="space-y-4">
-          <DialogTitle>Add Project</DialogTitle>
+          <DialogTitle>{t.newProject.addProject}</DialogTitle>
 
           <SegmentedControl
             value={tab}
             onValueChange={setTab}
             options={[
-              { value: "new" as Tab, label: "New Folder" },
-              { value: "existing" as Tab, label: "Existing Path" },
+              { value: "new" as Tab, label: t.newProject.newFolder },
+              { value: "existing" as Tab, label: t.newProject.existingPath },
             ]}
             className="w-full mb-2"
             optionClassName="flex-1 justify-center"
@@ -98,7 +100,7 @@ export function NewProjectModal({ open, onOpenChange, onConfirm }: Props) {
                   if (e.key === "Enter") handleSubmit()
                   if (e.key === "Escape") onOpenChange(false)
                 }}
-                placeholder="Project name"
+                placeholder={t.newProject.projectName}
               />
               {newPath && (
                 <p className="text-xs text-muted-foreground font-mono">
@@ -120,14 +122,14 @@ export function NewProjectModal({ open, onOpenChange, onConfirm }: Props) {
                 placeholder="~/Projects/my-app"
               />
               <p className="text-xs text-muted-foreground">
-                The folder will be created if it doesn't exist.
+                {t.newProject.folderCreated}
               </p>
             </div>
           )}
         </DialogBody>
         <DialogFooter>
           <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
-            Cancel
+            {t.common.cancel}
           </Button>
           <Button
             variant="secondary"
@@ -135,7 +137,7 @@ export function NewProjectModal({ open, onOpenChange, onConfirm }: Props) {
             onClick={handleSubmit}
             disabled={!canSubmit}
           >
-            Create
+            {t.common.create}
           </Button>
         </DialogFooter>
       </DialogContent>

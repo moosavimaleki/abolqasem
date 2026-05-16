@@ -32,11 +32,11 @@ import { ChatTranscriptViewport } from "./ChatTranscriptViewport"
 import { TerminalWorkspaceShell } from "./TerminalWorkspaceShell"
 import { useChatPageSidebarActions, EMPTY_DIFF_SNAPSHOT } from "./useChatPageSidebarActions"
 import {
-  EMPTY_STATE_TEXT,
   EMPTY_STATE_TYPING_INTERVAL_MS,
   hasFileDragTypes,
   sameContextWindowSnapshot,
 } from "./utils"
+import { useI18n } from "../../i18n/context"
 
 export {
   getIgnoreFolderEntryFromDiffPath,
@@ -44,7 +44,7 @@ export {
   shouldAutoFollowTranscriptResize,
 } from "./utils"
 
-function useEmptyStateTyping(showEmptyState: boolean, activeChatId: string | null) {
+function useEmptyStateTyping(showEmptyState: boolean, activeChatId: string | null, emptyStateText: string) {
   const [typedEmptyStateText, setTypedEmptyStateText] = useState("")
   const [isEmptyStateTypingComplete, setIsEmptyStateTypingComplete] = useState(false)
 
@@ -57,16 +57,16 @@ function useEmptyStateTyping(showEmptyState: boolean, activeChatId: string | nul
     let characterIndex = 0
     const interval = window.setInterval(() => {
       characterIndex += 1
-      setTypedEmptyStateText(EMPTY_STATE_TEXT.slice(0, characterIndex))
+      setTypedEmptyStateText(emptyStateText.slice(0, characterIndex))
 
-      if (characterIndex >= EMPTY_STATE_TEXT.length) {
+      if (characterIndex >= emptyStateText.length) {
         window.clearInterval(interval)
         setIsEmptyStateTypingComplete(true)
       }
     }, EMPTY_STATE_TYPING_INTERVAL_MS)
 
     return () => window.clearInterval(interval)
-  }, [showEmptyState, activeChatId])
+  }, [showEmptyState, activeChatId, emptyStateText])
 
   return { typedEmptyStateText, isEmptyStateTypingComplete }
 }
@@ -467,6 +467,7 @@ function ChatWorkspace({
 }
 
 export function ChatPage() {
+  const { t } = useI18n()
   const state = useOutletContext<KannaState>()
   const dialog = useAppDialog()
   const layoutRootRef = useRef<HTMLDivElement>(null)
@@ -588,7 +589,7 @@ export function ChatPage() {
     showRightSidebar: showGitPanel,
   })
 
-  const { typedEmptyStateText, isEmptyStateTypingComplete } = useEmptyStateTyping(showEmptyState, state.activeChatId)
+  const { typedEmptyStateText, isEmptyStateTypingComplete } = useEmptyStateTyping(showEmptyState, state.activeChatId, t.chat.emptyState)
 
   useStickyChatFocus({
     rootRef: chatCardRef,
@@ -662,10 +663,10 @@ export function ChatPage() {
     if (state.chatDiffSnapshot?.status === "no_repo") {
       void (async () => {
         const confirmed = await dialog.confirm({
-          title: "Initialize Git?",
-          description: "Initialize a local git repository in this project?",
-          confirmLabel: "Init Git",
-          cancelLabel: "Cancel",
+          title: t.chat.initializeGit,
+          description: t.chat.initializeGitDescription,
+          confirmLabel: t.chat.initGit,
+          cancelLabel: t.common.cancel,
         })
         if (!confirmed) return
 
@@ -678,7 +679,7 @@ export function ChatPage() {
     }
 
     toggleRightPanel(projectId, "git")
-  }, [activeRightPanel, dialog, handleInitializeGit, hideRightPanel, projectId, state.chatDiffSnapshot?.status, toggleRightPanel])
+  }, [activeRightPanel, dialog, handleInitializeGit, hideRightPanel, projectId, state.chatDiffSnapshot?.status, t, toggleRightPanel])
 
   const handleToggleBrowserPanel = useCallback(() => {
     if (!projectId) return
@@ -974,6 +975,7 @@ export function ChatPage() {
           isEmptyStateTypingComplete={isEmptyStateTypingComplete}
           isPageFileDragActive={isPageFileDragActive}
           showEmptyState={showEmptyState}
+          emptyStateText={t.chat.emptyState}
         />
       </CardContent>
 

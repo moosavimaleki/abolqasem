@@ -5,6 +5,8 @@ import type { ProcessedSystemMessage } from "./types"
 import { MetaRow, MetaLabel, MetaText, MetaPill, ExpandableRow, VerticalLineContainer, toolIcons, defaultToolIcon, getToolIcon } from "./shared"
 import { toTitleCase } from "../../lib/formatters"
 import { cn } from "../../lib/utils"
+import { useI18n } from "../../i18n/context"
+import type { TranslationDictionary } from "../../i18n"
 
 interface Props {
   message: ProcessedSystemMessage
@@ -70,18 +72,19 @@ function StatusDot({ status }: { status: string }) {
   return <span className={cn("inline-block h-2 w-2 rounded-full shrink-0", color)} />
 }
 
-function statusLabel(status: string): string {
+function statusLabel(status: string, t: TranslationDictionary): string {
   switch (status) {
-    case "connected": return "Connected"
-    case "failed": return "Failed"
-    case "needs-auth": return "Needs auth"
-    case "pending": return "Connecting..."
-    case "disabled": return "Disabled"
+    case "connected": return t.messages.status.connected
+    case "failed": return t.messages.status.failed
+    case "needs-auth": return t.messages.status.needsAuth
+    case "pending": return t.messages.status.pending
+    case "disabled": return t.messages.status.disabled
     default: return status
   }
 }
 
 function ExpandableMcpServer({ server }: { server: McpServerWithTools }) {
+  const { t } = useI18n()
   const [open, setOpen] = useState(false)
   const isConnected = server.status === "connected"
 
@@ -100,9 +103,9 @@ function ExpandableMcpServer({ server }: { server: McpServerWithTools }) {
         <StatusDot status={server.status} />
         <span className="text-muted-foreground font-medium">{toTitleCase(server.name)}</span>
         {isConnected ? (
-          <span className="text-muted-foreground/50">{server.tools.length} tools</span>
+          <span className="text-muted-foreground/50">{t.messages.toolsCount(server.tools.length)}</span>
         ) : (
-          <span className="text-muted-foreground/50">{statusLabel(server.status)}</span>
+          <span className="text-muted-foreground/50">{statusLabel(server.status, t)}</span>
         )}
       </button>
       {!isConnected && server.error && (
@@ -120,6 +123,7 @@ function ExpandableMcpServer({ server }: { server: McpServerWithTools }) {
 }
 
 function McpServerSection({ servers }: { servers: McpServerWithTools[] }) {
+  const { t } = useI18n()
   if (servers.length === 0) return null
 
   const connected = servers.filter((s) => s.status === "connected")
@@ -128,12 +132,12 @@ function McpServerSection({ servers }: { servers: McpServerWithTools[] }) {
   const badge = disconnected.length > 0 ? (
     <span className="flex items-center gap-1 ml-1">
       <StatusDot status="failed" />
-      <span className="text-muted-foreground/60">{disconnected.length} disconnected</span>
+      <span className="text-muted-foreground/60">{t.messages.disconnectedCount(disconnected.length)}</span>
     </span>
   ) : null
 
   return (
-    <CollapsibleSection title="MCP Servers" count={servers.length} badge={badge}>
+    <CollapsibleSection title={t.messages.mcpServers} count={servers.length} badge={badge}>
       <div className="flex flex-col gap-2">
         {connected.map((server) => (
           <ExpandableMcpServer key={server.name} server={server} />
@@ -147,12 +151,13 @@ function McpServerSection({ servers }: { servers: McpServerWithTools[] }) {
 }
 
 function RawMessageSection({ rawJson }: { rawJson: string }) {
+  const { t } = useI18n()
   const [open, setOpen] = useState(false)
   return (
     <div className="flex flex-col gap-1.5">
       <button onClick={() => setOpen(!open)} className="flex items-center gap-1 cursor-pointer group/section hover:opacity-60 transition-opacity">
         <ChevronRight className={cn("h-3.5 w-3.5 text-muted-foreground transition-transform duration-200", open && "rotate-90")} />
-        <span className="text-muted-foreground font-medium">Raw Message</span>
+        <span className="text-muted-foreground font-medium">{t.messages.rawMessage}</span>
       </button>
       {open && (
         <pre className="ml-5 text-xs whitespace-pre-wrap break-all border border-border rounded-md p-3 overflow-x-auto max-h-96 overflow-y-auto">
@@ -164,6 +169,7 @@ function RawMessageSection({ rawJson }: { rawJson: string }) {
 }
 
 export function SystemMessage({ message, rawJson }: Props) {
+  const { t } = useI18n()
   const { coreTools, mcpServersWithTools } = useMemo(() => {
     const mcpToolsByServer = new Map<string, string[]>()
     const core: string[] = []
@@ -196,9 +202,9 @@ export function SystemMessage({ message, rawJson }: Props) {
           <VerticalLineContainer className="my-4 text-xs">
             <div className="flex flex-col gap-3">
               <MetaText>{message.model}</MetaText>
-              <PillSection title="Tools" items={coreTools} getIcon={(tool) => toolIcons[tool] ?? defaultToolIcon} />
-              <PillSection title="Agents" items={message.agents} icon={UserRound} />
-              <PillSection title="Commands" items={message.slashCommands} icon={Slash} />
+              <PillSection title={t.messages.tools} items={coreTools} getIcon={(tool) => toolIcons[tool] ?? defaultToolIcon} />
+              <PillSection title={t.messages.agents} items={message.agents} icon={UserRound} />
+              <PillSection title={t.messages.commands} items={message.slashCommands} icon={Slash} />
               <McpServerSection servers={mcpServersWithTools} />
               {rawJson && <RawMessageSection rawJson={rawJson} />}
             </div>
@@ -206,7 +212,7 @@ export function SystemMessage({ message, rawJson }: Props) {
         }
       >
         <Asterisk className="h-5 w-5 text-logo" />
-        <MetaLabel>Session Started</MetaLabel>
+        <MetaLabel>{t.messages.sessionStarted}</MetaLabel>
       </ExpandableRow>
     </MetaRow>
   )

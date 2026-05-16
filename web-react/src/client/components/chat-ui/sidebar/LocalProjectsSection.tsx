@@ -22,10 +22,10 @@ import { CSS } from "@dnd-kit/utilities"
 import { Button } from "../../ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "../../ui/tooltip"
 import type { SidebarChatRow, SidebarProjectGroup } from "../../../../shared/types"
-import { APP_NAME } from "../../../../shared/branding"
 import { getPathBasename } from "../../../lib/formatters"
 import { cn } from "../../../lib/utils"
 import { ProjectSectionMenu } from "./Menus"
+import { useI18n } from "../../../i18n/context"
 
 interface Props {
   projectGroups: SidebarProjectGroup[]
@@ -126,13 +126,14 @@ function EmptyProjectChatButton({
   isConnected?: boolean
   startingLocalPath?: string | null
 }) {
+  const { t } = useI18n()
   const disabled = !isConnected || startingLocalPath === localPath
 
   return (
     <button
       type="button"
       disabled={disabled}
-      title={!isConnected ? `Start ${APP_NAME} to connect` : "New Chat"}
+      title={!isConnected ? t.sidebar.startToConnect() : t.sidebar.newChat}
       className={cn(
         "group flex w-full items-center gap-2 pl-2.5 pr-0.5 py-0.5 rounded-lg text-left cursor-pointer border-border/0 hover:border-border hover:bg-muted/20 active:scale-[0.985] border transition-all",
         "border-border/0 dark:hover:border-slate-400/10",
@@ -141,7 +142,7 @@ function EmptyProjectChatButton({
       onClick={() => onNewLocalChat(localPath)}
     >
       <span className="text-sm truncate flex-1 translate-y-[-0.5px] text-slate-500 dark:text-slate-400">
-        New Chat
+        {t.sidebar.newChat}
       </span>
       <div className="h-7 w-6 mr-[2px] shrink-0" aria-hidden />
     </button>
@@ -212,6 +213,7 @@ const SortableProjectGroup = memo(function SortableProjectGroup({
   isConnected,
   startingLocalPath,
 }: SortableProjectGroupProps) {
+  const { t } = useI18n()
   const { groupKey, localPath, title } = group
   const isExpanded = expandedGroups.has(groupKey)
   const isEmptyProject = group.chats.length === 0
@@ -283,7 +285,7 @@ const SortableProjectGroup = memo(function SortableProjectGroup({
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="right" sideOffset={4}>
-                More
+                {t.common.more}
               </TooltipContent>
             </Tooltip>
           ) : null}
@@ -311,7 +313,7 @@ const SortableProjectGroup = memo(function SortableProjectGroup({
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="right" sideOffset={4}>
-                {!isConnected ? `Start ${APP_NAME} to connect` : "New Chat"}
+                {!isConnected ? t.sidebar.startToConnect() : t.sidebar.newChat}
               </TooltipContent>
             </Tooltip>
           ) : null}
@@ -361,7 +363,7 @@ const SortableProjectGroup = memo(function SortableProjectGroup({
                   onClick={() => onToggleExpandedGroup(groupKey)}
                   className="pl-2.5 py-1 text-xs text-muted-foreground/60 hover:text-foreground/60 transition-colors flex flex-row items-center gap-2 justify-center"
                 >
-                 Show less
+                 {t.sidebar.showLess}
                 </button>
               ) : null}
               {isExpanded ? group.olderChats.map(renderChatRow) : null}
@@ -370,7 +372,7 @@ const SortableProjectGroup = memo(function SortableProjectGroup({
                   onClick={() => onToggleExpandedGroup(groupKey)}
                   className="pl-2.5 py-1 text-xs text-muted-foreground/60 hover:text-foreground/60 transition-colors flex flex-row items-center gap-1 justify-center"
                 >
-                 Show more
+                 {t.sidebar.showMore}
                 </button>
               ) : null}
             </>
