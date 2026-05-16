@@ -1800,13 +1800,22 @@ Output:
 
 ## Milestone 24: Auth, Analytics, Machine Name, CLI Runtime
 
-### Task 24.1: Auth parity check
+### Task 24.1: Auth parity check ✅
 
 Acceptance criteria:
 
-- behavior فایل‌های `auth.ts` و `cli-runtime.ts` در Kanna بررسی و معادل Go آن مشخص شود.
-- اگر auth فقط برای feature خاص Kanna است، همان feature با همان UX port شود.
-- auth جدید برای remote multi-user ساخته نشود.
+- [x] behavior فایل‌های `auth.ts` و `cli-runtime.ts` در Kanna بررسی و معادل Go آن مشخص شود.
+- [x] اگر auth فقط برای feature خاص Kanna است، همان feature با همان UX port شود.
+- [x] auth جدید برای remote multi-user ساخته نشود.
+
+Output:
+
+- [routes.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/routes.go)
+- [routes_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/routes_test.go)
+- [workspace_ws.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_ws.go)
+- Kanna `auth.ts` enables password auth only when CLI runtime passes a password. It uses an in-memory `kanna_session` cookie, same-origin Origin checks, and optional trusted proxy handling for secure cookies.
+- Kanna `cli-runtime.ts` exposes `--password` together with host/share runtime flags. The current Go runtime is still local-only service/hook startup, so Task 24.1 keeps auth disabled instead of inventing remote multi-user auth.
+- Disabled-auth parity is now explicit: `/auth/status` returns `{ enabled: false, authenticated: true }` and `/auth/logout` accepts `POST` with `{ ok: true }`, matching Kanna’s no-password UX shape.
 
 ### Task 24.2: Analytics parity
 

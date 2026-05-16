@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -55,6 +56,46 @@ func TestLegacyViewerRouteRedirectsToSlash(t *testing.T) {
 	}
 	if location := response.Header().Get("Location"); location != "/legacy/" {
 		t.Fatalf("expected /legacy/ redirect, got %q", location)
+	}
+}
+
+func TestWorkspaceAuthDisabledEndpointsMatchKannaShape(t *testing.T) {
+	mux := http.NewServeMux()
+	setupRoutes(mux)
+
+	statusResponse := httptest.NewRecorder()
+	mux.ServeHTTP(statusResponse, httptest.NewRequest(http.MethodGet, "/auth/status", nil))
+	if statusResponse.Code != http.StatusOK {
+		t.Fatalf("expected auth status 200, got %d", statusResponse.Code)
+	}
+	var statusPayload map[string]bool
+	if err := json.Unmarshal(statusResponse.Body.Bytes(), &statusPayload); err != nil {
+		t.Fatalf("json.Unmarshal status returned error: %v", err)
+	}
+	if statusPayload["enabled"] || !statusPayload["authenticated"] {
+		t.Fatalf("unexpected auth status payload: %#v", statusPayload)
+	}
+
+	logoutResponse := httptest.NewRecorder()
+	mux.ServeHTTP(logoutResponse, httptest.NewRequest(http.MethodPost, "/auth/logout", nil))
+	if logoutResponse.Code != http.StatusOK {
+		t.Fatalf("expected auth logout 200, got %d", logoutResponse.Code)
+	}
+	var logoutPayload map[string]bool
+	if err := json.Unmarshal(logoutResponse.Body.Bytes(), &logoutPayload); err != nil {
+		t.Fatalf("json.Unmarshal logout returned error: %v", err)
+	}
+	if !logoutPayload["ok"] {
+		t.Fatalf("unexpected auth logout payload: %#v", logoutPayload)
+	}
+
+	wrongMethodResponse := httptest.NewRecorder()
+	mux.ServeHTTP(wrongMethodResponse, httptest.NewRequest(http.MethodGet, "/auth/logout", nil))
+	if wrongMethodResponse.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected auth logout GET 405, got %d", wrongMethodResponse.Code)
+	}
+	if allow := wrongMethodResponse.Header().Get("Allow"); allow != http.MethodPost {
+		t.Fatalf("expected Allow POST, got %q", allow)
 	}
 }
 

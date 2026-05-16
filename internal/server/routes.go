@@ -32,6 +32,7 @@ func setupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/events", handleAPIEvents)
 	mux.HandleFunc("/ws", handleWorkspaceWS)
 	mux.HandleFunc("/auth/status", handleWorkspaceAuthStatus)
+	mux.HandleFunc("/auth/logout", handleWorkspaceAuthLogout)
 
 	rootFS := fs.FS(os.DirFS("web"))
 	if webFS != nil {
