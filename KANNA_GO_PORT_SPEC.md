@@ -327,7 +327,7 @@ Output:
 - [web-react/src](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/web-react/src)
 - [web-react/public](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/web-react/public)
 
-### Task 1.2: انتقال کامل shell UI Kanna
+### Task 1.2: انتقال کامل shell UI Kanna `[done]`
 
 شرح:
 
@@ -345,10 +345,24 @@ Output:
 
 Acceptance criteria:
 
-- UI بدون backend واقعی render شود.
-- empty states درست دیده شوند.
-- responsive layout خراب نباشد.
-- ظاهر باید با Kanna قابل مقایسه باشد، نه طراحی جدید.
+- [x] UI بدون backend واقعی render شود.
+- [x] empty states درست دیده شوند.
+- [x] responsive layout خراب نباشد.
+- [x] ظاهر باید با Kanna قابل مقایسه باشد، نه طراحی جدید.
+
+Output:
+
+- [App.tsx](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/web-react/src/client/app/App.tsx)
+- [ChatPage](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/web-react/src/client/app/ChatPage/index.tsx)
+- [KannaSidebar.tsx](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/web-react/src/client/app/KannaSidebar.tsx)
+- [ChatNavbar.tsx](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/web-react/src/client/components/chat-ui/ChatNavbar.tsx)
+- [ChatInputDock.tsx](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/web-react/src/client/app/ChatPage/ChatInputDock.tsx)
+- [BrowserPanel.tsx](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/web-react/src/client/components/chat-ui/BrowserPanel.tsx)
+- [TerminalWorkspace.tsx](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/web-react/src/client/components/chat-ui/TerminalWorkspace.tsx)
+- [SettingsPage.tsx](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/web-react/src/client/app/SettingsPage.tsx)
+- [LocalProjectsPage.tsx](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/web-react/src/client/app/LocalProjectsPage.tsx)
+- [StandaloneShareDialog.tsx](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/web-react/src/client/components/chat-ui/StandaloneShareDialog.tsx)
+- Existing frontend tests cover shell helpers, sidebar rows, transcript rendering, right-sidebar layout, settings, terminal layout, browser panel cache, and responsive sidebar behavior.
 
 ### Task 1.3: i18n foundation `[done]`
 
