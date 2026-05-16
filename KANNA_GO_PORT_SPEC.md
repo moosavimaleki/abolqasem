@@ -1264,7 +1264,7 @@ Output:
 - Additions/deletions are read from `git diff --numstat`; full patches remain lazy and are not embedded in the snapshot.
 - Each file receives a stable `patchDigest` for frontend cache invalidation.
 
-### Task 12.3: Commit workflow
+### Task 12.3: Commit workflow `[done]`
 
 Acceptance criteria:
 
@@ -1272,6 +1272,16 @@ Acceptance criteria:
 - commit message دستی.
 - generate commit message با helper LLM بعداً.
 - push/pull/fetch پشتیبانی شود.
+
+Output:
+
+- [commit.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/workspace/gitservice/commit.go)
+- [commit_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/workspace/gitservice/commit_test.go)
+- Selected-file commits use explicit pathspecs and manual summary/description.
+- `commit_only` and `commit_and_push` return Kanna-compatible success/failure result shapes.
+- Push creates upstream with `git push -u origin <branch>` when no upstream exists.
+- `fetch`, `pull --ff-only`, and `push` sync actions are available.
+- Commit message generation remains intentionally deferred, matching the original task note.
 
 ### Task 12.4: Branch workflow
 
