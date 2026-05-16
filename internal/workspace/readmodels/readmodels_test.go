@@ -175,3 +175,52 @@ func TestDeriveChatSnapshotIncludesProviders(t *testing.T) {
 		}
 	}
 }
+
+func TestDeriveLocalProjectsSnapshotPrefersSavedProject(t *testing.T) {
+	state := EmptyState()
+	state.ProjectsByID["project-1"] = ProjectRecord{
+		ID:        "project-1",
+		LocalPath: "/tmp/project",
+		Title:     "Saved Project",
+		CreatedAt: 10,
+		UpdatedAt: 20,
+	}
+	state.ChatsByID["chat-1"] = ChatRecord{
+		ID:        "chat-1",
+		ProjectID: "project-1",
+		Title:     "Chat",
+		CreatedAt: 30,
+		UpdatedAt: 40,
+	}
+
+	snapshot := DeriveLocalProjectsSnapshot(
+		state,
+		[]DiscoveredProject{{
+			LocalPath:  "/tmp/project",
+			Title:      "Discovered Project",
+			ModifiedAt: 5,
+		}},
+		"machine",
+		"linux",
+	)
+
+	if snapshot.Machine.ID != "local" || snapshot.Machine.DisplayName != "machine" || snapshot.Machine.Platform != "linux" {
+		t.Fatalf("unexpected machine: %#v", snapshot.Machine)
+	}
+	if len(snapshot.Projects) != 1 {
+		t.Fatalf("expected one project, got %#v", snapshot.Projects)
+	}
+	project := snapshot.Projects[0]
+	if project.Title != "Saved Project" {
+		t.Fatalf("expected saved title, got %q", project.Title)
+	}
+	if project.Source != "saved" {
+		t.Fatalf("expected saved source, got %q", project.Source)
+	}
+	if project.ChatCount != 1 {
+		t.Fatalf("expected chat count 1, got %d", project.ChatCount)
+	}
+	if project.LastOpenedAt != 30 {
+		t.Fatalf("expected last opened at 30, got %d", project.LastOpenedAt)
+	}
+}

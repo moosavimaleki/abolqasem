@@ -730,7 +730,7 @@ Output:
 - Transcript messages/history are passed through with Kanna `ChatHistorySnapshot` shape.
 - Available providers include the Kanna server provider catalog for `claude` and `codex`.
 
-### Task 4.3: Local projects read model
+### Task 4.3: Local projects read model `[done]`
 
 شرح:
 
@@ -741,6 +741,13 @@ Acceptance criteria:
 - پروژه‌های قدیمی از transcript discovery قابل مشاهده باشند.
 - پروژه جدید از UI قابل open باشد.
 - duplicate path حذف شود.
+
+Output:
+
+- `DeriveLocalProjectsSnapshot` mirrors Kanna saved/discovered merge behavior.
+- Saved project metadata wins over discovered project metadata for the same local path.
+- Active non-archived chat count and last-opened ordering are derived from read model state.
+- Machine snapshot uses Kanna `local` machine shape.
 
 ## Milestone 5: Provider Catalog
 

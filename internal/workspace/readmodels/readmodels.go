@@ -135,6 +135,31 @@ type ProviderContextWindowOption struct {
 	Label string `json:"label"`
 }
 
+type DiscoveredProject struct {
+	LocalPath  string
+	Title      string
+	ModifiedAt int64
+}
+
+type LocalProjectsSnapshot struct {
+	Machine  LocalProjectsMachine `json:"machine"`
+	Projects []LocalProjectRow    `json:"projects"`
+}
+
+type LocalProjectsMachine struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"displayName"`
+	Platform    string `json:"platform"`
+}
+
+type LocalProjectRow struct {
+	LocalPath    string `json:"localPath"`
+	Title        string `json:"title"`
+	Source       string `json:"source"`
+	LastOpenedAt int64  `json:"lastOpenedAt"`
+	ChatCount    int    `json:"chatCount"`
+}
+
 type SidebarData struct {
 	ProjectGroups []SidebarProjectGroup `json:"projectGroups"`
 }
@@ -500,6 +525,69 @@ func DeriveChatSnapshot(
 	}
 }
 
+func DeriveLocalProjectsSnapshot(
+	state StoreState,
+	discoveredProjects []DiscoveredProject,
+	machineName string,
+	platform string,
+) LocalProjectsSnapshot {
+	projects := map[string]LocalProjectRow{}
+
+	for _, project := range discoveredProjects {
+		if project.LocalPath == "" {
+			continue
+		}
+		projects[project.LocalPath] = LocalProjectRow{
+			LocalPath:    project.LocalPath,
+			Title:        project.Title,
+			Source:       "discovered",
+			LastOpenedAt: project.ModifiedAt,
+			ChatCount:    0,
+		}
+	}
+
+	for _, project := range state.ProjectsByID {
+		if project.DeletedAt != 0 {
+			continue
+		}
+		chatCount := 0
+		lastOpenedAt := project.UpdatedAt
+		for _, chat := range state.ChatsByID {
+			if chat.ProjectID != project.ID || chat.DeletedAt != 0 || chat.ArchivedAt != 0 {
+				continue
+			}
+			chatCount++
+			if getSidebarChatSortTimestamp(chat) > lastOpenedAt {
+				lastOpenedAt = getSidebarChatSortTimestamp(chat)
+			}
+		}
+		projects[project.LocalPath] = LocalProjectRow{
+			LocalPath:    project.LocalPath,
+			Title:        project.Title,
+			Source:       "saved",
+			LastOpenedAt: lastOpenedAt,
+			ChatCount:    chatCount,
+		}
+	}
+
+	rows := make([]LocalProjectRow, 0, len(projects))
+	for _, project := range projects {
+		rows = append(rows, project)
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		return rows[i].LastOpenedAt > rows[j].LastOpenedAt
+	})
+
+	return LocalProjectsSnapshot{
+		Machine: LocalProjectsMachine{
+			ID:          "local",
+			DisplayName: machineName,
+			Platform:    platform,
+		},
+		Projects: rows,
+	}
+}
+
 func chatsForProject(state StoreState, projectID string) []ChatRecord {
 	chats := make([]ChatRecord, 0)
 	for _, chat := range state.ChatsByID {
@@ -509,9 +597,16 @@ func chatsForProject(state StoreState, projectID string) []ChatRecord {
 		chats = append(chats, chat)
 	}
 	sort.Slice(chats, func(i, j int) bool {
-		return chats[i].UpdatedAt > chats[j].UpdatedAt
+		return getSidebarChatSortTimestamp(chats[i]) > getSidebarChatSortTimestamp(chats[j])
 	})
 	return chats
+}
+
+func getSidebarChatSortTimestamp(chat ChatRecord) int64 {
+	if chat.LastMessageAt != 0 {
+		return chat.LastMessageAt
+	}
+	return chat.CreatedAt
 }
 
 func sidebarRow(project ProjectRecord, chat ChatRecord) SidebarChatRow {
