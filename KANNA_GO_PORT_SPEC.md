@@ -1733,12 +1733,20 @@ Output:
 - Export copies the built standalone viewer, writes `transcript.json`, supports `metadata` and `bundle` attachment modes, and rewrites local paths to `/workspace`.
 - Share upload behavior and success/failure result shapes match Kanna.
 
-### Task 21.2: Share dialog support
+### Task 21.2: Share dialog support ✅
 
 Acceptance criteria:
 
-- StandaloneShareDialog frontend بدون redesign کار کند.
-- backend result shape با Kanna برابر باشد.
+- [x] StandaloneShareDialog frontend بدون redesign کار کند.
+- [x] backend result shape با Kanna برابر باشد.
+
+Output:
+
+- [StandaloneShareDialog.tsx](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/web-react/src/client/components/chat-ui/StandaloneShareDialog.tsx)
+- [useKannaState.ts](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/web-react/src/client/app/useKannaState.ts)
+- [workspace_standalone_export.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_standalone_export.go)
+- Share dialog wiring already matches Kanna and uses the `shareUrl` returned by `chat.exportStandalone`.
+- Backend success and failure payloads now match the Kanna contract used by the dialog flow.
 
 ## Milestone 22: Update Manager
 
