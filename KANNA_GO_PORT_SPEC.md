@@ -1,0 +1,1493 @@
+# Kanna Parity Port To Go Backend
+
+این سند task specification برای port کردن Kanna روی پروژه `ai-agent-manager` است.
+
+هدف این سند ساخت محصول جدید یا الهام‌گرفتن آزاد از Kanna نیست. هدف این است که Kanna تا حد ممکن با همان ظاهر، همان رفتار، همان UX و همان feature set منتقل شود؛ فقط backend به Go تبدیل شود و frontend دو زبانه و RTL شود.
+
+فرض‌ها:
+
+- Frontend ری‌اکتی Kanna باید تا حد ممکن مستقیم منتقل شود.
+- Frontend باید bilingual شود: `fa` و `en`.
+- زبان فارسی باید RTL کامل داشته باشد.
+- Backend باید Go باشد، نه Bun/TypeScript.
+- feature parity با Kanna مهم‌تر از طراحی feature جدید است.
+- deviation از Kanna فقط وقتی مجاز است که برای Go idiomatic بودن، امنیت local server یا RTL/i18n لازم باشد.
+- Gemini، hook behavior اختصاصی فعلی و viewer legacy نباید وارد core Kanna-port شوند مگر برای migration/compatibility.
+
+## قانون‌های Port
+
+### Rule 1: Copy First, Redesign Last
+
+- frontend componentها، layout، interaction و naming تا حد ممکن از Kanna کپی شوند.
+- backend behavior باید از Kanna mirror شود، نه اینکه feature جدید طراحی شود.
+- اگر در Kanna command یا snapshot خاصی هست، در Go همان shape حفظ شود مگر دلیل جدی وجود داشته باشد.
+
+### Rule 2: Protocol Parity
+
+Go backend باید envelopeهای Kanna را حفظ کند:
+
+```ts
+type ClientEnvelope =
+  | { v: 1; type: "subscribe"; id: string; topic: SubscriptionTopic }
+  | { v: 1; type: "unsubscribe"; id: string }
+  | { v: 1; type: "command"; id: string; command: ClientCommand }
+
+type ServerEnvelope =
+  | { v: 1; type: "snapshot"; id: string; snapshot: ServerSnapshot }
+  | { v: 1; type: "event"; id: string; event: TerminalEvent }
+  | { v: 1; type: "ack"; id: string; result?: unknown }
+  | { v: 1; type: "error"; id?: string; message: string }
+```
+
+نباید یک envelope جدید مثل `{type, data}` اختراع شود مگر frontend Kanna هم به همان تغییر منتقل شود. اولویت با کمترین تغییر در frontend است.
+
+### Rule 3: No Extra Product Scope
+
+موارد زیر در core parity scope نیستند مگر اینکه Kanna خودش داشته باشد:
+
+- Gemini send/control.
+- mode جدید اختصاصی برای viewer/web-ui.
+- auth جدید برای remote usage.
+- product flow جدید که در Kanna نیست.
+- abstractionهای بیش از حد عمومی برای آینده نامعلوم.
+
+### Rule 4: Go Idiomatic, Kanna Compatible
+
+- ساختار packageهای Go می‌تواند idiomatic باشد.
+- JSON shape، command names، snapshot names و UI expectations باید Kanna-compatible بمانند.
+- تست‌ها باید behavior Kanna را lock کنند.
+
+## هدف معماری
+
+معماری هدف با parity نسبت به Kanna:
+
+```text
+React Client
+  |
+  | WebSocket command/subscription
+  | REST for file/upload/static/fallback APIs
+  v
+Go Server
+  |
+  +-- WS Router
+  +-- Event Store
+  +-- Read Models
+  +-- Agent Coordinator
+  +-- Provider Catalog
+  +-- Codex Adapter
+  +-- Claude Adapter
+  +-- Git Service
+  +-- Terminal Manager
+  +-- Settings Service
+  +-- Keybindings Service
+  +-- LLM Provider Service
+  +-- Skills Service
+  +-- Update Manager
+  +-- Share / Standalone Export
+  +-- Browser Local Server Discovery
+  +-- Quick Actions
+  +-- External Open Service
+  +-- File/Upload Service
+  +-- Legacy Viewer Bridge
+  |
+  v
+Local tools
+  +-- codex app-server
+  +-- claude
+  +-- git
+  +-- shell
+  +-- filesystem
+```
+
+## Milestone 0: Parity Lock
+
+### Task 0.1: تهیه parity map از Kanna
+
+شرح:
+
+- تمام فایل‌های `src/shared`, `src/server`, `src/client` در Kanna map شوند.
+- برای هر فایل Kanna مشخص شود:
+  - `copy frontend`
+  - `port to Go`
+  - `keep as frontend utility`
+  - `defer but required for final parity`
+  - `not applicable because backend is Go`
+
+Acceptance criteria:
+
+- یک جدول parity در همین repo ثبت شود.
+- هیچ فیچر Kanna بدون تصمیم explicit حذف نشود.
+- هر defer باید دلیل و phase داشته باشد.
+
+### Task 0.1.1: Server module port map
+
+این map باید هنگام اجرا به checklist واقعی تبدیل شود. معادل‌های پیشنهادی Go فقط naming هستند؛ behavior باید از Kanna بیاید.
+
+```text
+Kanna server module                  Go target
+---------------------------------------------------------------------------
+agent.ts                             internal/workspace/agent_coordinator
+codex-app-server.ts                  internal/providers/codex
+codex-app-server-protocol.ts         internal/providers/codex/protocol
+provider-catalog.ts                  internal/providers/catalog
+event-store.ts                       internal/workspace/eventstore
+events.ts                            internal/workspace/events
+read-models.ts                       internal/workspace/readmodels
+ws-router.ts                         internal/workspace/ws
+diff-store.ts                        internal/git
+terminal-manager.ts                  internal/terminal
+uploads.ts                           internal/uploads
+external-open.ts                     internal/externalopen
+local-http-servers.ts                internal/browserpreview
+project-quick-actions.ts             internal/quickactions
+quick-response.ts                    internal/llm/quickresponse
+generate-title.ts                    internal/llm/title
+generate-commit-message.ts           internal/llm/commitmsg
+llm-provider.ts                      internal/llm/settings
+app-settings.ts                      internal/settings
+keybindings.ts                       internal/keybindings
+share.ts                             internal/share
+standalone-export.ts                 internal/export
+update-manager.ts                    internal/update
+auth.ts                              internal/auth
+analytics.ts                         internal/analytics
+machine-name.ts                      internal/machine
+paths.ts                             internal/paths
+process-utils.ts                     internal/processutil
+restart.ts                           internal/restart
+cli-runtime.ts                       internal/cliruntime
+cli-supervisor.ts                    internal/clisupervisor
+discovery.ts                         internal/discovery
+server.ts                            internal/server
+cli.ts                               cmd/ai-agent-manager
+```
+
+Acceptance criteria:
+
+- برای هر module بالا یک Go implementation، explicit defer، یا explicit not-applicable note وجود داشته باشد.
+- testهای متناظر Kanna تا حد ممکن به Go test تبدیل شوند.
+- هیچ module بدون ثبت تصمیم حذف نشود.
+
+### Task 0.1.2: Shared type parity map
+
+شرح:
+
+- `src/shared/types.ts` و `src/shared/protocol.ts` باید به Go DTOها و TypeScript shared types جدید منتقل شوند.
+- frontend نباید مجبور شود shapeهای متفاوت مصرف کند.
+
+Acceptance criteria:
+
+- `AgentProvider` فقط `claude | codex` باشد.
+- `ClientCommand`ها با Kanna برابر باشند.
+- `SubscriptionTopic`ها با Kanna برابر باشند.
+- `ServerSnapshot`ها با Kanna برابر باشند.
+- `TranscriptEntry`, `ChatSnapshot`, `SidebarData`, `ChatDiffSnapshot`, `TerminalSnapshot`, `AppSettingsSnapshot`, `KeybindingsSnapshot`, `UpdateSnapshot`, `LlmProviderSnapshot` معادل داشته باشند.
+
+### Task 0.1.3: Frontend component port map
+
+Componentهای کلیدی که باید با حداقل تغییر منتقل شوند:
+
+```text
+App / routing
+KannaSidebar
+LocalProjectsPage
+ChatPage
+ChatNavbar
+ChatInputDock
+ChatInput
+ChatPreferenceControls
+ChatTranscriptViewport
+KannaTranscript
+messages/*
+GitPanel
+BrowserPanel
+TerminalWorkspaceShell
+TerminalWorkspace
+TerminalPane
+SettingsPage
+StandaloneShareDialog
+NewProjectModal
+LocalDev
+ui/*
+stores/*
+lib/*
+```
+
+Acceptance criteria:
+
+- visual/component hierarchy با Kanna یکی بماند.
+- فقط i18n/RTL و backend connection تغییر کند.
+- testهای frontend Kanna تا حد ممکن حفظ شوند.
+
+### Task 0.2: بررسی license و اجازه copy مستقیم
+
+شرح:
+
+- license پروژه Kanna و dependencyهای آن بررسی شود.
+- اگر copy مستقیم frontend مجاز نیست، port باید component-by-component بازنویسی شود.
+
+Acceptance criteria:
+
+- یک note در repo ثبت شود که استفاده مستقیم از code مجاز است یا نه.
+- dependencyهای frontend در `package.json` جدید مشخص باشند.
+
+### Task 0.3: تعیین strategy انتقال frontend بدون redesign
+
+شرح:
+
+- ساختار React Kanna به مسیر frontend جدید منتقل شود.
+- تغییرات فقط برای اتصال به Go backend، branding، i18n و RTL باشد.
+- CSS/spacing/component hierarchy تا حد ممکن حفظ شود.
+
+Acceptance criteria:
+
+- UI visually نزدیک به Kanna باشد.
+- snapshot/screenshot baseline از صفحات Kanna برای مقایسه گرفته شود.
+- هیچ layout جدیدی بدون دلیل اضافه نشود.
+
+### Task 0.4: انتخاب build tool با حداقل تغییر
+
+شرح:
+
+- اگر Kanna با Vite/Bun است، frontend build می‌تواند همان Vite را نگه دارد.
+- backend Go فقط static output را embed/serve کند.
+
+Acceptance criteria:
+
+- frontend مستقل build شود.
+- Go embed خروجی `dist` را serve کند.
+- CI بدون Bun server backend کار کند.
+
+## Milestone 1: Frontend Port Skeleton
+
+### Task 1.1: انتقال ساختار React app
+
+مسیر پیشنهادی:
+
+```text
+web-react/
+  package.json
+  vite.config.ts
+  tsconfig.json
+  src/
+    app/
+    components/
+    stores/
+    lib/
+    i18n/
+    styles/
+```
+
+Acceptance criteria:
+
+- app روی dev server بالا بیاید.
+- production build ساخته شود.
+- Go server بتواند build خروجی را serve کند.
+- structure کلی Kanna حفظ شده باشد.
+
+### Task 1.2: انتقال کامل shell UI Kanna
+
+شرح:
+
+- layout اصلی Kanna منتقل شود:
+  - sidebar
+  - chat page
+  - chat navbar
+  - composer dock
+  - right sidebar
+  - settings page
+  - local projects page
+  - terminal workspace
+  - browser panel
+  - standalone share dialog
+
+Acceptance criteria:
+
+- UI بدون backend واقعی render شود.
+- empty states درست دیده شوند.
+- responsive layout خراب نباشد.
+- ظاهر باید با Kanna قابل مقایسه باشد، نه طراحی جدید.
+
+### Task 1.3: i18n foundation
+
+شرح:
+
+- اضافه کردن سیستم translation.
+- زبان‌های اولیه:
+  - `en`
+  - `fa`
+- locale از settings خوانده شود.
+- fallback به `en`.
+
+مسیر پیشنهادی:
+
+```text
+web-react/src/i18n/
+  index.ts
+  en.ts
+  fa.ts
+```
+
+Acceptance criteria:
+
+- UI بتواند بین فارسی و انگلیسی switch کند.
+- متن‌های hardcoded اصلی حذف شوند.
+- direction بر اساس locale تنظیم شود.
+
+### Task 1.4: RTL foundation
+
+شرح:
+
+- وقتی locale فارسی است:
+  - `dir="rtl"`
+  - alignment مناسب در sidebar/chat/navbar/settings
+  - composer و markdown با mixed direction درست کار کند.
+- کد، diff، terminal و pathها باید LTR بمانند.
+
+Acceptance criteria:
+
+- فارسی RTL است.
+- code blockها LTR هستند.
+- terminal LTR است.
+- git diff LTR است.
+- مسیر فایل‌ها LTR هستند.
+
+## Milestone 2: Go WebSocket Protocol
+
+### Task 2.1: Port دقیق protocol.ts به Go
+
+شرح:
+
+- معادل TypeScript protocol در Go تعریف شود.
+- shapeها باید با Kanna یکی بمانند.
+
+مدل envelope باید معادل این باشد:
+
+```go
+type ClientEnvelope struct {
+    V       int             `json:"v"`
+    Type    string          `json:"type"`
+    ID      string          `json:"id"`
+    Topic   *SubscriptionTopic `json:"topic,omitempty"`
+    Command json.RawMessage `json:"command,omitempty"`
+}
+
+type ServerEnvelope struct {
+    V        int             `json:"v"`
+    Type     string          `json:"type"`
+    ID       string          `json:"id,omitempty"`
+    Snapshot any             `json:"snapshot,omitempty"`
+    Event    any             `json:"event,omitempty"`
+    Result   any             `json:"result,omitempty"`
+    Message  string          `json:"message,omitempty"`
+}
+```
+
+Acceptance criteria:
+
+- WebSocket endpoint مثلاً `/api/ws` ایجاد شود.
+- client بتواند connect/disconnect کند.
+- ping/pong یا heartbeat وجود داشته باشد.
+- command نامعتبر error استاندارد برگرداند.
+- frontend Kanna socket client با حداقل تغییر به Go وصل شود.
+
+### Task 2.2: Subscription model
+
+Topicهای اولیه:
+
+```text
+sidebar
+local-projects
+update
+keybindings
+app-settings
+chat
+project-git
+terminal
+```
+
+Acceptance criteria:
+
+- client بتواند subscribe/unsubscribe کند.
+- snapshot اولیه بعد از subscribe ارسال شود.
+- تغییر state فقط به subscriberهای مرتبط broadcast شود.
+
+### Task 2.3: Command router
+
+Commandهای Kanna باید mirror شوند:
+
+```text
+project.open
+project.create
+project.rename
+project.remove
+sidebar.reorderProjectGroups
+project.readDiffPatch
+system.ping
+browser.listLocalHttpServers
+browser.killLocalHttpServer
+project.readQuickActions
+project.writeQuickActions
+update.check
+update.install
+settings.readKeybindings
+settings.writeKeybindings
+settings.readAppSettings
+settings.writeAppSettings
+settings.writeAppSettingsPatch
+settings.readLlmProvider
+settings.writeLlmProvider
+settings.validateLlmProvider
+skills.search
+skills.install
+skills.uninstall
+skills.listInstalled
+system.openExternal
+chat.create
+chat.fork
+chat.rename
+chat.archive
+chat.unarchive
+chat.delete
+chat.setDraftProtection
+chat.markRead
+chat.send
+chat.refreshDiffs
+chat.initGit
+chat.getGitHubPublishInfo
+chat.checkGitHubRepoAvailability
+chat.publishToGitHub
+chat.listBranches
+chat.previewMergeBranch
+chat.mergeBranch
+chat.syncBranch
+chat.checkoutBranch
+chat.createBranch
+chat.generateCommitMessage
+chat.commitDiffs
+chat.discardDiffFile
+chat.ignoreDiffFile
+chat.cancel
+chat.stopDraining
+chat.exportStandalone
+chat.loadHistory
+chat.respondTool
+message.enqueue
+message.steer
+message.dequeue
+terminal.create
+terminal.input
+terminal.resize
+terminal.close
+```
+
+Acceptance criteria:
+
+- هر command handler جدا و قابل تست باشد.
+- خطاها structured باشند.
+- command ID در response حفظ شود.
+- commandهای هنوز پیاده‌سازی‌نشده باید error سازگار بدهند، نه silently ignore.
+
+## Milestone 3: Event Store در Go
+
+### Task 3.1: طراحی event model
+
+Eventهای پایه:
+
+```text
+project.opened
+project.renamed
+project.hidden
+
+chat.created
+chat.renamed
+chat.deleted
+chat.archived
+chat.unarchived
+chat.provider_set
+chat.plan_mode_set
+chat.read_state_set
+
+message.appended
+
+queued_message.enqueued
+queued_message.removed
+
+turn.started
+turn.finished
+turn.failed
+turn.cancelled
+turn.session_token_set
+```
+
+Acceptance criteria:
+
+- eventها version داشته باشند.
+- timestamp داشته باشند.
+- migration path برای version بعدی در نظر گرفته شود.
+
+### Task 3.2: JSONL append-only store
+
+مسیر پیشنهادی:
+
+```text
+~/.cache/ai-agent-manager/data/
+  projects.jsonl
+  chats.jsonl
+  messages.jsonl
+  queued-messages.jsonl
+  turns.jsonl
+  snapshot.json
+```
+
+Acceptance criteria:
+
+- append atomic باشد.
+- corrupted line کل store را نابود نکند.
+- replay از صفر ممکن باشد.
+- lock فایل/فرآیند رعایت شود.
+
+### Task 3.3: Snapshot compaction
+
+شرح:
+
+- وقتی event log بزرگ شد snapshot ساخته شود.
+- startup از snapshot + events بعد از snapshot انجام شود.
+
+Acceptance criteria:
+
+- startup با ۱۰ هزار message کند نشود.
+- compact کردن باعث از بین رفتن داده نشود.
+- test برای replay و snapshot وجود داشته باشد.
+
+## Milestone 4: Read Models
+
+### Task 4.1: Sidebar read model
+
+خروجی:
+
+```json
+{
+  "project_groups": [
+    {
+      "project_id": "...",
+      "title": "...",
+      "local_path": "...",
+      "chats": [],
+      "archived_chats": []
+    }
+  ]
+}
+```
+
+Acceptance criteria:
+
+- چت‌ها زیر پروژه درست group شوند.
+- recent ordering درست باشد.
+- archived جدا شود.
+- active status روی rowها مشخص باشد.
+
+### Task 4.2: Chat snapshot read model
+
+خروجی:
+
+```json
+{
+  "runtime": {},
+  "messages": [],
+  "queued_messages": [],
+  "history": {},
+  "available_providers": []
+}
+```
+
+Acceptance criteria:
+
+- message pagination داشته باشد.
+- runtime status از active turn derive شود.
+- queued messages برگردند.
+- provider catalog به snapshot اضافه شود.
+
+### Task 4.3: Local projects read model
+
+شرح:
+
+- پروژه‌های ذخیره‌شده و پروژه‌های discover شده از legacy sessions merge شوند.
+
+Acceptance criteria:
+
+- پروژه‌های قدیمی از transcript discovery قابل مشاهده باشند.
+- پروژه جدید از UI قابل open باشد.
+- duplicate path حذف شود.
+
+## Milestone 5: Provider Catalog
+
+### Task 5.1: Port مستقیم ProviderCatalog Kanna
+
+Providerهای هدف:
+
+```text
+claude
+codex
+```
+
+مدل:
+
+```go
+type ProviderCatalogEntry struct {
+    ID               string
+    Label            string
+    DefaultModel     string
+    Models           []ModelInfo
+    SupportsPlanMode bool
+    Capabilities     map[string]bool
+}
+```
+
+Acceptance criteria:
+
+- UI بتواند provider/model/reasoning را از backend بخواند.
+- provider ناشناخته fallback امن داشته باشد.
+- provider list با Kanna برابر باشد مگر در migration legacy.
+
+### Task 5.2: Model options
+
+برای Codex:
+
+```text
+model
+reasoning_effort
+fast_mode
+plan_mode
+```
+
+برای Claude:
+
+```text
+model
+reasoning_effort
+context_window
+plan_mode
+```
+
+Acceptance criteria:
+
+- هر provider optionهای خودش را validate کند.
+- UI فقط optionهای قابل پشتیبانی را نشان دهد.
+- option naming با Kanna compatible باشد.
+
+## Milestone 6: Agent Coordinator
+
+### Task 6.1: ساخت coordinator مرکزی
+
+مسئولیت‌ها:
+
+- start turn
+- continue turn
+- cancel turn
+- queue message
+- dequeue message
+- track active turns
+- handle tool requests
+- append transcript entries
+- update runtime status
+- broadcast read model changes
+
+Acceptance criteria:
+
+- همزمان دو turn روی یک chat اجرا نشود.
+- اگر chat active است، پیام جدید queue شود.
+- cancel status را درست update کند.
+- خطای provider باعث خراب شدن server نشود.
+
+### Task 6.2: Active turn model
+
+```go
+type ActiveTurn struct {
+    ChatID       string
+    ProjectID    string
+    Provider     string
+    Model        string
+    Status       string
+    StartedAt    time.Time
+    Cancel       context.CancelFunc
+    PendingTools map[string]*PendingToolRequest
+}
+```
+
+Acceptance criteria:
+
+- statusهای `idle`, `running`, `waiting_for_user`, `failed`, `cancelled` پشتیبانی شوند.
+- pending tool request در snapshot دیده شود.
+
+### Task 6.3: Queue model
+
+شرح:
+
+- اگر کاربر هنگام active بودن chat پیام دهد، پیام queue شود.
+- بعد از پایان turn، پیام بعدی اجرا شود.
+
+Acceptance criteria:
+
+- queue persisted باشد.
+- refresh صفحه queue را از بین نبرد.
+- کاربر بتواند queued message را حذف کند.
+
+## Milestone 7: Codex Adapter در Go
+
+### Task 7.1: بازطراحی Codex app-server client
+
+مشکل فعلی:
+
+- برای هر request یک app-server جدید ساخته می‌شود.
+- streaming و tool handling کامل نیست.
+
+هدف:
+
+```text
+CodexManager
+  +-- sessions map[chatID]*CodexSession
+  +-- StartThread
+  +-- ResumeThread
+  +-- ForkThread
+  +-- StartTurn
+  +-- CancelTurn
+  +-- RespondTool
+```
+
+Acceptance criteria:
+
+- app-server context برای chat قابل reuse باشد.
+- initialize با `experimentalApi` انجام شود.
+- thread token/session token ذخیره شود.
+
+### Task 7.2: JSON-RPC routing
+
+شرح:
+
+- request/response/notificationهای Codex جدا route شوند.
+- concurrent pending calls با ID map مدیریت شوند.
+
+Acceptance criteria:
+
+- response اشتباه به call اشتباه وصل نشود.
+- notificationها stream شوند.
+- stderr در log ذخیره شود.
+
+### Task 7.3: Codex turn streaming
+
+Notificationهای مهم:
+
+```text
+thread/started
+turn/completed
+item/agentMessage/delta
+item/reasoning/*
+item/tool/*
+item/fileChange/*
+item/plan/*
+```
+
+Acceptance criteria:
+
+- پیام assistant زنده به transcript اضافه شود.
+- reasoning/plan/file change قابل نمایش باشد.
+- turn completed status درست set شود.
+
+### Task 7.4: Codex tool and approval handling
+
+Server requestهای مهم:
+
+```text
+item/tool/requestUserInput
+item/commandExecution/requestApproval
+item/fileChange/requestApproval
+```
+
+Acceptance criteria:
+
+- tool request به UI ارسال شود.
+- UI بتواند approve/deny/respond کند.
+- Codex request با پاسخ UI resume شود.
+
+## Milestone 8: Claude Adapter
+
+### Task 8.1: Port رفتار Claude adapter Kanna به Go
+
+اصل:
+
+- هدف کپی رفتار Kanna است.
+- استفاده از bridge جاوااسکریپتی دائمی نباید default باشد چون backend باید Go شود.
+- اگر Claude SDK فقط در JS قابل استفاده بود، bridge موقت فقط با تصمیم explicit مجاز است.
+
+گزینه‌های بررسی:
+
+- استفاده مستقیم از `claude` CLI اگر protocol کافی دارد.
+- استفاده از SDK معادل Go اگر موجود/مناسب باشد.
+- bridge process کوچک فقط اگر بدون آن parity ممکن نبود.
+
+Acceptance criteria:
+
+- تصمیم فنی documented شود.
+- proof of concept یک prompt ساده را stream کند.
+
+### Task 8.2: Claude session management
+
+Acceptance criteria:
+
+- start/resume session.
+- stream messages.
+- model/reasoning/context window support.
+- AskUserQuestion و plan approval پشتیبانی شود، اگر provider اجازه بدهد.
+
+## Milestone 9: Gemini Adapter
+
+### Task 9.1: Legacy Gemini viewer compatibility only
+
+Acceptance criteria:
+
+- اگر sessionهای Gemini فعلی وجود دارند، در legacy viewer از بین نروند.
+- Gemini وارد provider catalog Kanna-port نشود مگر Kanna upstream اضافه کند.
+
+### Task 9.2: No Gemini Web UI control in Kanna parity scope
+
+Acceptance criteria:
+
+- هیچ UI control جدید برای Gemini ساخته نشود.
+- هیچ مدل/option اختصاصی Gemini در Kanna workspace اضافه نشود.
+- اگر بعداً نیاز شد، task جدا خارج از parity scope تعریف شود.
+
+## Milestone 10: Transcript Model
+
+### Task 10.1: تعریف TranscriptEntry مشترک
+
+انواع:
+
+```text
+user_prompt
+assistant_message
+reasoning
+tool_call
+tool_result
+command
+file_change
+plan
+error
+system
+attachment
+```
+
+Acceptance criteria:
+
+- همه providerها به این مدل normalize شوند.
+- UI provider-specific raw payload نخواهد.
+
+### Task 10.2: Legacy transcript import
+
+شرح:
+
+- sessionهای قدیمی از parser فعلی import شوند.
+- به عنوان read-only chat یا imported chat دیده شوند.
+
+Acceptance criteria:
+
+- sessionهای قبلی از بین نروند.
+- duplicate sessionها کنترل شوند.
+- user بتواند session قدیمی را open کند.
+
+## Milestone 11: Tool Approval UI
+
+### Task 11.1: Pending tool cards
+
+Frontend:
+
+- question card
+- approval card
+- approve/deny buttons
+- optional text input
+
+Backend:
+
+- pending tool state
+- `chat.respondTool`
+
+Acceptance criteria:
+
+- agent هنگام approval معلق بماند.
+- user response به provider برگردد.
+- timeout/error قابل نمایش باشد.
+
+## Milestone 12: Git Service در Go
+
+### Task 12.1: Git repository detection
+
+Acceptance criteria:
+
+- project root git تشخیص داده شود.
+- non-git project status مشخص داشته باشد.
+
+### Task 12.2: Diff snapshot
+
+خروجی:
+
+```json
+{
+  "status": "ready",
+  "branch_name": "main",
+  "files": [
+    {
+      "path": "...",
+      "change_type": "modified",
+      "additions": 10,
+      "deletions": 2
+    }
+  ]
+}
+```
+
+Acceptance criteria:
+
+- untracked/modified/deleted/renamed تشخیص داده شود.
+- patch lazy load شود.
+
+### Task 12.3: Commit workflow
+
+Acceptance criteria:
+
+- selected files commit شوند.
+- commit message دستی.
+- generate commit message با helper LLM بعداً.
+- push/pull/fetch پشتیبانی شود.
+
+### Task 12.4: Branch workflow
+
+Acceptance criteria:
+
+- list branches.
+- checkout.
+- create branch.
+- merge preview.
+- merge.
+
+### Task 12.5: GitHub publish workflow مطابق Kanna
+
+Acceptance criteria:
+
+- `chat.getGitHubPublishInfo` پیاده شود.
+- `chat.checkGitHubRepoAvailability` پیاده شود.
+- `chat.publishToGitHub` پیاده شود.
+- response shape با Kanna برابر باشد.
+
+### Task 12.6: Discard/ignore workflow مطابق Kanna
+
+Acceptance criteria:
+
+- `chat.discardDiffFile` پیاده شود.
+- `chat.ignoreDiffFile` پیاده شود.
+- ignore file/folder behavior با UI Kanna سازگار باشد.
+
+## Milestone 13: Terminal Manager در Go
+
+### Task 13.1: PTY integration
+
+نیازمندی:
+
+- Unix: pty package.
+- Windows: ConPTY یا fallback محدود.
+
+Acceptance criteria:
+
+- terminal create/input/resize/close کار کند.
+- output با WebSocket stream شود.
+- process cleanup درست باشد.
+
+### Task 13.2: Terminal UI integration
+
+Acceptance criteria:
+
+- xterm.js frontend وصل شود.
+- multi terminal per project.
+- terminal layout persisted شود.
+
+## Milestone 14: File, Upload, Preview
+
+### Task 14.1: Upload service
+
+Acceptance criteria:
+
+- فایل‌ها در مسیر امن cache شوند.
+- attachment metadata ذخیره شود.
+- size limit و mime detection داشته باشد.
+
+### Task 14.2: Project file serving
+
+Acceptance criteria:
+
+- فقط مسیرهای زیر project root قابل serve باشند.
+- path traversal غیرممکن باشد.
+- markdown/code/image/pdf preview کار کند.
+
+## Milestone 15: Settings
+
+### Task 15.1: Global settings model
+
+تنظیمات:
+
+```text
+app settings
+locale
+theme
+default_provider
+provider_defaults
+editor
+terminal
+sounds
+analytics
+browserSettingsMigrated
+standalone transcript defaults
+```
+
+Acceptance criteria:
+
+- settings از backend خوانده و نوشته شود.
+- settings روی disk persist شود.
+- تغییر locale جهت UI را عوض کند.
+
+### Task 15.2: App management settings
+
+موارد:
+
+- restart server
+- reload sessions
+- hook notification mode
+- startup mode info
+- version/update info
+
+Acceptance criteria:
+
+- عملیات خطرناک confirmation داشته باشد.
+- restart server از UI ممکن باشد.
+
+### Task 15.3: Keybindings مطابق Kanna
+
+Acceptance criteria:
+
+- `settings.readKeybindings` پیاده شود.
+- `settings.writeKeybindings` پیاده شود.
+- default keybindings با Kanna برابر باشد.
+- shortcutهای frontend بدون تغییر رفتاری کار کنند.
+
+### Task 15.4: LLM provider settings مطابق Kanna
+
+شرح:
+
+- این بخش برای quick response، title generation و commit message generation است.
+
+Acceptance criteria:
+
+- `settings.readLlmProvider` پیاده شود.
+- `settings.writeLlmProvider` پیاده شود.
+- `settings.validateLlmProvider` پیاده شود.
+- provider kindهای Kanna حفظ شوند: `openai`, `openrouter`, `custom`.
+
+## Milestone 16: Frontend Integration With Go Protocol
+
+### Task 16.1: اتصال Kanna socket client با کمترین تغییر
+
+شرح:
+
+- TypeScript socket client موجود در Kanna حفظ شود.
+- فقط URL، error handling لازم و type compatibility با Go تنظیم شود.
+- command envelope همان Kanna بماند.
+
+Acceptance criteria:
+
+- sidebar snapshot از Go بیاید.
+- chat snapshot از Go بیاید.
+- settings snapshot از Go بیاید.
+
+### Task 16.2: اتصال composer
+
+Acceptance criteria:
+
+- create chat.
+- send message.
+- select provider/model/reasoning.
+- cancel turn.
+- queued message rendering.
+
+### Task 16.3: اتصال runtime events
+
+Acceptance criteria:
+
+- assistant message به صورت live update شود.
+- status running/waiting/failed درست نمایش داده شود.
+- tool approval card ظاهر شود.
+
+## Milestone 17: Legacy Viewer Bridge
+
+### Task 17.1: نگه داشتن viewer فعلی خارج از Kanna workspace
+
+Acceptance criteria:
+
+- viewer فعلی می‌تواند پشت route legacy بماند.
+- نباید UI اصلی Kanna-port را با behaviorهای hook-follow فعلی آلوده کند.
+- installer/hook compatibility حفظ شود، اما core Kanna workspace event-driven بماند.
+
+### Task 17.2: import یا نمایش legacy sessions بدون تغییر UX Kanna
+
+Acceptance criteria:
+
+- sessionهای hook/discovery زیر پروژه دیده شوند.
+- read-only badge داشته باشند اگر قابل ادامه نیستند.
+- اگر Codex session قابل resume بود، گزینه continue فعال شود.
+- این بخش نباید sidebar اصلی Kanna را از project/chat model خارج کند.
+
+## Milestone 18: Browser Panel And Local Servers
+
+### Task 18.1: Port local-http-servers
+
+شرح:
+
+- Kanna local HTTP serverهای مربوط به project را پیدا و مدیریت می‌کند.
+
+Acceptance criteria:
+
+- `browser.listLocalHttpServers` پیاده شود.
+- `browser.killLocalHttpServer` پیاده شود.
+- BrowserPanel frontend بدون redesign کار کند.
+
+### Task 18.2: Browser panel cache/state
+
+Acceptance criteria:
+
+- state مورد انتظار BrowserPanel حفظ شود.
+- project-specific browser preview behavior با Kanna یکی باشد.
+
+## Milestone 19: Quick Actions
+
+### Task 19.1: Project quick actions
+
+Acceptance criteria:
+
+- `project.readQuickActions` پیاده شود.
+- `project.writeQuickActions` پیاده شود.
+- quick actionهای project روی disk persist شوند.
+- UI Kanna بدون تغییر رفتاری کار کند.
+
+## Milestone 20: Skills
+
+### Task 20.1: Skills list/search/install/uninstall
+
+Acceptance criteria:
+
+- `skills.search` پیاده شود.
+- `skills.install` پیاده شود.
+- `skills.uninstall` پیاده شود.
+- `skills.listInstalled` پیاده شود.
+- response shape با Kanna برابر باشد.
+- اگر skill backend فعلی نداریم، ابتدا adapter thin به Codex skills filesystem ساخته شود، نه UX جدید.
+
+## Milestone 21: Share And Standalone Export
+
+### Task 21.1: Standalone transcript export
+
+Acceptance criteria:
+
+- `chat.exportStandalone` پیاده شود.
+- attachment modes مطابق Kanna باشد: `metadata`, `bundle`.
+- themeهای export مطابق Kanna باشد: `light`, `dark`.
+- output با viewer/export Kanna سازگار باشد.
+
+### Task 21.2: Share dialog support
+
+Acceptance criteria:
+
+- StandaloneShareDialog frontend بدون redesign کار کند.
+- backend result shape با Kanna برابر باشد.
+
+## Milestone 22: Update Manager
+
+### Task 22.1: update.check و update.install
+
+Acceptance criteria:
+
+- `update.check` پیاده شود.
+- `update.install` پیاده شود.
+- UpdateSnapshot با Kanna برابر باشد.
+- اگر release mechanism ما GoReleaser است، فقط backend implementation فرق کند، نه UI contract.
+
+## Milestone 23: External Open
+
+### Task 23.1: system.openExternal
+
+Actionهای Kanna:
+
+```text
+open_finder
+open_terminal
+open_editor
+open_preview
+open_default
+```
+
+Acceptance criteria:
+
+- file/path/line/column support حفظ شود.
+- editor preset/custom command با settings هماهنگ باشد.
+- path security رعایت شود.
+
+## Milestone 24: Auth, Analytics, Machine Name, CLI Runtime
+
+### Task 24.1: Auth parity check
+
+Acceptance criteria:
+
+- behavior فایل‌های `auth.ts` و `cli-runtime.ts` در Kanna بررسی و معادل Go آن مشخص شود.
+- اگر auth فقط برای feature خاص Kanna است، همان feature با همان UX port شود.
+- auth جدید برای remote multi-user ساخته نشود.
+
+### Task 24.2: Analytics parity
+
+Acceptance criteria:
+
+- analytics toggle و event naming با Kanna برابر باشد.
+- اگر analytics را disable می‌کنیم، UI و setting آن همچنان shape-compatible باشد.
+
+### Task 24.3: Machine name and CLI supervisor parity
+
+Acceptance criteria:
+
+- machine name behavior اگر در UI/settings استفاده شده port شود.
+- cli supervisor behavior اگر برای restart/update لازم است port شود.
+
+## Milestone 25: Security Hardening
+
+### Task 25.1: Filesystem security
+
+Acceptance criteria:
+
+- project root allowlist.
+- no path traversal.
+- symlink policy مشخص.
+- file preview فقط داخل root.
+
+### Task 25.2: Command execution security
+
+Acceptance criteria:
+
+- terminal و agent commandها local-only باشند.
+- approval flow برای عملیات حساس.
+- logs حاوی secret نباشند.
+
+### Task 25.3: Web server security
+
+Acceptance criteria:
+
+- bind default به localhost.
+- CORS بسته باشد.
+- WebSocket origin check داشته باشد.
+- auth جدید برای remote exposure خارج از parity scope است مگر Kanna همان را داشته باشد.
+
+## Milestone 26: Testing
+
+### Backend tests
+
+- Protocol parity with Kanna envelope.
+- EventStore append/replay.
+- Snapshot compaction.
+- ReadModel derivation.
+- WS command routing.
+- AgentCoordinator queue/cancel.
+- Codex JSON-RPC routing.
+- Tool approval lifecycle.
+- Git service parsing.
+- File serving security.
+- Settings persistence.
+- Browser local servers.
+- Quick actions.
+- Skills commands.
+- Update manager.
+- Standalone export.
+- External open.
+
+### Frontend tests
+
+- Existing Kanna frontend tests should be kept where practical.
+- i18n switch.
+- RTL layout smoke tests.
+- composer provider/model controls.
+- sidebar grouping.
+- chat snapshot rendering.
+- queued message rendering.
+- tool approval cards.
+- git panel rendering.
+- settings/keybindings rendering.
+- browser panel rendering.
+- terminal panel rendering.
+
+### E2E tests
+
+- start server.
+- open UI.
+- create project.
+- create chat.
+- send mock agent message.
+- approve mock tool.
+- see transcript update.
+- reload page and verify persistence.
+
+## Milestone 27: CI And Release
+
+### Task 27.1: Build pipeline
+
+Acceptance criteria:
+
+- frontend build.
+- Go test.
+- Go build.
+- embed assets.
+- goreleaser artifacts.
+
+### Task 27.2: Installer compatibility
+
+Acceptance criteria:
+
+- installer همچنان Go/runtime لازم را آماده کند.
+- service/hook mode بعد از نصب کار کند.
+- restart بعد از install انجام شود.
+
+## Suggested Implementation Order
+
+ترتیب پیشنهادی برای کاهش ریسک:
+
+1. Parity map کامل از Kanna.
+2. Frontend copy با build موفق، بدون redesign.
+3. i18n/RTL اضافه شود، بدون تغییر visual identity.
+4. Go WebSocket protocol دقیقاً با envelope Kanna.
+5. EventStore و ReadModels مطابق Kanna.
+6. Project/chat CRUD مطابق Kanna.
+7. ProviderCatalog فقط برای `claude | codex`.
+8. AgentCoordinator با mock provider برای lock کردن UI/runtime contract.
+9. Codex persistent adapter.
+10. Live transcript streaming.
+11. Tool approval.
+12. Claude adapter.
+13. Git/Diff/GitHub workflows.
+14. Terminal backend.
+15. BrowserPanel/local HTTP servers.
+16. Quick actions.
+17. Settings/keybindings/LLM provider.
+18. Skills.
+19. Share/standalone export.
+20. Update manager.
+21. External open.
+22. Legacy viewer bridge/import.
+23. Hardening, tests, release.
+
+## Phasing Notes, Not Feature Removal
+
+این موارد ممکن است در اولین vertical slice کامل نباشند، اما برای final parity حذف نمی‌شوند:
+
+- Claude کامل.
+- GitHub publish کامل.
+- terminal روی Windows با parity کامل.
+- share/export کامل.
+- analytics behavior مطابق Kanna.
+- skills کامل.
+- update install کامل.
+- BrowserPanel کامل.
+
+Gemini از این لیست حذف شد چون در Kanna provider اصلی نیست. Gemini فقط برای legacy compatibility پروژه فعلی می‌تواند جداگانه حفظ شود، نه در Kanna parity workspace.
+
+اولین vertical slice باید این را ثابت کند:
+
+```text
+React Kanna UI copied with minimal change
+  + Go WebSocket backend
+  + persistent Project/Chat/EventStore
+  + Codex live send/resume
+  + model/reasoning controls
+  + tool approval loop
+  + bilingual RTL/LTR UI
+```
+
+## Engineering Risk Register
+
+### Risk: Codex app-server protocol instability
+
+Mitigation:
+
+- adapter کاملاً isolated باشد.
+- raw logs نگهداری شود.
+- capability negotiation داشته باشیم.
+
+### Risk: Direct Claude SDK in Go unavailable
+
+Mitigation:
+
+- اول direct Go/CLI route بررسی شود.
+- bridge JS فقط در صورت غیرممکن بودن parity با Go direct مجاز است و باید پشت adapter پنهان باشد.
+
+### Risk: Frontend copy too tightly coupled to Kanna protocol
+
+Mitigation:
+
+- این ریسک عمداً پذیرفته می‌شود چون هدف copy کردن Kanna است.
+- به جای تغییر frontend، Go backend باید Kanna protocol را پیاده کند.
+
+### Risk: EventStore migration complexity
+
+Mitigation:
+
+- legacy viewer را جدا نگه داریم.
+- imported legacy sessions را read-only شروع کنیم.
+
+### Risk: RTL breaking code/diff/terminal
+
+Mitigation:
+
+- direction را component-level کنترل کنیم.
+- code/diff/terminal/path همیشه LTR باشند.
+
+## Definition Of Done For First Vertical Slice
+
+Vertical slice اول زمانی کامل است که:
+
+- UI جدید با فارسی/انگلیسی و RTL/LTR کار کند.
+- پروژه جدید اضافه شود.
+- chat جدید ساخته شود.
+- provider Codex انتخاب شود.
+- model/reasoning انتخاب شود.
+- پیام ارسال شود.
+- پاسخ Codex زنده در transcript دیده شود.
+- اگر Codex tool approval خواست، UI آن را نشان دهد و پاسخ برگرداند.
+- refresh صفحه chat را از بین نبرد.
+- sidebar پروژه‌ها و chatها را درست نشان دهد.
+- sessionهای legacy همچنان قابل مشاهده باشند.
+- build/release/installer خراب نشود.
+
+## Definition Of Done For Final Kanna Parity
+
+Final parity زمانی کامل است که:
+
+- ظاهر اصلی Kanna حفظ شده باشد.
+- sidebar، local projects، chat page، settings، right sidebar، terminal و browser panel مطابق Kanna کار کنند.
+- تمام commandهای `ClientCommand` در Kanna یا پیاده شده باشند یا با دلیل explicit و documented حذف شده باشند.
+- تمام topicهای `SubscriptionTopic` در Kanna پشتیبانی شوند.
+- تمام snapshotهای `ServerSnapshot` در Kanna پشتیبانی شوند.
+- `claude` و `codex` providerها مطابق Kanna کار کنند.
+- model/reasoning/context/fast/plan controls مطابق Kanna باشند.
+- queue، steer، dequeue، cancel و stop draining مطابق Kanna باشند.
+- tool approval و AskUserQuestion/ExitPlanMode مطابق Kanna باشند.
+- Git/Diff/GitHub workflows مطابق Kanna باشند.
+- terminal مطابق Kanna باشد.
+- BrowserPanel/local HTTP servers مطابق Kanna باشد.
+- quick actions مطابق Kanna باشد.
+- skills مطابق Kanna باشد.
+- settings/keybindings/LLM provider مطابق Kanna باشد.
+- standalone export/share مطابق Kanna باشد.
+- update/check/install مطابق Kanna UI contract باشد.
+- frontend فارسی/انگلیسی داشته باشد.
+- فارسی RTL باشد و code/diff/terminal/pathها LTR بمانند.
+- legacy viewer فقط compatibility layer باشد، نه عامل تغییر UX اصلی.
