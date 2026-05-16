@@ -1910,13 +1910,26 @@ Output:
 
 ## Milestone 26: Testing
 
+### Task 26.1: Backend WS command routing smoke tests ✅
+
+Acceptance criteria:
+
+- [x] `system.ping` command envelope از مسیر `workspaceConnection.handle` به ack Kanna-compatible برسد.
+- [x] flow حداقلی `project.open -> chat.create` از همان WS command router عبور کند و `projectId`/`chatId` برگرداند.
+- [x] تست‌ها بدون WebSocket واقعی و بدون side effect شبکه اجرا شوند.
+
+Output:
+
+- [workspace_ws_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_ws_test.go)
+- Backend command routing now has a direct smoke test for the Kanna envelope path, covering both a pure command and a state-mutating project/chat command sequence.
+
 ### Backend tests
 
 - Protocol parity with Kanna envelope.
 - EventStore append/replay.
 - Snapshot compaction.
 - ReadModel derivation.
-- WS command routing.
+- WS command routing. `[done: Task 26.1]`
 - AgentCoordinator queue/cancel.
 - Codex JSON-RPC routing.
 - Tool approval lifecycle.
