@@ -20,6 +20,7 @@ import (
 const (
 	sidebarSubscription       = "__sidebar__"
 	localProjectsSubscription = "__local_projects__"
+	updateSubscription        = "__update__"
 	terminalSubscription      = "terminal:"
 	chatSubscription          = "chat:"
 )

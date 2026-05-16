@@ -16,6 +16,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -29,6 +30,8 @@ var (
 	startDetached       = func(exe string, args ...string) error {
 		return exec.Command(exe, args...).Start()
 	}
+	workspaceUpdateMu    sync.Mutex
+	workspaceUpdateState map[string]any
 )
 
 type hookStatus struct {
@@ -156,6 +159,16 @@ func workspaceServiceInstalled() bool {
 }
 
 func workspaceUpdateSnapshot() map[string]any {
+	workspaceUpdateMu.Lock()
+	defer workspaceUpdateMu.Unlock()
+	if workspaceUpdateState != nil {
+		return cloneMap(workspaceUpdateState)
+	}
+	workspaceUpdateState = defaultWorkspaceUpdateSnapshot()
+	return cloneMap(workspaceUpdateState)
+}
+
+func defaultWorkspaceUpdateSnapshot() map[string]any {
 	return map[string]any{
 		"currentVersion":    normalizedAppVersion(),
 		"latestVersion":     nil,
@@ -204,11 +217,15 @@ func workspaceCheckUpdate() map[string]any {
 	} else {
 		snapshot["status"] = "up_to_date"
 	}
-	return snapshot
+	return setWorkspaceUpdateSnapshot(snapshot)
 }
 
 func workspaceInstallUpdate() map[string]any {
 	if err := scheduleServerCommand("update"); err != nil {
+		snapshot := workspaceUpdateSnapshot()
+		snapshot["status"] = "error"
+		snapshot["error"] = err.Error()
+		_ = setWorkspaceUpdateSnapshot(snapshot)
 		return map[string]any{
 			"ok":          false,
 			"action":      "restart",
@@ -217,6 +234,12 @@ func workspaceInstallUpdate() map[string]any {
 			"userMessage": err.Error(),
 		}
 	}
+	snapshot := workspaceUpdateSnapshot()
+	snapshot["status"] = "restart_pending"
+	snapshot["updateAvailable"] = false
+	snapshot["error"] = nil
+	snapshot["reloadRequestedAt"] = time.Now().UnixMilli()
+	_ = setWorkspaceUpdateSnapshot(snapshot)
 	return map[string]any{
 		"ok":          true,
 		"action":      "restart",
@@ -246,7 +269,22 @@ func workspaceUpdateError(snapshot map[string]any, err error) map[string]any {
 	snapshot["status"] = "error"
 	snapshot["error"] = err.Error()
 	snapshot["updateAvailable"] = false
-	return snapshot
+	return setWorkspaceUpdateSnapshot(snapshot)
+}
+
+func setWorkspaceUpdateSnapshot(snapshot map[string]any) map[string]any {
+	workspaceUpdateMu.Lock()
+	defer workspaceUpdateMu.Unlock()
+	workspaceUpdateState = cloneMap(snapshot)
+	return cloneMap(workspaceUpdateState)
+}
+
+func cloneMap(input map[string]any) map[string]any {
+	output := make(map[string]any, len(input))
+	for key, value := range input {
+		output[key] = value
+	}
+	return output
 }
 
 func normalizedAppVersion() string {

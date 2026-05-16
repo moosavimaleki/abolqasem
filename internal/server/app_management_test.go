@@ -14,7 +14,21 @@ func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return fn(req)
 }
 
+func resetWorkspaceUpdateState(t *testing.T) {
+	t.Helper()
+	workspaceUpdateMu.Lock()
+	previous := workspaceUpdateState
+	workspaceUpdateState = nil
+	workspaceUpdateMu.Unlock()
+	t.Cleanup(func() {
+		workspaceUpdateMu.Lock()
+		workspaceUpdateState = previous
+		workspaceUpdateMu.Unlock()
+	})
+}
+
 func TestWorkspaceCheckUpdateDetectsRelease(t *testing.T) {
+	resetWorkspaceUpdateState(t)
 	previousVersion := buildinfo.Version
 	previousClient := appUpdateHTTPClient
 	buildinfo.Version = "0.1.2"
@@ -42,9 +56,13 @@ func TestWorkspaceCheckUpdateDetectsRelease(t *testing.T) {
 	if snapshot["updateAvailable"] != true {
 		t.Fatalf("expected updateAvailable true, got %#v", snapshot["updateAvailable"])
 	}
+	if persisted := workspaceUpdateSnapshot(); persisted["status"] != "available" || persisted["latestVersion"] != "0.1.3" {
+		t.Fatalf("expected update snapshot to persist check result, got %#v", persisted)
+	}
 }
 
 func TestWorkspaceInstallUpdateSchedulesDetachedCommand(t *testing.T) {
+	resetWorkspaceUpdateState(t)
 	previousExecutablePath := executablePath
 	previousStartDetached := startDetached
 	started := make(chan []string, 1)
@@ -67,6 +85,10 @@ func TestWorkspaceInstallUpdateSchedulesDetachedCommand(t *testing.T) {
 	command := <-started
 	if len(command) != 2 || command[0] != "/tmp/ai-agent-manager" || command[1] != "update" {
 		t.Fatalf("unexpected scheduled command: %#v", command)
+	}
+	snapshot := workspaceUpdateSnapshot()
+	if snapshot["status"] != "restart_pending" || snapshot["reloadRequestedAt"] == nil {
+		t.Fatalf("expected restart_pending update snapshot, got %#v", snapshot)
 	}
 }
 

@@ -107,6 +107,8 @@ func (c *workspaceConnection) handleSubscribe(envelope protocol.ClientEnvelope) 
 		c.subscribe(envelope.ID, sidebarSubscription)
 	case envelope.Topic.Type == protocol.TopicLocalProjects:
 		c.subscribe(envelope.ID, localProjectsSubscription)
+	case envelope.Topic.Type == protocol.TopicUpdate:
+		c.subscribe(envelope.ID, updateSubscription)
 	case envelope.Topic.Type == protocol.TopicChat && envelope.Topic.ChatID != "":
 		c.subscribe(envelope.ID, chatSubscription+envelope.Topic.ChatID)
 	}
@@ -400,10 +402,14 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 		response := protocol.AckEnvelope(envelope.ID, map[string]any{"items": workspaceHookStatuses()})
 		return &response
 	case protocol.CommandUpdateCheck:
-		response := protocol.AckEnvelope(envelope.ID, workspaceCheckUpdate())
+		snapshot := workspaceCheckUpdate()
+		c.emitUpdateSnapshot(snapshot)
+		response := protocol.AckEnvelope(envelope.ID, snapshot)
 		return &response
 	case protocol.CommandUpdateInstall:
-		response := protocol.AckEnvelope(envelope.ID, workspaceInstallUpdate())
+		result := workspaceInstallUpdate()
+		c.emitUpdateSnapshot(workspaceUpdateSnapshot())
+		response := protocol.AckEnvelope(envelope.ID, result)
 		return &response
 	case protocol.CommandTerminalCreate:
 		result, err := workspaceTerminals.create(envelope.Command)
@@ -482,6 +488,15 @@ func (c *workspaceConnection) emitKeybindingsSnapshot(snapshot state.Keybindings
 			continue
 		}
 		_ = c.write(protocol.SnapshotEnvelope(subscriptionID, protocol.SnapshotKeybindings, snapshot))
+	}
+}
+
+func (c *workspaceConnection) emitUpdateSnapshot(snapshot map[string]any) {
+	for subscriptionID, topic := range c.subscriptions {
+		if topic != updateSubscription {
+			continue
+		}
+		_ = c.write(protocol.SnapshotEnvelope(subscriptionID, protocol.SnapshotUpdate, snapshot))
 	}
 }
 

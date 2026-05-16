@@ -1750,14 +1750,24 @@ Output:
 
 ## Milestone 22: Update Manager
 
-### Task 22.1: update.check و update.install
+### Task 22.1: update.check و update.install ✅
 
 Acceptance criteria:
 
-- `update.check` پیاده شود.
-- `update.install` پیاده شود.
-- UpdateSnapshot با Kanna برابر باشد.
-- اگر release mechanism ما GoReleaser است، فقط backend implementation فرق کند، نه UI contract.
+- [x] `update.check` پیاده شود.
+- [x] `update.install` پیاده شود.
+- [x] UpdateSnapshot با Kanna برابر باشد.
+- [x] اگر release mechanism ما GoReleaser است، فقط backend implementation فرق کند، نه UI contract.
+
+Output:
+
+- [app_management.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/app_management.go)
+- [app_management_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/app_management_test.go)
+- [workspace_ws.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_ws.go)
+- [workspace_composer.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_composer.go)
+- `update.check` reads GitHub releases for the GoReleaser release stream while preserving the Kanna `UpdateSnapshot` shape.
+- `update.install` schedules the Go binary update/restart path while preserving the Kanna `UpdateInstallResult` shape.
+- Update snapshots are persisted in-memory and broadcast to `update` subscribers so the frontend reacts like Kanna.
 
 ## Milestone 23: External Open
 
