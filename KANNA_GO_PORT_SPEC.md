@@ -1495,7 +1495,7 @@ Output:
 - `settings.readKeybindings` and `settings.writeKeybindings` now work over the Go WebSocket backend.
 - A write emits a fresh keybindings snapshot to the active subscribed connection so frontend shortcuts update without a reload.
 
-### Task 15.4: LLM provider settings مطابق Kanna
+### Task 15.4: LLM provider settings مطابق Kanna ✅
 
 شرح:
 
@@ -1503,10 +1503,20 @@ Output:
 
 Acceptance criteria:
 
-- `settings.readLlmProvider` پیاده شود.
-- `settings.writeLlmProvider` پیاده شود.
-- `settings.validateLlmProvider` پیاده شود.
-- provider kindهای Kanna حفظ شوند: `openai`, `openrouter`, `custom`.
+- `settings.readLlmProvider` پیاده شود. ✅
+- `settings.writeLlmProvider` پیاده شود. ✅
+- `settings.validateLlmProvider` پیاده شود. ✅
+- provider kindهای Kanna حفظ شوند: `openai`, `openrouter`, `custom`. ✅
+
+Output:
+
+- [llm_provider.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/state/llm_provider.go)
+- [llm_provider_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/state/llm_provider_test.go)
+- [workspace_ws.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_ws.go)
+- LLM provider settings are persisted in `llm-provider.json` under the app state directory.
+- Provider normalization follows Kanna: `openai`, `openrouter`, and `custom`, with the same base URLs and default models.
+- `settings.readLlmProvider`, `settings.writeLlmProvider`, and `settings.validateLlmProvider` now work over the Go WebSocket backend.
+- Validation sends an OpenAI-compatible `/responses` request when configuration is complete and returns Kanna-compatible config errors otherwise.
 
 ## Milestone 16: Frontend Integration With Go Protocol
 

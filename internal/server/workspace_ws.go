@@ -137,6 +137,30 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 		c.emitKeybindingsSnapshot(snapshot)
 		response := protocol.AckEnvelope(envelope.ID, snapshot)
 		return &response
+	case protocol.CommandSettingsReadLLMProvider:
+		snapshot, err := state.LoadLlmProviderSnapshot()
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		response := protocol.AckEnvelope(envelope.ID, snapshot)
+		return &response
+	case protocol.CommandSettingsWriteLLMProvider:
+		snapshot, err := writeWorkspaceLlmProvider(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		response := protocol.AckEnvelope(envelope.ID, snapshot)
+		return &response
+	case protocol.CommandSettingsValidateLLMProvider:
+		result, err := validateWorkspaceLlmProvider(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		response := protocol.AckEnvelope(envelope.ID, result)
+		return &response
 	case protocol.CommandSettingsWriteAppSettingsPatch:
 		snapshot, err := applyWorkspaceAppSettingsPatch(envelope.Command)
 		if err != nil {
@@ -481,6 +505,40 @@ func writeWorkspaceKeybindings(raw json.RawMessage) (state.KeybindingsSnapshot, 
 		return state.KeybindingsSnapshot{}, err
 	}
 	return state.SaveKeybindings(payload.Bindings)
+}
+
+func writeWorkspaceLlmProvider(raw json.RawMessage) (state.LlmProviderSnapshot, error) {
+	payload, err := decodeLlmProviderCommand(raw)
+	if err != nil {
+		return state.LlmProviderSnapshot{}, err
+	}
+	return state.SaveLlmProviderSnapshot(payload)
+}
+
+func validateWorkspaceLlmProvider(raw json.RawMessage) (state.LlmProviderValidationResult, error) {
+	payload, err := decodeLlmProviderCommand(raw)
+	if err != nil {
+		return state.LlmProviderValidationResult{}, err
+	}
+	return state.ValidateLlmProviderCredentials(payload), nil
+}
+
+func decodeLlmProviderCommand(raw json.RawMessage) (map[string]any, error) {
+	var payload struct {
+		Provider string `json:"provider"`
+		APIKey   string `json:"apiKey"`
+		Model    string `json:"model"`
+		BaseURL  string `json:"baseUrl"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"provider": payload.Provider,
+		"apiKey":   payload.APIKey,
+		"model":    payload.Model,
+		"baseUrl":  payload.BaseURL,
+	}, nil
 }
 
 func handleWorkspaceAuthStatus(w http.ResponseWriter, r *http.Request) {
