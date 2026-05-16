@@ -15,6 +15,16 @@ const (
 	StreamTurns          = "turns"
 )
 
+func Streams() []string {
+	return []string{
+		StreamProjects,
+		StreamChats,
+		StreamMessages,
+		StreamQueuedMessages,
+		StreamTurns,
+	}
+}
+
 const (
 	TypeProjectOpened         = "project_opened"
 	TypeProjectSidebarRenamed = "project_sidebar_renamed"

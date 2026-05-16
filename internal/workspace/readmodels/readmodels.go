@@ -7,28 +7,28 @@ import (
 )
 
 type ProjectRecord struct {
-	ID           string
-	LocalPath    string
-	Title        string
-	SidebarTitle *string
-	CreatedAt    int64
-	UpdatedAt    int64
-	DeletedAt    int64
+	ID           string  `json:"id"`
+	LocalPath    string  `json:"localPath"`
+	Title        string  `json:"title"`
+	SidebarTitle *string `json:"sidebarTitle,omitempty"`
+	CreatedAt    int64   `json:"createdAt"`
+	UpdatedAt    int64   `json:"updatedAt"`
+	DeletedAt    int64   `json:"deletedAt,omitempty"`
 }
 
 type ChatRecord struct {
-	ID              string
-	ProjectID       string
-	Title           string
-	CreatedAt       int64
-	UpdatedAt       int64
-	DeletedAt       int64
-	ArchivedAt      int64
-	Unread          bool
-	Provider        *string
-	PlanMode        bool
-	LastMessageAt   int64
-	LastTurnOutcome *string
+	ID              string  `json:"id"`
+	ProjectID       string  `json:"projectId"`
+	Title           string  `json:"title"`
+	CreatedAt       int64   `json:"createdAt"`
+	UpdatedAt       int64   `json:"updatedAt"`
+	DeletedAt       int64   `json:"deletedAt,omitempty"`
+	ArchivedAt      int64   `json:"archivedAt,omitempty"`
+	Unread          bool    `json:"unread"`
+	Provider        *string `json:"provider"`
+	PlanMode        bool    `json:"planMode"`
+	LastMessageAt   int64   `json:"lastMessageAt,omitempty"`
+	LastTurnOutcome *string `json:"lastTurnOutcome"`
 }
 
 type StoreState struct {

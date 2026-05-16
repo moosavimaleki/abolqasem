@@ -647,7 +647,7 @@ Output:
 - [store_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/workspace/eventstore/store_test.go)
 - Append/replay implemented for Kanna streams: `projects`, `chats`, `messages`, `queued-messages`, `turns`.
 
-### Task 3.3: Snapshot compaction `[todo]`
+### Task 3.3: Snapshot compaction `[done]`
 
 شرح:
 
@@ -659,6 +659,13 @@ Acceptance criteria:
 - startup با ۱۰ هزار message کند نشود.
 - compact کردن باعث از بین رفتن داده نشود.
 - test برای replay و snapshot وجود داشته باشد.
+
+Output:
+
+- `snapshot.json` shape follows Kanna `SnapshotFile`: `v`, `generatedAt`, `projects`, `chats`, `queuedMessages`.
+- Compaction writes snapshot atomically with temp+rename, then truncates Kanna event streams.
+- Startup path loads snapshot first and replays later JSONL events with Kanna event ordering priority.
+- Tests cover snapshot writing, log truncation, and snapshot-plus-event replay.
 
 ## Milestone 4: Read Models
 
