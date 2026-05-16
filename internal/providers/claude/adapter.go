@@ -8,6 +8,7 @@ import (
 	"os/exec"
 
 	"ai-agent-manager/internal/workspace/readmodels"
+	"ai-agent-manager/internal/workspace/transcript"
 )
 
 type Adapter struct {
@@ -99,9 +100,9 @@ func entriesFromEvent(event map[string]any) []readmodels.TranscriptEntry {
 		if text == "" {
 			return nil
 		}
-		return []readmodels.TranscriptEntry{entry("assistant_text", map[string]any{"text": text})}
+		return []readmodels.TranscriptEntry{transcript.New(transcript.KindAssistantText, map[string]any{"text": text})}
 	case "result":
-		return []readmodels.TranscriptEntry{entry("result", map[string]any{
+		return []readmodels.TranscriptEntry{transcript.New(transcript.KindResult, map[string]any{
 			"subtype":    "success",
 			"isError":    false,
 			"durationMs": number(event["duration_ms"]),
@@ -133,14 +134,6 @@ func assistantText(event map[string]any) string {
 		}
 	}
 	return text
-}
-
-func entry(kind string, fields map[string]any) readmodels.TranscriptEntry {
-	result := readmodels.TranscriptEntry{"kind": kind}
-	for key, value := range fields {
-		result[key] = value
-	}
-	return result
 }
 
 func stringValue(value any) string {

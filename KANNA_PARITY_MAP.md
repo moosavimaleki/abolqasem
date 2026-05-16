@@ -62,7 +62,7 @@ Status legend:
 | Kanna module | Go/TS target | Status | Notes |
 | --- | --- | --- | --- |
 | `protocol.ts` | Go DTOs + frontend shared TS | `[done]` | Envelope, command, topic, snapshot constants ported to Go. |
-| `types.ts` | Go DTOs + frontend shared TS | `[in-progress]` | Locale setting added; remaining snapshot/message DTOs are still copied TS-side and being ported Go-side. |
+| `types.ts` | Go DTOs + frontend shared TS | `[in-progress]` | Locale and Go transcript model added; remaining snapshot/message DTOs are still copied TS-side and being ported Go-side. |
 | `branding.ts` | frontend shared + Go constants | `[todo]` | Rename branding only where product requires. |
 | `ports.ts` | Go config/constants | `[todo]` | Match app server port policy. |
 | `dev-ports.ts` | frontend/dev config | `[todo]` | Needed only in dev. |

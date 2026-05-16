@@ -2,6 +2,8 @@ package codex
 
 import (
 	"encoding/json"
+
+	"ai-agent-manager/internal/workspace/transcript"
 )
 
 type ServerRequest struct {
@@ -98,7 +100,7 @@ func handleUserInputRequest(request ServerRequest, handlers RequestHandlers) ([]
 	}
 	events := []HarnessEvent{{
 		Type: "transcript",
-		Entry: transcriptEntry("tool_call", map[string]any{
+		Entry: transcript.New(transcript.KindToolCall, map[string]any{
 			"tool": tool,
 		}),
 	}}

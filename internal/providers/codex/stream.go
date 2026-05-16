@@ -2,10 +2,10 @@ package codex
 
 import (
 	"encoding/json"
-	"time"
 
 	codexrpc "ai-agent-manager/internal/providers/codex/rpc"
 	"ai-agent-manager/internal/workspace/readmodels"
+	"ai-agent-manager/internal/workspace/transcript"
 )
 
 type HarnessEvent struct {
@@ -39,7 +39,7 @@ func (n *StreamNormalizer) HandleNotification(notification codexrpc.Notification
 		}
 		return []HarnessEvent{{Type: "transcript", Entry: entry}}
 	case "thread/compacted":
-		return []HarnessEvent{{Type: "transcript", Entry: transcriptEntry("compact_boundary", nil)}}
+		return []HarnessEvent{{Type: "transcript", Entry: transcript.New(transcript.KindCompactBoundary, nil)}}
 	case "item/started":
 		return itemStartedEvents(notification.Params)
 	case "item/completed":
@@ -66,7 +66,7 @@ func itemStartedEvents(raw json.RawMessage) []HarnessEvent {
 		}
 		return []HarnessEvent{{
 			Type: "transcript",
-			Entry: transcriptEntry("tool_call", map[string]any{
+			Entry: transcript.New(transcript.KindToolCall, map[string]any{
 				"tool": map[string]any{
 					"kind":     "tool",
 					"toolKind": "bash",
@@ -98,12 +98,12 @@ func itemCompletedEvents(raw json.RawMessage) []HarnessEvent {
 		}
 		return []HarnessEvent{{
 			Type:  "transcript",
-			Entry: transcriptEntry("assistant_text", map[string]any{"text": text}),
+			Entry: transcript.New(transcript.KindAssistantText, map[string]any{"text": text}),
 		}}
 	case "commandExecution":
 		return []HarnessEvent{{
 			Type: "transcript",
-			Entry: transcriptEntry("tool_result", map[string]any{
+			Entry: transcript.New(transcript.KindToolResult, map[string]any{
 				"toolId":  asString(params.Item["id"]),
 				"content": asString(params.Item["aggregatedOutput"]),
 				"isError": asFloat(params.Item["exitCode"]) != 0,
@@ -137,7 +137,7 @@ func turnCompletedEntry(raw json.RawMessage) readmodels.TranscriptEntry {
 	} else if isError {
 		subtype = "error"
 	}
-	return transcriptEntry("result", map[string]any{
+	return transcript.New(transcript.KindResult, map[string]any{
 		"subtype":    subtype,
 		"isError":    isError,
 		"durationMs": float64(0),
@@ -155,7 +155,7 @@ func contextWindowEntry(raw json.RawMessage) readmodels.TranscriptEntry {
 	total := asMap(firstNonNil(params.TokenUsage["total"], params.TokenUsage["total_token_usage"]))
 	last := asMap(firstNonNil(params.TokenUsage["last"], params.TokenUsage["last_token_usage"]))
 	usedTokens := tokenValue(last, "totalTokens", "total_tokens")
-	return transcriptEntry("context_window_updated", map[string]any{
+	return transcript.New(transcript.KindContextWindowUpdated, map[string]any{
 		"usage": map[string]any{
 			"usedTokens":            usedTokens,
 			"totalProcessedTokens":  tokenValue(total, "totalTokens", "total_tokens"),
@@ -168,18 +168,6 @@ func contextWindowEntry(raw json.RawMessage) readmodels.TranscriptEntry {
 			"compactsAutomatically": true,
 		},
 	})
-}
-
-func transcriptEntry(kind string, fields map[string]any) readmodels.TranscriptEntry {
-	entry := readmodels.TranscriptEntry{
-		"_id":       kind + "-" + time.Now().UTC().Format("20060102150405.000000000"),
-		"createdAt": float64(time.Now().UnixMilli()),
-		"kind":      kind,
-	}
-	for key, value := range fields {
-		entry[key] = value
-	}
-	return entry
 }
 
 func decodeParams(raw json.RawMessage, target any) error {

@@ -5,6 +5,7 @@ import (
 
 	"ai-agent-manager/internal/providers/catalog"
 	"ai-agent-manager/internal/workspace/events"
+	"ai-agent-manager/internal/workspace/transcript"
 )
 
 type ProjectRecord struct {
@@ -75,7 +76,7 @@ type QueuedChatMessage struct {
 	PlanMode     *bool                 `json:"planMode,omitempty"`
 }
 
-type TranscriptEntry map[string]any
+type TranscriptEntry = transcript.Entry
 
 type ChatRuntime struct {
 	ChatID       string      `json:"chatId"`
@@ -303,7 +304,7 @@ func Apply(state StoreState, event events.Event) StoreState {
 		}
 		record := state.ChatsByID[data.ChatID]
 		record.HasMessages = true
-		if data.Entry["kind"] == "user_prompt" {
+		if transcript.Kind(data.Entry) == transcript.KindUserPrompt {
 			if createdAt, ok := numberAsInt64(data.Entry["createdAt"]); ok {
 				record.LastMessageAt = createdAt
 				if createdAt > record.UpdatedAt {

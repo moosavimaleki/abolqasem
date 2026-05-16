@@ -1131,7 +1131,7 @@ Output:
 
 ## Milestone 10: Transcript Model
 
-### Task 10.1: تعریف TranscriptEntry مشترک
+### Task 10.1: تعریف TranscriptEntry مشترک `[done]`
 
 انواع:
 
@@ -1153,6 +1153,14 @@ Acceptance criteria:
 
 - همه providerها به این مدل normalize شوند.
 - UI provider-specific raw payload نخواهد.
+
+Output:
+
+- [model.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/workspace/transcript/model.go)
+- [model_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/workspace/transcript/model_test.go)
+- Go-side transcript entry shape now has shared `kind`, `_id`, and `createdAt`.
+- Codex and Claude adapters normalize provider events into the shared transcript model.
+- Read models alias the shared transcript type so chat snapshots keep Kanna-compatible JSON.
 
 ### Task 10.2: Legacy transcript import
 
