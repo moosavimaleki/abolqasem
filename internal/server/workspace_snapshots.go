@@ -23,7 +23,7 @@ func workspaceSidebarSnapshot() any {
 	if err != nil {
 		return readmodels.SidebarData{ProjectGroups: []readmodels.SidebarProjectGroup{}}
 	}
-	return readmodels.DeriveSidebarData(storeState)
+	return readmodels.DeriveSidebarDataWithStatus(storeState, workspaceAgentCoordinator().ActiveStatuses())
 }
 
 func workspaceLocalProjectsSnapshot() any {

@@ -54,6 +54,8 @@ func handleWorkspaceWS(w http.ResponseWriter, r *http.Request) {
 		hub:           workspaceTerminals,
 		subscriptions: map[string]string{},
 	}
+	workspaceConnections.add(workspaceConn)
+	defer workspaceConnections.remove(workspaceConn)
 	defer workspaceConn.close()
 
 	for {
@@ -190,7 +192,7 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
 		}
-		c.emitWorkspaceSnapshots("")
+		workspaceConnections.broadcast("")
 		response := protocol.AckEnvelope(envelope.ID, map[string]any{"projectId": project.ID})
 		return &response
 	case protocol.CommandChatCreate:
@@ -206,7 +208,7 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
 		}
-		c.emitWorkspaceSnapshots(chat.ID)
+		workspaceConnections.broadcast(chat.ID)
 		response := protocol.AckEnvelope(envelope.ID, map[string]any{"chatId": chat.ID})
 		return &response
 	case protocol.CommandChatSend:
@@ -276,6 +278,19 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 		c.emitWorkspaceSnapshots(chatID)
 		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
 		return &response
+	case protocol.CommandChatRespondTool:
+		command, err := decodeToolResponseCommand(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		if err := workspaceAgentCoordinator().RespondTool(context.Background(), command); err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		c.emitWorkspaceSnapshots(command.ChatID)
+		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
+		return &response
 	case protocol.CommandChatMarkRead:
 		chatID, err := decodeChatID(envelope.Command)
 		if err != nil {
@@ -286,7 +301,7 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
 		}
-		c.emitWorkspaceSnapshots(chatID)
+		workspaceConnections.broadcast(chatID)
 		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
 		return &response
 	case protocol.CommandAppReadManagement:

@@ -28,10 +28,44 @@ var (
 	workspaceCoordinatorMu  sync.Mutex
 	workspaceCoordinator    *agent.Coordinator
 	workspaceCoordinatorDir string
+	workspaceConnections    = newWorkspaceConnectionRegistry()
 )
 
 type workspaceEventStore struct {
 	store *eventstore.Store
+}
+
+type workspaceConnectionRegistry struct {
+	mu          sync.Mutex
+	connections map[*workspaceConnection]struct{}
+}
+
+func newWorkspaceConnectionRegistry() *workspaceConnectionRegistry {
+	return &workspaceConnectionRegistry{connections: map[*workspaceConnection]struct{}{}}
+}
+
+func (r *workspaceConnectionRegistry) add(conn *workspaceConnection) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.connections[conn] = struct{}{}
+}
+
+func (r *workspaceConnectionRegistry) remove(conn *workspaceConnection) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.connections, conn)
+}
+
+func (r *workspaceConnectionRegistry) broadcast(chatID string) {
+	r.mu.Lock()
+	connections := make([]*workspaceConnection, 0, len(r.connections))
+	for conn := range r.connections {
+		connections = append(connections, conn)
+	}
+	r.mu.Unlock()
+	for _, conn := range connections {
+		conn.emitWorkspaceSnapshots(chatID)
+	}
 }
 
 func workspaceAgentCoordinator() *agent.Coordinator {
@@ -42,7 +76,9 @@ func workspaceAgentCoordinator() *agent.Coordinator {
 		return workspaceCoordinator
 	}
 	workspaceCoordinatorDir = dir
-	workspaceCoordinator = agent.NewCoordinator(&workspaceEventStore{store: eventstore.New(dir)}, nil, func(string) {})
+	workspaceCoordinator = agent.NewCoordinator(&workspaceEventStore{store: eventstore.New(dir)}, nil, func(chatID string) {
+		workspaceConnections.broadcast(chatID)
+	})
 	return workspaceCoordinator
 }
 
@@ -108,11 +144,43 @@ func (s *workspaceEventStore) AppendUserPrompt(chatID string, content string, at
 		"attachments": attachments,
 		"steered":     steered,
 	})
+	return s.AppendTranscriptEntry(chatID, entry)
+}
+
+func (s *workspaceEventStore) AppendTranscriptEntry(chatID string, entry readmodels.TranscriptEntry) error {
 	event, err := events.New(events.TypeMessageAppended, map[string]any{"chatId": chatID, "entry": entry})
 	if err != nil {
 		return err
 	}
 	return s.store.Append(events.StreamMessages, event)
+}
+
+func (s *workspaceEventStore) RecordToolCall(chatID string, request agent.PendingToolRequest) error {
+	toolName := request.ToolName
+	if toolName == "" {
+		toolName = workspaceToolName(request.ToolKind)
+	}
+	input := request.Input
+	if input == nil {
+		input = workspaceToolDefaultInput(request.ToolKind)
+	}
+	return s.AppendTranscriptEntry(chatID, transcript.New(transcript.KindToolCall, map[string]any{
+		"tool": map[string]any{
+			"kind":     "tool",
+			"toolKind": request.ToolKind,
+			"toolName": toolName,
+			"toolId":   request.ToolUseID,
+			"input":    input,
+		},
+	}))
+}
+
+func (s *workspaceEventStore) RecordToolResult(chatID string, toolUseID string, result any) error {
+	return s.AppendTranscriptEntry(chatID, transcript.New(transcript.KindToolResult, map[string]any{
+		"toolId":   toolUseID,
+		"content":  result,
+		"debugRaw": mustJSONString(map[string]any{"tool_use_result": result}),
+	}))
 }
 
 func (s *workspaceEventStore) RecordTurnStarted(chatID string) error {
@@ -256,6 +324,22 @@ func workspaceMarkChatRead(chatID string) error {
 	return workspaceStore().Append(events.StreamChats, event)
 }
 
+func workspaceAppendAssistantText(chatID string, text string) error {
+	if strings.TrimSpace(chatID) == "" {
+		return errors.New("chatId is required")
+	}
+	if strings.TrimSpace(text) == "" {
+		return nil
+	}
+	if err := (&workspaceEventStore{store: workspaceStore()}).AppendTranscriptEntry(chatID, transcript.New(transcript.KindAssistantText, map[string]any{
+		"text": text,
+	})); err != nil {
+		return err
+	}
+	workspaceConnections.broadcast(chatID)
+	return nil
+}
+
 func (c *workspaceConnection) emitWorkspaceSnapshots(chatID string) {
 	for subscriptionID, topic := range c.subscriptions {
 		switch {
@@ -329,4 +413,54 @@ func decodeQueuedMessageCommand(raw json.RawMessage) (string, string, error) {
 		return "", "", errors.New("queuedMessageId is required")
 	}
 	return payload.ChatID, payload.QueuedMessageID, nil
+}
+
+func decodeToolResponseCommand(raw json.RawMessage) (agent.ToolResponseCommand, error) {
+	var payload struct {
+		ChatID    string `json:"chatId"`
+		ToolUseID string `json:"toolUseId"`
+		Result    any    `json:"result"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return agent.ToolResponseCommand{}, err
+	}
+	if strings.TrimSpace(payload.ChatID) == "" {
+		return agent.ToolResponseCommand{}, errors.New("chatId is required")
+	}
+	if strings.TrimSpace(payload.ToolUseID) == "" {
+		return agent.ToolResponseCommand{}, errors.New("toolUseId is required")
+	}
+	return agent.ToolResponseCommand{
+		ChatID:    payload.ChatID,
+		ToolUseID: payload.ToolUseID,
+		Result:    payload.Result,
+	}, nil
+}
+
+func workspaceToolName(toolKind string) string {
+	switch toolKind {
+	case "ask_user_question":
+		return "AskUserQuestion"
+	case "exit_plan_mode":
+		return "ExitPlanMode"
+	default:
+		return toolKind
+	}
+}
+
+func workspaceToolDefaultInput(toolKind string) any {
+	switch toolKind {
+	case "ask_user_question":
+		return map[string]any{"questions": []any{}}
+	default:
+		return map[string]any{}
+	}
+}
+
+func mustJSONString(value any) string {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return "{}"
+	}
+	return string(data)
 }

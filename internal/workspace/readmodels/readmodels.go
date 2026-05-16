@@ -404,6 +404,10 @@ func Replay(eventsList []events.Event) StoreState {
 }
 
 func DeriveSidebarData(state StoreState) SidebarData {
+	return DeriveSidebarDataWithStatus(state, nil)
+}
+
+func DeriveSidebarDataWithStatus(state StoreState, activeStatuses map[string]KannaStatus) SidebarData {
 	projects := make([]ProjectRecord, 0, len(state.ProjectsByID))
 	for _, project := range state.ProjectsByID {
 		if project.DeletedAt != 0 {
@@ -436,7 +440,7 @@ func DeriveSidebarData(state StoreState) SidebarData {
 			DefaultCollapsed: false,
 		}
 		for _, chat := range chatsForProject(state, project.ID) {
-			row := sidebarRow(project, chat)
+			row := sidebarRow(project, chat, activeStatuses[chat.ID])
 			if chat.ArchivedAt != 0 {
 				group.ArchivedChats = append(group.ArchivedChats, row)
 				continue
@@ -583,7 +587,7 @@ func getSidebarChatSortTimestamp(chat ChatRecord) int64 {
 	return chat.CreatedAt
 }
 
-func sidebarRow(project ProjectRecord, chat ChatRecord) SidebarChatRow {
+func sidebarRow(project ProjectRecord, chat ChatRecord, activeStatus KannaStatus) SidebarChatRow {
 	var lastMessageAt *int64
 	if chat.LastMessageAt != 0 {
 		lastMessageAt = &chat.LastMessageAt
@@ -593,7 +597,7 @@ func sidebarRow(project ProjectRecord, chat ChatRecord) SidebarChatRow {
 		CreationTime:  chat.CreatedAt,
 		ChatID:        chat.ID,
 		Title:         chat.Title,
-		Status:        "idle",
+		Status:        string(DeriveStatus(chat, activeStatus)),
 		Unread:        chat.Unread,
 		LocalPath:     project.LocalPath,
 		Provider:      chat.Provider,

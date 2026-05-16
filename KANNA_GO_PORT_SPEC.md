@@ -1565,13 +1565,25 @@ Output:
 - Chat sending preserves provider/model/model options/effort/plan mode through the Go coordinator.
 - Active runtime state and queued messages are reflected in chat snapshots.
 
-### Task 16.3: اتصال runtime events
+### Task 16.3: اتصال runtime events ✅
 
 Acceptance criteria:
 
-- assistant message به صورت live update شود.
-- status running/waiting/failed درست نمایش داده شود.
-- tool approval card ظاهر شود.
+- [x] assistant message به صورت live update شود.
+- [x] status running/waiting/failed درست نمایش داده شود.
+- [x] tool approval card ظاهر شود.
+
+Output:
+
+- [workspace_composer.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_composer.go)
+- [workspace_composer_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_composer_test.go)
+- [workspace_snapshots.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_snapshots.go)
+- [workspace_ws.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_ws.go)
+- [coordinator.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/workspace/agent/coordinator.go)
+- [readmodels.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/workspace/readmodels/readmodels.go)
+- Workspace runtime state changes now broadcast fresh snapshots to every subscribed WebSocket connection.
+- Sidebar/chat snapshots now reflect active `starting`/`running`/`waiting_for_user` and persisted `failed` status.
+- `chat.respondTool` is wired to the Go coordinator and tool call/result transcript entries are recorded for Kanna approval cards.
 
 ## Milestone 17: Legacy Viewer Bridge
 

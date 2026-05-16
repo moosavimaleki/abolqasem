@@ -46,6 +46,11 @@ type ToolResponder interface {
 	RespondTool(ctx context.Context, response ToolResponse) error
 }
 
+type ToolEventRecorder interface {
+	RecordToolCall(chatID string, request PendingToolRequest) error
+	RecordToolResult(chatID string, toolUseID string, result any) error
+}
+
 type TurnStarterFunc func(ctx context.Context, request TurnRequest) (Turn, error)
 
 func (fn TurnStarterFunc) StartTurn(ctx context.Context, request TurnRequest) (Turn, error) {
@@ -79,6 +84,8 @@ type ActiveTurn struct {
 type PendingToolRequest struct {
 	ToolUseID string
 	ToolKind  string
+	ToolName  string
+	Input     any
 }
 
 type PendingToolSnapshot struct {
@@ -188,6 +195,11 @@ func (c *Coordinator) SetPendingTool(chatID string, request PendingToolRequest) 
 	active.PendingTool = &request
 	c.mu.Unlock()
 
+	if recorder, ok := c.store.(ToolEventRecorder); ok {
+		if err := recorder.RecordToolCall(chatID, request); err != nil {
+			return err
+		}
+	}
 	c.emitStateChange(chatID)
 	return nil
 }
@@ -211,6 +223,11 @@ func (c *Coordinator) RespondTool(ctx context.Context, command ToolResponseComma
 		Result:    command.Result,
 	}); err != nil {
 		return err
+	}
+	if recorder, ok := c.store.(ToolEventRecorder); ok {
+		if err := recorder.RecordToolResult(command.ChatID, command.ToolUseID, command.Result); err != nil {
+			return err
+		}
 	}
 
 	c.mu.Lock()
@@ -500,5 +517,9 @@ func derefBool(value *bool) bool {
 type noopTurn struct{}
 
 func (noopTurn) Cancel() error {
+	return nil
+}
+
+func (noopTurn) RespondTool(context.Context, ToolResponse) error {
 	return nil
 }
