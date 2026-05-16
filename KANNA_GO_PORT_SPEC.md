@@ -823,7 +823,7 @@ Output:
 
 ## Milestone 6: Agent Coordinator
 
-### Task 6.1: ساخت coordinator مرکزی
+### Task 6.1: ساخت coordinator مرکزی `[in-progress]`
 
 مسئولیت‌ها:
 
@@ -844,6 +844,42 @@ Acceptance criteria:
 - اگر chat active است، پیام جدید queue شود.
 - cancel status را درست update کند.
 - خطای provider باعث خراب شدن server نشود.
+
+Progress:
+
+- Core coordinator package added.
+- Active turn map and status derivation added.
+- `chat.send` behavior for existing/new chat is modeled.
+- Active chat sends are queued instead of starting a second turn.
+- Cancel removes active turn immediately and records cancellation.
+- Provider start failure records failed turn and clears active state.
+
+Remaining:
+
+- Provider event stream consumption.
+- Tool request/response lifecycle.
+- Draining stream behavior.
+- Start-next-queued-message after final result.
+- Integration with WebSocket command router.
+
+### Task 6.1.1: Coordinator core invariants `[done]`
+
+شرح:
+
+- Kanna coordinator invariants بدون adapter واقعی provider پیاده شود.
+- این task نباید Claude/Codex protocol را بسازد؛ فقط core state machine را آماده می‌کند.
+
+Acceptance criteria:
+
+- active turn per chat فقط یکی باشد.
+- send روی chat فعال queue شود.
+- cancel active را پاک کند و turn را cancel کند.
+- provider start error active را پاک کند و failed record بزند.
+
+Output:
+
+- [coordinator.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/workspace/agent/coordinator.go)
+- [coordinator_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/workspace/agent/coordinator_test.go)
 
 ### Task 6.2: Active turn model
 

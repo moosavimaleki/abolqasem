@@ -22,7 +22,7 @@ Status legend:
 
 | Kanna module | Go target | Status | Notes |
 | --- | --- | --- | --- |
-| `agent.ts` | `internal/workspace/agent_coordinator` | `[todo]` | Central runtime owner. |
+| `agent.ts` | `internal/workspace/agent` | `[in-progress]` | Core coordinator invariants implemented; provider stream/tool lifecycle remains. |
 | `codex-app-server.ts` | `internal/providers/codex` | `[todo]` | Persistent Codex app-server sessions. |
 | `codex-app-server-protocol.ts` | `internal/providers/codex/protocol` | `[todo]` | JSON-RPC DTOs and event normalization. |
 | `provider-catalog.ts` | `internal/providers/catalog` | `[done]` | Kanna `claude` and `codex` server catalog ported. |
