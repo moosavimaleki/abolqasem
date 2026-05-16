@@ -84,6 +84,15 @@ function ChatRowImpl({
           chat.status !== 'idle' || activeChatId === normalizedChatId || chat.unread ? <span className="">{chat.title}</span> : <span className="text-slate-500 dark:text-slate-400">{chat.title}</span>
         }
       </span>
+      {chat.readOnly && !chat.canResume ? (
+        <span className="hidden rounded-full border border-border/70 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground md:inline-flex">
+          Read-only
+        </span>
+      ) : chat.canResume ? (
+        <span className="hidden rounded-full border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-300 md:inline-flex">
+          Resume
+        </span>
+      ) : null}
       <div className={cn("relative h-7 mr-[2px] shrink-0", chat.canFork ? "w-12" : "w-6")}>
         {trailingLabel ? (
           showShortcutKeycap ? (

@@ -3,6 +3,7 @@ package server
 import (
 	"testing"
 
+	"ai-agent-manager/internal/state"
 	"ai-agent-manager/internal/workspace/events"
 	"ai-agent-manager/internal/workspace/eventstore"
 	"ai-agent-manager/internal/workspace/readmodels"
@@ -13,8 +14,15 @@ func withWorkspaceSnapshotStore(t *testing.T) *eventstore.Store {
 	t.Helper()
 	dir := t.TempDir()
 	previous := workspaceDataDir
+	previousLegacyState := workspaceLoadLegacyState
 	workspaceDataDir = func() string { return dir }
-	t.Cleanup(func() { workspaceDataDir = previous })
+	workspaceLoadLegacyState = func() (*state.AppState, error) {
+		return &state.AppState{Sessions: map[string]state.SessionMeta{}}, nil
+	}
+	t.Cleanup(func() {
+		workspaceDataDir = previous
+		workspaceLoadLegacyState = previousLegacyState
+	})
 	return eventstore.New(dir)
 }
 

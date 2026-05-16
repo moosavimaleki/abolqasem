@@ -1607,14 +1607,29 @@ Output:
 - Legacy viewer asset references are relative, so the viewer can remain isolated from the Kanna workspace root.
 - Existing legacy APIs and hook compatibility endpoints remain unchanged.
 
-### Task 17.2: import یا نمایش legacy sessions بدون تغییر UX Kanna
+### Task 17.2: import یا نمایش legacy sessions بدون تغییر UX Kanna ✅
 
 Acceptance criteria:
 
-- sessionهای hook/discovery زیر پروژه دیده شوند.
-- read-only badge داشته باشند اگر قابل ادامه نیستند.
-- اگر Codex session قابل resume بود، گزینه continue فعال شود.
-- این بخش نباید sidebar اصلی Kanna را از project/chat model خارج کند.
+- [x] sessionهای hook/discovery زیر پروژه دیده شوند.
+- [x] read-only badge داشته باشند اگر قابل ادامه نیستند.
+- [x] اگر Codex session قابل resume بود، گزینه continue فعال شود.
+- [x] این بخش نباید sidebar اصلی Kanna را از project/chat model خارج کند.
+
+Output:
+
+- [workspace_legacy.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_legacy.go)
+- [workspace_legacy_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_legacy_test.go)
+- [workspace_snapshots.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_snapshots.go)
+- [workspace_snapshots_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_snapshots_test.go)
+- [workspace_composer_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_composer_test.go)
+- [readmodels.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/workspace/readmodels/readmodels.go)
+- [types.ts](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/web-react/src/shared/types.ts)
+- [useKannaState.ts](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/web-react/src/client/app/useKannaState.ts)
+- [ChatRow.tsx](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/web-react/src/client/components/chat-ui/sidebar/ChatRow.tsx)
+- Legacy sessions are overlaid into sidebar snapshots under project groups without being copied into the Kanna event store.
+- Selecting a legacy chat imports its transcript into a read-only Kanna chat snapshot.
+- Sidebar rows expose `readOnly`, `canResume`, and `legacySessionKey`; the UI shows `Read-only` or `Resume` badges.
 
 ## Milestone 18: Browser Panel And Local Servers
 

@@ -386,6 +386,9 @@ export interface SidebarChatRow {
   lastMessageAt?: number
   hasAutomation: boolean
   canFork?: boolean
+  readOnly?: boolean
+  canResume?: boolean
+  legacySessionKey?: string
 }
 
 export interface SidebarProjectGroup {
@@ -1079,6 +1082,9 @@ export interface ChatRuntime {
   provider: AgentProvider | null
   planMode: boolean
   sessionToken: string | null
+  readOnly?: boolean
+  canResume?: boolean
+  legacySessionKey?: string
 }
 
 export interface ChatHistorySnapshot {

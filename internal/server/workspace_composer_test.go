@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"ai-agent-manager/internal/state"
 	"ai-agent-manager/internal/workspace/agent"
 	"ai-agent-manager/internal/workspace/readmodels"
 	"ai-agent-manager/internal/workspace/transcript"
@@ -15,13 +16,18 @@ func withWorkspaceComposerStore(t *testing.T) {
 	previousDataDir := workspaceDataDir
 	previousCoordinator := workspaceCoordinator
 	previousCoordinatorDir := workspaceCoordinatorDir
+	previousLegacyState := workspaceLoadLegacyState
 	workspaceDataDir = func() string { return dir }
 	workspaceCoordinator = nil
 	workspaceCoordinatorDir = ""
+	workspaceLoadLegacyState = func() (*state.AppState, error) {
+		return &state.AppState{Sessions: map[string]state.SessionMeta{}}, nil
+	}
 	t.Cleanup(func() {
 		workspaceDataDir = previousDataDir
 		workspaceCoordinator = previousCoordinator
 		workspaceCoordinatorDir = previousCoordinatorDir
+		workspaceLoadLegacyState = previousLegacyState
 	})
 }
 

@@ -32,6 +32,9 @@ function sameRuntime(left: ChatSnapshot["runtime"] | null | undefined, right: Ch
     && left.provider === right.provider
     && left.planMode === right.planMode
     && left.sessionToken === right.sessionToken
+    && left.readOnly === right.readOnly
+    && left.canResume === right.canResume
+    && left.legacySessionKey === right.legacySessionKey
 }
 
 function sameTranscriptEntries(left: ChatSnapshot["messages"] | null | undefined, right: ChatSnapshot["messages"] | null | undefined) {

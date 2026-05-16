@@ -79,15 +79,18 @@ type QueuedChatMessage struct {
 type TranscriptEntry = transcript.Entry
 
 type ChatRuntime struct {
-	ChatID       string      `json:"chatId"`
-	ProjectID    string      `json:"projectId"`
-	LocalPath    string      `json:"localPath"`
-	Title        string      `json:"title"`
-	Status       KannaStatus `json:"status"`
-	IsDraining   bool        `json:"isDraining"`
-	Provider     *string     `json:"provider"`
-	PlanMode     bool        `json:"planMode"`
-	SessionToken *string     `json:"sessionToken"`
+	ChatID           string      `json:"chatId"`
+	ProjectID        string      `json:"projectId"`
+	LocalPath        string      `json:"localPath"`
+	Title            string      `json:"title"`
+	Status           KannaStatus `json:"status"`
+	IsDraining       bool        `json:"isDraining"`
+	Provider         *string     `json:"provider"`
+	PlanMode         bool        `json:"planMode"`
+	SessionToken     *string     `json:"sessionToken"`
+	ReadOnly         bool        `json:"readOnly,omitempty"`
+	CanResume        bool        `json:"canResume,omitempty"`
+	LegacySessionKey string      `json:"legacySessionKey,omitempty"`
 }
 
 type ChatHistorySnapshot struct {
@@ -152,17 +155,20 @@ type SidebarProjectGroup struct {
 }
 
 type SidebarChatRow struct {
-	ID            string  `json:"_id"`
-	CreationTime  int64   `json:"_creationTime"`
-	ChatID        string  `json:"chatId"`
-	Title         string  `json:"title"`
-	Status        string  `json:"status"`
-	Unread        bool    `json:"unread"`
-	LocalPath     string  `json:"localPath"`
-	Provider      *string `json:"provider"`
-	LastMessageAt *int64  `json:"lastMessageAt,omitempty"`
-	HasAutomation bool    `json:"hasAutomation"`
-	CanFork       bool    `json:"canFork,omitempty"`
+	ID               string  `json:"_id"`
+	CreationTime     int64   `json:"_creationTime"`
+	ChatID           string  `json:"chatId"`
+	Title            string  `json:"title"`
+	Status           string  `json:"status"`
+	Unread           bool    `json:"unread"`
+	LocalPath        string  `json:"localPath"`
+	Provider         *string `json:"provider"`
+	LastMessageAt    *int64  `json:"lastMessageAt,omitempty"`
+	HasAutomation    bool    `json:"hasAutomation"`
+	CanFork          bool    `json:"canFork,omitempty"`
+	ReadOnly         bool    `json:"readOnly,omitempty"`
+	CanResume        bool    `json:"canResume,omitempty"`
+	LegacySessionKey string  `json:"legacySessionKey,omitempty"`
 }
 
 func EmptyState() StoreState {
