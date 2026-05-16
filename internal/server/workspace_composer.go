@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"ai-agent-manager/internal/providers/catalog"
+	"ai-agent-manager/internal/state"
 	"ai-agent-manager/internal/workspace/agent"
 	"ai-agent-manager/internal/workspace/events"
 	"ai-agent-manager/internal/workspace/eventstore"
@@ -21,8 +22,10 @@ const (
 	sidebarSubscription       = "__sidebar__"
 	localProjectsSubscription = "__local_projects__"
 	updateSubscription        = "__update__"
+	appSettingsSubscription   = "__app_settings__"
 	terminalSubscription      = "terminal:"
 	chatSubscription          = "chat:"
+	projectGitSubscription    = "project_git:"
 )
 
 var (
@@ -39,10 +42,14 @@ type workspaceEventStore struct {
 type workspaceConnectionRegistry struct {
 	mu          sync.Mutex
 	connections map[*workspaceConnection]struct{}
+	subscribers map[string]map[*workspaceConnection]map[string]struct{}
 }
 
 func newWorkspaceConnectionRegistry() *workspaceConnectionRegistry {
-	return &workspaceConnectionRegistry{connections: map[*workspaceConnection]struct{}{}}
+	return &workspaceConnectionRegistry{
+		connections: map[*workspaceConnection]struct{}{},
+		subscribers: map[string]map[*workspaceConnection]map[string]struct{}{},
+	}
 }
 
 func (r *workspaceConnectionRegistry) add(conn *workspaceConnection) {
@@ -55,18 +62,101 @@ func (r *workspaceConnectionRegistry) remove(conn *workspaceConnection) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.connections, conn)
+	for topicKey, topicSubscribers := range r.subscribers {
+		delete(topicSubscribers, conn)
+		if len(topicSubscribers) == 0 {
+			delete(r.subscribers, topicKey)
+		}
+	}
+}
+
+func (r *workspaceConnectionRegistry) subscribe(topicKey string, subscriptionID string, conn *workspaceConnection) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.subscribers[topicKey] == nil {
+		r.subscribers[topicKey] = map[*workspaceConnection]map[string]struct{}{}
+	}
+	if r.subscribers[topicKey][conn] == nil {
+		r.subscribers[topicKey][conn] = map[string]struct{}{}
+	}
+	r.subscribers[topicKey][conn][subscriptionID] = struct{}{}
+}
+
+func (r *workspaceConnectionRegistry) unsubscribe(topicKey string, subscriptionID string, conn *workspaceConnection) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	topicSubscribers := r.subscribers[topicKey]
+	if topicSubscribers == nil {
+		return
+	}
+	subscriptionIDs := topicSubscribers[conn]
+	if subscriptionIDs == nil {
+		return
+	}
+	delete(subscriptionIDs, subscriptionID)
+	if len(subscriptionIDs) == 0 {
+		delete(topicSubscribers, conn)
+	}
+	if len(topicSubscribers) == 0 {
+		delete(r.subscribers, topicKey)
+	}
+}
+
+func (r *workspaceConnectionRegistry) topicSubscribers(topicKey string) map[*workspaceConnection][]string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	topicSubscribers := r.subscribers[topicKey]
+	out := make(map[*workspaceConnection][]string, len(topicSubscribers))
+	for conn, subscriptionIDs := range topicSubscribers {
+		for subscriptionID := range subscriptionIDs {
+			out[conn] = append(out[conn], subscriptionID)
+		}
+	}
+	return out
 }
 
 func (r *workspaceConnectionRegistry) broadcast(chatID string) {
-	r.mu.Lock()
-	connections := make([]*workspaceConnection, 0, len(r.connections))
-	for conn := range r.connections {
-		connections = append(connections, conn)
+	r.broadcastTopic(sidebarSubscription, protocol.SnapshotSidebar, workspaceSidebarSnapshot())
+	r.broadcastTopic(localProjectsSubscription, protocol.SnapshotLocalProjects, workspaceLocalProjectsSnapshot())
+	if chatID != "" {
+		r.broadcastChat(chatID)
 	}
-	r.mu.Unlock()
-	for _, conn := range connections {
-		conn.emitWorkspaceSnapshots(chatID)
+}
+
+func (r *workspaceConnectionRegistry) broadcastTopic(topicKey string, snapshotType string, data any) {
+	for conn, subscriptionIDs := range r.topicSubscribers(topicKey) {
+		for _, subscriptionID := range subscriptionIDs {
+			_ = conn.write(protocol.SnapshotEnvelope(subscriptionID, snapshotType, data))
+		}
 	}
+}
+
+func (r *workspaceConnectionRegistry) broadcastChat(chatID string) {
+	for conn, subscriptionIDs := range r.topicSubscribers(chatSubscription + chatID) {
+		for _, subscriptionID := range subscriptionIDs {
+			subscription, ok := conn.subscription(subscriptionID)
+			if !ok {
+				continue
+			}
+			_ = conn.write(protocol.SnapshotEnvelope(
+				subscriptionID,
+				protocol.SnapshotChat,
+				workspaceChatSnapshot(chatID, subscriptionRecentLimit(subscription.topic)),
+			))
+		}
+	}
+}
+
+func (r *workspaceConnectionRegistry) broadcastKeybindings(snapshot state.KeybindingsSnapshot) {
+	r.broadcastTopic(keybindingsSubscription, protocol.SnapshotKeybindings, snapshot)
+}
+
+func (r *workspaceConnectionRegistry) broadcastUpdate(snapshot map[string]any) {
+	r.broadcastTopic(updateSubscription, protocol.SnapshotUpdate, snapshot)
+}
+
+func (r *workspaceConnectionRegistry) broadcastAppSettings(snapshot map[string]any) {
+	r.broadcastTopic(appSettingsSubscription, protocol.SnapshotAppSettings, snapshot)
 }
 
 func workspaceAgentCoordinator() *agent.Coordinator {
@@ -342,14 +432,22 @@ func workspaceAppendAssistantText(chatID string, text string) error {
 }
 
 func (c *workspaceConnection) emitWorkspaceSnapshots(chatID string) {
-	for subscriptionID, topic := range c.subscriptions {
+	c.subscriptionsMu.Lock()
+	subscriptions := make(map[string]workspaceSubscription, len(c.subscriptions))
+	for subscriptionID, subscription := range c.subscriptions {
+		subscriptions[subscriptionID] = subscription
+	}
+	c.subscriptionsMu.Unlock()
+
+	for subscriptionID, subscription := range subscriptions {
+		topic := subscription.key
 		switch {
 		case topic == sidebarSubscription:
 			_ = c.write(protocol.SnapshotEnvelope(subscriptionID, protocol.SnapshotSidebar, workspaceSidebarSnapshot()))
 		case topic == localProjectsSubscription:
 			_ = c.write(protocol.SnapshotEnvelope(subscriptionID, protocol.SnapshotLocalProjects, workspaceLocalProjectsSnapshot()))
 		case chatID != "" && topic == chatSubscription+chatID:
-			_ = c.write(protocol.SnapshotEnvelope(subscriptionID, protocol.SnapshotChat, workspaceChatSnapshot(chatID, 0)))
+			_ = c.write(protocol.SnapshotEnvelope(subscriptionID, protocol.SnapshotChat, workspaceChatSnapshot(chatID, subscriptionRecentLimit(subscription.topic))))
 		}
 	}
 }

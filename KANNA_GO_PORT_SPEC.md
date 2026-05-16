@@ -456,7 +456,7 @@ Remaining for Milestone 2:
 
 - Actual `/api/ws` handler and subscription routing are Task 2.2/2.3.
 
-### Task 2.2: Subscription model `[in-progress]`
+### Task 2.2: Subscription model `[done]`
 
 Topicهای اولیه:
 
@@ -473,20 +473,21 @@ terminal
 
 Acceptance criteria:
 
-- client بتواند subscribe/unsubscribe کند.
-- snapshot اولیه بعد از subscribe ارسال شود.
-- تغییر state فقط به subscriberهای مرتبط broadcast شود.
+- [x] client بتواند subscribe/unsubscribe کند.
+- [x] snapshot اولیه بعد از subscribe ارسال شود.
+- [x] تغییر state فقط به subscriberهای مرتبط broadcast شود.
 
 Output:
 
 - `/ws` endpoint added.
 - Initial snapshot responses implemented for `sidebar`, `local-projects`, `update`, `keybindings`, `app-settings`, `chat`, `project-git`, and `terminal`.
 - `/auth/status` added so copied Kanna UI can pass auth check.
-
-Remaining:
-
-- Persistent subscription registry.
-- Topic-specific broadcasts after state changes.
+- Persistent topic registry added for non-terminal workspace subscriptions.
+- `sidebar`, `local-projects`, `chat`, `update`, `keybindings`, and `app-settings` broadcasts now target only matching subscribers.
+- subscribe replacement and unsubscribe remove entries from the registry, so stale subscription IDs do not keep receiving snapshots.
+- [workspace_ws.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_ws.go)
+- [workspace_composer.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_composer.go)
+- [workspace_ws_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_ws_test.go)
 
 ### Task 2.3: Command router `[in-progress]`
 

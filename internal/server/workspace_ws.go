@@ -59,8 +59,16 @@ type workspaceConnection struct {
 	conn *websocket.Conn
 	hub  *workspaceTerminalHub
 
-	writeMu       sync.Mutex
-	subscriptions map[string]string
+	writeMu sync.Mutex
+	writeFn func(protocol.ServerEnvelope) error
+
+	subscriptionsMu sync.Mutex
+	subscriptions   map[string]workspaceSubscription
+}
+
+type workspaceSubscription struct {
+	key   string
+	topic protocol.SubscriptionTopic
 }
 
 func handleWorkspaceWS(w http.ResponseWriter, r *http.Request) {
@@ -77,7 +85,7 @@ func handleWorkspaceWS(w http.ResponseWriter, r *http.Request) {
 	workspaceConn := &workspaceConnection{
 		conn:          conn,
 		hub:           workspaceTerminals,
-		subscriptions: map[string]string{},
+		subscriptions: map[string]workspaceSubscription{},
 	}
 	workspaceConnections.add(workspaceConn)
 	defer workspaceConnections.remove(workspaceConn)
@@ -123,19 +131,8 @@ func (c *workspaceConnection) handleSubscribe(envelope protocol.ClientEnvelope) 
 		response := protocol.ErrorEnvelope(envelope.ID, "missing topic")
 		return &response
 	}
-	switch {
-	case envelope.Topic.Type == protocol.TopicTerminal && envelope.Topic.TerminalID != "":
-		c.subscribe(envelope.ID, terminalSubscription+envelope.Topic.TerminalID)
-	case envelope.Topic.Type == protocol.TopicKeybindings:
-		c.subscribe(envelope.ID, keybindingsSubscription)
-	case envelope.Topic.Type == protocol.TopicSidebar:
-		c.subscribe(envelope.ID, sidebarSubscription)
-	case envelope.Topic.Type == protocol.TopicLocalProjects:
-		c.subscribe(envelope.ID, localProjectsSubscription)
-	case envelope.Topic.Type == protocol.TopicUpdate:
-		c.subscribe(envelope.ID, updateSubscription)
-	case envelope.Topic.Type == protocol.TopicChat && envelope.Topic.ChatID != "":
-		c.subscribe(envelope.ID, chatSubscription+envelope.Topic.ChatID)
+	if key := workspaceSubscriptionKey(*envelope.Topic); key != "" {
+		c.subscribe(envelope.ID, key, *envelope.Topic)
 	}
 	snapshotType, data := workspaceSnapshotForTopic(*envelope.Topic)
 	response := protocol.SnapshotEnvelope(envelope.ID, snapshotType, data)
@@ -193,6 +190,7 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
 		}
+		workspaceConnections.broadcastAppSettings(snapshot)
 		response := protocol.AckEnvelope(envelope.ID, snapshot)
 		return &response
 	case protocol.CommandSettingsReadKeybindings:
@@ -209,7 +207,7 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
 		}
-		c.emitKeybindingsSnapshot(snapshot)
+		workspaceConnections.broadcastKeybindings(snapshot)
 		response := protocol.AckEnvelope(envelope.ID, snapshot)
 		return &response
 	case protocol.CommandSettingsReadLLMProvider:
@@ -322,7 +320,7 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
 		}
-		c.emitWorkspaceSnapshots(result.ChatID)
+		workspaceConnections.broadcast(result.ChatID)
 		response := protocol.AckEnvelope(envelope.ID, result)
 		return &response
 	case protocol.CommandMessageEnqueue:
@@ -336,7 +334,7 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
 		}
-		c.emitWorkspaceSnapshots(command.ChatID)
+		workspaceConnections.broadcast(command.ChatID)
 		response := protocol.AckEnvelope(envelope.ID, map[string]any{"queuedMessageId": queuedID})
 		return &response
 	case protocol.CommandMessageDequeue:
@@ -349,7 +347,7 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
 		}
-		c.emitWorkspaceSnapshots(chatID)
+		workspaceConnections.broadcast(chatID)
 		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
 		return &response
 	case protocol.CommandMessageSteer:
@@ -362,7 +360,7 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
 		}
-		c.emitWorkspaceSnapshots(chatID)
+		workspaceConnections.broadcast(chatID)
 		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
 		return &response
 	case protocol.CommandChatCancel:
@@ -375,7 +373,7 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
 		}
-		c.emitWorkspaceSnapshots(chatID)
+		workspaceConnections.broadcast(chatID)
 		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
 		return &response
 	case protocol.CommandChatExportStandalone:
@@ -396,7 +394,7 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
 		}
-		c.emitWorkspaceSnapshots(command.ChatID)
+		workspaceConnections.broadcast(command.ChatID)
 		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
 		return &response
 	case protocol.CommandChatMarkRead:
@@ -421,6 +419,7 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
 		}
+		workspaceConnections.broadcastAppSettings(workspaceAppSettingsSnapshot())
 		response := protocol.AckEnvelope(envelope.ID, snapshot)
 		return &response
 	case protocol.CommandAppReloadSessions:
@@ -443,12 +442,12 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 		return &response
 	case protocol.CommandUpdateCheck:
 		snapshot := workspaceCheckUpdate()
-		c.emitUpdateSnapshot(snapshot)
+		workspaceConnections.broadcastUpdate(snapshot)
 		response := protocol.AckEnvelope(envelope.ID, snapshot)
 		return &response
 	case protocol.CommandUpdateInstall:
 		result := workspaceInstallUpdate()
-		c.emitUpdateSnapshot(workspaceUpdateSnapshot())
+		workspaceConnections.broadcastUpdate(workspaceUpdateSnapshot())
 		response := protocol.AckEnvelope(envelope.ID, result)
 		return &response
 	case protocol.CommandTerminalCreate:
@@ -487,56 +486,112 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 }
 
 func (c *workspaceConnection) write(envelope protocol.ServerEnvelope) error {
+	if c.writeFn != nil {
+		return c.writeFn(envelope)
+	}
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
 	return c.conn.WriteJSON(envelope)
 }
 
-func (c *workspaceConnection) subscribe(subscriptionID string, terminalID string) {
-	c.subscriptions[subscriptionID] = terminalID
-	if terminalID == keybindingsSubscription {
+func (c *workspaceConnection) subscribe(subscriptionID string, key string, topic protocol.SubscriptionTopic) {
+	c.subscriptionsMu.Lock()
+	previous, replacing := c.subscriptions[subscriptionID]
+	c.subscriptions[subscriptionID] = workspaceSubscription{key: key, topic: topic}
+	c.subscriptionsMu.Unlock()
+	if replacing {
+		c.unregisterSubscription(subscriptionID, previous.key)
+	}
+	if key == "" {
 		return
 	}
-	if strings.HasPrefix(terminalID, terminalSubscription) {
-		c.hub.subscribe(strings.TrimPrefix(terminalID, terminalSubscription), subscriptionID, c)
+	c.registerSubscription(subscriptionID, key)
+}
+
+func (c *workspaceConnection) registerSubscription(subscriptionID string, key string) {
+	if strings.HasPrefix(key, terminalSubscription) {
+		c.hub.subscribe(strings.TrimPrefix(key, terminalSubscription), subscriptionID, c)
+		return
 	}
+	workspaceConnections.subscribe(key, subscriptionID, c)
 }
 
 func (c *workspaceConnection) unsubscribe(subscriptionID string) {
-	terminalID, ok := c.subscriptions[subscriptionID]
+	c.subscriptionsMu.Lock()
+	subscription, ok := c.subscriptions[subscriptionID]
 	if !ok {
+		c.subscriptionsMu.Unlock()
 		return
 	}
 	delete(c.subscriptions, subscriptionID)
-	if terminalID == keybindingsSubscription {
+	c.subscriptionsMu.Unlock()
+	if subscription.key == "" {
 		return
 	}
-	if strings.HasPrefix(terminalID, terminalSubscription) {
-		c.hub.unsubscribe(strings.TrimPrefix(terminalID, terminalSubscription), subscriptionID, c)
+	c.unregisterSubscription(subscriptionID, subscription.key)
+}
+
+func (c *workspaceConnection) unregisterSubscription(subscriptionID string, key string) {
+	if strings.HasPrefix(key, terminalSubscription) {
+		c.hub.unsubscribe(strings.TrimPrefix(key, terminalSubscription), subscriptionID, c)
+		return
 	}
+	workspaceConnections.unsubscribe(key, subscriptionID, c)
 }
 
 func (c *workspaceConnection) close() {
-	for subscriptionID := range c.subscriptions {
+	subscriptionIDs := c.subscriptionIDs()
+	for _, subscriptionID := range subscriptionIDs {
 		c.unsubscribe(subscriptionID)
 	}
 }
 
-func (c *workspaceConnection) emitKeybindingsSnapshot(snapshot state.KeybindingsSnapshot) {
-	for subscriptionID, topic := range c.subscriptions {
-		if topic != keybindingsSubscription {
-			continue
-		}
-		_ = c.write(protocol.SnapshotEnvelope(subscriptionID, protocol.SnapshotKeybindings, snapshot))
+func (c *workspaceConnection) subscriptionIDs() []string {
+	c.subscriptionsMu.Lock()
+	defer c.subscriptionsMu.Unlock()
+	ids := make([]string, 0, len(c.subscriptions))
+	for subscriptionID := range c.subscriptions {
+		ids = append(ids, subscriptionID)
 	}
+	return ids
 }
 
-func (c *workspaceConnection) emitUpdateSnapshot(snapshot map[string]any) {
-	for subscriptionID, topic := range c.subscriptions {
-		if topic != updateSubscription {
-			continue
+func (c *workspaceConnection) subscription(subscriptionID string) (workspaceSubscription, bool) {
+	c.subscriptionsMu.Lock()
+	defer c.subscriptionsMu.Unlock()
+	subscription, ok := c.subscriptions[subscriptionID]
+	return subscription, ok
+}
+
+func workspaceSubscriptionKey(topic protocol.SubscriptionTopic) string {
+	switch topic.Type {
+	case protocol.TopicTerminal:
+		if topic.TerminalID == "" {
+			return ""
 		}
-		_ = c.write(protocol.SnapshotEnvelope(subscriptionID, protocol.SnapshotUpdate, snapshot))
+		return terminalSubscription + topic.TerminalID
+	case protocol.TopicKeybindings:
+		return keybindingsSubscription
+	case protocol.TopicSidebar:
+		return sidebarSubscription
+	case protocol.TopicLocalProjects:
+		return localProjectsSubscription
+	case protocol.TopicUpdate:
+		return updateSubscription
+	case protocol.TopicAppSettings:
+		return appSettingsSubscription
+	case protocol.TopicChat:
+		if topic.ChatID == "" {
+			return ""
+		}
+		return chatSubscription + topic.ChatID
+	case protocol.TopicProjectGit:
+		if topic.ProjectID == "" {
+			return ""
+		}
+		return projectGitSubscription + topic.ProjectID
+	default:
+		return ""
 	}
 }
 
