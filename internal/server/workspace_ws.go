@@ -1,11 +1,13 @@
 package server
 
 import (
+	"ai-agent-manager/internal/analytics"
 	"ai-agent-manager/internal/state"
 	"ai-agent-manager/internal/workspace/protocol"
 	"ai-agent-manager/internal/workspace/terminal"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"runtime"
@@ -27,6 +29,7 @@ var workspaceWSUpgrader = websocket.Upgrader{
 }
 
 var workspaceTerminals = newWorkspaceTerminalHub()
+var workspaceAnalyticsReporter analytics.Reporter = analytics.NoopReporter{}
 
 const keybindingsSubscription = "__keybindings__"
 
@@ -161,6 +164,14 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 		return &response
 	case protocol.CommandSettingsReadAppSettings:
 		response := protocol.AckEnvelope(envelope.ID, workspaceAppSettingsSnapshot())
+		return &response
+	case protocol.CommandSettingsWriteAppSettings:
+		snapshot, err := writeWorkspaceAppSettings(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		response := protocol.AckEnvelope(envelope.ID, snapshot)
 		return &response
 	case protocol.CommandSettingsReadKeybindings:
 		snapshot, err := state.LoadKeybindingsSnapshot()
@@ -710,11 +721,49 @@ func applyWorkspaceAppSettingsPatch(raw json.RawMessage) (map[string]any, error)
 	if err != nil {
 		return nil, err
 	}
+	previousAnalyticsEnabled := state.NormalizeSettings(settings).AnalyticsEnabled
 	settings = state.ApplySettingsPatch(settings, payload.Patch)
 	if err := state.SaveSettings(settings); err != nil {
 		return nil, err
 	}
+	if payload.Patch.AnalyticsEnabled != nil {
+		trackWorkspaceAnalyticsToggle(previousAnalyticsEnabled, settings.AnalyticsEnabled)
+	}
 	return workspaceAppSettingsSnapshot(), nil
+}
+
+func writeWorkspaceAppSettings(raw json.RawMessage) (map[string]any, error) {
+	var payload struct {
+		AnalyticsEnabled *bool `json:"analyticsEnabled"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil, err
+	}
+	if payload.AnalyticsEnabled == nil {
+		return nil, errors.New("analyticsEnabled is required")
+	}
+	settings, err := state.LoadSettings()
+	if err != nil {
+		return nil, err
+	}
+	previousAnalyticsEnabled := state.NormalizeSettings(settings).AnalyticsEnabled
+	settings.AnalyticsEnabled = *payload.AnalyticsEnabled
+	if err := state.SaveSettings(settings); err != nil {
+		return nil, err
+	}
+	trackWorkspaceAnalyticsToggle(previousAnalyticsEnabled, settings.AnalyticsEnabled)
+	return workspaceAppSettingsSnapshot(), nil
+}
+
+func trackWorkspaceAnalyticsToggle(previous bool, current bool) {
+	if previous == current {
+		return
+	}
+	if current {
+		workspaceAnalyticsReporter.Track(analytics.EventAnalyticsEnabled, nil)
+		return
+	}
+	workspaceAnalyticsReporter.Track(analytics.EventAnalyticsDisabled, nil)
 }
 
 func writeWorkspaceKeybindings(raw json.RawMessage) (state.KeybindingsSnapshot, error) {

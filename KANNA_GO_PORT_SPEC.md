@@ -1817,12 +1817,22 @@ Output:
 - Kanna `cli-runtime.ts` exposes `--password` together with host/share runtime flags. The current Go runtime is still local-only service/hook startup, so Task 24.1 keeps auth disabled instead of inventing remote multi-user auth.
 - Disabled-auth parity is now explicit: `/auth/status` returns `{ enabled: false, authenticated: true }` and `/auth/logout` accepts `POST` with `{ ok: true }`, matching Kanna’s no-password UX shape.
 
-### Task 24.2: Analytics parity
+### Task 24.2: Analytics parity ✅
 
 Acceptance criteria:
 
-- analytics toggle و event naming با Kanna برابر باشد.
-- اگر analytics را disable می‌کنیم، UI و setting آن همچنان shape-compatible باشد.
+- [x] analytics toggle و event naming با Kanna برابر باشد.
+- [x] اگر analytics را disable می‌کنیم، UI و setting آن همچنان shape-compatible باشد.
+
+Output:
+
+- [analytics.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/analytics/analytics.go)
+- [analytics_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/analytics/analytics_test.go)
+- [workspace_analytics_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_analytics_test.go)
+- [workspace_ws.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_ws.go)
+- Kanna static analytics event/property names are mirrored in Go, including `analytics_enabled` and `analytics_disabled`.
+- Kanna launch property derivation is mirrored as a reusable Go helper.
+- External analytics transport remains a no-op reporter for this local-first Go port, while `settings.writeAppSettings` and `settings.writeAppSettingsPatch` preserve toggle semantics and event naming.
 
 ### Task 24.3: Machine name and CLI supervisor parity
 
