@@ -1283,7 +1283,7 @@ Output:
 - `fetch`, `pull --ff-only`, and `push` sync actions are available.
 - Commit message generation remains intentionally deferred, matching the original task note.
 
-### Task 12.4: Branch workflow
+### Task 12.4: Branch workflow `[done]`
 
 Acceptance criteria:
 
@@ -1292,6 +1292,15 @@ Acceptance criteria:
 - create branch.
 - merge preview.
 - merge.
+
+Output:
+
+- [branch.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/workspace/gitservice/branch.go)
+- [branch_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/workspace/gitservice/branch_test.go)
+- Local and remote branch lists return Kanna-compatible branch rows.
+- Checkout and create branch commands return Kanna-compatible action results.
+- Merge preview reports `up_to_date`, `mergeable`, `conflicts`, or `error`.
+- Merge uses `git merge --no-edit` and returns snapshot-change metadata.
 
 ### Task 12.5: GitHub publish workflow مطابق Kanna
 
