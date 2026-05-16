@@ -65,14 +65,14 @@ type ChatAttachment struct {
 }
 
 type QueuedChatMessage struct {
-	ID           string           `json:"id"`
-	Content      string           `json:"content"`
-	Attachments  []ChatAttachment `json:"attachments"`
-	CreatedAt    int64            `json:"createdAt"`
-	Provider     *string          `json:"provider,omitempty"`
-	Model        string           `json:"model,omitempty"`
-	ModelOptions map[string]any   `json:"modelOptions,omitempty"`
-	PlanMode     *bool            `json:"planMode,omitempty"`
+	ID           string                `json:"id"`
+	Content      string                `json:"content"`
+	Attachments  []ChatAttachment      `json:"attachments"`
+	CreatedAt    int64                 `json:"createdAt"`
+	Provider     *string               `json:"provider,omitempty"`
+	Model        string                `json:"model,omitempty"`
+	ModelOptions *catalog.ModelOptions `json:"modelOptions,omitempty"`
+	PlanMode     *bool                 `json:"planMode,omitempty"`
 }
 
 type TranscriptEntry map[string]any
@@ -621,12 +621,6 @@ func markChatTimestamp(state StoreState, event events.Event, update func(*ChatRe
 func cloneQueuedMessage(message QueuedChatMessage) QueuedChatMessage {
 	cloned := message
 	cloned.Attachments = append([]ChatAttachment(nil), message.Attachments...)
-	if message.ModelOptions != nil {
-		cloned.ModelOptions = map[string]any{}
-		for key, value := range message.ModelOptions {
-			cloned.ModelOptions[key] = value
-		}
-	}
 	return cloned
 }
 

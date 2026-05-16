@@ -23,6 +23,7 @@ type Store interface {
 	SetPlanMode(chatID string, planMode bool) error
 	AppendUserPrompt(chatID string, content string, attachments []readmodels.ChatAttachment, steered bool) error
 	RecordTurnStarted(chatID string) error
+	RecordTurnFinished(chatID string) error
 	RecordTurnFailed(chatID string, message string) error
 	RecordTurnCancelled(chatID string) error
 	EnqueueMessage(chatID string, message QueueMessageInput) (readmodels.QueuedChatMessage, error)
@@ -236,6 +237,15 @@ func (c *Coordinator) Dequeue(chatID string, queuedMessageID string) error {
 	return nil
 }
 
+func (c *Coordinator) Finish(chatID string) error {
+	c.clearActive(chatID)
+	if err := c.store.RecordTurnFinished(chatID); err != nil {
+		return err
+	}
+	c.emitStateChange(chatID)
+	return c.maybeStartNextQueuedMessage(context.Background(), chatID)
+}
+
 func (c *Coordinator) Cancel(chatID string) error {
 	c.mu.Lock()
 	active := c.active[chatID]
@@ -258,6 +268,21 @@ func (c *Coordinator) Cancel(chatID string) error {
 	}
 	c.emitStateChange(chatID)
 	return nil
+}
+
+func (c *Coordinator) maybeStartNextQueuedMessage(ctx context.Context, chatID string) error {
+	if c.isActive(chatID) {
+		return nil
+	}
+	queuedMessages := c.store.GetQueuedMessages(chatID)
+	if len(queuedMessages) == 0 {
+		return nil
+	}
+	next := queuedMessages[0]
+	if err := c.store.RemoveQueuedMessage(chatID, next.ID); err != nil {
+		return err
+	}
+	return c.startTurn(ctx, chatID, next.Content, next.Attachments, derefString(next.Provider), next.Model, next.ModelOptions, "", derefBool(next.PlanMode), false)
 }
 
 func (c *Coordinator) startTurn(
@@ -411,6 +436,17 @@ func initialStatus(provider string) readmodels.KannaStatus {
 		return readmodels.StatusRunning
 	}
 	return readmodels.StatusStarting
+}
+
+func derefString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func derefBool(value *bool) bool {
+	return value != nil && *value
 }
 
 type noopTurn struct{}

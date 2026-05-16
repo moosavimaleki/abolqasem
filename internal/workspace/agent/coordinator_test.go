@@ -137,6 +137,52 @@ func TestPendingToolSnapshot(t *testing.T) {
 	}
 }
 
+func TestFinishStartsNextQueuedMessage(t *testing.T) {
+	store := newFakeStore()
+	var startedContents []string
+	coordinator := NewCoordinator(store, TurnStarterFunc(func(_ context.Context, request TurnRequest) (Turn, error) {
+		startedContents = append(startedContents, request.Content)
+		return &fakeTurn{}, nil
+	}), nil)
+
+	if _, err := coordinator.Send(context.Background(), SendCommand{ChatID: "chat-1", Content: "first"}); err != nil {
+		t.Fatalf("Send returned error: %v", err)
+	}
+	if _, err := coordinator.Send(context.Background(), SendCommand{ChatID: "chat-1", Content: "second"}); err != nil {
+		t.Fatalf("queued Send returned error: %v", err)
+	}
+	if err := coordinator.Finish("chat-1"); err != nil {
+		t.Fatalf("Finish returned error: %v", err)
+	}
+	if store.finished != 1 {
+		t.Fatalf("expected one finished turn, got %d", store.finished)
+	}
+	if len(startedContents) != 2 || startedContents[0] != "first" || startedContents[1] != "second" {
+		t.Fatalf("expected queued message to start, got %#v", startedContents)
+	}
+	if len(store.queued["chat-1"]) != 0 {
+		t.Fatalf("expected queue to be empty, got %#v", store.queued["chat-1"])
+	}
+	if coordinator.ActiveStatuses()["chat-1"] == "" {
+		t.Fatalf("expected next queued turn to be active")
+	}
+}
+
+func TestDequeueRemovesQueuedMessage(t *testing.T) {
+	store := newFakeStore()
+	coordinator := NewCoordinator(store, nil, nil)
+	queuedID, err := coordinator.Enqueue(SendCommand{ChatID: "chat-1", Content: "queued"})
+	if err != nil {
+		t.Fatalf("Enqueue returned error: %v", err)
+	}
+	if err := coordinator.Dequeue("chat-1", queuedID); err != nil {
+		t.Fatalf("Dequeue returned error: %v", err)
+	}
+	if len(store.queued["chat-1"]) != 0 {
+		t.Fatalf("expected queue to be empty, got %#v", store.queued["chat-1"])
+	}
+}
+
 func TestActiveTurnIncludesProjectAndStartedAt(t *testing.T) {
 	store := newFakeStore()
 	coordinator := NewCoordinator(store, TurnStarterFunc(func(context.Context, TurnRequest) (Turn, error) {
@@ -165,6 +211,7 @@ type fakeStore struct {
 	chats     map[string]readmodels.ChatRecord
 	queued    map[string][]readmodels.QueuedChatMessage
 	started   int
+	finished  int
 	cancelled int
 	failed    int
 }
@@ -227,6 +274,11 @@ func (s *fakeStore) RecordTurnStarted(string) error {
 	return nil
 }
 
+func (s *fakeStore) RecordTurnFinished(string) error {
+	s.finished++
+	return nil
+}
+
 func (s *fakeStore) RecordTurnFailed(string, string) error {
 	s.failed++
 	return nil
@@ -239,7 +291,7 @@ func (s *fakeStore) RecordTurnCancelled(string) error {
 
 func (s *fakeStore) EnqueueMessage(chatID string, message QueueMessageInput) (readmodels.QueuedChatMessage, error) {
 	queued := readmodels.QueuedChatMessage{
-		ID:          "queued-1",
+		ID:          "queued-" + message.Content,
 		Content:     message.Content,
 		Attachments: message.Attachments,
 		CreatedAt:   2,

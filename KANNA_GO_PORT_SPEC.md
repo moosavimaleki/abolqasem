@@ -853,13 +853,13 @@ Progress:
 - Active chat sends are queued instead of starting a second turn.
 - Cancel removes active turn immediately and records cancellation.
 - Provider start failure records failed turn and clears active state.
+- Queue deletion and start-next-queued-message after finish are implemented.
 
 Remaining:
 
 - Provider event stream consumption.
 - Tool request/response lifecycle.
 - Draining stream behavior.
-- Start-next-queued-message after final result.
 - Integration with WebSocket command router.
 
 ### Task 6.1.1: Coordinator core invariants `[done]`
@@ -908,7 +908,7 @@ Output:
 - Pending tool snapshot exposes `toolUseId` and `toolKind`.
 - Cancelling a turn cancels the provider context and removes the active turn immediately.
 
-### Task 6.3: Queue model
+### Task 6.3: Queue model `[done]`
 
 شرح:
 
@@ -920,6 +920,13 @@ Acceptance criteria:
 - queue persisted باشد.
 - refresh صفحه queue را از بین نبرد.
 - کاربر بتواند queued message را حذف کند.
+
+Output:
+
+- Active chat sends enqueue instead of starting a second turn.
+- `Finish` records turn completion and starts the next queued message.
+- `Dequeue` removes queued messages by id.
+- Queue persistence is delegated to the Kanna-compatible store interface/event store.
 
 ## Milestone 7: Codex Adapter در Go
 
