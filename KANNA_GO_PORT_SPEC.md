@@ -1024,7 +1024,7 @@ Remaining:
 
 - Full reasoning/plan/file-change visual event parity continues under Task 7.4 and later transcript rendering integration.
 
-### Task 7.4: Codex tool and approval handling
+### Task 7.4: Codex tool and approval handling `[done]`
 
 Server requestهای مهم:
 
@@ -1039,6 +1039,15 @@ Acceptance criteria:
 - tool request به UI ارسال شود.
 - UI بتواند approve/deny/respond کند.
 - Codex request با پاسخ UI resume شود.
+
+Output:
+
+- [approvals.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/providers/codex/approvals.go)
+- [approvals_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/providers/codex/approvals_test.go)
+- `item/tool/requestUserInput` maps to Kanna `ask_user_question` tool call and returns Codex answer shape.
+- `item/commandExecution/requestApproval` returns approval decision.
+- `item/fileChange/requestApproval` returns approval decision and defaults to `decline`.
+- Request handling is isolated so the JSON-RPC process bridge can call it directly.
 
 ## Milestone 8: Claude Adapter
 
