@@ -1321,13 +1321,21 @@ Output:
 - Repo availability uses `gh repo view` and returns Kanna-compatible `available/message`.
 - Publish uses `gh repo create` plus a real branch push through the Git service.
 
-### Task 12.6: Discard/ignore workflow مطابق Kanna
+### Task 12.6: Discard/ignore workflow مطابق Kanna `[done]`
 
 Acceptance criteria:
 
 - `chat.discardDiffFile` پیاده شود.
 - `chat.ignoreDiffFile` پیاده شود.
 - ignore file/folder behavior با UI Kanna سازگار باشد.
+
+Output:
+
+- [discard.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/workspace/gitservice/discard.go)
+- [discard_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/workspace/gitservice/discard_test.go)
+- Tracked files are restored with `git restore --staged --worktree`.
+- Untracked files are removed only after safe in-repository path validation.
+- Ignore file and ignore folder append normalized entries to `.gitignore` without duplicating existing patterns.
 
 ## Milestone 13: Terminal Manager در Go
 
