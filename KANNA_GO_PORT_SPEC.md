@@ -1051,7 +1051,7 @@ Output:
 
 ## Milestone 8: Claude Adapter
 
-### Task 8.1: Port رفتار Claude adapter Kanna به Go
+### Task 8.1: Port رفتار Claude adapter Kanna به Go `[done]`
 
 اصل:
 
@@ -1069,6 +1069,15 @@ Acceptance criteria:
 
 - تصمیم فنی documented شود.
 - proof of concept یک prompt ساده را stream کند.
+
+Output:
+
+- [CLAUDE_ADAPTER_DECISION.md](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/CLAUDE_ADAPTER_DECISION.md)
+- [adapter.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/providers/claude/adapter.go)
+- [adapter_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/providers/claude/adapter_test.go)
+- The Go port uses the local `claude` CLI stream-json mode instead of a permanent JS SDK bridge.
+- Command construction supports model, effort, permission mode, resume, and fork-session.
+- Stream parser maps assistant/result JSON lines into Kanna transcript entries.
 
 ### Task 8.2: Claude session management
 

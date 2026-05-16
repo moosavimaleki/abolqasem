@@ -22,7 +22,7 @@ Status legend:
 
 | Kanna module | Go target | Status | Notes |
 | --- | --- | --- | --- |
-| `agent.ts` | `internal/workspace/agent` | `[in-progress]` | Core coordinator invariants implemented; provider stream/tool lifecycle remains. |
+| `agent.ts` | `internal/workspace/agent` | `[in-progress]` | Core coordinator invariants, active turn model, and queue flow implemented; full provider event lifecycle remains. |
 | `codex-app-server.ts` | `internal/providers/codex` | `[in-progress]` | Session manager, stream normalization, request approval handling, and RPC router implemented; process bridge integration remains. |
 | `codex-app-server-protocol.ts` | `internal/providers/codex/protocol` | `[in-progress]` | Initial JSON-RPC DTO subset ported; full app-server generated protocol parity remains. |
 | `provider-catalog.ts` | `internal/providers/catalog` | `[done]` | Kanna `claude` and `codex` server catalog ported. |
