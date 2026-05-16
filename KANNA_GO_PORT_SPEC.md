@@ -1545,15 +1545,25 @@ Output:
 - Chat snapshots now derive runtime, queue, providers, and recent transcript entries from the Go event store.
 - Settings snapshots already come from the Go backend through `settings.readAppSettings` and app-settings subscriptions.
 
-### Task 16.2: اتصال composer
+### Task 16.2: اتصال composer ✅
 
 Acceptance criteria:
 
-- create chat.
-- send message.
-- select provider/model/reasoning.
-- cancel turn.
-- queued message rendering.
+- [x] create chat.
+- [x] send message.
+- [x] select provider/model/reasoning.
+- [x] cancel turn.
+- [x] queued message rendering.
+
+Output:
+
+- [workspace_composer.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_composer.go)
+- [workspace_composer_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_composer_test.go)
+- [workspace_ws.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_ws.go)
+- [workspace_snapshots.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_snapshots.go)
+- Composer socket commands now support `project.open`, `chat.create`, `chat.send`, `message.enqueue`, `message.dequeue`, `message.steer`, `chat.cancel`, and `chat.markRead`.
+- Chat sending preserves provider/model/model options/effort/plan mode through the Go coordinator.
+- Active runtime state and queued messages are reflected in chat snapshots.
 
 ### Task 16.3: اتصال runtime events
 

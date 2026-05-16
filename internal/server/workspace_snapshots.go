@@ -47,7 +47,7 @@ func workspaceChatSnapshot(chatID string, recentLimit int) any {
 	if err != nil {
 		return nil
 	}
-	return readmodels.DeriveChatSnapshot(storeState, map[string]readmodels.KannaStatus{}, map[string]bool{}, chatID, transcript)
+	return readmodels.DeriveChatSnapshot(storeState, workspaceAgentCoordinator().ActiveStatuses(), map[string]bool{}, chatID, transcript)
 }
 
 func subscriptionRecentLimit(topic protocol.SubscriptionTopic) int {

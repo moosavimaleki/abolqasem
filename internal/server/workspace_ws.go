@@ -96,10 +96,17 @@ func (c *workspaceConnection) handleSubscribe(envelope protocol.ClientEnvelope) 
 		response := protocol.ErrorEnvelope(envelope.ID, "missing topic")
 		return &response
 	}
-	if envelope.Topic.Type == protocol.TopicTerminal && envelope.Topic.TerminalID != "" {
-		c.subscribe(envelope.ID, envelope.Topic.TerminalID)
-	} else if envelope.Topic.Type == protocol.TopicKeybindings {
+	switch {
+	case envelope.Topic.Type == protocol.TopicTerminal && envelope.Topic.TerminalID != "":
+		c.subscribe(envelope.ID, terminalSubscription+envelope.Topic.TerminalID)
+	case envelope.Topic.Type == protocol.TopicKeybindings:
 		c.subscribe(envelope.ID, keybindingsSubscription)
+	case envelope.Topic.Type == protocol.TopicSidebar:
+		c.subscribe(envelope.ID, sidebarSubscription)
+	case envelope.Topic.Type == protocol.TopicLocalProjects:
+		c.subscribe(envelope.ID, localProjectsSubscription)
+	case envelope.Topic.Type == protocol.TopicChat && envelope.Topic.ChatID != "":
+		c.subscribe(envelope.ID, chatSubscription+envelope.Topic.ChatID)
 	}
 	snapshotType, data := workspaceSnapshotForTopic(*envelope.Topic)
 	response := protocol.SnapshotEnvelope(envelope.ID, snapshotType, data)
@@ -168,6 +175,119 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 			return &response
 		}
 		response := protocol.AckEnvelope(envelope.ID, snapshot)
+		return &response
+	case protocol.CommandProjectOpen:
+		var payload struct {
+			LocalPath string `json:"localPath"`
+			Title     string `json:"title"`
+		}
+		if err := json.Unmarshal(envelope.Command, &payload); err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		project, err := workspaceOpenProject(payload.LocalPath, payload.Title)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		c.emitWorkspaceSnapshots("")
+		response := protocol.AckEnvelope(envelope.ID, map[string]any{"projectId": project.ID})
+		return &response
+	case protocol.CommandChatCreate:
+		var payload struct {
+			ProjectID string `json:"projectId"`
+		}
+		if err := json.Unmarshal(envelope.Command, &payload); err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		chat, err := workspaceCreateChat(payload.ProjectID)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		c.emitWorkspaceSnapshots(chat.ID)
+		response := protocol.AckEnvelope(envelope.ID, map[string]any{"chatId": chat.ID})
+		return &response
+	case protocol.CommandChatSend:
+		command, err := decodeSendCommand(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		result, err := workspaceAgentCoordinator().Send(context.Background(), command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		c.emitWorkspaceSnapshots(result.ChatID)
+		response := protocol.AckEnvelope(envelope.ID, result)
+		return &response
+	case protocol.CommandMessageEnqueue:
+		command, err := decodeQueueCommand(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		queuedID, err := workspaceAgentCoordinator().Enqueue(command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		c.emitWorkspaceSnapshots(command.ChatID)
+		response := protocol.AckEnvelope(envelope.ID, map[string]any{"queuedMessageId": queuedID})
+		return &response
+	case protocol.CommandMessageDequeue:
+		chatID, queuedID, err := decodeQueuedMessageCommand(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		if err := workspaceAgentCoordinator().Dequeue(chatID, queuedID); err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		c.emitWorkspaceSnapshots(chatID)
+		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
+		return &response
+	case protocol.CommandMessageSteer:
+		chatID, queuedID, err := decodeQueuedMessageCommand(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		if err := workspaceAgentCoordinator().Dequeue(chatID, queuedID); err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		c.emitWorkspaceSnapshots(chatID)
+		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
+		return &response
+	case protocol.CommandChatCancel:
+		chatID, err := decodeChatID(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		if err := workspaceAgentCoordinator().Cancel(chatID); err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		c.emitWorkspaceSnapshots(chatID)
+		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
+		return &response
+	case protocol.CommandChatMarkRead:
+		chatID, err := decodeChatID(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		if err := workspaceMarkChatRead(chatID); err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		c.emitWorkspaceSnapshots(chatID)
+		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
 		return &response
 	case protocol.CommandAppReadManagement:
 		response := protocol.AckEnvelope(envelope.ID, workspaceManagementSnapshot())
@@ -250,7 +370,9 @@ func (c *workspaceConnection) subscribe(subscriptionID string, terminalID string
 	if terminalID == keybindingsSubscription {
 		return
 	}
-	c.hub.subscribe(terminalID, subscriptionID, c)
+	if strings.HasPrefix(terminalID, terminalSubscription) {
+		c.hub.subscribe(strings.TrimPrefix(terminalID, terminalSubscription), subscriptionID, c)
+	}
 }
 
 func (c *workspaceConnection) unsubscribe(subscriptionID string) {
@@ -262,7 +384,9 @@ func (c *workspaceConnection) unsubscribe(subscriptionID string) {
 	if terminalID == keybindingsSubscription {
 		return
 	}
-	c.hub.unsubscribe(terminalID, subscriptionID, c)
+	if strings.HasPrefix(terminalID, terminalSubscription) {
+		c.hub.unsubscribe(strings.TrimPrefix(terminalID, terminalSubscription), subscriptionID, c)
+	}
 }
 
 func (c *workspaceConnection) close() {
