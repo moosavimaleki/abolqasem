@@ -620,6 +620,16 @@ export function resolveComposeIntent(params: {
   return null
 }
 
+function getSidebarProjectLocalPath(projectGroups: SidebarData["projectGroups"], projectId: string | null | undefined) {
+  if (!projectId) return null
+  return projectGroups.find((group) => group.groupKey === projectId)?.localPath || null
+}
+
+export function resolveProjectStartIntent(projectGroups: SidebarData["projectGroups"], projectId: string): StartChatIntent {
+  const localPath = getSidebarProjectLocalPath(projectGroups, projectId)
+  return localPath ? { kind: "local_path", localPath } : { kind: "project_id", projectId }
+}
+
 export function getActiveChatSnapshot(chatSnapshot: ChatSnapshot | null, activeChatId: string | null): ChatSnapshot | null {
   if (!chatSnapshot) return null
   if (!activeChatId) return null
@@ -1416,9 +1426,13 @@ export function useKannaState(activeChatId: string | null): KannaState {
     }
   }, [createChatForProject, resolveProjectIdForStartChat])
 
+  const startChatForProjectId = useCallback(async (projectId: string) => {
+    await startChatFromIntent(resolveProjectStartIntent(sidebarProjectGroups, projectId))
+  }, [sidebarProjectGroups, startChatFromIntent])
+
   const handleCreateChat = useCallback(async (projectId: string) => {
-    await startChatFromIntent({ kind: "project_id", projectId })
-  }, [startChatFromIntent])
+    await startChatForProjectId(projectId)
+  }, [startChatForProjectId])
 
   const handleForkChat = useCallback(async (chat: SidebarChatRow) => {
     try {
@@ -1576,14 +1590,17 @@ export function useKannaState(activeChatId: string | null): KannaState {
     })
 
     try {
-      let projectId = selectedProjectId ?? sidebarProjectGroups[0]?.groupKey ?? null
-      if (!activeChatId && !projectId && fallbackLocalProjectPath) {
-        const project = await socket.command<{ projectId: string }>({
-          type: "project.open",
-          localPath: fallbackLocalProjectPath,
-        })
-        projectId = project.projectId
-        setSelectedProjectId(projectId)
+      let projectId = activeChatId ? null : selectedProjectId ?? sidebarProjectGroups[0]?.groupKey ?? null
+      if (!activeChatId) {
+        const localPath = getSidebarProjectLocalPath(sidebarProjectGroups, projectId) ?? (!projectId ? fallbackLocalProjectPath : null)
+        if (localPath) {
+          const project = await socket.command<{ projectId: string }>({
+            type: "project.open",
+            localPath,
+          })
+          projectId = project.projectId
+          setSelectedProjectId(projectId)
+        }
       }
 
       if (!activeChatId && !projectId) {
@@ -1954,18 +1971,19 @@ export function useKannaState(activeChatId: string | null): KannaState {
   }, [standaloneShareUrl])
 
   const handleCompose = useCallback(() => {
-    const intent = resolveComposeIntent({
-      selectedProjectId,
-      sidebarProjectId: sidebarProjectGroups[0]?.groupKey,
-      fallbackLocalProjectPath,
-    })
-    if (intent) {
-      void startChatFromIntent(intent)
+    const projectId = selectedProjectId ?? sidebarProjectGroups[0]?.groupKey ?? null
+    if (projectId) {
+      void startChatForProjectId(projectId)
+      return
+    }
+
+    if (fallbackLocalProjectPath) {
+      void startChatFromIntent({ kind: "local_path", localPath: fallbackLocalProjectPath })
       return
     }
 
     navigate("/")
-  }, [fallbackLocalProjectPath, navigate, selectedProjectId, sidebarProjectGroups, startChatFromIntent])
+  }, [fallbackLocalProjectPath, navigate, selectedProjectId, sidebarProjectGroups, startChatForProjectId, startChatFromIntent])
 
   const openSidebar = useCallback(() => setSidebarOpen(true), [])
   const closeSidebar = useCallback(() => setSidebarOpen(false), [])

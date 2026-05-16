@@ -12,6 +12,7 @@ import {
   getUiUpdateRestartReconnectAction,
   reconcileOptimisticUserPrompts,
   resolveComposeIntent,
+  resolveProjectStartIntent,
   shouldHandleUiUpdateReloadRequest,
   shouldMarkActiveChatRead,
   shouldAutoFollowTranscript,
@@ -267,6 +268,24 @@ describe("resolveComposeIntent", () => {
         fallbackLocalProjectPath: null,
       })
     ).toBeNull()
+  })
+})
+
+describe("resolveProjectStartIntent", () => {
+  test("opens sidebar projects by local path so legacy groups get registered first", () => {
+    const sidebarData = createSidebarData()
+
+    expect(resolveProjectStartIntent(sidebarData.projectGroups, "project-1")).toEqual({
+      kind: "local_path",
+      localPath: "/tmp/project-1",
+    })
+  })
+
+  test("falls back to project id when no sidebar path is known", () => {
+    expect(resolveProjectStartIntent([], "project-missing")).toEqual({
+      kind: "project_id",
+      projectId: "project-missing",
+    })
   })
 })
 
