@@ -1103,20 +1103,31 @@ Remaining:
 
 ## Milestone 9: Gemini Adapter
 
-### Task 9.1: Legacy Gemini viewer compatibility only
+### Task 9.1: Legacy Gemini viewer compatibility only `[done]`
 
 Acceptance criteria:
 
 - اگر sessionهای Gemini فعلی وجود دارند، در legacy viewer از بین نروند.
 - Gemini وارد provider catalog Kanna-port نشود مگر Kanna upstream اضافه کند.
 
-### Task 9.2: No Gemini Web UI control in Kanna parity scope
+Output:
+
+- Existing legacy Gemini parser/discovery/hook code remains untouched.
+- Provider catalog test locks Kanna parity providers to exclude Gemini.
+- Gemini remains available only through legacy viewer compatibility.
+
+### Task 9.2: No Gemini Web UI control in Kanna parity scope `[done]`
 
 Acceptance criteria:
 
 - هیچ UI control جدید برای Gemini ساخته نشود.
 - هیچ مدل/option اختصاصی Gemini در Kanna workspace اضافه نشود.
 - اگر بعداً نیاز شد، task جدا خارج از parity scope تعریف شود.
+
+Output:
+
+- No Gemini provider entry was added to Kanna Web UI provider catalog.
+- No Gemini model/options were added to Kanna workspace scope.
 
 ## Milestone 10: Transcript Model
 

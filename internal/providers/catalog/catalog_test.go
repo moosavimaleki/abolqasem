@@ -28,6 +28,14 @@ func TestServerProvidersMatchesKannaCodexModels(t *testing.T) {
 	}
 }
 
+func TestServerProvidersExcludeGeminiForKannaParity(t *testing.T) {
+	for _, provider := range ServerProviders() {
+		if provider.ID == "gemini" {
+			t.Fatal("gemini must stay legacy-viewer-only for Kanna parity")
+		}
+	}
+}
+
 func TestNormalizeModelUsesAliasesAndSafeFallback(t *testing.T) {
 	if got := NormalizeModel("claude", "sonnet"); got != "claude-sonnet-4-6" {
 		t.Fatalf("expected claude sonnet alias, got %q", got)
