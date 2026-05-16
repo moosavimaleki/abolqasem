@@ -141,6 +141,22 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 		}
 		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
 		return &response
+	case protocol.CommandProjectReadQuickActions:
+		result, err := workspaceReadProjectQuickActions(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		response := protocol.AckEnvelope(envelope.ID, result)
+		return &response
+	case protocol.CommandProjectWriteQuickActions:
+		result, err := workspaceWriteProjectQuickActions(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		response := protocol.AckEnvelope(envelope.ID, result)
+		return &response
 	case protocol.CommandSettingsReadAppSettings:
 		response := protocol.AckEnvelope(envelope.ID, workspaceAppSettingsSnapshot())
 		return &response

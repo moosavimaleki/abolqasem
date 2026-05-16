@@ -1672,14 +1672,23 @@ Output:
 
 ## Milestone 19: Quick Actions
 
-### Task 19.1: Project quick actions
+### Task 19.1: Project quick actions ✅
 
 Acceptance criteria:
 
-- `project.readQuickActions` پیاده شود.
-- `project.writeQuickActions` پیاده شود.
-- quick actionهای project روی disk persist شوند.
-- UI Kanna بدون تغییر رفتاری کار کند.
+- [x] `project.readQuickActions` پیاده شود.
+- [x] `project.writeQuickActions` پیاده شود.
+- [x] quick actionهای project روی disk persist شوند.
+- [x] UI Kanna بدون تغییر رفتاری کار کند.
+
+Output:
+
+- [workspace_quick_actions.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_quick_actions.go)
+- [workspace_quick_actions_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_quick_actions_test.go)
+- [workspace_ws.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_ws.go)
+- `project.readQuickActions` and `project.writeQuickActions` are wired into the Go workspace WebSocket backend.
+- Quick actions persist in each project at `.kanna/quick-actions.json`, matching Kanna.
+- Quick action normalization matches Kanna limits and duplicate handling.
 
 ## Milestone 20: Skills
 
