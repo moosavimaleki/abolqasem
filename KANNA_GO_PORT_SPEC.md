@@ -1302,7 +1302,7 @@ Output:
 - Merge preview reports `up_to_date`, `mergeable`, `conflicts`, or `error`.
 - Merge uses `git merge --no-edit` and returns snapshot-change metadata.
 
-### Task 12.5: GitHub publish workflow مطابق Kanna
+### Task 12.5: GitHub publish workflow مطابق Kanna `[done]`
 
 Acceptance criteria:
 
@@ -1310,6 +1310,16 @@ Acceptance criteria:
 - `chat.checkGitHubRepoAvailability` پیاده شود.
 - `chat.publishToGitHub` پیاده شود.
 - response shape با Kanna برابر باشد.
+
+Output:
+
+- [github.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/workspace/gitservice/github.go)
+- [github_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/workspace/gitservice/github_test.go)
+- Go service now reports whether `gh` is installed and authenticated.
+- Active GitHub login and org owners are returned when available.
+- Suggested repository name is derived from the project/repository folder.
+- Repo availability uses `gh repo view` and returns Kanna-compatible `available/message`.
+- Publish uses `gh repo create` plus a real branch push through the Git service.
 
 ### Task 12.6: Discard/ignore workflow مطابق Kanna
 
