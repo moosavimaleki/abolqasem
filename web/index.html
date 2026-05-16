@@ -1,300 +1,34 @@
-<!DOCTYPE html>
-<html lang="fa" dir="rtl">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>نمایشگر نشست‌های هوش مصنوعی</title>
-  <link rel="stylesheet" href="styles.css">
-</head>
-<body data-theme="night">
-  <div id="app" class="app-shell">
-    <header class="app-header">
-      <button id="open-sessions" class="icon-button mobile-only" type="button" data-icon="menu" aria-label="باز کردن فهرست نشست‌ها"></button>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no" />
+    <meta name="theme-color" content="#ffffff" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Kanna" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="96x96" href="/favicon.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <script>
+      (() => {
+        const resolved = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
+        const themeColor = resolved === "dark" ? "rgb(33, 34, 35)" : "rgb(255, 255, 255)"
 
-      <div id="session-header" class="session-header">
-        <button id="session-project" class="session-project-button hidden" type="button" aria-label="نمایش نشست‌های پروژه">
-          <span class="session-project-copy">
-            <span class="session-project-kicker">پروژه</span>
-            <span id="session-project-label" class="session-project-label"></span>
-          </span>
-          <span id="session-project-badge" class="session-project-badge hidden"></span>
-        </button>
-        <span id="session-title-separator" class="session-title-separator hidden" aria-hidden="true"></span>
-        <button id="session-title-button" class="session-title-button hidden" type="button" aria-label="ویرایش نام نشست"></button>
-        <input id="session-title-input" class="session-title-input hidden" type="text" maxlength="72" aria-label="نام نشست">
-        <span id="session-title" class="session-title">نمایشگر نشست‌ها</span>
-      </div>
-
-      <div class="header-actions">
-        <button id="refresh-session" class="icon-button" type="button" data-icon="refresh" aria-label="بارگذاری دوباره نشست"></button>
-        <button id="active-session-info" class="icon-button" type="button" data-icon="info" aria-label="اطلاعات نشست فعال"></button>
-        <div id="message-search-shell" class="search-box collapsed">
-          <button id="message-search-toggle" class="icon-button" type="button" data-icon="search" aria-label="جست‌وجو در پیام‌ها"></button>
-          <button id="search-scope-chip" class="search-scope-chip" type="button" aria-label="حذف محدودیت جست‌وجو به همین نشست">همین نشست</button>
-          <input id="message-search" type="search" placeholder="جست‌وجو در همین نشست" autocomplete="off" aria-label="جست‌وجو در همین نشست">
-        </div>
-        <button id="open-settings" class="icon-button" type="button" data-icon="settings" aria-label="تنظیمات برنامه"></button>
-      </div>
-    </header>
-
-    <div class="app-body">
-      <main class="chat-shell">
-        <section id="chat-messages" class="chat-messages" aria-live="polite">
-          <div class="empty-state">
-            <p>برای شروع یک نشست را از سمت راست انتخاب کنید.</p>
-            <code>ai-agent-manager install</code>
-          </div>
-        </section>
-        <button id="sticky-reader-action" class="sticky-reader-action hidden" type="button" data-icon="menu_book" aria-label="حالت خواندن"></button>
-        <button id="jump-to-end" class="jump-to-end hidden" type="button" data-icon="keyboard_arrow_down" aria-label="رفتن به آخر گفتگو"></button>
-        <form id="agent-composer" class="agent-composer" aria-label="ارسال پیام به agent">
-          <div class="agent-composer-status">
-            <select id="agent-composer-agent" class="agent-composer-select" aria-label="انتخاب agent"></select>
-            <input id="agent-composer-model" class="agent-composer-model" type="text" list="agent-model-options" placeholder="model" aria-label="انتخاب مدل">
-            <datalist id="agent-model-options"></datalist>
-            <span id="agent-composer-label">فقط نمایش</span>
-            <button id="agent-new-session" class="agent-composer-link" type="button">نشست جدید</button>
-          </div>
-          <div class="agent-composer-box">
-            <textarea id="agent-composer-input" rows="1" placeholder="پیام برای ادامه این نشست..." aria-label="پیام برای agent"></textarea>
-            <button id="agent-composer-submit" class="agent-composer-submit" type="submit" data-icon="send" aria-label="ارسال پیام"></button>
-          </div>
-        </form>
-      </main>
-
-      <aside id="sessions-rail" class="sessions-rail" aria-label="فهرست نشست‌ها">
-        <header class="rail-header mobile-only">
-          <span id="session-count" class="muted-text">در حال بارگذاری</span>
-          <button id="close-sessions" class="icon-button" type="button" data-icon="close" aria-label="بستن فهرست نشست‌ها"></button>
-        </header>
-        <nav id="sessions-list" class="sessions-list" aria-label="نشست‌های ذخیره‌شده"></nav>
-      </aside>
-    </div>
-  </div>
-
-  <div id="session-info-popover" class="session-info-popover hidden" role="dialog" aria-labelledby="session-info-title" aria-hidden="true">
-    <header class="session-info-header">
-      <strong id="session-info-title">اطلاعات نشست</strong>
-      <button id="close-session-info" class="icon-button subtle" type="button" data-icon="close" aria-label="بستن اطلاعات نشست"></button>
-    </header>
-    <div id="session-info-body" class="session-info-body"></div>
-  </div>
-
-  <section id="reader-page" class="reader-page hidden" aria-hidden="true">
-    <header class="reader-topbar">
-      <button id="close-reader" class="icon-button" type="button" data-icon="close" aria-label="بستن حالت خواندن"></button>
-
-      <div class="reader-tools">
-        <div id="reader-search-shell" class="search-box collapsed">
-          <button id="reader-search-toggle" class="icon-button" type="button" data-icon="search" aria-label="جست‌وجو در متن"></button>
-          <input id="reader-search" type="search" placeholder="جست‌وجو در متن" autocomplete="off" aria-label="جست‌وجو در متن">
-        </div>
-        <button id="reader-settings" class="icon-button" type="button" data-icon="tune" aria-label="تنظیمات خواندن"></button>
-      </div>
-    </header>
-
-    <div class="reader-layout">
-      <aside id="reader-toc" class="reader-toc" aria-label="فهرست بخش‌ها">
-        <p>فهرست</p>
-        <nav id="reader-toc-list"></nav>
-      </aside>
-
-      <main id="reader-scroll" class="reader-scroll">
-        <article id="reader-content" class="reader-content"></article>
-      </main>
-    </div>
-  </section>
-
-  <div id="settings-popover" class="settings-popover hidden" role="dialog" aria-labelledby="settings-title" aria-hidden="true">
-    <header class="settings-popover-header">
-      <strong id="settings-title">تنظیمات خواندن</strong>
-      <button id="close-settings" class="icon-button subtle" type="button" data-icon="close" aria-label="بستن تنظیمات"></button>
-    </header>
-
-    <section class="settings-row">
-      <span>فونت</span>
-      <div class="segmented-control" data-setting="font">
-        <button type="button" data-value="vazirmatn">وزیر</button>
-        <button type="button" data-value="bzar">زر</button>
-        <button type="button" data-value="iranian-sans">ایرانیان</button>
-      </div>
-    </section>
-
-    <section class="settings-row">
-      <span>اندازه</span>
-      <div class="stepper-control">
-        <button id="font-size-decrease" type="button" aria-label="کوچک‌تر کردن متن">A-</button>
-        <strong id="font-size-value">18</strong>
-        <button id="font-size-increase" type="button" aria-label="بزرگ‌تر کردن متن">A+</button>
-      </div>
-    </section>
-
-    <section class="settings-row">
-      <span>فاصله خطوط</span>
-      <div class="segmented-control" data-setting="lineHeight">
-        <button type="button" data-value="1.65">کم</button>
-        <button type="button" data-value="1.9">معمولی</button>
-        <button type="button" data-value="2.15">زیاد</button>
-      </div>
-    </section>
-
-    <section class="settings-row">
-      <span>عرض متن</span>
-      <div class="segmented-control" data-setting="contentWidth">
-        <button type="button" data-value="contained">ستونی</button>
-        <button type="button" data-value="full">تمام عرض</button>
-      </div>
-    </section>
-
-    <section class="settings-row">
-      <span>رنگ‌بندی</span>
-      <div class="theme-options" data-setting="theme">
-        <button type="button" data-value="paper" aria-label="تم روشن"></button>
-        <button type="button" data-value="sepia" aria-label="تم سپیا"></button>
-        <button type="button" data-value="night" aria-label="تم شب"></button>
-        <button type="button" data-value="charcoal" aria-label="تم ذغالی"></button>
-        <button type="button" data-value="teal" aria-label="تم کله‌غازی"></button>
-      </div>
-    </section>
-  </div>
-
-  <section id="app-settings-modal" class="app-settings-modal hidden" role="dialog" aria-labelledby="app-settings-title" aria-hidden="true">
-    <div class="app-settings-panel">
-      <header class="app-settings-header">
-        <div>
-          <strong id="app-settings-title">تنظیمات برنامه</strong>
-          <p>رفتار hookها، دنبال‌کردن نشست‌ها و سرور محلی</p>
-        </div>
-        <button id="close-app-settings" class="icon-button subtle" type="button" data-icon="close" aria-label="بستن تنظیمات برنامه"></button>
-      </header>
-
-      <div class="app-settings-body">
-        <section class="app-settings-section">
-          <h2>نشست‌ها و hookها</h2>
-
-          <div class="app-settings-row">
-            <div>
-              <strong>دریافت update از hookها</strong>
-              <p>برای نشست‌هایی که در TUI یا CLI فعال هستند.</p>
-            </div>
-            <button class="switch-control" type="button" data-app-toggle="hook_updates" aria-label="دریافت update از hookها"></button>
-          </div>
-
-          <div class="app-settings-row">
-            <div>
-              <strong>رفتار هنگام update جدید</strong>
-              <p>وقتی hook یک نشست دیگر را به‌روزرسانی می‌کند.</p>
-            </div>
-            <div class="segmented-control app-segmented-control" data-app-setting="hook_follow_mode">
-              <button type="button" data-value="auto">خودکار</button>
-              <button type="button" data-value="notice">اعلان</button>
-              <button type="button" data-value="off">خاموش</button>
-            </div>
-          </div>
-
-          <div class="app-settings-row">
-            <div>
-              <strong>حفظ تمرکز هنگام تایپ</strong>
-              <p>وقتی search یا ورودی فعال است، hook صفحه را جابه‌جا نکند.</p>
-            </div>
-            <button class="switch-control" type="button" data-app-toggle="ignore_hook_navigation_while_typing" aria-label="حفظ تمرکز هنگام تایپ"></button>
-          </div>
-
-          <div class="app-settings-row">
-            <div>
-              <strong>واک خودکار دیسک</strong>
-              <p>برای پیدا کردن نشست‌هایی که hookشان از دست رفته است.</p>
-            </div>
-            <button class="switch-control" type="button" data-app-toggle="filesystem_discovery" aria-label="واک خودکار دیسک"></button>
-          </div>
-        </section>
-
-        <section class="app-settings-section">
-          <h2>Web UI و مدل‌ها</h2>
-
-          <div class="app-settings-row">
-            <div>
-              <strong>agent پیش‌فرض</strong>
-              <p>برای ساخت نشست جدید از داخل Web UI.</p>
-            </div>
-            <div class="segmented-control app-segmented-control" data-app-setting="default_agent">
-              <button type="button" data-value="codex">Codex</button>
-              <button type="button" data-value="claude">Claude</button>
-              <button type="button" data-value="gemini">Gemini</button>
-            </div>
-          </div>
-
-          <div class="app-settings-row app-settings-model-row">
-            <div>
-              <strong>مدل Codex</strong>
-              <p>مثلاً از مدل‌های اعلام‌شده توسط خود Codex.</p>
-            </div>
-            <input class="app-settings-input" type="text" data-app-agent-model="codex" list="agent-model-options" placeholder="پیش‌فرض Codex">
-          </div>
-
-          <div class="app-settings-row app-settings-model-row">
-            <div>
-              <strong>مدل Claude</strong>
-              <p>برای زمانی که کنترل Claude اضافه شود.</p>
-            </div>
-            <input class="app-settings-input" type="text" data-app-agent-model="claude" placeholder="مثلاً sonnet">
-          </div>
-
-          <div class="app-settings-row app-settings-model-row">
-            <div>
-              <strong>مدل Gemini</strong>
-              <p>برای زمانی که کنترل Gemini اضافه شود.</p>
-            </div>
-            <input class="app-settings-input" type="text" data-app-agent-model="gemini" placeholder="مثلاً gemini-pro">
-          </div>
-        </section>
-
-        <section class="app-settings-section">
-          <h2>سرور محلی</h2>
-          <div class="app-settings-actions">
-            <button id="app-settings-reload-sessions" class="utility-button" type="button" data-icon="sync">بارگذاری نشست‌ها</button>
-            <button id="app-settings-check-hooks" class="utility-button" type="button" data-icon="fact_check">بررسی hookها</button>
-            <button id="app-settings-copy-url" class="utility-button" type="button" data-icon="content_copy">کپی آدرس</button>
-            <button id="app-settings-restart-server" class="utility-button danger" type="button" data-icon="restart_alt">ری‌استارت سرور</button>
-          </div>
-          <div id="app-hooks-status" class="app-hooks-status hidden"></div>
-          <p id="app-settings-status" class="app-settings-status" role="status"></p>
-        </section>
-      </div>
-    </div>
-  </section>
-
-  <section id="file-preview" class="file-preview hidden" role="dialog" aria-labelledby="file-preview-title" aria-hidden="true">
-    <div class="file-preview-panel">
-      <header class="file-preview-header">
-        <div>
-          <strong id="file-preview-title">نمایش فایل</strong>
-          <code id="file-preview-meta"></code>
-        </div>
-        <div class="file-preview-actions">
-          <button id="open-file-preview-link" class="icon-button subtle" type="button" data-icon="open_in_new" aria-label="باز کردن لینک مستقیم فایل"></button>
-          <button id="close-file-preview" class="icon-button subtle" type="button" data-icon="close" aria-label="بستن نمایش فایل"></button>
-        </div>
-      </header>
-      <div id="file-preview-body" class="file-preview-body"></div>
-    </div>
-  </section>
-
-  <section id="project-sessions-modal" class="project-sessions-modal hidden" role="dialog" aria-labelledby="project-sessions-title" aria-hidden="true">
-    <div class="project-sessions-panel">
-      <header class="project-sessions-header">
-        <div>
-          <strong id="project-sessions-title">نشست‌های پروژه</strong>
-          <p id="project-sessions-meta" class="muted-text"></p>
-        </div>
-        <button id="close-project-sessions" class="icon-button subtle" type="button" data-icon="close" aria-label="بستن نشست‌های پروژه"></button>
-      </header>
-      <div id="project-sessions-list" class="project-sessions-list"></div>
-    </div>
-  </section>
-
-  <script src="vendor/highlight/highlight.min.js"></script>
-  <script src="vendor/mermaid/mermaid.min.js"></script>
-  <script type="module" src="app.js"></script>
-</body>
-</html>
+        document.documentElement.classList.toggle("dark", resolved === "dark")
+        document.documentElement.style.colorScheme = resolved
+        document.querySelector('meta[name="theme-color"]')?.setAttribute("content", themeColor)
+        document
+          .querySelector('meta[name="apple-mobile-web-app-status-bar-style"]')
+          ?.setAttribute("content", resolved === "dark" ? "black-translucent" : "default")
+      })()
+    </script>
+    <title>Kanna</title>
+    <script type="module" crossorigin src="/assets/index-DBViVwce.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DvQ_Tt4x.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+  </html>
