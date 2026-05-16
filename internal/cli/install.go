@@ -20,6 +20,8 @@ var installAll bool
 var installStartup string
 var installNoHooks bool
 
+var installRestartActiveMode = restartActiveMode
+
 func getAdapter(agent string) (adapters.AgentAdapter, error) {
 	switch agent {
 	case "codex":
@@ -159,7 +161,7 @@ func installHooks(scope adapters.InstallScope, agents []string) []string {
 }
 
 func restartAfterInstall() error {
-	if err := restartActiveMode(); err != nil {
+	if err := installRestartActiveMode(); err != nil {
 		return err
 	}
 	fmt.Println("Successfully restarted")

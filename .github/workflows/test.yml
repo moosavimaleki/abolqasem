@@ -88,6 +88,8 @@ jobs:
         run: |
           test -x "$RUNNER_TEMP/bin/ai-agent-manager"
           "$RUNNER_TEMP/bin/ai-agent-manager" --help >/dev/null
+          "$RUNNER_TEMP/bin/ai-agent-manager" status | tee "$RUNNER_TEMP/ai-agent-manager-status.txt"
+          grep -q "Server: running" "$RUNNER_TEMP/ai-agent-manager-status.txt"
           grep -q "ai-agent-manager" "$HOME/.codex/config.toml"
           grep -q "ai-agent-manager" "$HOME/.claude/settings.json"
           grep -q "ai-agent-manager" "$HOME/.gemini/settings.json"
@@ -112,6 +114,11 @@ jobs:
           $Binary = Join-Path $env:RUNNER_TEMP "bin\ai-agent-manager.exe"
           if (!(Test-Path $Binary)) { throw "installed binary not found: $Binary" }
           & $Binary --help | Out-Null
+          $Status = (& $Binary status) -join "`n"
+          Write-Host $Status
+          if ($Status -notmatch "Server: running") {
+            throw "server did not restart after source install"
+          }
           foreach ($Path in @(
             "$env:USERPROFILE\.codex\config.toml",
             "$env:USERPROFILE\.claude\settings.json",
@@ -177,6 +184,8 @@ jobs:
         run: |
           test -x "$RUNNER_TEMP/release-bin/ai-agent-manager"
           "$RUNNER_TEMP/release-bin/ai-agent-manager" --help >/dev/null
+          "$RUNNER_TEMP/release-bin/ai-agent-manager" status | tee "$RUNNER_TEMP/ai-agent-manager-release-status.txt"
+          grep -q "Server: running" "$RUNNER_TEMP/ai-agent-manager-release-status.txt"
           grep -q "ai-agent-manager" "$HOME/.codex/config.toml"
           grep -q "ai-agent-manager" "$HOME/.claude/settings.json"
           grep -q "ai-agent-manager" "$HOME/.gemini/settings.json"
@@ -249,6 +258,11 @@ jobs:
           $Binary = Join-Path $env:RUNNER_TEMP "release-bin\ai-agent-manager.exe"
           if (!(Test-Path $Binary)) { throw "installed binary not found: $Binary" }
           & $Binary --help | Out-Null
+          $Status = (& $Binary status) -join "`n"
+          Write-Host $Status
+          if ($Status -notmatch "Server: running") {
+            throw "server did not restart after release install"
+          }
           foreach ($Path in @(
             "$env:USERPROFILE\.codex\config.toml",
             "$env:USERPROFILE\.claude\settings.json",

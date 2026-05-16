@@ -2007,13 +2007,22 @@ Output:
 - GoReleaser now runs `scripts/prepare-web-assets.sh` before `go test ./...`, so release archives embed the built React client instead of stale static assets.
 - GitHub-hosted actions were upgraded to Node 24-capable major versions (`checkout@v6`, `setup-go@v6`, `setup-node@v6`) to avoid the Node 20 action runtime deprecation path.
 
-### Task 27.2: Installer compatibility
+### Task 27.2: Installer compatibility [done]
 
 Acceptance criteria:
 
-- installer همچنان Go/runtime لازم را آماده کند.
-- service/hook mode بعد از نصب کار کند.
-- restart بعد از install انجام شود.
+- [x] installer همچنان Go/runtime لازم را آماده کند.
+- [x] service/hook mode بعد از نصب کار کند.
+- [x] restart بعد از install انجام شود.
+
+Output:
+
+- [install.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/cli/install.go)
+- [install_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/cli/install_test.go)
+- [test.yml](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/.github/workflows/test.yml)
+- source/release installers still use the existing Go/runtime bootstrap paths, then call `ai-agent-manager install --startup hook|service`.
+- `install` now has direct test coverage proving it restarts the active startup mode and propagates restart failures.
+- Installer CI now verifies `ai-agent-manager status` reports `Server: running` after source and release installs on Unix, macOS, and Windows.
 
 ## Suggested Implementation Order
 
