@@ -28,6 +28,8 @@ var workspaceWSUpgrader = websocket.Upgrader{
 
 var workspaceTerminals = newWorkspaceTerminalHub()
 
+const keybindingsSubscription = "__keybindings__"
+
 type workspaceConnection struct {
 	conn *websocket.Conn
 	hub  *workspaceTerminalHub
@@ -96,6 +98,8 @@ func (c *workspaceConnection) handleSubscribe(envelope protocol.ClientEnvelope) 
 	}
 	if envelope.Topic.Type == protocol.TopicTerminal && envelope.Topic.TerminalID != "" {
 		c.subscribe(envelope.ID, envelope.Topic.TerminalID)
+	} else if envelope.Topic.Type == protocol.TopicKeybindings {
+		c.subscribe(envelope.ID, keybindingsSubscription)
 	}
 	snapshotType, data := workspaceSnapshotForTopic(*envelope.Topic)
 	response := protocol.SnapshotEnvelope(envelope.ID, snapshotType, data)
@@ -115,6 +119,23 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 		return &response
 	case protocol.CommandSettingsReadAppSettings:
 		response := protocol.AckEnvelope(envelope.ID, workspaceAppSettingsSnapshot())
+		return &response
+	case protocol.CommandSettingsReadKeybindings:
+		snapshot, err := state.LoadKeybindingsSnapshot()
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		response := protocol.AckEnvelope(envelope.ID, snapshot)
+		return &response
+	case protocol.CommandSettingsWriteKeybindings:
+		snapshot, err := writeWorkspaceKeybindings(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		c.emitKeybindingsSnapshot(snapshot)
+		response := protocol.AckEnvelope(envelope.ID, snapshot)
 		return &response
 	case protocol.CommandSettingsWriteAppSettingsPatch:
 		snapshot, err := applyWorkspaceAppSettingsPatch(envelope.Command)
@@ -202,6 +223,9 @@ func (c *workspaceConnection) write(envelope protocol.ServerEnvelope) error {
 
 func (c *workspaceConnection) subscribe(subscriptionID string, terminalID string) {
 	c.subscriptions[subscriptionID] = terminalID
+	if terminalID == keybindingsSubscription {
+		return
+	}
 	c.hub.subscribe(terminalID, subscriptionID, c)
 }
 
@@ -211,12 +235,24 @@ func (c *workspaceConnection) unsubscribe(subscriptionID string) {
 		return
 	}
 	delete(c.subscriptions, subscriptionID)
+	if terminalID == keybindingsSubscription {
+		return
+	}
 	c.hub.unsubscribe(terminalID, subscriptionID, c)
 }
 
 func (c *workspaceConnection) close() {
 	for subscriptionID := range c.subscriptions {
 		c.unsubscribe(subscriptionID)
+	}
+}
+
+func (c *workspaceConnection) emitKeybindingsSnapshot(snapshot state.KeybindingsSnapshot) {
+	for subscriptionID, topic := range c.subscriptions {
+		if topic != keybindingsSubscription {
+			continue
+		}
+		_ = c.write(protocol.SnapshotEnvelope(subscriptionID, protocol.SnapshotKeybindings, snapshot))
 	}
 }
 
@@ -236,7 +272,15 @@ func workspaceSnapshotForTopic(topic protocol.SubscriptionTopic) (string, any) {
 	case protocol.TopicUpdate:
 		return protocol.SnapshotUpdate, workspaceUpdateSnapshot()
 	case protocol.TopicKeybindings:
-		return protocol.SnapshotKeybindings, workspaceKeybindingsSnapshot()
+		snapshot, err := state.LoadKeybindingsSnapshot()
+		if err != nil {
+			return protocol.SnapshotKeybindings, map[string]any{
+				"bindings":        state.DefaultKeybindings(),
+				"warning":         err.Error(),
+				"filePathDisplay": state.GetKeybindingsFilePath(),
+			}
+		}
+		return protocol.SnapshotKeybindings, snapshot
 	case protocol.TopicAppSettings:
 		return protocol.SnapshotAppSettings, workspaceAppSettingsSnapshot()
 	case protocol.TopicChat:
@@ -373,23 +417,6 @@ func workspacePlatform() string {
 	return runtime.GOOS
 }
 
-func workspaceKeybindingsSnapshot() map[string]any {
-	return map[string]any{
-		"bindings": map[string][]string{
-			"toggleEmbeddedTerminal":     {"cmd+j", "ctrl+`"},
-			"toggleRightSidebar":         {"cmd+b", "ctrl+b"},
-			"openInFinder":               {"cmd+alt+f", "ctrl+alt+f"},
-			"openInEditor":               {"cmd+shift+o", "ctrl+shift+o"},
-			"addSplitTerminal":           {"cmd+/", "ctrl+/"},
-			"jumpToSidebarChat":          {"cmd+alt"},
-			"createChatInCurrentProject": {"cmd+alt+n"},
-			"openAddProject":             {"cmd+alt+o"},
-		},
-		"warning":         nil,
-		"filePathDisplay": "~/.cache/ai-agent-manager/keybindings.json",
-	}
-}
-
 func workspaceAppSettingsSnapshot() map[string]any {
 	settings, _ := state.LoadSettings()
 	settings = state.NormalizeSettings(settings)
@@ -444,6 +471,16 @@ func applyWorkspaceAppSettingsPatch(raw json.RawMessage) (map[string]any, error)
 		return nil, err
 	}
 	return workspaceAppSettingsSnapshot(), nil
+}
+
+func writeWorkspaceKeybindings(raw json.RawMessage) (state.KeybindingsSnapshot, error) {
+	var payload struct {
+		Bindings map[string][]string `json:"bindings"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return state.KeybindingsSnapshot{}, err
+	}
+	return state.SaveKeybindings(payload.Bindings)
 }
 
 func handleWorkspaceAuthStatus(w http.ResponseWriter, r *http.Request) {

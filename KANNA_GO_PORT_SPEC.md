@@ -1476,14 +1476,24 @@ Output:
 - Update checks read the latest GitHub release tag and keep development builds non-updateable.
 - Existing REST reload/restart/hooks endpoints now share the same backend helpers.
 
-### Task 15.3: Keybindings مطابق Kanna
+### Task 15.3: Keybindings مطابق Kanna ✅
 
 Acceptance criteria:
 
-- `settings.readKeybindings` پیاده شود.
-- `settings.writeKeybindings` پیاده شود.
-- default keybindings با Kanna برابر باشد.
-- shortcutهای frontend بدون تغییر رفتاری کار کنند.
+- `settings.readKeybindings` پیاده شود. ✅
+- `settings.writeKeybindings` پیاده شود. ✅
+- default keybindings با Kanna برابر باشد. ✅
+- shortcutهای frontend بدون تغییر رفتاری کار کنند. ✅
+
+Output:
+
+- [keybindings.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/state/keybindings.go)
+- [keybindings_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/state/keybindings_test.go)
+- [workspace_ws.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_ws.go)
+- Keybindings are persisted in `keybindings.json` under the app state directory and are created from Kanna defaults when missing.
+- Invalid or empty keybinding files fall back to Kanna defaults with a warning snapshot.
+- `settings.readKeybindings` and `settings.writeKeybindings` now work over the Go WebSocket backend.
+- A write emits a fresh keybindings snapshot to the active subscribed connection so frontend shortcuts update without a reload.
 
 ### Task 15.4: LLM provider settings مطابق Kanna
 
