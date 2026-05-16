@@ -14,7 +14,7 @@ func TestDiscoverSessionsInRootsFindsKnownAgentTranscripts(t *testing.T) {
 	geminiRoot := filepath.Join(root, "gemini", "tmp")
 
 	codexPath := writeDiscoveryFile(t,
-		filepath.Join(codexRoot, "2026", "05", "14", "rollout-codex.jsonl"),
+		filepath.Join(codexRoot, "2026", "05", "14", "rollout-2026-05-14T10-00-00-019e2a32-513d-7c02-a78c-ab1b0130635c.jsonl"),
 		`{"payload":{"type":"user_message","message":"hi"},"cwd":"/work/codex-project"}`+"\n",
 	)
 	claudePath := writeDiscoveryFile(t,
@@ -44,7 +44,7 @@ func TestDiscoverSessionsInRootsFindsKnownAgentTranscripts(t *testing.T) {
 		t.Fatalf("unexpected discovery report: %+v", report)
 	}
 
-	assertDiscoveredSession(t, appState, "codex:rollout-codex", "codex-project", codexPath)
+	assertDiscoveredSession(t, appState, "codex:019e2a32-513d-7c02-a78c-ab1b0130635c", "codex-project", codexPath)
 	assertDiscoveredSession(t, appState, "claude:claude-session", "claude-project", claudePath)
 	assertDiscoveredSession(t, appState, "gemini:gemini-session", "gemini-project", geminiPath)
 	if appState.LatestSessionKey != "gemini:gemini-session" {
@@ -86,6 +86,38 @@ func TestDiscoverSessionsDoesNotRegressNewerHookMetadata(t *testing.T) {
 	}
 	if !meta.UpdatedAt.Equal(newTime) {
 		t.Fatalf("expected newer timestamp to survive, got %s", meta.UpdatedAt)
+	}
+}
+
+func TestDiscoverSessionsPrefersExistingCanonicalSessionIDForCodexTranscript(t *testing.T) {
+	root := t.TempDir()
+	codexRoot := filepath.Join(root, "codex", "sessions")
+	codexPath := writeDiscoveryFile(t,
+		filepath.Join(codexRoot, "2026", "05", "15", "rollout-2026-05-15T09-23-21-019e2a32-513d-7c02-a78c-ab1b0130635c.jsonl"),
+		`{"cwd":"/work/codex-project","payload":{"type":"user_message","message":"hi"}}`+"\n",
+	)
+
+	appState := newAppState()
+	UpsertSession(appState, HookEvent{
+		Agent:          "codex",
+		SessionID:      "019e2a32-513d-7c02-a78c-ab1b0130635c",
+		TranscriptPath: codexPath,
+		Cwd:            "/work/codex-project",
+		UpdatedAt:      time.Date(2026, 5, 15, 9, 30, 0, 0, time.UTC).Format(time.RFC3339),
+	})
+
+	report, err := DiscoverSessionsInRoots(appState, []DiscoveryRoot{{Agent: "codex", Path: codexRoot}})
+	if err != nil {
+		t.Fatalf("DiscoverSessionsInRoots returned error: %v", err)
+	}
+	if report.Added != 0 {
+		t.Fatalf("expected no duplicate add, got %+v", report)
+	}
+	if _, ok := appState.Sessions["codex:rollout-2026-05-15T09-23-21-019e2a32-513d-7c02-a78c-ab1b0130635c"]; ok {
+		t.Fatal("discovery should not create a rollout-derived duplicate key")
+	}
+	if _, ok := appState.Sessions["codex:019e2a32-513d-7c02-a78c-ab1b0130635c"]; !ok {
+		t.Fatal("expected canonical codex key to remain")
 	}
 }
 

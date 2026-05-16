@@ -76,12 +76,40 @@
   color: var(--text);
 }
 
-.session-name {
+.session-primary {
   min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  direction: rtl;
+}
+
+.session-project-name {
+  flex: 0 0 auto;
+  max-width: 42%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-weight: 700;
+  unicode-bidi: plaintext;
+}
+
+.session-name-separator {
+  flex: 0 0 1px;
+  align-self: stretch;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--line-strong) 88%, transparent);
+  opacity: 0.72;
+}
+
+.session-name {
+  flex: 1 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 600;
+  unicode-bidi: plaintext;
 }
 
 .session-search-snippet {
@@ -212,6 +240,176 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.session-header {
+  grid-column: 2;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-self: center;
+  gap: 10px;
+  flex-direction: row-reverse;
+}
+
+.session-project-button,
+.session-title-button {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  padding: 0;
+}
+
+.session-project-button {
+  max-width: min(28vw, 19rem);
+  height: 44px;
+  padding: 7px 10px 7px 12px;
+  border: 1px solid color-mix(in srgb, var(--line-strong) 84%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  cursor: pointer;
+  transition:
+    border-color var(--ease),
+    background var(--ease),
+    transform var(--ease),
+    box-shadow var(--ease);
+}
+
+.session-project-button::before,
+.session-project-button::after {
+  font-family: "Material Symbols Outlined";
+  font-weight: 300;
+  line-height: 1;
+  -webkit-font-feature-settings: "liga";
+  font-feature-settings: "liga";
+}
+
+.session-project-button::before {
+  content: "folder";
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: color-mix(in srgb, var(--accent) 74%, var(--text));
+  display: inline-grid;
+  place-items: center;
+  font-size: 18px;
+  flex: 0 0 auto;
+}
+
+.session-project-button::after {
+  content: "chevron_left";
+  color: var(--text-muted);
+  font-size: 19px;
+  flex: 0 0 auto;
+  transition: transform var(--ease), color var(--ease);
+}
+
+.session-project-copy {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: grid;
+  gap: 2px;
+}
+
+.session-project-kicker {
+  color: var(--text-muted);
+  font-size: 0.67rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.session-project-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.92rem;
+  font-weight: 800;
+  unicode-bidi: plaintext;
+}
+
+.session-project-badge {
+  min-width: 1.7rem;
+  height: 1.7rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 18%, var(--surface-strong));
+  color: color-mix(in srgb, var(--accent) 76%, var(--text));
+  display: inline-grid;
+  place-items: center;
+  padding: 0 7px;
+  font-size: 0.76rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  flex: 0 0 auto;
+}
+
+.session-title-button {
+  max-width: min(42vw, 28rem);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: clamp(1rem, 1.6vw, 1.28rem);
+  font-weight: 800;
+  cursor: text;
+  border-bottom: 1px dashed color-mix(in srgb, var(--line-strong) 86%, transparent);
+  unicode-bidi: plaintext;
+}
+
+.session-title-button:hover,
+.session-project-button:hover {
+  color: var(--accent);
+}
+
+.session-project-button:hover {
+  border-color: color-mix(in srgb, var(--accent) 46%, var(--line-strong));
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transform: translateY(-1px);
+}
+
+.session-project-button:hover::after,
+.session-project-button:focus-visible::after {
+  color: var(--accent);
+  transform: translateX(-2px);
+}
+
+.session-project-button:active {
+  transform: translateY(0);
+}
+
+.session-project-button:focus-visible,
+.session-title-button:focus-visible,
+.session-title-input:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.session-title-separator {
+  width: 1px;
+  align-self: stretch;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--line-strong) 88%, transparent);
+}
+
+.session-title-input {
+  width: min(42vw, 28rem);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  color: var(--text);
+  padding: 8px 14px;
+  font: inherit;
+  font-weight: 800;
+  text-align: center;
 }
 
 .header-actions {
@@ -354,10 +552,85 @@
   height: 32px;
 }
 
+.project-sessions-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  display: grid;
+  place-items: center;
+  background: rgba(7, 11, 18, 0.54);
+  backdrop-filter: blur(10px);
+}
+
+.project-sessions-panel {
+  width: min(680px, calc(100vw - 32px));
+  max-height: min(78dvh, 760px);
+  border: 1px solid var(--line-strong);
+  border-radius: 22px;
+  background: color-mix(in srgb, var(--surface-strong) 96%, var(--bg));
+  box-shadow: var(--shadow);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.project-sessions-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.project-sessions-header p {
+  margin: 6px 0 0;
+}
+
+.project-sessions-list {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.project-session-item {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: transparent;
+  color: var(--text);
+  padding: 14px 16px;
+  display: grid;
+  gap: 6px;
+  text-align: right;
+}
+
+.project-session-item:hover,
+.project-session-item.active {
+  border-color: var(--rail-active-border);
+  background: var(--rail-active);
+}
+
+.project-session-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  unicode-bidi: plaintext;
+}
+
+.project-session-meta {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
 .jump-to-end {
   position: absolute;
   left: clamp(24px, 8vw, 128px);
-  bottom: var(--floating-action-bottom);
+  bottom: calc(var(--floating-action-bottom) + 104px);
   z-index: 20;
   width: 42px;
   height: 42px;

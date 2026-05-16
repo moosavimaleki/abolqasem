@@ -147,6 +147,7 @@ func upsertDiscoveredSession(appState *AppState, pathIndex map[string]string, ro
 	sessionID := firstNonEmptyString(
 		pathIndex[transcriptPathIndexKey(root.Agent, transcriptPath)],
 		probe.SessionID,
+		discoveredCodexSessionID(root, transcriptPath),
 		discoveredSessionID(root, transcriptPath),
 	)
 	event := HookEvent{
@@ -161,6 +162,18 @@ func upsertDiscoveredSession(appState *AppState, pathIndex map[string]string, ro
 	before, existed := appState.Sessions[key]
 	meta := UpsertSession(appState, event)
 	return before, existed, meta
+}
+
+func discoveredCodexSessionID(root DiscoveryRoot, transcriptPath string) string {
+	if root.Agent != "codex" {
+		return ""
+	}
+	base := strings.TrimSuffix(filepath.Base(transcriptPath), filepath.Ext(transcriptPath))
+	parts := strings.Split(base, "-")
+	if len(parts) < 6 || strings.ToLower(parts[0]) != "rollout" {
+		return ""
+	}
+	return strings.Join(parts[len(parts)-5:], "-")
 }
 
 func transcriptPathIndex(appState *AppState) map[string]string {

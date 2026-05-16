@@ -1,4 +1,18 @@
-import { connectSessionEvents, fetchFilePreview, fetchMessages, fetchSessionSearch, fetchSessions } from "./api.js";
+import {
+  connectSessionEvents,
+  fetchAppSettings,
+  fetchAgentStatus,
+  fetchFilePreview,
+  fetchHookStatus,
+  fetchMessages,
+  fetchSessionSearch,
+  fetchSessions,
+  reloadSessions,
+  restartServer,
+  sendAgentTurn,
+  updateAppSettings,
+  updateSession,
+} from "./api.js";
 import { renderMessageContent } from "./content-renderer.js";
 import { renderReaderDocument } from "./reader-renderer.js";
 import { applySettings, clampFontSize, loadSettings, saveSettings, syncSettingsUI } from "./settings.js";
@@ -16,6 +30,18 @@ import {
 } from "./utils.js";
 
 const SESSION_PAGE_SIZE = 100;
+const DEFAULT_APP_SETTINGS = {
+  hook_updates: true,
+  hook_follow_mode: "auto",
+  ignore_hook_navigation_while_typing: true,
+  filesystem_discovery: true,
+  default_agent: "codex",
+  agent_models: {
+    codex: "",
+    claude: "",
+    gemini: "",
+  },
+};
 
 export function createViewerApp() {
   const state = {
@@ -34,26 +60,45 @@ export function createViewerApp() {
     visibleMessages: [],
     currentSessionKey: "",
     currentSessionName: "",
+    currentProjectName: "",
     oldestCursor: "",
     hasMoreBefore: false,
     loadingOlder: false,
     loadRequestId: 0,
     search: "",
     searchScope: "session",
+    editingSessionTitle: false,
+    projectSessionCounts: {},
     reader: {
       open: false,
       messageId: "",
       search: "",
     },
     settings: loadSettings(),
+    appSettings: { ...DEFAULT_APP_SETTINGS },
     eventSource: null,
     sessionNoticeTimer: null,
     sessionNoticeInterval: null,
+    appSettingsStatusTimer: null,
+    agentStatus: { agents: [], codex: { available: false } },
+    composerAgent: DEFAULT_APP_SETTINGS.default_agent,
+    agentSending: false,
+    composerNewSession: false,
     filePreviewRequestId: 0,
     filePreviewDirectURL: "",
     filePreviewFromRoute: false,
     stickyReaderFrame: 0,
     stickyReaderMessageId: "",
+    projectSessions: {
+      open: false,
+      project: "",
+      items: [],
+      nextOffset: 0,
+      hasMore: false,
+      total: 0,
+      loading: false,
+      requestId: 0,
+    },
   };
 
   const els = {
@@ -61,8 +106,23 @@ export function createViewerApp() {
     sessionsRail: document.getElementById("sessions-rail"),
     sessionsList: document.getElementById("sessions-list"),
     sessionCount: document.getElementById("session-count"),
+    sessionHeader: document.getElementById("session-header"),
+    sessionProject: document.getElementById("session-project"),
+    sessionProjectLabel: document.getElementById("session-project-label"),
+    sessionProjectBadge: document.getElementById("session-project-badge"),
+    sessionTitleSeparator: document.getElementById("session-title-separator"),
+    sessionTitleButton: document.getElementById("session-title-button"),
+    sessionTitleInput: document.getElementById("session-title-input"),
     sessionTitle: document.getElementById("session-title"),
     chat: document.getElementById("chat-messages"),
+    agentComposer: document.getElementById("agent-composer"),
+    agentComposerLabel: document.getElementById("agent-composer-label"),
+    agentComposerAgent: document.getElementById("agent-composer-agent"),
+    agentComposerModel: document.getElementById("agent-composer-model"),
+    agentModelOptions: document.getElementById("agent-model-options"),
+    agentNewSession: document.getElementById("agent-new-session"),
+    agentComposerInput: document.getElementById("agent-composer-input"),
+    agentComposerSubmit: document.getElementById("agent-composer-submit"),
     stickyReaderAction: document.getElementById("sticky-reader-action"),
     openSessions: document.getElementById("open-sessions"),
     closeSessions: document.getElementById("close-sessions"),
@@ -79,12 +139,24 @@ export function createViewerApp() {
     openSettings: document.getElementById("open-settings"),
     settingsPopover: document.getElementById("settings-popover"),
     closeSettings: document.getElementById("close-settings"),
+    appSettingsModal: document.getElementById("app-settings-modal"),
+    closeAppSettings: document.getElementById("close-app-settings"),
+    appSettingsReloadSessions: document.getElementById("app-settings-reload-sessions"),
+    appSettingsCheckHooks: document.getElementById("app-settings-check-hooks"),
+    appSettingsCopyURL: document.getElementById("app-settings-copy-url"),
+    appSettingsRestartServer: document.getElementById("app-settings-restart-server"),
+    appSettingsStatus: document.getElementById("app-settings-status"),
+    appHooksStatus: document.getElementById("app-hooks-status"),
     filePreview: document.getElementById("file-preview"),
     filePreviewTitle: document.getElementById("file-preview-title"),
     filePreviewMeta: document.getElementById("file-preview-meta"),
     filePreviewBody: document.getElementById("file-preview-body"),
     openFilePreviewLink: document.getElementById("open-file-preview-link"),
     closeFilePreview: document.getElementById("close-file-preview"),
+    projectSessionsModal: document.getElementById("project-sessions-modal"),
+    projectSessionsMeta: document.getElementById("project-sessions-meta"),
+    projectSessionsList: document.getElementById("project-sessions-list"),
+    closeProjectSessions: document.getElementById("close-project-sessions"),
     readerPage: document.getElementById("reader-page"),
     readerScroll: document.getElementById("reader-scroll"),
     readerContent: document.getElementById("reader-content"),
@@ -101,6 +173,8 @@ export function createViewerApp() {
       applySettings(state.settings);
       syncSettingsUI(state.settings, els.settingsPopover);
       bindEvents();
+      loadAppSettings();
+      loadAgentStatus();
       loadSessionList();
       state.eventSource = connectSessionEvents(handleSessionEvent);
       openInitialFileRoute();
@@ -126,7 +200,33 @@ export function createViewerApp() {
     els.searchScopeChip.addEventListener("click", () => {
       removeSessionSearchScope();
     });
+    els.agentComposer.addEventListener("submit", handleAgentComposerSubmit);
+    els.agentComposerAgent.addEventListener("change", handleComposerAgentChange);
+    els.agentComposerModel.addEventListener("change", handleComposerModelChange);
+    els.agentComposerInput.addEventListener("input", () => {
+      autosizeComposer();
+      syncAgentComposer();
+    });
+    els.agentComposerInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        els.agentComposer.requestSubmit();
+      }
+    });
+    els.agentNewSession.addEventListener("click", () => {
+      state.composerNewSession = !state.composerNewSession;
+      syncAgentComposer();
+      els.agentComposerInput.focus();
+    });
     els.refreshSession.addEventListener("click", refreshCurrentSession);
+    els.sessionProject.addEventListener("click", openProjectSessionsModal);
+    els.sessionTitleButton.addEventListener("click", beginSessionTitleEdit);
+    els.sessionTitleInput.addEventListener("keydown", handleSessionTitleInputKeydown);
+    els.sessionTitleInput.addEventListener("blur", () => {
+      if (state.editingSessionTitle) {
+        commitSessionTitleEdit();
+      }
+    });
     els.jumpToEnd.addEventListener("click", () => {
       scrollToBottom(els.chat);
       syncJumpToEnd();
@@ -144,13 +244,16 @@ export function createViewerApp() {
     els.closeSessionInfo.addEventListener("click", closeSessionInfoPopover);
 
     els.openSettings.addEventListener("click", () => {
-      toggleSettingsPopover(els.openSettings);
+      openAppSettingsModal();
     });
     els.readerSettings.addEventListener("click", () => {
       toggleSettingsPopover(els.readerSettings);
     });
     els.closeSettings.addEventListener("click", closeSettingsPopover);
     els.settingsPopover.addEventListener("click", handleSettingsClick);
+    els.closeAppSettings.addEventListener("click", closeAppSettingsModal);
+    els.appSettingsModal.addEventListener("click", handleAppSettingsClick);
+    els.appSettingsModal.addEventListener("change", handleAppSettingsChange);
 
     els.closeReader.addEventListener("click", closeReader);
     els.readerSearchToggle.addEventListener("click", () => {
@@ -165,6 +268,13 @@ export function createViewerApp() {
         window.open(state.filePreviewDirectURL, "_blank", "noopener,noreferrer");
       }
     });
+    els.closeProjectSessions.addEventListener("click", closeProjectSessionsModal);
+    els.projectSessionsModal.addEventListener("click", (event) => {
+      if (event.target === els.projectSessionsModal) {
+        closeProjectSessionsModal();
+      }
+    });
+    els.projectSessionsList.addEventListener("scroll", maybeLoadMoreProjectSessions);
     els.closeFilePreview.addEventListener("click", closeFilePreview);
     els.filePreview.addEventListener("click", (event) => {
       if (!state.filePreviewFromRoute && event.target === els.filePreview) {
@@ -207,10 +317,23 @@ export function createViewerApp() {
         && !target.closest("#active-session-info")) {
         closeSessionInfoPopover();
       }
+      if (state.editingSessionTitle
+        && !els.sessionHeader.contains(target)
+        && !target.closest("#session-title-button")) {
+        commitSessionTitleEdit();
+      }
     });
 
     document.addEventListener("keydown", (event) => {
       if (event.key !== "Escape") {
+        return;
+      }
+      if (!els.projectSessionsModal.classList.contains("hidden")) {
+        closeProjectSessionsModal();
+        return;
+      }
+      if (!els.appSettingsModal.classList.contains("hidden")) {
+        closeAppSettingsModal();
         return;
       }
       if (!els.settingsPopover.classList.contains("hidden")) {
@@ -219,6 +342,10 @@ export function createViewerApp() {
       }
       if (!els.sessionInfoPopover.classList.contains("hidden")) {
         closeSessionInfoPopover();
+        return;
+      }
+      if (state.editingSessionTitle) {
+        cancelSessionTitleEdit();
         return;
       }
       if (!els.filePreview.classList.contains("hidden") && !state.filePreviewFromRoute) {
@@ -262,9 +389,17 @@ export function createViewerApp() {
       });
       const page = data.items || [];
       state.sessions = reset ? page : mergeSessionPages(state.sessions, page);
+      state.sessions = dedupeSessions(state.sessions);
       state.sessionsNextOffset = Number(data.next_offset || 0);
       state.sessionsHasMore = state.sessionsNextOffset > 0;
       state.sessionsTotal = Number(data.total || state.sessions.length);
+      if (state.currentSessionKey) {
+        const active = currentSession();
+        state.currentSessionName = sessionDisplayName(active);
+        state.currentProjectName = normalizeInlineText(active?.project_name || "");
+        syncCurrentSessionHeader();
+        syncAgentComposer();
+      }
       renderSessions(getVisibleSessions());
       syncSessionCount();
 
@@ -377,9 +512,36 @@ export function createViewerApp() {
 
   function mergeSessionPages(existing, incoming) {
     const merged = new Map();
-    existing.forEach((session) => merged.set(session.key, session));
-    incoming.forEach((session) => merged.set(session.key, session));
+    existing.forEach((session) => merged.set(sessionIdentity(session), session));
+    incoming.forEach((session) => merged.set(sessionIdentity(session), session));
     return [...merged.values()].sort((a, b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0));
+  }
+
+  function dedupeSessions(items) {
+    const merged = new Map();
+    items.forEach((session) => {
+      merged.set(sessionIdentity(session), session);
+    });
+    return [...merged.values()].sort((a, b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0));
+  }
+
+  function sessionIdentity(session) {
+    if (!session) {
+      return "";
+    }
+    const transcriptPath = normalizeInlineText(session.transcript_path || "");
+    if (transcriptPath) {
+      return transcriptPath;
+    }
+    const key = normalizeInlineText(session.key || "");
+    if (key) {
+      return key;
+    }
+    return [
+      normalizeInlineText(session.agent || "unknown"),
+      normalizeInlineText(session.session_id || ""),
+      normalizeInlineText(session.project_name || ""),
+    ].join(":");
   }
 
   function resetGlobalSearchResults() {
@@ -425,7 +587,7 @@ export function createViewerApp() {
     try {
       await loadSessionList({ loadInitial: false });
       if (sessionKey && state.sessions.some((item) => item.key === sessionKey)) {
-        await loadSession(sessionKey);
+        await refreshCurrentSessionContent({ stickBottom: true });
         return;
       }
       if (state.sessions.length > 0) {
@@ -437,11 +599,35 @@ export function createViewerApp() {
     }
   }
 
+  async function refreshCurrentSessionContent(options = {}) {
+    if (!state.currentSessionKey) {
+      return;
+    }
+
+    const requestId = ++state.loadRequestId;
+    const data = await fetchMessages(state.currentSessionKey, { limit: 40 });
+    if (requestId !== state.loadRequestId) {
+      return;
+    }
+    if (data.status === "metadata_only") {
+      renderEmptyState("متن این نشست در دسترس نیست.", "");
+      return;
+    }
+    state.messages = (data.items || []).map(normalizeMessage);
+    state.oldestCursor = data.oldest_cursor || "";
+    state.hasMoreBefore = Boolean(data.has_more_before);
+    renderMessages({ stickBottom: options.stickBottom !== false });
+    if (state.reader.open) {
+      renderReader();
+    }
+  }
+
   function renderSessions(sessions) {
     hideSessionTooltip();
     els.sessionsList.replaceChildren();
+    const uniqueSessions = dedupeSessions(sessions);
 
-    if (sessions.length === 0) {
+    if (uniqueSessions.length === 0) {
       const empty = document.createElement("div");
       empty.className = "session-list-empty";
       empty.textContent = state.searchResultsLoading
@@ -453,18 +639,30 @@ export function createViewerApp() {
       return;
     }
 
-    sessions.forEach((session) => {
+    uniqueSessions.forEach((session) => {
       const item = document.createElement("button");
       item.type = "button";
       item.className = "session-item";
       item.classList.toggle("active", session.key === state.currentSessionKey);
 
+      const textWrap = document.createElement("span");
+      textWrap.className = "session-primary";
+
+      const project = document.createElement("span");
+      project.className = "session-project-name";
+      project.textContent = normalizeInlineText(session.project_name || "پروژه نامشخص");
+
+      const separator = document.createElement("span");
+      separator.className = "session-name-separator";
+      separator.setAttribute("aria-hidden", "true");
+
       const title = document.createElement("span");
       title.className = "session-name";
-      const sessionLabel = formatSessionListLabel(session);
+      const sessionLabel = sessionDisplayName(session);
       title.textContent = sessionLabel;
-      title.title = sessionLabel;
-      item.title = sessionLabel;
+
+      textWrap.append(project, separator, title);
+      item.title = `${project.textContent} / ${sessionLabel}`;
       const searchSnippet = renderSessionSearchSnippet(session);
 
       const info = document.createElement("span");
@@ -475,7 +673,7 @@ export function createViewerApp() {
       info.addEventListener("mousemove", () => positionSessionTooltip(info, getSessionTooltip()));
       info.addEventListener("mouseleave", hideSessionTooltip);
 
-      item.append(info, title);
+      item.append(info, textWrap);
       if (searchSnippet) {
         item.appendChild(searchSnippet);
       }
@@ -524,9 +722,12 @@ export function createViewerApp() {
   function renderSessionTooltip(session) {
     const fragment = document.createDocumentFragment();
     [
-      ["مدل", agentLabel(session.agent)],
+      ["نام نشست", sessionDisplayName(session)],
+      ["پروژه", normalizeInlineText(session.project_name || "پروژه نامشخص")],
+      ["عامل", agentLabel(session.agent)],
+      ["مدل", normalizeInlineText(session.model || "نامشخص")],
       ["وضعیت", sessionStatus(session)],
-      ["شروع", formatTime(session.updated_at)],
+      ["آخرین فعالیت", formatTime(session.updated_at)],
       ["مسیر", session.cwd || "نامشخص"],
       ["اولین پیام", summarizeSessionFirstPreview(session)],
       ["آخرین پیام", summarizeSessionPreview(session)],
@@ -613,11 +814,17 @@ export function createViewerApp() {
     tooltip.classList.toggle("placed-right", !placeLeft);
   }
 
-  async function loadSession(sessionKey) {
+  async function loadSession(sessionKey, options = {}) {
     const requestId = ++state.loadRequestId;
-    const session = state.sessions.find((item) => item.key === sessionKey);
+    const hintedSession = options.sessionHint ? buildSessionStub(options.sessionHint) : null;
+    const existingSession = state.sessions.find((item) => item.key === sessionKey);
+    const session = existingSession || hintedSession;
+    if (hintedSession && !existingSession) {
+      state.sessions = mergeSessionPages(state.sessions, [hintedSession]);
+    }
     state.currentSessionKey = sessionKey;
-    state.currentSessionName = session?.project_name || session?.session_id || "نشست بدون نام";
+    state.currentSessionName = sessionDisplayName(session);
+    state.currentProjectName = normalizeInlineText(session?.project_name || "");
     state.messages = [];
     state.visibleMessages = [];
     state.oldestCursor = "";
@@ -628,7 +835,8 @@ export function createViewerApp() {
     els.messageSearch.value = "";
     syncSearchScope();
     collapseSearch(els.messageSearchShell, els.messageSearch);
-    els.sessionTitle.textContent = state.currentSessionName;
+    syncCurrentSessionHeader();
+    syncAgentComposer();
     renderSessions(getVisibleSessions());
     renderEmptyState("در حال بارگذاری نشست...", "");
     closeSessionInfoPopover();
@@ -1265,9 +1473,9 @@ export function createViewerApp() {
 
   function getVisibleSessions() {
     if (isGlobalSearchActive()) {
-      return state.searchResults;
+      return dedupeSessions(state.searchResults);
     }
-    return state.sessions;
+    return dedupeSessions(state.sessions);
   }
 
   function isGlobalSearchActive() {
@@ -1299,6 +1507,540 @@ export function createViewerApp() {
     empty.className = "empty-state";
     empty.textContent = "جست‌وجو در متن نشست‌ها انجام نشد.";
     els.chat.appendChild(empty);
+  }
+
+  async function loadAppSettings() {
+    try {
+      state.appSettings = normalizeAppSettings(await fetchAppSettings());
+      renderAppSettingsUI();
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
+  async function loadAgentStatus() {
+    try {
+      state.agentStatus = normalizeAgentStatus(await fetchAgentStatus());
+    } catch (error) {
+      console.error(error);
+      state.agentStatus = normalizeAgentStatus();
+    } finally {
+      syncAgentComposer();
+    }
+  }
+
+  function normalizeAgentStatus(status = {}) {
+    const fallbackCodex = status.codex || { available: false, capabilities: {} };
+    const agents = Array.isArray(status.agents) && status.agents.length > 0
+      ? status.agents
+      : [
+        {
+          agent: "codex",
+          label: "کدکس",
+          available: Boolean(fallbackCodex.available),
+          controllable: true,
+          default_model: fallbackCodex.default_model || "",
+          models: Array.isArray(fallbackCodex.models) ? fallbackCodex.models : [],
+          capabilities: fallbackCodex.capabilities || {},
+        },
+      ];
+    const normalizedAgents = agents.map((item) => ({
+      agent: normalizeAgentName(item.agent),
+      label: item.label || agentLabel(item.agent),
+      available: Boolean(item.available),
+      controllable: Boolean(item.controllable),
+      default_model: normalizeInlineText(item.default_model || ""),
+      models: normalizeAgentModels(item.models || []),
+      error: item.error || "",
+      capabilities: item.capabilities || {},
+    })).filter((item) => item.agent);
+    return {
+      ...status,
+      agents: normalizedAgents,
+      codex: {
+        ...fallbackCodex,
+        available: Boolean(fallbackCodex.available),
+        models: normalizeAgentModels(fallbackCodex.models || []),
+      },
+    };
+  }
+
+  function normalizeAgentModels(models = []) {
+    const seen = new Set();
+    return models.map((item) => {
+      const model = normalizeInlineText(item.model || item.id || "");
+      if (!model || seen.has(model)) {
+        return null;
+      }
+      seen.add(model);
+      return {
+        id: normalizeInlineText(item.id || model),
+        model,
+        display_name: normalizeInlineText(item.display_name || item.displayName || model),
+        description: normalizeInlineText(item.description || ""),
+        is_default: Boolean(item.is_default || item.isDefault),
+      };
+    }).filter(Boolean);
+  }
+
+  function normalizeAgentName(agent) {
+    const value = normalizeInlineText(agent || "").toLowerCase();
+    return ["codex", "claude", "gemini"].includes(value) ? value : "";
+  }
+
+  function getAgentStatus(agentName) {
+    const normalized = normalizeAgentName(agentName);
+    return state.agentStatus.agents.find((item) => item.agent === normalized) || null;
+  }
+
+  function getDefaultAgent() {
+    const configured = normalizeAgentName(state.appSettings.default_agent);
+    if (configured && getAgentStatus(configured)) {
+      return configured;
+    }
+    return state.agentStatus.agents[0]?.agent || "codex";
+  }
+
+  function getSelectedAgent(session, newSession) {
+    if (!newSession && session?.agent) {
+      return normalizeAgentName(session.agent);
+    }
+    return normalizeAgentName(state.composerAgent) || getDefaultAgent();
+  }
+
+  function getConfiguredModel(agentName) {
+    const agentKey = normalizeAgentName(agentName);
+    return normalizeInlineText(state.appSettings.agent_models?.[agentKey] || "");
+  }
+
+  function getSuggestedDefaultModel(agentName) {
+    return normalizeInlineText(getAgentStatus(agentName)?.default_model || "");
+  }
+
+  function getComposerModel(agentName) {
+    return normalizeInlineText(els.agentComposerModel.value || "");
+  }
+
+  function formatComposerModelLabel(agentName, model) {
+    if (model) {
+      return model;
+    }
+    const suggested = getSuggestedDefaultModel(agentName);
+    return suggested ? `پیش‌فرض agent (${suggested})` : "مدل پیش‌فرض agent";
+  }
+
+  function renderComposerAgentOptions(selectedAgent, locked) {
+    els.agentComposerAgent.replaceChildren();
+    const knownAgents = state.agentStatus.agents.length > 0
+      ? state.agentStatus.agents
+      : [{ agent: "codex", label: "کدکس", available: false, controllable: true, capabilities: {} }];
+    knownAgents.forEach((item) => {
+      const option = document.createElement("option");
+      option.value = item.agent;
+      option.textContent = item.label || agentLabel(item.agent);
+      option.disabled = locked
+        ? item.agent !== selectedAgent
+        : !item.available || !item.controllable || !item.capabilities?.can_send;
+      option.selected = item.agent === selectedAgent;
+      els.agentComposerAgent.appendChild(option);
+    });
+    els.agentComposerAgent.value = selectedAgent;
+    els.agentComposerAgent.disabled = locked || state.agentSending;
+  }
+
+  function renderComposerModelOptions(agentName) {
+    const models = getAgentStatus(agentName)?.models || [];
+    els.agentModelOptions.replaceChildren();
+    models.forEach((item) => {
+      const option = document.createElement("option");
+      option.value = item.model;
+      option.label = item.display_name || item.model;
+      els.agentModelOptions.appendChild(option);
+    });
+    const configuredModel = getConfiguredModel(agentName);
+    if (document.activeElement !== els.agentComposerModel) {
+      els.agentComposerModel.value = configuredModel;
+    }
+    const suggestedDefault = getSuggestedDefaultModel(agentName);
+    els.agentComposerModel.placeholder = suggestedDefault ? `default: ${suggestedDefault}` : "model";
+    els.agentComposerModel.disabled = state.agentSending;
+  }
+
+  function syncAgentComposer() {
+    const session = currentSession();
+    const messageReady = normalizeInlineText(els.agentComposerInput.value).length > 0;
+    const forcedNewSession = state.composerNewSession || !session || !state.currentSessionKey;
+    const selectedAgent = getSelectedAgent(session, forcedNewSession);
+    const selectedStatus = getAgentStatus(selectedAgent);
+    const canSend = Boolean(selectedStatus?.available && selectedStatus?.controllable && selectedStatus?.capabilities?.can_send);
+    const isSameAgentSession = Boolean(session?.agent && normalizeAgentName(session.agent) === selectedAgent);
+    const hasCwd = Boolean(normalizeInlineText(session?.cwd || state.currentProjectName));
+    const canContinue = canSend && isSameAgentSession && Boolean(state.currentSessionKey);
+    const canStart = canSend && hasCwd;
+    const newSession = forcedNewSession || !canContinue;
+    const enabled = !state.agentSending && messageReady && (newSession ? canStart : canContinue);
+    const model = getComposerModel(selectedAgent);
+    const modelLabel = formatComposerModelLabel(selectedAgent, model);
+
+    els.agentComposer.classList.toggle("is-sending", state.agentSending);
+    els.agentComposer.classList.toggle("is-unavailable", !canSend);
+    els.agentComposer.classList.toggle("is-new-session", newSession);
+    els.agentComposerSubmit.disabled = !enabled;
+    els.agentNewSession.disabled = state.agentSending || !canStart;
+    els.agentNewSession.classList.toggle("active", newSession);
+    renderComposerAgentOptions(selectedAgent, !newSession);
+    renderComposerModelOptions(selectedAgent);
+
+    if (state.agentSending) {
+      els.agentComposerLabel.textContent = `${agentLabel(selectedAgent)} با ${modelLabel} در حال کار است...`;
+      return;
+    }
+    if (!selectedStatus?.available) {
+      els.agentComposerLabel.textContent = `${agentLabel(selectedAgent)} در PATH در دسترس نیست.`;
+      return;
+    }
+    if (!selectedStatus?.controllable || !selectedStatus?.capabilities?.can_send) {
+      els.agentComposerLabel.textContent = `ارسال پیام برای ${agentLabel(selectedAgent)} هنوز پیاده‌سازی نشده است.`;
+      return;
+    }
+    if (!session) {
+      els.agentComposerLabel.textContent = "برای شروع، یک نشست پروژه‌دار را انتخاب کنید.";
+      return;
+    }
+    if (newSession) {
+      els.agentComposerLabel.textContent = `نشست جدید ${agentLabel(selectedAgent)} با ${modelLabel} در ${normalizeInlineText(session.project_name || "این پروژه")}`;
+      return;
+    }
+    if (canContinue) {
+      els.agentComposerLabel.textContent = `ادامه همین نشست با ${agentLabel(selectedAgent)} / ${modelLabel}`;
+      return;
+    }
+    els.agentComposerLabel.textContent = "این نشست فعلاً فقط قابل مشاهده است.";
+  }
+
+  async function handleComposerAgentChange() {
+    const nextAgent = normalizeAgentName(els.agentComposerAgent.value) || "codex";
+    state.composerAgent = nextAgent;
+    await updateAppSettingsState({ default_agent: nextAgent }, { silent: true });
+    syncAgentComposer();
+  }
+
+  async function handleComposerModelChange() {
+    const session = currentSession();
+    const forcedNewSession = state.composerNewSession || !session || !state.currentSessionKey;
+    const agentName = getSelectedAgent(session, forcedNewSession);
+    const model = normalizeInlineText(els.agentComposerModel.value || "");
+    await updateAgentModelSetting(agentName, model, { silent: true });
+    syncAgentComposer();
+  }
+
+  async function updateAgentModelSetting(agentName, model, options = {}) {
+    const agentKey = normalizeAgentName(agentName);
+    if (!agentKey) {
+      return;
+    }
+    const agentModels = { ...(state.appSettings.agent_models || {}), [agentKey]: model };
+    await updateAppSettingsState({ agent_models: agentModels }, options);
+  }
+
+  function autosizeComposer() {
+    const input = els.agentComposerInput;
+    input.style.height = "auto";
+    input.style.height = `${Math.min(160, Math.max(42, input.scrollHeight))}px`;
+  }
+
+  async function handleAgentComposerSubmit(event) {
+    event.preventDefault();
+    if (state.agentSending) {
+      return;
+    }
+    const message = els.agentComposerInput.value.trim();
+    if (!message) {
+      return;
+    }
+    const session = currentSession();
+    const forcedNewSession = state.composerNewSession || !session || !state.currentSessionKey;
+    const selectedAgent = getSelectedAgent(session, forcedNewSession);
+    const selectedStatus = getAgentStatus(selectedAgent);
+    const newSession = forcedNewSession || normalizeAgentName(session?.agent) !== selectedAgent;
+    if (!selectedStatus?.available || !selectedStatus?.controllable || !selectedStatus?.capabilities?.can_send || !session?.cwd) {
+      syncAgentComposer();
+      return;
+    }
+    const model = getComposerModel(selectedAgent);
+
+    state.agentSending = true;
+    syncAgentComposer();
+    appendPendingUserMessage(message);
+    els.agentComposerInput.value = "";
+    autosizeComposer();
+
+    try {
+      const data = await sendAgentTurn({
+        agent: selectedAgent,
+        session_key: newSession ? "" : state.currentSessionKey,
+        cwd: session.cwd,
+        message,
+        new: newSession,
+        model,
+      });
+      if (data.session) {
+        applySessionUpdate(data.session);
+      }
+      const nextKey = data.session_key || data.session?.key || state.currentSessionKey;
+      state.composerNewSession = false;
+      if (nextKey) {
+        await loadSession(nextKey, { sessionHint: data.session });
+      }
+      await loadSessionList({ loadInitial: false });
+    } catch (error) {
+      console.error(error);
+      appendComposerError(error.message || "ارسال پیام انجام نشد.");
+    } finally {
+      state.agentSending = false;
+      syncAgentComposer();
+    }
+  }
+
+  function appendPendingUserMessage(text) {
+    if (!state.currentSessionKey) {
+      return;
+    }
+    const message = normalizeMessage({
+      id: `pending-${Date.now()}`,
+      index: state.messages.length + 1,
+      role: "user",
+      text,
+      created_at: new Date().toISOString(),
+    });
+    state.messages = [...state.messages, message];
+    renderMessages({ stickBottom: true });
+  }
+
+  function appendComposerError(text) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "composer-error";
+    wrapper.textContent = text;
+    els.chat.appendChild(wrapper);
+    scrollToBottom(els.chat);
+  }
+
+  function normalizeAppSettings(settings = {}) {
+    const next = { ...DEFAULT_APP_SETTINGS, ...settings };
+    next.agent_models = {
+      ...DEFAULT_APP_SETTINGS.agent_models,
+      ...(settings.agent_models || {}),
+    };
+    if (!["auto", "notice", "off"].includes(next.hook_follow_mode)) {
+      next.hook_follow_mode = DEFAULT_APP_SETTINGS.hook_follow_mode;
+    }
+    next.default_agent = normalizeAgentName(next.default_agent) || DEFAULT_APP_SETTINGS.default_agent;
+    Object.keys(next.agent_models).forEach((agentName) => {
+      const normalized = normalizeAgentName(agentName);
+      if (!normalized) {
+        delete next.agent_models[agentName];
+        return;
+      }
+      next.agent_models[normalized] = normalizeInlineText(next.agent_models[agentName] || "");
+      if (normalized !== agentName) {
+        delete next.agent_models[agentName];
+      }
+    });
+    next.hook_updates = Boolean(next.hook_updates);
+    next.ignore_hook_navigation_while_typing = Boolean(next.ignore_hook_navigation_while_typing);
+    next.filesystem_discovery = Boolean(next.filesystem_discovery);
+    state.composerAgent = normalizeAgentName(state.composerAgent || next.default_agent) || next.default_agent;
+    return next;
+  }
+
+  function openAppSettingsModal() {
+    renderAppSettingsUI();
+    els.appSettingsModal.classList.remove("hidden");
+    els.appSettingsModal.setAttribute("aria-hidden", "false");
+    setAppSettingsStatus("");
+  }
+
+  function closeAppSettingsModal() {
+    els.appSettingsModal.classList.add("hidden");
+    els.appSettingsModal.setAttribute("aria-hidden", "true");
+  }
+
+  function renderAppSettingsUI() {
+    const settings = state.appSettings;
+    els.appSettingsModal.querySelectorAll("[data-app-toggle]").forEach((button) => {
+      const key = button.dataset.appToggle;
+      const enabled = Boolean(settings[key]);
+      button.classList.toggle("active", enabled);
+      button.setAttribute("aria-pressed", String(enabled));
+    });
+    els.appSettingsModal.querySelectorAll("[data-app-setting]").forEach((group) => {
+      const key = group.dataset.appSetting;
+      group.querySelectorAll("[data-value]").forEach((button) => {
+        button.classList.toggle("active", String(button.dataset.value) === String(settings[key]));
+      });
+    });
+    els.appSettingsModal.querySelectorAll("[data-app-agent-model]").forEach((input) => {
+      const agentName = normalizeAgentName(input.dataset.appAgentModel);
+      input.value = normalizeInlineText(settings.agent_models?.[agentName] || "");
+    });
+  }
+
+  async function handleAppSettingsChange(event) {
+    const input = event.target.closest("[data-app-agent-model]");
+    if (!input || !els.appSettingsModal.contains(input)) {
+      return;
+    }
+    const agentName = normalizeAgentName(input.dataset.appAgentModel);
+    const model = normalizeInlineText(input.value || "");
+    await updateAgentModelSetting(agentName, model);
+    syncAgentComposer();
+  }
+
+  async function handleAppSettingsClick(event) {
+    if (event.target === els.appSettingsModal) {
+      closeAppSettingsModal();
+      return;
+    }
+
+    const button = event.target.closest("button");
+    if (!button || !els.appSettingsModal.contains(button)) {
+      return;
+    }
+
+    const toggleKey = button.dataset.appToggle;
+    if (toggleKey) {
+      await updateAppSettingsState({ [toggleKey]: !Boolean(state.appSettings[toggleKey]) });
+      return;
+    }
+
+    const group = button.closest("[data-app-setting]");
+    if (group && button.dataset.value) {
+      const key = group.dataset.appSetting;
+      if (key === "default_agent") {
+        state.composerAgent = normalizeAgentName(button.dataset.value) || state.composerAgent;
+      }
+      await updateAppSettingsState({ [key]: button.dataset.value });
+      syncAgentComposer();
+      return;
+    }
+
+    if (button.id === "app-settings-reload-sessions") {
+      await runAppSettingsAction(button, "در حال بارگذاری نشست‌ها...", async () => {
+        await reloadSessions();
+        await loadSessionList({ loadInitial: false });
+        setAppSettingsStatus("نشست‌ها دوباره بارگذاری شدند.");
+      });
+      return;
+    }
+
+    if (button.id === "app-settings-check-hooks") {
+      await runAppSettingsAction(button, "در حال بررسی hookها...", async () => {
+        const data = await fetchHookStatus();
+        renderHookStatus(data.items || []);
+        setAppSettingsStatus("وضعیت hookها به‌روزرسانی شد.");
+      });
+      return;
+    }
+
+    if (button.id === "app-settings-copy-url") {
+      await copyText(window.location.origin);
+      setAppSettingsStatus("آدرس محلی کپی شد.");
+      return;
+    }
+
+    if (button.id === "app-settings-restart-server") {
+      await runAppSettingsAction(button, "در حال ری‌استارت سرور...", async () => {
+        await restartServer();
+        setAppSettingsStatus("درخواست ری‌استارت ثبت شد. چند ثانیه بعد صفحه را تازه کنید.");
+      });
+    }
+  }
+
+  async function updateAppSettingsState(patch, options = {}) {
+    const previous = state.appSettings;
+    state.appSettings = normalizeAppSettings({ ...state.appSettings, ...patch });
+    renderAppSettingsUI();
+    try {
+      state.appSettings = normalizeAppSettings(await updateAppSettings(patch));
+      renderAppSettingsUI();
+      if (!options.silent) {
+        setAppSettingsStatus("تنظیمات ذخیره شد.");
+      }
+    } catch (error) {
+      console.error(error);
+      state.appSettings = previous;
+      renderAppSettingsUI();
+      if (!options.silent) {
+        setAppSettingsStatus("ذخیره تنظیمات انجام نشد.");
+      }
+    }
+  }
+
+  async function runAppSettingsAction(button, pendingText, action) {
+    if (button.disabled) {
+      return;
+    }
+    button.disabled = true;
+    setAppSettingsStatus(pendingText);
+    try {
+      await action();
+    } catch (error) {
+      console.error(error);
+      setAppSettingsStatus("عملیات انجام نشد.");
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  function renderHookStatus(items) {
+    els.appHooksStatus.replaceChildren();
+    if (items.length === 0) {
+      els.appHooksStatus.classList.add("hidden");
+      return;
+    }
+    items.forEach((item) => {
+      const row = document.createElement("div");
+      row.className = "app-hook-row";
+
+      const agent = document.createElement("strong");
+      agent.textContent = agentLabel(item.agent);
+
+      const badges = document.createElement("div");
+      badges.className = "app-hook-badges";
+      badges.append(
+        hookBadge("user", Boolean(item.user_installed)),
+        hookBadge("project", Boolean(item.project_installed)),
+      );
+      if (item.error) {
+        const error = document.createElement("span");
+        error.className = "app-hook-badge";
+        error.textContent = "error";
+        error.title = item.error;
+        badges.appendChild(error);
+      }
+      row.append(agent, badges);
+      els.appHooksStatus.appendChild(row);
+    });
+    els.appHooksStatus.classList.remove("hidden");
+  }
+
+  function hookBadge(label, active) {
+    const badge = document.createElement("span");
+    badge.className = "app-hook-badge";
+    badge.classList.toggle("active", active);
+    badge.textContent = `${label}: ${active ? "installed" : "off"}`;
+    return badge;
+  }
+
+  function setAppSettingsStatus(text) {
+    els.appSettingsStatus.textContent = text;
+    window.clearTimeout(state.appSettingsStatusTimer);
+    if (!text) {
+      return;
+    }
+    state.appSettingsStatusTimer = window.setTimeout(() => {
+      els.appSettingsStatus.textContent = "";
+    }, 4200);
   }
 
   function toggleSettingsPopover(anchor) {
@@ -1351,10 +2093,12 @@ export function createViewerApp() {
     }
 
     [
-      ["نام", session.project_name || "نشست بدون نام"],
+      ["نام نشست", sessionDisplayName(session)],
+      ["پروژه", normalizeInlineText(session.project_name || "پروژه نامشخص")],
       ["شناسه", session.session_id || "نامشخص"],
       ["کلید", session.key || "نامشخص"],
       ["عامل", agentLabel(session.agent)],
+      ["مدل", normalizeInlineText(session.model || "نامشخص")],
       ["مسیر اجرا", session.cwd || "نامشخص"],
       ["وضعیت", sessionStatus(session)],
       ["آخرین فعالیت", formatTime(session.updated_at)],
@@ -1422,18 +2166,49 @@ export function createViewerApp() {
   }
 
   function handleSessionEvent(event) {
+    if (event?.source === "hook" && !state.appSettings.hook_updates) {
+      return;
+    }
+
     const shouldStick = isNearBottom(els.chat);
-    loadSessionList().then(() => {
+    loadSessionList({ loadInitial: false }).then(() => {
       if (event.session_key && event.session_key === state.currentSessionKey) {
-        loadSession(state.currentSessionKey).then(() => {
-          if (shouldStick) {
-            scrollToBottom(els.chat);
-          }
+        hideSessionNotice();
+        refreshCurrentSessionContent({ stickBottom: shouldStick }).catch((error) => {
+          console.error(error);
         });
         return;
       }
-      showSessionNotice(event);
+      if (event?.source === "hook") {
+        handleHookSessionNotice(event);
+        return;
+      }
+      showSessionNotice(event, { autoOpen: false });
     });
+  }
+
+  function handleHookSessionNotice(event) {
+    const mode = state.appSettings.hook_follow_mode;
+    if (mode === "off") {
+      return;
+    }
+    const holdNavigation = state.appSettings.ignore_hook_navigation_while_typing && isUserEditing();
+    showSessionNotice(event, { autoOpen: mode === "auto" && !holdNavigation });
+  }
+
+  function isUserEditing() {
+    const active = document.activeElement;
+    if (state.editingSessionTitle) {
+      return true;
+    }
+    if (!active) {
+      return false;
+    }
+    const tagName = active.tagName?.toLowerCase();
+    return tagName === "input"
+      || tagName === "textarea"
+      || active.isContentEditable
+      || Boolean(active.closest(".search-box"));
   }
 
   function getSessionNotice() {
@@ -1466,27 +2241,26 @@ export function createViewerApp() {
     return notice;
   }
 
-  function showSessionNotice(event) {
+  function showSessionNotice(event, options = {}) {
     if (!event?.session_key) {
       return;
     }
 
     const notice = getSessionNotice();
-    const title = event.project_name || event.session_id || "نشست جدید";
+    const title = normalizeInlineText(event.session_name || event.project_name || event.session_id || "نشست جدید");
     const durationSeconds = 8;
     let remainingSeconds = durationSeconds;
     const action = notice.querySelector(".session-notice-action");
+    const autoOpen = options.autoOpen !== false;
 
     const goToSession = async () => {
       hideSessionNotice();
+      await loadSession(event.session_key, { sessionHint: event });
       await loadSessionList({ loadInitial: false });
-      if (state.sessions.some((item) => item.key === event.session_key)) {
-        await loadSession(event.session_key);
-      }
     };
     const updateCountdown = () => {
-      action.textContent = `رفتن به این چت (${remainingSeconds})`;
-      action.style.setProperty("--notice-progress", String(Math.max(0, remainingSeconds / durationSeconds)));
+      action.textContent = autoOpen ? `رفتن به این چت (${remainingSeconds})` : "رفتن به این چت";
+      action.style.setProperty("--notice-progress", autoOpen ? String(Math.max(0, remainingSeconds / durationSeconds)) : "0");
     };
 
     notice.querySelector(".session-notice-text").textContent = `نشست به‌روزرسانی شد: ${title}`;
@@ -1498,6 +2272,9 @@ export function createViewerApp() {
 
     window.clearTimeout(state.sessionNoticeTimer);
     window.clearInterval(state.sessionNoticeInterval);
+    if (!autoOpen) {
+      return;
+    }
     state.sessionNoticeInterval = window.setInterval(() => {
       remainingSeconds -= 1;
       updateCountdown();
@@ -1541,10 +2318,317 @@ export function createViewerApp() {
     return preview;
   }
 
-  function formatSessionListLabel(session) {
-    const projectName = normalizeInlineText(session.project_name || session.session_id || "نشست بدون نام");
-    const firstPreview = normalizeInlineText(session.first_preview);
-    return firstPreview ? `${projectName} / ${firstPreview}` : projectName;
+  function sessionDisplayName(session) {
+    return normalizeInlineText(
+      session?.session_name
+      || session?.first_preview
+      || session?.last_preview
+      || session?.session_id
+      || "نشست بدون نام",
+    );
+  }
+
+  function buildSessionStub(source) {
+    const key = normalizeInlineText(source?.key || source?.session_key || "");
+    if (!key) {
+      return null;
+    }
+    const sessionId = normalizeInlineText(source.session_id || key.split(":").slice(1).join(":"));
+    const updatedAt = normalizeInlineText(source.updated_at || new Date().toISOString());
+    return {
+      key,
+      session_id: sessionId,
+      session_name: normalizeInlineText(source.session_name || ""),
+      project_name: normalizeInlineText(source.project_name || ""),
+      updated_at: updatedAt,
+      first_preview: "",
+      last_preview: "",
+      message_count_estimate: 0,
+      metadata_only: false,
+      invalid_reason: "",
+    };
+  }
+
+  function syncCurrentSessionHeader() {
+    const hasSession = Boolean(state.currentSessionKey);
+    const hasProject = hasSession && Boolean(state.currentProjectName);
+    const hasTitle = hasSession && !state.editingSessionTitle;
+    const projectCount = hasProject ? currentProjectSessionCount(state.currentProjectName) : 0;
+    const hasProjectBadge = projectCount > 1;
+
+    els.sessionTitle.classList.toggle("hidden", hasSession);
+    els.sessionProject.classList.toggle("hidden", !hasProject);
+    els.sessionProjectBadge.classList.toggle("hidden", !hasProjectBadge);
+    els.sessionTitleButton.classList.toggle("hidden", !hasTitle);
+    els.sessionTitleInput.classList.toggle("hidden", !state.editingSessionTitle);
+    els.sessionTitleSeparator.classList.toggle("hidden", !hasProject || !hasSession);
+
+    if (!hasSession) {
+      els.sessionTitle.textContent = "نمایشگر نشست‌ها";
+      els.sessionProjectLabel.textContent = "";
+      els.sessionProjectBadge.textContent = "";
+      els.sessionProject.title = "";
+      els.sessionTitleButton.textContent = "";
+      els.sessionTitleInput.value = "";
+      return;
+    }
+
+    els.sessionProjectLabel.textContent = state.currentProjectName || "پروژه نامشخص";
+    els.sessionProjectBadge.textContent = hasProjectBadge ? String(projectCount) : "";
+    els.sessionProject.title = hasProject
+      ? `${state.currentProjectName} • ${projectCount > 0 ? `${projectCount} نشست` : "نمایش نشست‌های پروژه"}`
+      : "";
+    els.sessionProject.setAttribute(
+      "aria-label",
+      hasProject
+        ? `باز کردن نشست‌های پروژه ${state.currentProjectName}${projectCount > 0 ? `، ${projectCount} نشست` : ""}`
+        : "نمایش نشست‌های پروژه",
+    );
+    els.sessionTitleButton.textContent = state.currentSessionName || "نشست بدون نام";
+    els.sessionTitleButton.title = "برای تغییر نام کلیک کنید";
+    if (!state.editingSessionTitle) {
+      els.sessionTitleInput.value = state.currentSessionName || "";
+    }
+    if (hasProject) {
+      ensureProjectSessionCount(state.currentProjectName);
+    }
+  }
+
+  function beginSessionTitleEdit() {
+    if (!state.currentSessionKey) {
+      return;
+    }
+    state.editingSessionTitle = true;
+    syncCurrentSessionHeader();
+    els.sessionTitleInput.value = state.currentSessionName || "";
+    els.sessionTitleInput.focus();
+    els.sessionTitleInput.select();
+  }
+
+  function cancelSessionTitleEdit() {
+    state.editingSessionTitle = false;
+    syncCurrentSessionHeader();
+  }
+
+  function handleSessionTitleInputKeydown(event) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      commitSessionTitleEdit();
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      cancelSessionTitleEdit();
+    }
+  }
+
+  async function commitSessionTitleEdit() {
+    if (!state.editingSessionTitle || !state.currentSessionKey) {
+      return;
+    }
+
+    const nextTitle = normalizeInlineText(els.sessionTitleInput.value);
+    const currentTitle = normalizeInlineText(state.currentSessionName);
+    state.editingSessionTitle = false;
+    syncCurrentSessionHeader();
+    if (!nextTitle || nextTitle === currentTitle) {
+      return;
+    }
+
+    try {
+      const updated = await updateSession(state.currentSessionKey, { session_name: nextTitle });
+      applySessionUpdate(updated);
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
+  function applySessionUpdate(updated) {
+    if (!updated?.key) {
+      return;
+    }
+    state.sessions = mergeSessionPages(state.sessions, [updated]);
+    state.searchResults = mergeSessionPages(state.searchResults, [updated]);
+    if (state.currentSessionKey === updated.key) {
+      state.currentSessionName = sessionDisplayName(updated);
+      state.currentProjectName = normalizeInlineText(updated.project_name || "");
+      syncCurrentSessionHeader();
+      syncAgentComposer();
+      if (state.reader.open) {
+        renderReader();
+      }
+    }
+    if (state.projectSessions.open) {
+      state.projectSessions.items = mergeSessionPages(state.projectSessions.items, [updated]);
+      renderProjectSessions();
+    }
+    renderSessions(getVisibleSessions());
+  }
+
+  function openProjectSessionsModal() {
+    const project = normalizeInlineText(state.currentProjectName);
+    if (!project) {
+      return;
+    }
+    state.projectSessions.open = true;
+    state.projectSessions.project = project;
+    state.projectSessions.items = [];
+    state.projectSessions.nextOffset = 0;
+    state.projectSessions.hasMore = false;
+    state.projectSessions.total = 0;
+    state.projectSessions.requestId += 1;
+    els.projectSessionsModal.classList.remove("hidden");
+    els.projectSessionsModal.setAttribute("aria-hidden", "false");
+    renderProjectSessions();
+    loadProjectSessionsPage({ reset: true });
+  }
+
+  function closeProjectSessionsModal() {
+    state.projectSessions.open = false;
+    state.projectSessions.loading = false;
+    state.projectSessions.requestId += 1;
+    els.projectSessionsModal.classList.add("hidden");
+    els.projectSessionsModal.setAttribute("aria-hidden", "true");
+  }
+
+  async function loadProjectSessionsPage(options = {}) {
+    const project = normalizeInlineText(state.projectSessions.project);
+    if (!project || state.projectSessions.loading) {
+      return;
+    }
+    const reset = options.reset !== false;
+    if (!reset && !state.projectSessions.hasMore) {
+      return;
+    }
+
+    const requestId = ++state.projectSessions.requestId;
+    state.projectSessions.loading = true;
+    renderProjectSessions();
+    try {
+      const data = await fetchSessions({
+        project,
+        limit: SESSION_PAGE_SIZE,
+        offset: reset ? 0 : state.projectSessions.nextOffset,
+      });
+      if (requestId !== state.projectSessions.requestId || !state.projectSessions.open) {
+        return;
+      }
+      const page = data.items || [];
+      state.projectSessions.items = reset ? page : mergeSessionPages(state.projectSessions.items, page);
+      state.projectSessions.nextOffset = Number(data.next_offset || 0);
+      state.projectSessions.hasMore = state.projectSessions.nextOffset > 0;
+      state.projectSessions.total = Number(data.total || state.projectSessions.items.length);
+    } catch (error) {
+      if (requestId === state.projectSessions.requestId) {
+        console.error(error);
+      }
+    } finally {
+      if (requestId === state.projectSessions.requestId) {
+        state.projectSessions.loading = false;
+        renderProjectSessions();
+      }
+    }
+  }
+
+  function maybeLoadMoreProjectSessions() {
+    if (!state.projectSessions.open || state.projectSessions.loading || !state.projectSessions.hasMore) {
+      return;
+    }
+    const distanceFromBottom = els.projectSessionsList.scrollHeight - els.projectSessionsList.scrollTop - els.projectSessionsList.clientHeight;
+    if (distanceFromBottom < 220) {
+      loadProjectSessionsPage({ reset: false });
+    }
+  }
+
+  function renderProjectSessions() {
+    const items = dedupeSessions(state.projectSessions.items);
+    const project = state.projectSessions.project || "پروژه";
+    els.projectSessionsMeta.textContent = state.projectSessions.loading && items.length === 0
+      ? "در حال بارگذاری نشست‌ها..."
+      : `${items.length}${state.projectSessions.hasMore ? "+" : ""} از ${Math.max(items.length, state.projectSessions.total || 0)} نشست`;
+    els.projectSessionsList.replaceChildren();
+
+    if (items.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "session-list-empty";
+      empty.textContent = state.projectSessions.loading
+        ? "در حال بارگذاری نشست‌های پروژه..."
+        : `نشستی برای پروژه ${project} پیدا نشد.`;
+      els.projectSessionsList.appendChild(empty);
+      return;
+    }
+
+    items.forEach((session) => {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "project-session-item";
+      item.classList.toggle("active", session.key === state.currentSessionKey);
+
+      const title = document.createElement("span");
+      title.className = "project-session-name";
+      title.textContent = sessionDisplayName(session);
+
+      const meta = document.createElement("span");
+      meta.className = "project-session-meta";
+      meta.textContent = `${formatTime(session.updated_at)} • ${agentLabel(session.agent)}`;
+
+      item.append(title, meta);
+      item.addEventListener("click", async () => {
+        state.sessions = mergeSessionPages(state.sessions, [session]);
+        closeProjectSessionsModal();
+        els.sessionsRail.classList.remove("open");
+        await loadSession(session.key);
+      });
+      els.projectSessionsList.appendChild(item);
+    });
+
+    if (state.projectSessions.loading || state.projectSessions.hasMore) {
+      const footer = document.createElement("div");
+      footer.className = "session-list-footer";
+      footer.textContent = state.projectSessions.loading
+        ? "در حال بارگذاری نشست‌های بیشتر..."
+        : "برای نشست‌های بیشتر اسکرول کنید";
+      els.projectSessionsList.appendChild(footer);
+    }
+  }
+
+  function currentProjectSessionCount(projectName) {
+    const project = normalizeInlineText(projectName);
+    if (!project) {
+      return 0;
+    }
+    const cached = state.projectSessionCounts[project];
+    if (cached?.total > 0) {
+      return cached.total;
+    }
+    return state.sessions.filter((session) => normalizeInlineText(session.project_name || "") === project).length;
+  }
+
+  async function ensureProjectSessionCount(projectName) {
+    const project = normalizeInlineText(projectName);
+    if (!project) {
+      return;
+    }
+    const cached = state.projectSessionCounts[project];
+    if (cached?.loading || Number.isFinite(cached?.total)) {
+      return;
+    }
+
+    state.projectSessionCounts[project] = { total: cached?.total, loading: true };
+    try {
+      const data = await fetchSessions({ project, limit: 1, offset: 0 });
+      state.projectSessionCounts[project] = {
+        total: Number(data.total || 0),
+        loading: false,
+      };
+    } catch (error) {
+      console.error(error);
+      state.projectSessionCounts[project] = { total: cached?.total, loading: false };
+    } finally {
+      if (project === state.currentProjectName) {
+        syncCurrentSessionHeader();
+      }
+    }
   }
 
   function normalizeInlineText(value) {

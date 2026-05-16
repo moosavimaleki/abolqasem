@@ -25,9 +25,11 @@ type sessionSearchResult struct {
 	Key                  string               `json:"key"`
 	Agent                string               `json:"agent"`
 	SessionID            string               `json:"session_id"`
+	SessionName          string               `json:"session_name"`
 	TranscriptPath       string               `json:"transcript_path"`
 	Cwd                  string               `json:"cwd"`
 	ProjectName          string               `json:"project_name"`
+	Model                string               `json:"model,omitempty"`
 	UpdatedAt            time.Time            `json:"updated_at"`
 	FirstPreview         string               `json:"first_preview,omitempty"`
 	LastPreview          string               `json:"last_preview"`
@@ -142,9 +144,11 @@ func newSessionSearchResult(meta state.SessionMeta, matches []parser.SearchMatch
 		Key:                  meta.Key,
 		Agent:                meta.Agent,
 		SessionID:            meta.SessionID,
+		SessionName:          state.ResolveSessionName(meta),
 		TranscriptPath:       meta.TranscriptPath,
 		Cwd:                  meta.Cwd,
 		ProjectName:          meta.ProjectName,
+		Model:                meta.Model,
 		UpdatedAt:            meta.UpdatedAt,
 		FirstPreview:         meta.FirstPreview,
 		LastPreview:          meta.LastPreview,
@@ -172,7 +176,7 @@ func handleAPISessions(w http.ResponseWriter, r *http.Request) {
 
 	items := make([]state.SessionMeta, 0, len(appState.Sessions))
 	for _, meta := range appState.Sessions {
-		if projectFilter != "" && !strings.Contains(strings.ToLower(meta.ProjectName), strings.ToLower(projectFilter)) {
+		if projectFilter != "" && !strings.EqualFold(strings.TrimSpace(meta.ProjectName), projectFilter) {
 			continue
 		}
 		items = append(items, meta)
@@ -233,9 +237,11 @@ func handleAPIHook(w http.ResponseWriter, r *http.Request) {
 
 	eventKey := meta.Key + ":" + meta.UpdatedAt.Format(time.RFC3339Nano)
 	EventBroker.Broadcast(SSEEvent{
+		Source:      "hook",
 		EventKey:    eventKey,
 		SessionKey:  meta.Key,
 		SessionID:   meta.SessionID,
+		SessionName: state.ResolveSessionName(meta),
 		ProjectName: meta.ProjectName,
 		UpdatedAt:   meta.UpdatedAt.Format(time.RFC3339),
 	})
@@ -247,13 +253,13 @@ func handleAPIHook(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleAPISessionMessages(w http.ResponseWriter, r *http.Request) {
-	parts := strings.Split(r.URL.Path, "/")
-	if len(parts) < 5 || parts[4] != "messages" {
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) < 3 || parts[0] != "api" || parts[1] != "session" {
 		http.NotFound(w, r)
 		return
 	}
 
-	sessionKey := parts[3]
+	sessionKey := parts[2]
 	appState, err := state.LoadState()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -263,6 +269,15 @@ func handleAPISessionMessages(w http.ResponseWriter, r *http.Request) {
 	sessionMeta, exists := appState.Sessions[sessionKey]
 	if !exists {
 		http.Error(w, "Session not found", http.StatusNotFound)
+		return
+	}
+
+	if len(parts) == 3 {
+		handleAPISessionUpdate(w, r, appState, sessionMeta)
+		return
+	}
+	if len(parts) != 4 || parts[3] != "messages" {
+		http.NotFound(w, r)
 		return
 	}
 
@@ -287,11 +302,36 @@ func handleAPISessionMessages(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, result)
 }
 
+func handleAPISessionUpdate(w http.ResponseWriter, r *http.Request, appState *state.AppState, sessionMeta state.SessionMeta) {
+	if r.Method != http.MethodPatch && r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var payload struct {
+		SessionName string `json:"session_name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	sessionMeta.SessionName = state.SanitizeSessionName(payload.SessionName)
+	appState.Sessions[sessionMeta.Key] = sessionMeta
+	if err := state.SaveState(appState); err != nil {
+		http.Error(w, "Failed to save state", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, enrichSessionMeta(sessionMeta))
+}
+
 func enrichSessionMeta(meta state.SessionMeta) state.SessionMeta {
 	if meta.MetadataOnly {
+		meta.SessionName = state.ResolveSessionName(meta)
 		return meta
 	}
 	if meta.FirstPreview != "" && meta.LastPreview != "" && meta.MessageCountEstimate > 0 {
+		meta.SessionName = state.ResolveSessionName(meta)
 		return meta
 	}
 
@@ -303,11 +343,13 @@ func enrichSessionMeta(meta state.SessionMeta) state.SessionMeta {
 				meta.InvalidReason = "transcript is not readable"
 			}
 		}
+		meta.SessionName = state.ResolveSessionName(meta)
 		return meta
 	}
 	meta.FirstPreview = summary.FirstPreview
 	meta.LastPreview = summary.LastPreview
 	meta.MessageCountEstimate = summary.MessageCountEstimate
+	meta.SessionName = state.ResolveSessionName(meta)
 	return meta
 }
 

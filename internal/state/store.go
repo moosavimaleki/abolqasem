@@ -110,15 +110,50 @@ func migrateState(appState *AppState) *AppState {
 				meta.InvalidReason = "transcript path is missing"
 			}
 		}
+		if existing, ok := migrated[newKey]; ok {
+			migrated[newKey] = mergeCanonicalSessionMeta(existing, meta)
+			continue
+		}
 		migrated[newKey] = meta
 	}
-	appState.Sessions = migrated
+
+	collapsed := make(map[string]SessionMeta, len(migrated))
+	for _, meta := range migrated {
+		collapseKey := meta.Key
+		if meta.TranscriptPath != "" {
+			collapseKey = transcriptPathIndexKey(meta.Agent, meta.TranscriptPath)
+		}
+		if existing, ok := collapsed[collapseKey]; ok {
+			collapsed[collapseKey] = mergeCanonicalSessionMeta(existing, meta)
+			continue
+		}
+		collapsed[collapseKey] = meta
+	}
+
+	normalized := make(map[string]SessionMeta, len(collapsed))
+	for _, meta := range collapsed {
+		meta.Key = SessionKey(meta.Agent, meta.SessionID)
+		normalized[meta.Key] = meta
+	}
+	appState.Sessions = normalized
 
 	if appState.LatestSessionKey == "" && appState.LatestSessionID != "" {
 		for key, meta := range appState.Sessions {
 			if meta.SessionID == appState.LatestSessionID {
 				appState.LatestSessionKey = key
 				break
+			}
+		}
+	}
+	if appState.LatestSessionKey != "" {
+		if latest, ok := appState.Sessions[appState.LatestSessionKey]; ok {
+			appState.LatestSessionKey = latest.Key
+		} else if appState.LatestSessionID != "" {
+			for key, meta := range appState.Sessions {
+				if meta.SessionID == appState.LatestSessionID {
+					appState.LatestSessionKey = key
+					break
+				}
 			}
 		}
 	}

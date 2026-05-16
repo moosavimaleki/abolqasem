@@ -34,6 +34,37 @@ func TestLoadStateRecoversCorruptFile(t *testing.T) {
 	}
 }
 
+func TestLoadSettingsUsesDefaultsAndPersistsFalseValues(t *testing.T) {
+	original := stateDir
+	stateDir = t.TempDir()
+	t.Cleanup(func() { stateDir = original })
+
+	defaults, err := LoadSettings()
+	if err != nil {
+		t.Fatalf("LoadSettings returned error: %v", err)
+	}
+	if !defaults.HookUpdates || defaults.HookFollowMode != HookFollowAuto || !defaults.FilesystemDiscovery {
+		t.Fatalf("unexpected defaults: %+v", defaults)
+	}
+
+	next := defaults
+	next.HookUpdates = false
+	next.HookFollowMode = HookFollowNotice
+	next.IgnoreHookNavigationWhileTyping = false
+	next.FilesystemDiscovery = false
+	if err := SaveSettings(next); err != nil {
+		t.Fatalf("SaveSettings returned error: %v", err)
+	}
+
+	loaded, err := LoadSettings()
+	if err != nil {
+		t.Fatalf("LoadSettings returned error: %v", err)
+	}
+	if loaded.HookUpdates || loaded.HookFollowMode != HookFollowNotice || loaded.IgnoreHookNavigationWhileTyping || loaded.FilesystemDiscovery {
+		t.Fatalf("expected persisted false values, got %+v", loaded)
+	}
+}
+
 func TestNormalizeAndValidateEventBuildsFallbackAndMetadataOnly(t *testing.T) {
 	event := NormalizeAndValidateEvent(HookEvent{
 		Agent: "gemini",
@@ -71,5 +102,42 @@ func TestUpsertSessionUsesCompositeKey(t *testing.T) {
 	}
 	if len(appState.Sessions) != 2 {
 		t.Fatalf("expected 2 sessions, got %d", len(appState.Sessions))
+	}
+}
+
+func TestUpsertSessionCanonicalizesTranscriptDuplicatesAndPreservesCustomName(t *testing.T) {
+	appState := newAppState()
+	transcriptPath := "/tmp/codex/rollout-2026-05-15T09-23-21-019e2a32-513d-7c02-a78c-ab1b0130635c.jsonl"
+	alias := SessionMeta{
+		Key:            "codex:rollout-2026-05-15T09-23-21-019e2a32-513d-7c02-a78c-ab1b0130635c",
+		Agent:          "codex",
+		SessionID:      "rollout-2026-05-15T09-23-21-019e2a32-513d-7c02-a78c-ab1b0130635c",
+		SessionName:    "تست",
+		TranscriptPath: transcriptPath,
+		Cwd:            "/tmp/codex",
+		ProjectName:    "codex",
+	}
+	appState.Sessions[alias.Key] = alias
+
+	meta := UpsertSession(appState, HookEvent{
+		Agent:          "codex",
+		SessionID:      "019e2a32-513d-7c02-a78c-ab1b0130635c",
+		TranscriptPath: transcriptPath,
+		Cwd:            "/tmp/codex",
+		ProjectName:    "codex",
+		MetadataOnly:   true,
+	})
+
+	if meta.Key != "codex:019e2a32-513d-7c02-a78c-ab1b0130635c" {
+		t.Fatalf("expected canonical key, got %q", meta.Key)
+	}
+	if meta.SessionName != "تست" {
+		t.Fatalf("expected custom session name to survive, got %q", meta.SessionName)
+	}
+	if len(appState.Sessions) != 1 {
+		t.Fatalf("expected duplicate sessions to collapse, got %d", len(appState.Sessions))
+	}
+	if _, ok := appState.Sessions[alias.Key]; ok {
+		t.Fatalf("expected alias key %q to be removed", alias.Key)
 	}
 }

@@ -10,12 +10,17 @@ import (
 var discoveryMu sync.Mutex
 
 func DiscoverSessionsOnce() {
+	settings, err := state.LoadSettings()
+	if err == nil && !settings.FilesystemDiscovery {
+		return
+	}
 	report, err := runDiscovery()
 	if err != nil {
 		log.Printf("Warning: session discovery failed: %v", err)
 	}
 	if report.Added > 0 || report.Updated > 0 {
 		EventBroker.Broadcast(SSEEvent{
+			Source:    "discovery",
 			EventKey:  "discovery:" + time.Now().Format(time.RFC3339Nano),
 			UpdatedAt: time.Now().Format(time.RFC3339),
 		})

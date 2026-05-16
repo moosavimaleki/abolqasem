@@ -73,10 +73,20 @@ var installCmd = &cobra.Command{
 			fmt.Println("Successfully removed service")
 		}
 
+		successful := []string{}
 		if installNoHooks {
+			if err := restartAfterInstall(); err != nil {
+				fmt.Printf("Restart failed: %v\n", err)
+				return
+			}
 			return
 		}
-		successful := installHooks(scope, agents)
+
+		successful = installHooks(scope, agents)
+		if err := restartAfterInstall(); err != nil {
+			fmt.Printf("Restart failed: %v\n", err)
+			return
+		}
 		printTrustNotice(successful)
 	},
 }
@@ -146,6 +156,14 @@ func installHooks(scope adapters.InstallScope, agents []string) []string {
 		successful = append(successful, agent)
 	}
 	return successful
+}
+
+func restartAfterInstall() error {
+	if err := restartActiveMode(); err != nil {
+		return err
+	}
+	fmt.Println("Successfully restarted")
+	return nil
 }
 
 func resolveInstallStartup(input io.Reader, scope adapters.InstallScope, agents []string, serviceInstalled bool) (string, error) {

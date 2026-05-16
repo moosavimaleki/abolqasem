@@ -8,9 +8,11 @@ import (
 )
 
 type SSEEvent struct {
+	Source      string `json:"source,omitempty"`
 	EventKey    string `json:"event_key"`
 	SessionKey  string `json:"session_key"`
 	SessionID   string `json:"session_id"`
+	SessionName string `json:"session_name"`
 	ProjectName string `json:"project_name"`
 	UpdatedAt   string `json:"updated_at"`
 }

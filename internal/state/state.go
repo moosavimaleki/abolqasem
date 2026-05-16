@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // HookEvent is the normalized payload received from a local hook.
@@ -17,6 +18,7 @@ type HookEvent struct {
 	Cwd            string `json:"cwd"`
 	ProjectName    string `json:"project_name,omitempty"`
 	LastPreview    string `json:"last_preview,omitempty"`
+	Model          string `json:"model,omitempty"`
 	UpdatedAt      string `json:"updated_at,omitempty"`
 	MetadataOnly   bool   `json:"metadata_only,omitempty"`
 	InvalidReason  string `json:"invalid_reason,omitempty"`
@@ -27,9 +29,11 @@ type SessionMeta struct {
 	Key                  string    `json:"key"`
 	Agent                string    `json:"agent"`
 	SessionID            string    `json:"session_id"`
+	SessionName          string    `json:"session_name,omitempty"`
 	TranscriptPath       string    `json:"transcript_path"`
 	Cwd                  string    `json:"cwd"`
 	ProjectName          string    `json:"project_name"`
+	Model                string    `json:"model,omitempty"`
 	UpdatedAt            time.Time `json:"updated_at"`
 	FirstPreview         string    `json:"first_preview,omitempty"`
 	LastPreview          string    `json:"last_preview"`
@@ -64,6 +68,7 @@ func NormalizeAndValidateEvent(event HookEvent) HookEvent {
 	event.TranscriptPath = normalizePath(event.TranscriptPath)
 	event.ProjectName = strings.TrimSpace(event.ProjectName)
 	event.LastPreview = sanitizePreview(event.LastPreview)
+	event.Model = strings.TrimSpace(event.Model)
 	event.InvalidReason = strings.TrimSpace(event.InvalidReason)
 
 	if event.ProjectName == "" {
@@ -91,6 +96,7 @@ func NormalizeAndValidateEvent(event HookEvent) HookEvent {
 
 func UpsertSession(appState *AppState, event HookEvent) SessionMeta {
 	event = NormalizeAndValidateEvent(event)
+	event.SessionID = canonicalSessionIDForEvent(appState, event)
 	key := SessionKey(event.Agent, event.SessionID)
 
 	existing, ok := appState.Sessions[key]
@@ -125,6 +131,9 @@ func UpsertSession(appState *AppState, event HookEvent) SessionMeta {
 	} else if meta.ProjectName == "" {
 		meta.ProjectName = deriveProjectName(meta.Cwd, firstNonEmptyString(event.TranscriptPath, meta.TranscriptPath))
 	}
+	if event.Model != "" && !staleEvent {
+		meta.Model = event.Model
+	}
 	meta.UpdatedAt = updatedAt
 	if !staleEvent || (meta.MetadataOnly && event.TranscriptPath != "" && !event.MetadataOnly) {
 		meta.MetadataOnly = event.MetadataOnly
@@ -145,6 +154,52 @@ func UpsertSession(appState *AppState, event HookEvent) SessionMeta {
 	return meta
 }
 
+func canonicalSessionIDForEvent(appState *AppState, event HookEvent) string {
+	if appState == nil || appState.Sessions == nil || event.TranscriptPath == "" {
+		return event.SessionID
+	}
+
+	pathKey := transcriptPathIndexKey(event.Agent, event.TranscriptPath)
+	var matched []SessionMeta
+	for _, meta := range appState.Sessions {
+		if transcriptPathIndexKey(meta.Agent, meta.TranscriptPath) == pathKey {
+			matched = append(matched, meta)
+		}
+	}
+	if len(matched) == 0 {
+		return event.SessionID
+	}
+
+	canonical := matched[0]
+	for _, meta := range matched[1:] {
+		canonical = mergeCanonicalSessionMeta(canonical, meta)
+	}
+
+	merged := mergeCanonicalSessionMeta(canonical, SessionMeta{
+		Agent:          event.Agent,
+		SessionID:      event.SessionID,
+		TranscriptPath: event.TranscriptPath,
+		Cwd:            event.Cwd,
+		ProjectName:    event.ProjectName,
+	})
+
+	canonicalKey := SessionKey(event.Agent, merged.SessionID)
+	merged.Key = canonicalKey
+	for _, meta := range matched {
+		delete(appState.Sessions, meta.Key)
+	}
+	appState.Sessions[canonicalKey] = merged
+	if appState.LatestSessionKey != "" {
+		for _, meta := range matched {
+			if appState.LatestSessionKey == meta.Key {
+				appState.LatestSessionKey = canonicalKey
+				break
+			}
+		}
+	}
+	return merged.SessionID
+}
+
 func shouldMarkLatest(appState *AppState, meta SessionMeta) bool {
 	if appState.LatestSessionKey == "" {
 		return true
@@ -154,6 +209,69 @@ func shouldMarkLatest(appState *AppState, meta SessionMeta) bool {
 		return true
 	}
 	return !meta.UpdatedAt.Before(latest.UpdatedAt)
+}
+
+func mergeCanonicalSessionMeta(current, candidate SessionMeta) SessionMeta {
+	preferred, other := preferredCanonicalSession(current, candidate)
+	merged := preferred
+	merged.Key = SessionKey(merged.Agent, merged.SessionID)
+	if other.UpdatedAt.After(merged.UpdatedAt) {
+		merged.UpdatedAt = other.UpdatedAt
+	}
+	if merged.SessionName == "" {
+		merged.SessionName = other.SessionName
+	}
+	if merged.TranscriptPath == "" {
+		merged.TranscriptPath = other.TranscriptPath
+	}
+	if merged.Cwd == "" {
+		merged.Cwd = other.Cwd
+	}
+	if merged.ProjectName == "" || merged.ProjectName == "unknown" {
+		merged.ProjectName = other.ProjectName
+	}
+	if merged.FirstPreview == "" {
+		merged.FirstPreview = other.FirstPreview
+	}
+	if merged.LastPreview == "" {
+		merged.LastPreview = other.LastPreview
+	}
+	if merged.MessageCountEstimate == 0 {
+		merged.MessageCountEstimate = other.MessageCountEstimate
+	}
+	if merged.InvalidReason == "" {
+		merged.InvalidReason = other.InvalidReason
+	}
+	if merged.MetadataOnly && !other.MetadataOnly {
+		merged.MetadataOnly = false
+	}
+	return merged
+}
+
+func preferredCanonicalSession(a, b SessionMeta) (SessionMeta, SessionMeta) {
+	aScore := sessionIDQuality(a.Agent, a.SessionID)
+	bScore := sessionIDQuality(b.Agent, b.SessionID)
+	if bScore > aScore {
+		return b, a
+	}
+	if aScore > bScore {
+		return a, b
+	}
+	if b.UpdatedAt.After(a.UpdatedAt) {
+		return b, a
+	}
+	return a, b
+}
+
+func sessionIDQuality(agent, sessionID string) int {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return -1
+	}
+	if strings.EqualFold(strings.TrimSpace(agent), "codex") && strings.HasPrefix(strings.ToLower(sessionID), "rollout-") {
+		return 0
+	}
+	return 1
 }
 
 func normalizePath(path string) string {
@@ -219,4 +337,70 @@ func fallbackSessionID(agent, transcriptPath, cwd string) string {
 	}
 	h := sha1.Sum([]byte(agent + "\n" + transcriptPath + "\n" + cwd))
 	return "fallback-" + hex.EncodeToString(h[:6])
+}
+
+func ResolveSessionName(meta SessionMeta) string {
+	if strings.TrimSpace(meta.SessionName) != "" {
+		return SanitizeSessionName(meta.SessionName)
+	}
+	return deriveSessionName(meta.FirstPreview, meta.LastPreview, meta.SessionID)
+}
+
+func SanitizeSessionName(value string) string {
+	value = normalizeSessionTitle(value)
+	runes := []rune(value)
+	if len(runes) > 72 {
+		value = strings.TrimSpace(string(runes[:72])) + "..."
+	}
+	if value == "" {
+		return "نشست بدون نام"
+	}
+	return value
+}
+
+func deriveSessionName(firstPreview, lastPreview, sessionID string) string {
+	for _, candidate := range []string{
+		preferPersianTitle(firstPreview),
+		normalizeSessionTitle(firstPreview),
+		preferPersianTitle(lastPreview),
+		normalizeSessionTitle(lastPreview),
+		sessionID,
+	} {
+		if candidate != "" {
+			return SanitizeSessionName(candidate)
+		}
+	}
+	return "نشست بدون نام"
+}
+
+func preferPersianTitle(value string) string {
+	normalized := normalizeSessionTitle(value)
+	if normalized == "" {
+		return ""
+	}
+	runes := []rune(normalized)
+	start := -1
+	for i, r := range runes {
+		if unicode.In(r, unicode.Arabic) {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		return ""
+	}
+	return normalizeSessionTitle(string(runes[start:]))
+}
+
+func normalizeSessionTitle(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	value = strings.ReplaceAll(value, "\r\n", "\n")
+	value = strings.ReplaceAll(value, "\r", "\n")
+	value = strings.TrimSpace(strings.Split(value, "\n")[0])
+	value = strings.Join(strings.Fields(value), " ")
+	value = strings.Trim(value, " -–—_|:/\\,.!؟[](){}'\"`")
+	return value
 }

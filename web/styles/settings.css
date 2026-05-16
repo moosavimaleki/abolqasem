@@ -185,6 +185,244 @@
   height: 32px;
 }
 
+.app-settings-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(14px);
+}
+
+.app-settings-panel {
+  width: min(760px, calc(100vw - 36px));
+  max-height: min(84vh, 760px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  border: 1px solid var(--line-strong);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--surface-strong) 94%, #0b1220);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  direction: rtl;
+}
+
+.app-settings-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+}
+
+.app-settings-header strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.app-settings-header p,
+.app-settings-row p,
+.app-settings-status {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  line-height: 1.7;
+}
+
+.app-settings-body {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 18px;
+  display: grid;
+  gap: 16px;
+}
+
+.app-settings-section {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--surface) 62%, transparent);
+}
+
+.app-settings-section h2 {
+  margin: 0;
+  padding: 13px 16px;
+  color: var(--text-soft);
+  font-size: 0.86rem;
+  font-weight: 800;
+  border-bottom: 1px solid var(--line);
+}
+
+.app-settings-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(176px, auto);
+  align-items: center;
+  gap: 16px;
+  padding: 14px 16px;
+  border-top: 1px solid var(--line);
+}
+
+.app-settings-row:first-of-type {
+  border-top: 0;
+}
+
+.app-settings-row strong {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--text);
+  font-size: 0.91rem;
+}
+
+.app-segmented-control {
+  min-width: 196px;
+}
+
+.app-settings-input {
+  justify-self: stretch;
+  min-width: 196px;
+  height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-soft) 72%, transparent);
+  color: var(--text);
+  padding: 0 12px;
+  direction: ltr;
+  outline: 0;
+}
+
+.app-settings-input:focus {
+  border-color: color-mix(in srgb, var(--accent) 58%, transparent);
+}
+
+.switch-control {
+  justify-self: end;
+  position: relative;
+  width: 50px;
+  height: 28px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-soft) 80%, #000);
+  transition: background var(--ease), border-color var(--ease);
+}
+
+.switch-control::before {
+  content: "";
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--text-muted);
+  transition: transform var(--ease), background var(--ease);
+}
+
+.switch-control.active {
+  border-color: color-mix(in srgb, var(--accent) 72%, transparent);
+  background: color-mix(in srgb, var(--accent) 22%, var(--surface-soft));
+}
+
+.switch-control.active::before {
+  transform: translateX(-22px);
+  background: var(--accent);
+}
+
+.app-settings-actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  padding: 16px;
+}
+
+.utility-button {
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-soft) 78%, transparent);
+  color: var(--text-soft);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 10px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.utility-button::before {
+  font-family: "Material Symbols Outlined";
+  font-size: 1.1rem;
+  font-weight: 400;
+  line-height: 1;
+  content: attr(data-icon);
+}
+
+.utility-button:hover {
+  border-color: var(--line-strong);
+  color: var(--text);
+  background: color-mix(in srgb, var(--surface-soft) 100%, var(--accent) 8%);
+}
+
+.utility-button.danger {
+  color: color-mix(in srgb, #ffb4b4 80%, var(--text));
+}
+
+.app-hooks-status {
+  margin: 0 16px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.app-hook-row {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border-top: 1px solid var(--line);
+  color: var(--text-soft);
+  font-size: 0.82rem;
+}
+
+.app-hook-row:first-child {
+  border-top: 0;
+}
+
+.app-hook-row strong {
+  color: var(--text);
+}
+
+.app-hook-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.app-hook-badge {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 8px;
+  color: var(--text-muted);
+}
+
+.app-hook-badge.active {
+  border-color: color-mix(in srgb, var(--success) 58%, transparent);
+  color: var(--success);
+}
+
+.app-settings-status {
+  min-height: 26px;
+  padding: 0 16px 14px;
+}
+
 .file-preview {
   position: fixed;
   inset: 0;
