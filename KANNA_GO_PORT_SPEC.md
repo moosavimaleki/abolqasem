@@ -1692,16 +1692,26 @@ Output:
 
 ## Milestone 20: Skills
 
-### Task 20.1: Skills list/search/install/uninstall
+### Task 20.1: Skills list/search/install/uninstall ✅
 
 Acceptance criteria:
 
-- `skills.search` پیاده شود.
-- `skills.install` پیاده شود.
-- `skills.uninstall` پیاده شود.
-- `skills.listInstalled` پیاده شود.
-- response shape با Kanna برابر باشد.
-- اگر skill backend فعلی نداریم، ابتدا adapter thin به Codex skills filesystem ساخته شود، نه UX جدید.
+- [x] `skills.search` پیاده شود.
+- [x] `skills.install` پیاده شود.
+- [x] `skills.uninstall` پیاده شود.
+- [x] `skills.listInstalled` پیاده شود.
+- [x] response shape با Kanna برابر باشد.
+- [x] اگر skill backend فعلی نداریم، ابتدا adapter thin به Codex skills filesystem ساخته شود، نه UX جدید.
+
+Output:
+
+- [workspace_skills.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_skills.go)
+- [workspace_skills_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_skills_test.go)
+- [workspace_ws.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_ws.go)
+- Skills WebSocket commands now return Kanna-compatible shapes for search, install, uninstall, and installed snapshots.
+- `skills.search` calls `skills.sh/api/search` with Kanna query and limit normalization.
+- `skills.install` and `skills.uninstall` use the same `npx skills` command shape as Kanna.
+- `skills.listInstalled` reads the global skill lock and falls back to scanning the Codex skills filesystem.
 
 ## Milestone 21: Share And Standalone Export
 
