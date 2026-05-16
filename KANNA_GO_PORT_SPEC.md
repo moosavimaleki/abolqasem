@@ -988,7 +988,7 @@ Output:
 - Server notifications are exposed through a notification channel.
 - stderr lines are retained in a log buffer for turn failure reporting.
 
-### Task 7.3: Codex turn streaming
+### Task 7.3: Codex turn streaming `[done]`
 
 Notificationهای مهم:
 
@@ -1007,6 +1007,22 @@ Acceptance criteria:
 - پیام assistant زنده به transcript اضافه شود.
 - reasoning/plan/file change قابل نمایش باشد.
 - turn completed status درست set شود.
+
+Output:
+
+- [stream.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/providers/codex/stream.go)
+- [stream_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/providers/codex/stream_test.go)
+- Core Codex notifications map to Kanna harness events.
+- `thread/started` emits `session_token`.
+- command execution emits `tool_call` and `tool_result`.
+- agent messages emit `assistant_text`.
+- `turn/completed` emits Kanna `result`.
+- token usage emits `context_window_updated`.
+- `thread/compacted` emits `compact_boundary`.
+
+Remaining:
+
+- Full reasoning/plan/file-change visual event parity continues under Task 7.4 and later transcript rendering integration.
 
 ### Task 7.4: Codex tool and approval handling
 
