@@ -39,6 +39,10 @@ func setupRoutes(mux *http.ServeMux) {
 		rootFS = subFS
 	}
 	fileServer := http.FileServer(http.FS(rootFS))
+	mux.HandleFunc("/legacy", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/legacy/", http.StatusTemporaryRedirect)
+	})
+	mux.Handle("/legacy/", http.StripPrefix("/legacy/", fileServer))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if isLocalFileRoute(r.URL.Path) {
 			serveAppIndex(w, rootFS)

@@ -1587,13 +1587,25 @@ Output:
 
 ## Milestone 17: Legacy Viewer Bridge
 
-### Task 17.1: نگه داشتن viewer فعلی خارج از Kanna workspace
+### Task 17.1: نگه داشتن viewer فعلی خارج از Kanna workspace ✅
 
 Acceptance criteria:
 
-- viewer فعلی می‌تواند پشت route legacy بماند.
-- نباید UI اصلی Kanna-port را با behaviorهای hook-follow فعلی آلوده کند.
-- installer/hook compatibility حفظ شود، اما core Kanna workspace event-driven بماند.
+- [x] viewer فعلی می‌تواند پشت route legacy بماند.
+- [x] نباید UI اصلی Kanna-port را با behaviorهای hook-follow فعلی آلوده کند.
+- [x] installer/hook compatibility حفظ شود، اما core Kanna workspace event-driven بماند.
+
+Output:
+
+- [routes.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/routes.go)
+- [routes_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/routes_test.go)
+- [index.html](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/web/index.html)
+- [styles.css](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/web/styles.css)
+- [base.css](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/web/styles/base.css)
+- [icons.css](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/web/styles/icons.css)
+- Legacy viewer is now reachable under `/legacy/` with `/legacy` redirecting to the canonical route.
+- Legacy viewer asset references are relative, so the viewer can remain isolated from the Kanna workspace root.
+- Existing legacy APIs and hook compatibility endpoints remain unchanged.
 
 ### Task 17.2: import یا نمایش legacy sessions بدون تغییر UX Kanna
 

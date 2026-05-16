@@ -4,7 +4,7 @@
 
 @font-face {
   font-family: "VazirLocal";
-  src: url("/assets/fonts/vazir.woff2") format("woff2");
+  src: url("../assets/fonts/vazir.woff2") format("woff2");
   font-weight: 400;
   font-style: normal;
   font-display: swap;
@@ -12,7 +12,7 @@
 
 @font-face {
   font-family: "VazirLocal";
-  src: url("/assets/fonts/vazir-bold.woff2") format("woff2");
+  src: url("../assets/fonts/vazir-bold.woff2") format("woff2");
   font-weight: 700;
   font-style: normal;
   font-display: swap;
@@ -20,7 +20,7 @@
 
 @font-face {
   font-family: "BZarLocal";
-  src: url("/assets/fonts/b-zar.ttf") format("truetype");
+  src: url("../assets/fonts/b-zar.ttf") format("truetype");
   font-weight: 400;
   font-style: normal;
   font-display: swap;
@@ -35,7 +35,7 @@
 
 @font-face {
   font-family: "BZarLocal";
-  src: url("/assets/fonts/b-zar-bold.ttf") format("truetype");
+  src: url("../assets/fonts/b-zar-bold.ttf") format("truetype");
   font-weight: 700;
   font-style: normal;
   font-display: swap;
@@ -50,7 +50,7 @@
 
 @font-face {
   font-family: "IranianSansLocal";
-  src: url("/assets/fonts/iranian-sans.ttf") format("truetype");
+  src: url("../assets/fonts/iranian-sans.ttf") format("truetype");
   font-weight: 400;
   font-style: normal;
   font-display: swap;
@@ -58,7 +58,7 @@
 
 @font-face {
   font-family: "IranianSansLocal";
-  src: url("/assets/fonts/iranian-sans.ttf") format("truetype");
+  src: url("../assets/fonts/iranian-sans.ttf") format("truetype");
   font-weight: 700;
   font-style: normal;
   font-display: swap;
