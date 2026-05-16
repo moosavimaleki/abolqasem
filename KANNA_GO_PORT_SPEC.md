@@ -966,7 +966,7 @@ Output:
 - `StartSession` chooses `thread/fork`, `thread/resume`, or `thread/start` using Kanna order.
 - Recoverable resume errors fall back to `thread/start`.
 
-### Task 7.2: JSON-RPC routing
+### Task 7.2: JSON-RPC routing `[done]`
 
 شرح:
 
@@ -978,6 +978,15 @@ Acceptance criteria:
 - response اشتباه به call اشتباه وصل نشود.
 - notificationها stream شوند.
 - stderr در log ذخیره شود.
+
+Output:
+
+- [client.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/providers/codex/rpc/client.go)
+- [client_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/providers/codex/rpc/client_test.go)
+- Pending calls are tracked by JSON-RPC id.
+- Out-of-order responses route to the correct caller.
+- Server notifications are exposed through a notification channel.
+- stderr lines are retained in a log buffer for turn failure reporting.
 
 ### Task 7.3: Codex turn streaming
 
