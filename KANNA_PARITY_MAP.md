@@ -23,8 +23,8 @@ Status legend:
 | Kanna module | Go target | Status | Notes |
 | --- | --- | --- | --- |
 | `agent.ts` | `internal/workspace/agent` | `[in-progress]` | Core coordinator invariants implemented; provider stream/tool lifecycle remains. |
-| `codex-app-server.ts` | `internal/providers/codex` | `[todo]` | Persistent Codex app-server sessions. |
-| `codex-app-server-protocol.ts` | `internal/providers/codex/protocol` | `[todo]` | JSON-RPC DTOs and event normalization. |
+| `codex-app-server.ts` | `internal/providers/codex` | `[in-progress]` | Session start/resume/fork manager implemented; process RPC routing and streaming remain. |
+| `codex-app-server-protocol.ts` | `internal/providers/codex/protocol` | `[in-progress]` | Initial JSON-RPC DTO subset ported; streaming/tool DTOs remain. |
 | `provider-catalog.ts` | `internal/providers/catalog` | `[done]` | Kanna `claude` and `codex` server catalog ported. |
 | `event-store.ts` | `internal/workspace/eventstore` | `[in-progress]` | JSONL append/replay implemented; snapshot compaction remains. |
 | `events.ts` | `internal/workspace/events` | `[done]` | Kanna v2 top-level event shape preserved. |

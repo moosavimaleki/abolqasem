@@ -930,7 +930,7 @@ Output:
 
 ## Milestone 7: Codex Adapter در Go
 
-### Task 7.1: بازطراحی Codex app-server client
+### Task 7.1: بازطراحی Codex app-server client `[done]`
 
 مشکل فعلی:
 
@@ -955,6 +955,16 @@ Acceptance criteria:
 - app-server context برای chat قابل reuse باشد.
 - initialize با `experimentalApi` انجام شود.
 - thread token/session token ذخیره شود.
+
+Output:
+
+- [manager.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/providers/codex/manager.go)
+- [manager_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/providers/codex/manager_test.go)
+- [protocol.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/providers/codex/protocol/protocol.go)
+- Manager keeps reusable `chatID -> session` state.
+- `initialize` sends `experimentalApi: true`.
+- `StartSession` chooses `thread/fork`, `thread/resume`, or `thread/start` using Kanna order.
+- Recoverable resume errors fall back to `thread/start`.
 
 ### Task 7.2: JSON-RPC routing
 
