@@ -1771,7 +1771,7 @@ Output:
 
 ## Milestone 23: External Open
 
-### Task 23.1: system.openExternal
+### Task 23.1: system.openExternal ✅
 
 Actionهای Kanna:
 
@@ -1785,9 +1785,18 @@ open_default
 
 Acceptance criteria:
 
-- file/path/line/column support حفظ شود.
-- editor preset/custom command با settings هماهنگ باشد.
-- path security رعایت شود.
+- [x] file/path/line/column support حفظ شود.
+- [x] editor preset/custom command با settings هماهنگ باشد.
+- [x] path security رعایت شود.
+
+Output:
+
+- [workspace_external_open.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_external_open.go)
+- [workspace_external_open_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_external_open_test.go)
+- [workspace_ws.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_ws.go)
+- `system.openExternal` now supports Kanna actions: `open_finder`, `open_terminal`, `open_editor`, `open_preview`, and `open_default`.
+- Editor presets/custom templates preserve file path, line, and column handling while running commands without shell expansion.
+- Local path validation rejects URLs and control characters before resolving filesystem paths.
 
 ## Milestone 24: Auth, Analytics, Machine Name, CLI Runtime
 

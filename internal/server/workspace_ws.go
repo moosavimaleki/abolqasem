@@ -230,6 +230,13 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 	case protocol.CommandSkillsListInstalled:
 		response := protocol.AckEnvelope(envelope.ID, listInstalledSkills(""))
 		return &response
+	case protocol.CommandSystemOpenExternal:
+		if err := workspaceOpenExternal(envelope.Command); err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
+		return &response
 	case protocol.CommandSettingsWriteAppSettingsPatch:
 		snapshot, err := applyWorkspaceAppSettingsPatch(envelope.Command)
 		if err != nil {
