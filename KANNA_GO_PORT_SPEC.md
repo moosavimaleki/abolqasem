@@ -1852,14 +1852,22 @@ Output:
 
 ## Milestone 25: Security Hardening
 
-### Task 25.1: Filesystem security
+### Task 25.1: Filesystem security ✅
 
 Acceptance criteria:
 
-- project root allowlist.
-- no path traversal.
-- symlink policy مشخص.
-- file preview فقط داخل root.
+- [x] project root allowlist.
+- [x] no path traversal.
+- [x] symlink policy مشخص.
+- [x] file preview فقط داخل root.
+
+Output:
+
+- [project_file_api.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/project_file_api.go)
+- [project_file_api_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/project_file_api_test.go)
+- Project file serving now stores canonical registered roots and rejects broad roots such as the user home.
+- Project file targets are resolved with `EvalSymlinks` and must remain under the canonical project root, so symlinks that escape the project are rejected.
+- Existing file preview security remains root-scoped with the same symlink policy: symlinks are allowed only when their resolved target stays inside an allowed project/session root.
 
 ### Task 25.2: Command execution security
 

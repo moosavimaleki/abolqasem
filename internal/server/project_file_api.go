@@ -21,17 +21,12 @@ func registerProjectRoot(projectID string, root string) error {
 	if projectID == "" {
 		return errors.New("invalid project id")
 	}
-	root = strings.TrimSpace(root)
-	info, err := os.Stat(root)
-	if err != nil || !info.IsDir() {
+	rootEval, ok := safePreviewRoot(root)
+	if !ok {
 		return errors.New("project root is not readable")
 	}
-	abs, err := filepath.Abs(root)
-	if err != nil {
-		return err
-	}
 	projectRoots.Lock()
-	projectRoots.roots[projectID] = filepath.Clean(abs)
+	projectRoots.roots[projectID] = rootEval
 	projectRoots.Unlock()
 	return nil
 }
@@ -79,6 +74,10 @@ func handleAPIProjectFile(w http.ResponseWriter, r *http.Request, projectID stri
 }
 
 func safeProjectFilePath(root string, relativePath string) (string, error) {
+	rootEval, ok := safePreviewRoot(root)
+	if !ok {
+		return "", errors.New("project root is not readable")
+	}
 	relativePath = strings.TrimSpace(relativePath)
 	if unescaped, err := url.PathUnescape(relativePath); err == nil {
 		relativePath = unescaped
@@ -87,13 +86,16 @@ func safeProjectFilePath(root string, relativePath string) (string, error) {
 	if relativePath == "." || relativePath == "" || filepath.IsAbs(relativePath) || strings.HasPrefix(relativePath, "..") {
 		return "", errors.New("path must stay inside project root")
 	}
-	root = filepath.Clean(root)
-	absolutePath := filepath.Join(root, relativePath)
-	rel, err := filepath.Rel(root, absolutePath)
+	absolutePath := filepath.Join(rootEval, relativePath)
+	targetEval, err := filepath.EvalSymlinks(absolutePath)
+	if err != nil {
+		return "", err
+	}
+	rel, err := filepath.Rel(rootEval, targetEval)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
 		return "", errors.New("path must stay inside project root")
 	}
-	return absolutePath, nil
+	return targetEval, nil
 }
 
 func projectFileMimeType(path string) string {

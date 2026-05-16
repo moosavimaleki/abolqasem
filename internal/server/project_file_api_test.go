@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -51,6 +52,31 @@ func TestProjectFileServingRejectsTraversal(t *testing.T) {
 	}
 }
 
+func TestProjectFileServingRejectsSymlinkEscape(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink creation requires elevated privileges on some Windows runners")
+	}
+	root := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "outside.txt")
+	link := filepath.Join(root, "linked.txt")
+	if err := os.WriteFile(outside, []byte("outside"), 0o644); err != nil {
+		t.Fatalf("write outside failed: %v", err)
+	}
+	if err := os.Symlink(outside, link); err != nil {
+		t.Fatalf("create symlink failed: %v", err)
+	}
+	if err := registerProjectRoot("project-symlink", root); err != nil {
+		t.Fatalf("registerProjectRoot failed: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/api/projects/project-symlink/files/linked.txt/content", nil)
+	response := httptest.NewRecorder()
+	handleAPIProjects(response, request)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for symlink escape, got %d", response.Code)
+	}
+}
+
 func TestProjectFileServingRequiresRegisteredRoot(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/api/projects/unknown/files/README.md/content", nil)
 	response := httptest.NewRecorder()
@@ -64,5 +90,15 @@ func TestSafeProjectFilePathRejectsEncodedTraversal(t *testing.T) {
 	root := t.TempDir()
 	if _, err := safeProjectFilePath(root, "%2e%2e/secret.txt"); err == nil {
 		t.Fatal("expected encoded-looking traversal to be rejected after clean")
+	}
+}
+
+func TestRegisterProjectRootRejectsBroadRoots(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skipf("home unavailable: %v", err)
+	}
+	if err := registerProjectRoot("project-home", home); err == nil {
+		t.Fatal("expected home directory root to be rejected")
 	}
 }
