@@ -1447,7 +1447,7 @@ Output:
 - `settings.writeAppSettingsPatch` applies Kanna-compatible partial patches and returns the updated snapshot.
 - Locale writes are persisted through the same settings patch path used by the React UI.
 
-### Task 15.2: App management settings
+### Task 15.2: App management settings ✅
 
 موارد:
 
@@ -1459,8 +1459,22 @@ Output:
 
 Acceptance criteria:
 
-- عملیات خطرناک confirmation داشته باشد.
-- restart server از UI ممکن باشد.
+- عملیات خطرناک confirmation داشته باشد. ✅
+- restart server از UI ممکن باشد. ✅
+
+Output:
+
+- [buildinfo.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/buildinfo/buildinfo.go)
+- [app_management.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/app_management.go)
+- [app_management_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/app_management_test.go)
+- [workspace_ws.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_ws.go)
+- [protocol.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/workspace/protocol/protocol.go)
+- [types.ts](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/web-react/src/shared/types.ts)
+- [protocol.ts](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/web-react/src/shared/protocol.ts)
+- WebSocket now supports app management commands for reading management state, hook status, reload sessions, restart server, update check, and update install.
+- Release builds inject the GitHub tag into `buildinfo.Version`; local builds use `dev`.
+- Update checks read the latest GitHub release tag and keep development builds non-updateable.
+- Existing REST reload/restart/hooks endpoints now share the same backend helpers.
 
 ### Task 15.3: Keybindings مطابق Kanna
 

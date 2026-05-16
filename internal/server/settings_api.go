@@ -1,16 +1,9 @@
 package server
 
 import (
-	"ai-agent-manager/internal/adapters"
-	"ai-agent-manager/internal/adapters/claude"
-	"ai-agent-manager/internal/adapters/codex"
-	"ai-agent-manager/internal/adapters/gemini"
 	"ai-agent-manager/internal/state"
 	"encoding/json"
 	"net/http"
-	"os"
-	"os/exec"
-	"time"
 )
 
 type settingsPatch struct {
@@ -20,13 +13,6 @@ type settingsPatch struct {
 	FilesystemDiscovery             *bool             `json:"filesystem_discovery"`
 	DefaultAgent                    *string           `json:"default_agent"`
 	AgentModels                     map[string]string `json:"agent_models"`
-}
-
-type hookStatus struct {
-	Agent            string `json:"agent"`
-	UserInstalled    bool   `json:"user_installed"`
-	ProjectInstalled bool   `json:"project_installed"`
-	Error            string `json:"error,omitempty"`
 }
 
 func handleAPISettings(w http.ResponseWriter, r *http.Request) {
@@ -104,15 +90,10 @@ func handleAPIRestartServer(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	exe, err := os.Executable()
-	if err != nil {
-		http.Error(w, "Failed to locate executable", http.StatusInternalServerError)
+	if err := scheduleServerRestart(); err != nil {
+		http.Error(w, "Failed to schedule restart", http.StatusInternalServerError)
 		return
 	}
-	go func() {
-		time.Sleep(250 * time.Millisecond)
-		_ = exec.Command(exe, "restart").Start()
-	}()
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	_ = json.NewEncoder(w).Encode(map[string]any{"status": "restarting"})
@@ -123,21 +104,7 @@ func handleAPIHooksStatus(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	statuses := make([]hookStatus, 0, 3)
-	for _, adapter := range []adapters.AgentAdapter{codex.New(), claude.New(), gemini.New()} {
-		status := hookStatus{Agent: adapter.Name()}
-		userInstalled, userErr := adapter.IsHookInstalled(adapters.ScopeUser)
-		projectInstalled, projectErr := adapter.IsHookInstalled(adapters.ScopeProject)
-		status.UserInstalled = userInstalled
-		status.ProjectInstalled = projectInstalled
-		if userErr != nil {
-			status.Error = userErr.Error()
-		} else if projectErr != nil {
-			status.Error = projectErr.Error()
-		}
-		statuses = append(statuses, status)
-	}
 	writeJSON(w, map[string]any{
-		"items": statuses,
+		"items": workspaceHookStatuses(),
 	})
 }

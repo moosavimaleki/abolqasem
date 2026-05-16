@@ -1,0 +1,83 @@
+package server
+
+import (
+	"ai-agent-manager/internal/buildinfo"
+	"io"
+	"net/http"
+	"strings"
+	"testing"
+)
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
+}
+
+func TestWorkspaceCheckUpdateDetectsRelease(t *testing.T) {
+	previousVersion := buildinfo.Version
+	previousClient := appUpdateHTTPClient
+	buildinfo.Version = "0.1.2"
+	appUpdateHTTPClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Body:       io.NopCloser(strings.NewReader(`{"tag_name":"0.1.3"}`)),
+			Header:     make(http.Header),
+			Request:    req,
+		}, nil
+	})}
+	t.Cleanup(func() {
+		buildinfo.Version = previousVersion
+		appUpdateHTTPClient = previousClient
+	})
+
+	snapshot := workspaceCheckUpdate()
+	if snapshot["status"] != "available" {
+		t.Fatalf("expected available update, got %#v", snapshot["status"])
+	}
+	if snapshot["latestVersion"] != "0.1.3" {
+		t.Fatalf("expected latest version 0.1.3, got %#v", snapshot["latestVersion"])
+	}
+	if snapshot["updateAvailable"] != true {
+		t.Fatalf("expected updateAvailable true, got %#v", snapshot["updateAvailable"])
+	}
+}
+
+func TestWorkspaceInstallUpdateSchedulesDetachedCommand(t *testing.T) {
+	previousExecutablePath := executablePath
+	previousStartDetached := startDetached
+	started := make(chan []string, 1)
+	executablePath = func() (string, error) {
+		return "/tmp/ai-agent-manager", nil
+	}
+	startDetached = func(exe string, args ...string) error {
+		started <- append([]string{exe}, args...)
+		return nil
+	}
+	t.Cleanup(func() {
+		executablePath = previousExecutablePath
+		startDetached = previousStartDetached
+	})
+
+	result := workspaceInstallUpdate()
+	if result["ok"] != true {
+		t.Fatalf("expected successful install scheduling, got %#v", result)
+	}
+	command := <-started
+	if len(command) != 2 || command[0] != "/tmp/ai-agent-manager" || command[1] != "update" {
+		t.Fatalf("unexpected scheduled command: %#v", command)
+	}
+}
+
+func TestUpdateVersionNewerIgnoresDevelopmentBuilds(t *testing.T) {
+	if updateVersionNewer("0.1.3", "dev") {
+		t.Fatal("development builds should not be marked as updateable")
+	}
+	if !updateVersionNewer("0.1.3", "0.1.2") {
+		t.Fatal("expected 0.1.3 to be newer than 0.1.2")
+	}
+	if updateVersionNewer("0.1.2", "0.1.3") {
+		t.Fatal("expected older latest version to be ignored")
+	}
+}

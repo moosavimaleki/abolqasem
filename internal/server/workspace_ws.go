@@ -124,6 +124,41 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 		}
 		response := protocol.AckEnvelope(envelope.ID, snapshot)
 		return &response
+	case protocol.CommandAppReadManagement:
+		response := protocol.AckEnvelope(envelope.ID, workspaceManagementSnapshot())
+		return &response
+	case protocol.CommandAppWriteManagementSettings:
+		snapshot, err := applyWorkspaceManagementPatch(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		response := protocol.AckEnvelope(envelope.ID, snapshot)
+		return &response
+	case protocol.CommandAppReloadSessions:
+		report, err := runDiscovery()
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, "failed to reload sessions")
+			return &response
+		}
+		response := protocol.AckEnvelope(envelope.ID, map[string]any{"status": "ok", "report": report})
+		return &response
+	case protocol.CommandAppRestart:
+		if err := scheduleServerRestart(); err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		response := protocol.AckEnvelope(envelope.ID, map[string]any{"status": "restarting"})
+		return &response
+	case protocol.CommandAppReadHooksStatus:
+		response := protocol.AckEnvelope(envelope.ID, map[string]any{"items": workspaceHookStatuses()})
+		return &response
+	case protocol.CommandUpdateCheck:
+		response := protocol.AckEnvelope(envelope.ID, workspaceCheckUpdate())
+		return &response
+	case protocol.CommandUpdateInstall:
+		response := protocol.AckEnvelope(envelope.ID, workspaceInstallUpdate())
+		return &response
 	case protocol.CommandTerminalCreate:
 		result, err := workspaceTerminals.create(envelope.Command)
 		if err != nil {
@@ -338,19 +373,6 @@ func workspacePlatform() string {
 	return runtime.GOOS
 }
 
-func workspaceUpdateSnapshot() map[string]any {
-	return map[string]any{
-		"currentVersion":    "0.1.0",
-		"latestVersion":     nil,
-		"status":            "idle",
-		"updateAvailable":   false,
-		"lastCheckedAt":     nil,
-		"error":             nil,
-		"installAction":     "restart",
-		"reloadRequestedAt": nil,
-	}
-}
-
 func workspaceKeybindingsSnapshot() map[string]any {
 	return map[string]any{
 		"bindings": map[string][]string{
@@ -388,6 +410,7 @@ func workspaceAppSettingsSnapshot() map[string]any {
 		},
 		"defaultProvider":  settings.DefaultProvider,
 		"providerDefaults": providerDefaultsSnapshot(settings.ProviderDefaults),
+		"management":       workspaceManagementSnapshot(),
 		"warning":          nil,
 		"filePathDisplay":  state.GetSettingsFilePath(),
 	}

@@ -83,6 +83,19 @@ export type ClientCommand =
   | { type: "project.writeQuickActions"; projectId: string; quickActions: ProjectQuickAction[] }
   | { type: "update.check"; force?: boolean }
   | { type: "update.install" }
+  | { type: "app.readManagement" }
+  | {
+      type: "app.writeManagementSettings"
+      patch: {
+        hookUpdates?: boolean
+        hookFollowMode?: "auto" | "notice" | "off"
+        ignoreHookNavigationWhileTyping?: boolean
+        filesystemDiscovery?: boolean
+      }
+    }
+  | { type: "app.reloadSessions" }
+  | { type: "app.restart" }
+  | { type: "app.readHooksStatus" }
   | { type: "settings.readKeybindings" }
   | { type: "settings.writeKeybindings"; bindings: KeybindingsSnapshot["bindings"] }
   | { type: "settings.readAppSettings" }

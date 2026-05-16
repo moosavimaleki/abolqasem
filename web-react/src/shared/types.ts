@@ -439,8 +439,39 @@ export interface AppSettingsSnapshot {
   }
   defaultProvider: DefaultProviderPreference
   providerDefaults: ChatProviderPreferences
+  management?: AppManagementSnapshot
   warning: string | null
   filePathDisplay: string
+}
+
+export interface HookStatusSnapshot {
+  agent: string
+  user_installed: boolean
+  project_installed: boolean
+  error?: string
+}
+
+export interface AppManagementSnapshot {
+  hookNotifications: {
+    enabled: boolean
+    followMode: "auto" | "notice" | "off"
+    ignoreNavigationWhileTyping: boolean
+    filesystemDiscovery: boolean
+    supportedModes: Array<"auto" | "notice" | "off">
+    dangerousOperationsNeedConfirm: boolean
+  }
+  startup: {
+    mode: "service" | "hook" | "manual"
+    serviceInstalled: boolean
+    platform: string
+  }
+  hooks: HookStatusSnapshot[]
+  update: UpdateSnapshot
+  actions: {
+    reloadSessions: { available: boolean; requiresConfirmation: boolean }
+    restartServer: { available: boolean; requiresConfirmation: boolean }
+    installUpdate: { available: boolean; requiresConfirmation: boolean }
+  }
 }
 
 export interface AppSettingsPatch {
