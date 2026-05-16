@@ -1362,13 +1362,20 @@ Output:
 - Windows builds use a limited pipe fallback so release builds stay portable.
 - Manager supports create, input, resize, close, output events, exit events, serialized replay state, and process cleanup.
 
-### Task 13.2: Terminal UI integration
+### Task 13.2: Terminal UI integration `[done]`
 
 Acceptance criteria:
 
 - xterm.js frontend وصل شود.
 - multi terminal per project.
 - terminal layout persisted شود.
+
+Output:
+
+- [workspace_ws.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_ws.go)
+- Existing copied Kanna React UI already includes xterm.js panes, terminal layout store, multi-terminal UI, and persisted layout state.
+- Go WebSocket backend now handles `terminal.create`, `terminal.input`, `terminal.resize`, and `terminal.close`.
+- Terminal subscriptions now return snapshots and stream `terminal.output` / `terminal.exit` events to the matching subscription id.
 
 ## Milestone 14: File, Upload, Preview
 

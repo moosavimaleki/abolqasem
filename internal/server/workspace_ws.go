@@ -3,11 +3,14 @@ package server
 import (
 	"ai-agent-manager/internal/state"
 	"ai-agent-manager/internal/workspace/protocol"
+	"ai-agent-manager/internal/workspace/terminal"
+	"context"
 	"encoding/json"
 	"net/http"
 	"os"
 	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/gorilla/websocket"
 )
@@ -23,6 +26,16 @@ var workspaceWSUpgrader = websocket.Upgrader{
 	},
 }
 
+var workspaceTerminals = newWorkspaceTerminalHub()
+
+type workspaceConnection struct {
+	conn *websocket.Conn
+	hub  *workspaceTerminalHub
+
+	writeMu       sync.Mutex
+	subscriptions map[string]string
+}
+
 func handleWorkspaceWS(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -34,6 +47,12 @@ func handleWorkspaceWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer conn.Close()
+	workspaceConn := &workspaceConnection{
+		conn:          conn,
+		hub:           workspaceTerminals,
+		subscriptions: map[string]string{},
+	}
+	defer workspaceConn.close()
 
 	for {
 		_, data, err := conn.ReadMessage()
@@ -42,44 +61,48 @@ func handleWorkspaceWS(w http.ResponseWriter, r *http.Request) {
 		}
 		envelope, err := protocol.DecodeClientEnvelope(data)
 		if err != nil {
-			_ = writeWorkspaceEnvelope(conn, protocol.ErrorEnvelope("", err.Error()))
+			_ = workspaceConn.write(protocol.ErrorEnvelope("", err.Error()))
 			continue
 		}
-		response := handleWorkspaceEnvelope(envelope)
+		response := workspaceConn.handle(envelope)
 		if response == nil {
 			continue
 		}
-		if err := writeWorkspaceEnvelope(conn, *response); err != nil {
+		if err := workspaceConn.write(*response); err != nil {
 			return
 		}
 	}
 }
 
-func handleWorkspaceEnvelope(envelope protocol.ClientEnvelope) *protocol.ServerEnvelope {
+func (c *workspaceConnection) handle(envelope protocol.ClientEnvelope) *protocol.ServerEnvelope {
 	switch envelope.Type {
 	case protocol.EnvelopeSubscribe:
-		return handleWorkspaceSubscribe(envelope)
+		return c.handleSubscribe(envelope)
 	case protocol.EnvelopeUnsubscribe:
+		c.unsubscribe(envelope.ID)
 		return nil
 	case protocol.EnvelopeCommand:
-		return handleWorkspaceCommand(envelope)
+		return c.handleCommand(envelope)
 	default:
 		response := protocol.ErrorEnvelope(envelope.ID, "unsupported envelope type")
 		return &response
 	}
 }
 
-func handleWorkspaceSubscribe(envelope protocol.ClientEnvelope) *protocol.ServerEnvelope {
+func (c *workspaceConnection) handleSubscribe(envelope protocol.ClientEnvelope) *protocol.ServerEnvelope {
 	if envelope.Topic == nil {
 		response := protocol.ErrorEnvelope(envelope.ID, "missing topic")
 		return &response
+	}
+	if envelope.Topic.Type == protocol.TopicTerminal && envelope.Topic.TerminalID != "" {
+		c.subscribe(envelope.ID, envelope.Topic.TerminalID)
 	}
 	snapshotType, data := workspaceSnapshotForTopic(*envelope.Topic)
 	response := protocol.SnapshotEnvelope(envelope.ID, snapshotType, data)
 	return &response
 }
 
-func handleWorkspaceCommand(envelope protocol.ClientEnvelope) *protocol.ServerEnvelope {
+func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *protocol.ServerEnvelope {
 	commandType, err := protocol.CommandType(envelope.Command)
 	if err != nil {
 		response := protocol.ErrorEnvelope(envelope.ID, err.Error())
@@ -101,14 +124,65 @@ func handleWorkspaceCommand(envelope protocol.ClientEnvelope) *protocol.ServerEn
 		}
 		response := protocol.AckEnvelope(envelope.ID, snapshot)
 		return &response
+	case protocol.CommandTerminalCreate:
+		result, err := workspaceTerminals.create(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		response := protocol.AckEnvelope(envelope.ID, result)
+		return &response
+	case protocol.CommandTerminalInput:
+		if err := workspaceTerminals.input(envelope.Command); err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
+		return &response
+	case protocol.CommandTerminalResize:
+		if err := workspaceTerminals.resize(envelope.Command); err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
+		return &response
+	case protocol.CommandTerminalClose:
+		if err := workspaceTerminals.close(envelope.Command); err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
+		return &response
 	default:
 		response := protocol.ErrorEnvelope(envelope.ID, commandType+" is not implemented in the Go workspace backend yet")
 		return &response
 	}
 }
 
-func writeWorkspaceEnvelope(conn *websocket.Conn, envelope protocol.ServerEnvelope) error {
-	return conn.WriteJSON(envelope)
+func (c *workspaceConnection) write(envelope protocol.ServerEnvelope) error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	return c.conn.WriteJSON(envelope)
+}
+
+func (c *workspaceConnection) subscribe(subscriptionID string, terminalID string) {
+	c.subscriptions[subscriptionID] = terminalID
+	c.hub.subscribe(terminalID, subscriptionID, c)
+}
+
+func (c *workspaceConnection) unsubscribe(subscriptionID string) {
+	terminalID, ok := c.subscriptions[subscriptionID]
+	if !ok {
+		return
+	}
+	delete(c.subscriptions, subscriptionID)
+	c.hub.unsubscribe(terminalID, subscriptionID, c)
+}
+
+func (c *workspaceConnection) close() {
+	for subscriptionID := range c.subscriptions {
+		c.unsubscribe(subscriptionID)
+	}
 }
 
 func workspaceSnapshotForTopic(topic protocol.SubscriptionTopic) (string, any) {
@@ -135,10 +209,118 @@ func workspaceSnapshotForTopic(topic protocol.SubscriptionTopic) (string, any) {
 	case protocol.TopicProjectGit:
 		return protocol.SnapshotProjectGit, nil
 	case protocol.TopicTerminal:
-		return protocol.SnapshotTerminal, nil
+		return protocol.SnapshotTerminal, workspaceTerminals.snapshot(topic.TerminalID)
 	default:
 		return topic.Type, nil
 	}
+}
+
+type workspaceTerminalHub struct {
+	manager *terminal.Manager
+
+	mu          sync.Mutex
+	subscribers map[string]map[string]*workspaceConnection
+}
+
+func newWorkspaceTerminalHub() *workspaceTerminalHub {
+	hub := &workspaceTerminalHub{
+		subscribers: map[string]map[string]*workspaceConnection{},
+	}
+	hub.manager = terminal.NewManager(hub.broadcast)
+	return hub
+}
+
+func (h *workspaceTerminalHub) subscribe(terminalID string, subscriptionID string, conn *workspaceConnection) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.subscribers[terminalID] == nil {
+		h.subscribers[terminalID] = map[string]*workspaceConnection{}
+	}
+	h.subscribers[terminalID][subscriptionID] = conn
+}
+
+func (h *workspaceTerminalHub) unsubscribe(terminalID string, subscriptionID string, conn *workspaceConnection) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	subscribers := h.subscribers[terminalID]
+	if subscribers == nil {
+		return
+	}
+	if subscribers[subscriptionID] == conn {
+		delete(subscribers, subscriptionID)
+	}
+	if len(subscribers) == 0 {
+		delete(h.subscribers, terminalID)
+	}
+}
+
+func (h *workspaceTerminalHub) broadcast(event terminal.Event) {
+	h.mu.Lock()
+	subscribers := make(map[string]*workspaceConnection, len(h.subscribers[event.TerminalID]))
+	for subscriptionID, conn := range h.subscribers[event.TerminalID] {
+		subscribers[subscriptionID] = conn
+	}
+	h.mu.Unlock()
+	for subscriptionID, conn := range subscribers {
+		_ = conn.write(protocol.EventEnvelope(subscriptionID, event))
+	}
+}
+
+func (h *workspaceTerminalHub) snapshot(terminalID string) *terminal.Snapshot {
+	return h.manager.Snapshot(terminalID)
+}
+
+func (h *workspaceTerminalHub) create(raw json.RawMessage) (terminal.Snapshot, error) {
+	var payload struct {
+		ProjectID  string `json:"projectId"`
+		TerminalID string `json:"terminalId"`
+		Cols       int    `json:"cols"`
+		Rows       int    `json:"rows"`
+		Scrollback int    `json:"scrollback"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return terminal.Snapshot{}, err
+	}
+	return h.manager.Create(context.Background(), terminal.CreateRequest{
+		ProjectID:  payload.ProjectID,
+		TerminalID: payload.TerminalID,
+		Cols:       payload.Cols,
+		Rows:       payload.Rows,
+		Scrollback: payload.Scrollback,
+	})
+}
+
+func (h *workspaceTerminalHub) input(raw json.RawMessage) error {
+	var payload struct {
+		TerminalID string `json:"terminalId"`
+		Data       string `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return err
+	}
+	return h.manager.Input(payload.TerminalID, payload.Data)
+}
+
+func (h *workspaceTerminalHub) resize(raw json.RawMessage) error {
+	var payload struct {
+		TerminalID string `json:"terminalId"`
+		Cols       int    `json:"cols"`
+		Rows       int    `json:"rows"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return err
+	}
+	return h.manager.Resize(payload.TerminalID, payload.Cols, payload.Rows)
+}
+
+func (h *workspaceTerminalHub) close(raw json.RawMessage) error {
+	var payload struct {
+		TerminalID string `json:"terminalId"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return err
+	}
+	return h.manager.Close(payload.TerminalID)
 }
 
 func workspaceMachineName() string {
