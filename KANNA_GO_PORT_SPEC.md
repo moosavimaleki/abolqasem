@@ -1231,7 +1231,7 @@ Output:
 - Non-git directories return Kanna-compatible `status: "no_repo"` with empty files.
 - Ready repositories return branch, origin remote, GitHub slug, upstream metadata, and `files: []` for Task 12.2.
 
-### Task 12.2: Diff snapshot
+### Task 12.2: Diff snapshot `[done]`
 
 خروجی:
 
@@ -1254,6 +1254,15 @@ Acceptance criteria:
 
 - untracked/modified/deleted/renamed تشخیص داده شود.
 - patch lazy load شود.
+
+Output:
+
+- [detect.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/workspace/gitservice/detect.go)
+- [detect_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/workspace/gitservice/detect_test.go)
+- Git snapshots now populate Kanna-compatible `files` with `added`, `modified`, `deleted`, and `renamed` entries.
+- Untracked files are marked with `isUntracked: true`.
+- Additions/deletions are read from `git diff --numstat`; full patches remain lazy and are not embedded in the snapshot.
+- Each file receives a stable `patchDigest` for frontend cache invalidation.
 
 ### Task 12.3: Commit workflow
 
