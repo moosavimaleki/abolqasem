@@ -1379,13 +1379,22 @@ Output:
 
 ## Milestone 14: File, Upload, Preview
 
-### Task 14.1: Upload service
+### Task 14.1: Upload service `[done]`
 
 Acceptance criteria:
 
 - فایل‌ها در مسیر امن cache شوند.
 - attachment metadata ذخیره شود.
 - size limit و mime detection داشته باشد.
+
+Output:
+
+- [upload_api.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/upload_api.go)
+- [upload_api_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/upload_api_test.go)
+- `POST /api/projects/{projectId}/uploads` stores uploads under the application cache directory.
+- Attachment metadata is persisted as a sidecar JSON file.
+- Uploads enforce a 25 MiB limit and detect MIME from headers/content/extension.
+- Uploaded content can be previewed through `.../content` and deleted through the attachment URL without `/content`.
 
 ### Task 14.2: Project file serving
 

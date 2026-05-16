@@ -28,6 +28,7 @@ func setupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/hook", handleAPIHook)
 	mux.HandleFunc("/api/session/", handleAPISessionMessages)
 	mux.HandleFunc("/api/file-preview", handleAPIFilePreview)
+	mux.HandleFunc("/api/projects/", handleAPIProjects)
 	mux.HandleFunc("/api/events", handleAPIEvents)
 	mux.HandleFunc("/ws", handleWorkspaceWS)
 	mux.HandleFunc("/auth/status", handleWorkspaceAuthStatus)
