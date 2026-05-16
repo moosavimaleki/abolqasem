@@ -5,6 +5,7 @@ project_name: ai-agent-manager
 before:
   hooks:
     - go mod tidy
+    - sh scripts/prepare-web-assets.sh
     - go test ./...
 
 builds:

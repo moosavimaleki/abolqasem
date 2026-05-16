@@ -1985,15 +1985,27 @@ Output:
 
 ## Milestone 27: CI And Release
 
-### Task 27.1: Build pipeline
+### Task 27.1: Build pipeline ✅
 
 Acceptance criteria:
 
-- frontend build.
-- Go test.
-- Go build.
-- embed assets.
-- goreleaser artifacts.
+- [x] frontend build.
+- [x] Go test.
+- [x] Go build.
+- [x] embed assets.
+- [x] goreleaser artifacts.
+
+Output:
+
+- [test.yml](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/.github/workflows/test.yml)
+- [release.yml](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/.github/workflows/release.yml)
+- [.goreleaser.yaml](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/.goreleaser.yaml)
+- [prepare-web-assets.sh](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/scripts/prepare-web-assets.sh)
+- CI now has a dedicated web job that runs `npm ci`, frontend tests, and `npm run check`.
+- The `build-all` CI job prepares React client assets before cross-compiling so embedded assets are present during Go builds.
+- Release preflight still runs the reusable test workflow before GoReleaser.
+- GoReleaser now runs `scripts/prepare-web-assets.sh` before `go test ./...`, so release archives embed the built React client instead of stale static assets.
+- GitHub-hosted actions were upgraded to Node 24-capable major versions (`checkout@v6`, `setup-go@v6`, `setup-node@v6`) to avoid the Node 20 action runtime deprecation path.
 
 ### Task 27.2: Installer compatibility
 
