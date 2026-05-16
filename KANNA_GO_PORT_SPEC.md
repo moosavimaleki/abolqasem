@@ -1339,7 +1339,7 @@ Output:
 
 ## Milestone 13: Terminal Manager در Go
 
-### Task 13.1: PTY integration
+### Task 13.1: PTY integration `[done]`
 
 نیازمندی:
 
@@ -1351,6 +1351,16 @@ Acceptance criteria:
 - terminal create/input/resize/close کار کند.
 - output با WebSocket stream شود.
 - process cleanup درست باشد.
+
+Output:
+
+- [manager.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/workspace/terminal/manager.go)
+- [process_pty.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/workspace/terminal/process_pty.go)
+- [process_windows.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/workspace/terminal/process_windows.go)
+- [manager_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/workspace/terminal/manager_test.go)
+- Unix terminals use `github.com/creack/pty` with real resize support.
+- Windows builds use a limited pipe fallback so release builds stay portable.
+- Manager supports create, input, resize, close, output events, exit events, serialized replay state, and process cleanup.
 
 ### Task 13.2: Terminal UI integration
 
