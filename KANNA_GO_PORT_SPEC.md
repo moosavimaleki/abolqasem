@@ -787,7 +787,7 @@ Output:
 - Codex server model list matches Kanna hard-coded server catalog.
 - Unknown provider/model fallback is safe and deterministic.
 
-### Task 5.2: Model options
+### Task 5.2: Model options `[done]`
 
 برای Codex:
 
@@ -812,6 +812,14 @@ Acceptance criteria:
 - هر provider optionهای خودش را validate کند.
 - UI فقط optionهای قابل پشتیبانی را نشان دهد.
 - option naming با Kanna compatible باشد.
+
+Output:
+
+- `NormalizeServerModel` mirrors Kanna alias/default behavior.
+- `NormalizeClaudeModelOptions` supports reasoning effort and context window fallback.
+- `NormalizeCodexModelOptions` supports reasoning effort and fast mode fallback.
+- `CodexServiceTierFromModelOptions` maps fast mode to Kanna `fast` service tier.
+- `ResolveClaudeAPIModelID` mirrors Kanna `1m` context model suffix behavior.
 
 ## Milestone 6: Agent Coordinator
 

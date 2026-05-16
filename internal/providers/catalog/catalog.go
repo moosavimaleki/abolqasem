@@ -29,6 +29,38 @@ type ProviderContextWindowOption struct {
 	Label string `json:"label"`
 }
 
+type ModelOptions struct {
+	Claude *ClaudeModelOptionsPatch `json:"claude,omitempty"`
+	Codex  *CodexModelOptionsPatch  `json:"codex,omitempty"`
+}
+
+type ClaudeModelOptionsPatch struct {
+	ReasoningEffort string `json:"reasoningEffort,omitempty"`
+	ContextWindow   string `json:"contextWindow,omitempty"`
+}
+
+type CodexModelOptionsPatch struct {
+	ReasoningEffort string `json:"reasoningEffort,omitempty"`
+	FastMode        *bool  `json:"fastMode,omitempty"`
+}
+
+type ClaudeModelOptions struct {
+	ReasoningEffort string `json:"reasoningEffort"`
+	ContextWindow   string `json:"contextWindow"`
+}
+
+type CodexModelOptions struct {
+	ReasoningEffort string `json:"reasoningEffort"`
+	FastMode        bool   `json:"fastMode"`
+}
+
+const (
+	DefaultClaudeReasoningEffort = "high"
+	DefaultClaudeContextWindow   = "200k"
+	DefaultCodexReasoningEffort  = "high"
+	ServiceTierFast              = "fast"
+)
+
 func ServerProviders() []ProviderCatalogEntry {
 	return cloneProviders(serverProviders)
 }
@@ -51,9 +83,13 @@ func GetOrDefault(providerID string) ProviderCatalogEntry {
 }
 
 func NormalizeModel(providerID string, modelID string) string {
+	return NormalizeServerModel(providerID, modelID)
+}
+
+func NormalizeServerModel(providerID string, modelID string) string {
 	provider := GetOrDefault(providerID)
 	for _, model := range provider.Models {
-		if model.ID == modelID {
+		if model.ID == modelID || modelAliasMatches(provider.ID, model.ID, modelID) {
 			return model.ID
 		}
 		for _, alias := range model.Aliases {
@@ -63,6 +99,100 @@ func NormalizeModel(providerID string, modelID string) string {
 		}
 	}
 	return provider.DefaultModel
+}
+
+func NormalizeClaudeModelOptions(model string, modelOptions *ModelOptions, legacyEffort string) ClaudeModelOptions {
+	reasoningEffort := ""
+	contextWindow := ""
+	if modelOptions != nil && modelOptions.Claude != nil {
+		reasoningEffort = modelOptions.Claude.ReasoningEffort
+		contextWindow = modelOptions.Claude.ContextWindow
+	}
+	if !IsClaudeReasoningEffort(reasoningEffort) {
+		if IsClaudeReasoningEffort(legacyEffort) {
+			reasoningEffort = legacyEffort
+		} else {
+			reasoningEffort = DefaultClaudeReasoningEffort
+		}
+	}
+	return ClaudeModelOptions{
+		ReasoningEffort: reasoningEffort,
+		ContextWindow:   NormalizeClaudeContextWindow(model, contextWindow),
+	}
+}
+
+func NormalizeCodexModelOptions(modelOptions *ModelOptions, legacyEffort string) CodexModelOptions {
+	reasoningEffort := ""
+	fastMode := false
+	if modelOptions != nil && modelOptions.Codex != nil {
+		reasoningEffort = modelOptions.Codex.ReasoningEffort
+		if modelOptions.Codex.FastMode != nil {
+			fastMode = *modelOptions.Codex.FastMode
+		}
+	}
+	if !IsCodexReasoningEffort(reasoningEffort) {
+		if IsCodexReasoningEffort(legacyEffort) {
+			reasoningEffort = legacyEffort
+		} else {
+			reasoningEffort = DefaultCodexReasoningEffort
+		}
+	}
+	return CodexModelOptions{
+		ReasoningEffort: reasoningEffort,
+		FastMode:        fastMode,
+	}
+}
+
+func CodexServiceTierFromModelOptions(modelOptions CodexModelOptions) string {
+	if modelOptions.FastMode {
+		return ServiceTierFast
+	}
+	return ""
+}
+
+func NormalizeClaudeContextWindow(model string, contextWindow string) string {
+	for _, provider := range serverProviders {
+		if provider.ID != "claude" {
+			continue
+		}
+		for _, option := range provider.Models {
+			if option.ID != model {
+				continue
+			}
+			for _, candidate := range option.ContextWindowOptions {
+				if candidate.ID == contextWindow {
+					return contextWindow
+				}
+			}
+			return DefaultClaudeContextWindow
+		}
+	}
+	return DefaultClaudeContextWindow
+}
+
+func ResolveClaudeAPIModelID(model string, contextWindow string) string {
+	if contextWindow == "1m" {
+		return model + "[1m]"
+	}
+	return model
+}
+
+func IsClaudeReasoningEffort(value string) bool {
+	switch value {
+	case "low", "medium", "high", "max":
+		return true
+	default:
+		return false
+	}
+}
+
+func IsCodexReasoningEffort(value string) bool {
+	switch value {
+	case "minimal", "low", "medium", "high", "xhigh":
+		return true
+	default:
+		return false
+	}
 }
 
 var serverProviders = []ProviderCatalogEntry{
@@ -115,6 +245,15 @@ var serverProviders = []ProviderCatalogEntry{
 		},
 		Efforts: []ProviderEffortOption{},
 	},
+}
+
+func modelAliasMatches(providerID string, modelID string, alias string) bool {
+	switch providerID {
+	case "codex":
+		return modelID == "gpt-5.3-codex" && alias == "gpt-5-codex"
+	default:
+		return false
+	}
 }
 
 func cloneProviders(providers []ProviderCatalogEntry) []ProviderCatalogEntry {
