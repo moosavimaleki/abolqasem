@@ -1216,12 +1216,20 @@ Output:
 
 ## Milestone 12: Git Service در Go
 
-### Task 12.1: Git repository detection
+### Task 12.1: Git repository detection `[done]`
 
 Acceptance criteria:
 
 - project root git تشخیص داده شود.
 - non-git project status مشخص داشته باشد.
+
+Output:
+
+- [detect.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/workspace/gitservice/detect.go)
+- [detect_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/workspace/gitservice/detect_test.go)
+- Go git service now detects repository root from nested project paths.
+- Non-git directories return Kanna-compatible `status: "no_repo"` with empty files.
+- Ready repositories return branch, origin remote, GitHub slug, upstream metadata, and `files: []` for Task 12.2.
 
 ### Task 12.2: Diff snapshot
 
