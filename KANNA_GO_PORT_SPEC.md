@@ -1834,12 +1834,21 @@ Output:
 - Kanna launch property derivation is mirrored as a reusable Go helper.
 - External analytics transport remains a no-op reporter for this local-first Go port, while `settings.writeAppSettings` and `settings.writeAppSettingsPatch` preserve toggle semantics and event naming.
 
-### Task 24.3: Machine name and CLI supervisor parity
+### Task 24.3: Machine name and CLI supervisor parity ✅
 
 Acceptance criteria:
 
-- machine name behavior اگر در UI/settings استفاده شده port شود.
-- cli supervisor behavior اگر برای restart/update لازم است port شود.
+- [x] machine name behavior اگر در UI/settings استفاده شده port شود.
+- [x] cli supervisor behavior اگر برای restart/update لازم است port شود.
+
+Output:
+
+- [workspace_machine.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_machine.go)
+- [workspace_machine_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_machine_test.go)
+- [workspace_ws.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_ws.go)
+- Machine display name now matches Kanna behavior: macOS prefers `scutil --get ComputerName`, other platforms use hostname with `.local`/`.lan` stripped, and empty names fall back to `This Machine`.
+- Platform naming remains Kanna/Node-compatible by exposing Windows as `win32`.
+- Kanna’s long-running CLI supervisor restarts child processes through exit codes `75`/`76`. The Go port already uses service/hook-aware `restart` and `update` commands plus detached scheduling, so no extra supervisor process is introduced for the current startup model.
 
 ## Milestone 25: Security Hardening
 

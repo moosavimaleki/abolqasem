@@ -9,8 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"os"
-	"runtime"
 	"strings"
 	"sync"
 
@@ -655,21 +653,6 @@ func (h *workspaceTerminalHub) close(raw json.RawMessage) error {
 		return err
 	}
 	return h.manager.Close(payload.TerminalID)
-}
-
-func workspaceMachineName() string {
-	name, err := os.Hostname()
-	if err != nil || strings.TrimSpace(name) == "" {
-		return "Local Machine"
-	}
-	return name
-}
-
-func workspacePlatform() string {
-	if runtime.GOOS == "windows" {
-		return "win32"
-	}
-	return runtime.GOOS
 }
 
 func workspaceAppSettingsSnapshot() map[string]any {
