@@ -86,6 +86,81 @@ func TestProviderStartFailureRecordsFailure(t *testing.T) {
 	}
 }
 
+func TestCancelCancelsTurnContext(t *testing.T) {
+	store := newFakeStore()
+	var turnContext context.Context
+	coordinator := NewCoordinator(store, TurnStarterFunc(func(ctx context.Context, _ TurnRequest) (Turn, error) {
+		turnContext = ctx
+		return &fakeTurn{}, nil
+	}), nil)
+
+	if _, err := coordinator.Send(context.Background(), SendCommand{ChatID: "chat-1", Content: "hello"}); err != nil {
+		t.Fatalf("Send returned error: %v", err)
+	}
+	if turnContext == nil {
+		t.Fatal("expected turn context")
+	}
+	if err := coordinator.Cancel("chat-1"); err != nil {
+		t.Fatalf("Cancel returned error: %v", err)
+	}
+	select {
+	case <-turnContext.Done():
+	default:
+		t.Fatal("expected turn context to be cancelled")
+	}
+}
+
+func TestPendingToolSnapshot(t *testing.T) {
+	store := newFakeStore()
+	coordinator := NewCoordinator(store, TurnStarterFunc(func(context.Context, TurnRequest) (Turn, error) {
+		return &fakeTurn{}, nil
+	}), nil)
+
+	if _, err := coordinator.Send(context.Background(), SendCommand{ChatID: "chat-1", Content: "hello"}); err != nil {
+		t.Fatalf("Send returned error: %v", err)
+	}
+	if err := coordinator.SetPendingTool("chat-1", PendingToolRequest{
+		ToolUseID: "tool-1",
+		ToolKind:  "ask_user_question",
+	}); err != nil {
+		t.Fatalf("SetPendingTool returned error: %v", err)
+	}
+	pending := coordinator.PendingTool("chat-1")
+	if pending == nil {
+		t.Fatal("expected pending tool")
+	}
+	if pending.ToolUseID != "tool-1" || pending.ToolKind != "ask_user_question" {
+		t.Fatalf("unexpected pending tool: %#v", pending)
+	}
+	if got := coordinator.ActiveStatuses()["chat-1"]; got != readmodels.StatusWaitingForUser {
+		t.Fatalf("expected waiting_for_user status, got %q", got)
+	}
+}
+
+func TestActiveTurnIncludesProjectAndStartedAt(t *testing.T) {
+	store := newFakeStore()
+	coordinator := NewCoordinator(store, TurnStarterFunc(func(context.Context, TurnRequest) (Turn, error) {
+		return &fakeTurn{}, nil
+	}), nil)
+
+	if _, err := coordinator.Send(context.Background(), SendCommand{ChatID: "chat-1", Content: "hello"}); err != nil {
+		t.Fatalf("Send returned error: %v", err)
+	}
+
+	coordinator.mu.Lock()
+	active := coordinator.active["chat-1"]
+	coordinator.mu.Unlock()
+	if active == nil {
+		t.Fatal("expected active turn")
+	}
+	if active.ProjectID != "project-1" {
+		t.Fatalf("expected project id, got %q", active.ProjectID)
+	}
+	if active.StartedAt.IsZero() {
+		t.Fatal("expected startedAt to be set")
+	}
+}
+
 type fakeStore struct {
 	chats     map[string]readmodels.ChatRecord
 	queued    map[string][]readmodels.QueuedChatMessage

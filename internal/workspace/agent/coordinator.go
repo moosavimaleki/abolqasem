@@ -56,6 +56,7 @@ type Coordinator struct {
 
 type ActiveTurn struct {
 	ChatID      string
+	ProjectID   string
 	Provider    string
 	Model       string
 	Effort      string
@@ -63,7 +64,19 @@ type ActiveTurn struct {
 	PlanMode    bool
 	Status      readmodels.KannaStatus
 	Turn        Turn
-	StartedAt   int64
+	StartedAt   time.Time
+	Cancel      context.CancelFunc
+	PendingTool *PendingToolRequest
+}
+
+type PendingToolRequest struct {
+	ToolUseID string
+	ToolKind  string
+}
+
+type PendingToolSnapshot struct {
+	ToolUseID string `json:"toolUseId"`
+	ToolKind  string `json:"toolKind"`
 }
 
 type SendCommand struct {
@@ -130,6 +143,35 @@ func (c *Coordinator) ActiveStatuses() map[string]readmodels.KannaStatus {
 		statuses[chatID] = turn.Status
 	}
 	return statuses
+}
+
+func (c *Coordinator) PendingTool(chatID string) *PendingToolSnapshot {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	active := c.active[chatID]
+	if active == nil || active.PendingTool == nil {
+		return nil
+	}
+	return &PendingToolSnapshot{
+		ToolUseID: active.PendingTool.ToolUseID,
+		ToolKind:  active.PendingTool.ToolKind,
+	}
+}
+
+func (c *Coordinator) SetPendingTool(chatID string, request PendingToolRequest) error {
+	c.mu.Lock()
+	active := c.active[chatID]
+	if active == nil {
+		c.mu.Unlock()
+		return errors.New("chat turn is not active")
+	}
+	active.Status = readmodels.StatusWaitingForUser
+	active.PendingTool = &request
+	c.mu.Unlock()
+
+	c.emitStateChange(chatID)
+	return nil
 }
 
 func (c *Coordinator) Send(ctx context.Context, command SendCommand) (SendResult, error) {
@@ -205,6 +247,9 @@ func (c *Coordinator) Cancel(chatID string) error {
 	if active == nil {
 		return nil
 	}
+	if active.Cancel != nil {
+		active.Cancel()
+	}
 	if active.Turn != nil {
 		_ = active.Turn.Cancel()
 	}
@@ -234,45 +279,53 @@ func (c *Coordinator) startTurn(
 
 	resolvedProvider := resolveProvider(provider, chat.Provider)
 	settings := providerSettings(resolvedProvider, model, modelOptions, legacyEffort, planMode)
+	turnCtx, cancel := context.WithCancel(ctx)
 
 	c.mu.Lock()
 	if c.active[chatID] != nil {
+		cancel()
 		c.mu.Unlock()
 		return ErrChatAlreadyRunning
 	}
 	active := &ActiveTurn{
 		ChatID:      chatID,
+		ProjectID:   chat.ProjectID,
 		Provider:    resolvedProvider,
 		Model:       settings.model,
 		Effort:      settings.effort,
 		ServiceTier: settings.serviceTier,
 		PlanMode:    settings.planMode,
 		Status:      initialStatus(resolvedProvider),
-		StartedAt:   time.Now().UnixMilli(),
+		StartedAt:   time.Now(),
+		Cancel:      cancel,
 	}
 	c.active[chatID] = active
 	c.mu.Unlock()
 
 	if chat.Provider == nil {
 		if err := c.store.SetChatProvider(chatID, resolvedProvider); err != nil {
+			cancel()
 			c.clearActive(chatID)
 			return err
 		}
 	}
 	if err := c.store.SetPlanMode(chatID, settings.planMode); err != nil {
+		cancel()
 		c.clearActive(chatID)
 		return err
 	}
 	if err := c.store.AppendUserPrompt(chatID, content, attachments, steered); err != nil {
+		cancel()
 		c.clearActive(chatID)
 		return err
 	}
 	if err := c.store.RecordTurnStarted(chatID); err != nil {
+		cancel()
 		c.clearActive(chatID)
 		return err
 	}
 
-	turn, err := c.starter.StartTurn(ctx, TurnRequest{
+	turn, err := c.starter.StartTurn(turnCtx, TurnRequest{
 		ChatID:      chatID,
 		Provider:    resolvedProvider,
 		Content:     content,
@@ -283,6 +336,7 @@ func (c *Coordinator) startTurn(
 		PlanMode:    settings.planMode,
 	})
 	if err != nil {
+		cancel()
 		c.clearActive(chatID)
 		_ = c.store.RecordTurnFailed(chatID, err.Error())
 		c.emitStateChange(chatID)

@@ -50,6 +50,7 @@ const (
 	StatusRunning        KannaStatus = "running"
 	StatusWaitingForUser KannaStatus = "waiting_for_user"
 	StatusFailed         KannaStatus = "failed"
+	StatusCancelled      KannaStatus = "cancelled"
 )
 
 type ChatAttachment struct {

@@ -881,7 +881,7 @@ Output:
 - [coordinator.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/workspace/agent/coordinator.go)
 - [coordinator_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/workspace/agent/coordinator_test.go)
 
-### Task 6.2: Active turn model
+### Task 6.2: Active turn model `[done]`
 
 ```go
 type ActiveTurn struct {
@@ -900,6 +900,13 @@ Acceptance criteria:
 
 - statusهای `idle`, `running`, `waiting_for_user`, `failed`, `cancelled` پشتیبانی شوند.
 - pending tool request در snapshot دیده شود.
+
+Output:
+
+- `ActiveTurn` now includes `ChatID`, `ProjectID`, provider/model/options, `StartedAt`, cancel context, and pending tool state.
+- Active statuses include Kanna statuses plus cancelled support for Go-side state handling.
+- Pending tool snapshot exposes `toolUseId` and `toolKind`.
+- Cancelling a turn cancels the provider context and removes the active turn immediately.
 
 ### Task 6.3: Queue model
 
