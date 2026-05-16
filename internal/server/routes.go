@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 )
 
@@ -69,8 +68,7 @@ func isLocalFileRoute(rawPath string) bool {
 		return false
 	}
 	path = stripLineSuffix(path)
-	path = cleanRequestedPreviewPath(path)
-	if path == "" || !filepath.IsAbs(path) {
+	if path == "" {
 		return false
 	}
 	return looksLikeLocalFilesystemPath(path)
@@ -90,10 +88,22 @@ func stripLineSuffix(path string) string {
 }
 
 func looksLikeLocalFilesystemPath(path string) bool {
-	slashPath := filepath.ToSlash(path)
+	slashPath := strings.ReplaceAll(path, "\\", "/")
 	return strings.HasPrefix(slashPath, "/home/") ||
 		strings.HasPrefix(slashPath, "/Users/") ||
 		strings.HasPrefix(slashPath, "/tmp/") ||
 		strings.HasPrefix(slashPath, "/var/") ||
-		(len(slashPath) >= 3 && slashPath[1] == ':' && slashPath[2] == '/')
+		strings.HasPrefix(slashPath, "/private/var/") ||
+		isWindowsDrivePath(slashPath)
+}
+
+func isWindowsDrivePath(path string) bool {
+	if len(path) >= 4 && path[0] == '/' && isASCIIAlpha(path[1]) && path[2] == ':' && path[3] == '/' {
+		return true
+	}
+	return len(path) >= 3 && isASCIIAlpha(path[0]) && path[1] == ':' && path[2] == '/'
+}
+
+func isASCIIAlpha(ch byte) bool {
+	return (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z')
 }

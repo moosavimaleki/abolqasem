@@ -9,6 +9,8 @@ func TestIsLocalFileRoute(t *testing.T) {
 	}{
 		{path: "/home/user/project/main.go:12", want: true},
 		{path: "/home/user/project/main.go", want: true},
+		{path: "/C:/Users/user/project/main.go:12", want: true},
+		{path: "C:/Users/user/project/main.go:12", want: true},
 		{path: "/styles.css", want: false},
 		{path: "/api/state", want: false},
 		{path: "/", want: false},

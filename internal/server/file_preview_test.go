@@ -21,7 +21,11 @@ func TestBuildFilePreviewReturnsSmallWindow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildFilePreview returned error: %v", err)
 	}
-	if preview.Path != path || preview.Line != 6 || preview.Language != "python" {
+	expectedPath, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		t.Fatalf("resolve expected path: %v", err)
+	}
+	if preview.Path != expectedPath || preview.Line != 6 || preview.Language != "python" {
 		t.Fatalf("unexpected preview metadata: %+v", preview)
 	}
 	if len(preview.Lines) != 11 {
