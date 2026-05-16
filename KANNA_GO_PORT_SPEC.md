@@ -1633,7 +1633,7 @@ Output:
 
 ## Milestone 18: Browser Panel And Local Servers
 
-### Task 18.1: Port local-http-servers
+### Task 18.1: Port local-http-servers ✅
 
 شرح:
 
@@ -1641,9 +1641,18 @@ Output:
 
 Acceptance criteria:
 
-- `browser.listLocalHttpServers` پیاده شود.
-- `browser.killLocalHttpServer` پیاده شود.
-- BrowserPanel frontend بدون redesign کار کند.
+- [x] `browser.listLocalHttpServers` پیاده شود.
+- [x] `browser.killLocalHttpServer` پیاده شود.
+- [x] BrowserPanel frontend بدون redesign کار کند.
+
+Output:
+
+- [workspace_browser.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_browser.go)
+- [workspace_browser_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_browser_test.go)
+- [workspace_ws.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_ws.go)
+- `browser.listLocalHttpServers` now enumerates local listening ports, probes HTTP responses, extracts page titles, and marks `sameProject` from process cwd.
+- `browser.killLocalHttpServer` kills the process bound to the requested listening port.
+- BrowserPanel keeps using the existing socket contract and frontend code path.
 
 ### Task 18.2: Browser panel cache/state
 

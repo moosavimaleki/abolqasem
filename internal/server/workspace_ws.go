@@ -126,6 +126,21 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 	case protocol.CommandSystemPing:
 		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
 		return &response
+	case protocol.CommandBrowserListLocalHTTPServers:
+		result, err := listWorkspaceLocalHTTPServers(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		response := protocol.AckEnvelope(envelope.ID, result)
+		return &response
+	case protocol.CommandBrowserKillLocalHTTPServer:
+		if err := killWorkspaceLocalHTTPServer(envelope.Command); err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
+		return &response
 	case protocol.CommandSettingsReadAppSettings:
 		response := protocol.AckEnvelope(envelope.ID, workspaceAppSettingsSnapshot())
 		return &response
