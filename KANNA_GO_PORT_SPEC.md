@@ -1079,7 +1079,7 @@ Output:
 - Command construction supports model, effort, permission mode, resume, and fork-session.
 - Stream parser maps assistant/result JSON lines into Kanna transcript entries.
 
-### Task 8.2: Claude session management
+### Task 8.2: Claude session management `[done]`
 
 Acceptance criteria:
 
@@ -1087,6 +1087,19 @@ Acceptance criteria:
 - stream messages.
 - model/reasoning/context window support.
 - AskUserQuestion و plan approval پشتیبانی شود، اگر provider اجازه بدهد.
+
+Output:
+
+- [session.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/providers/claude/session.go)
+- [session_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/providers/claude/session_test.go)
+- Session manager reuses existing Claude session for matching cwd/effort.
+- Model and permission mode updates are applied to reusable sessions.
+- Fork session or cwd/effort changes close the old session and start a new one.
+- Prompt sending is routed through the reusable session handle.
+
+Remaining:
+
+- Full AskUserQuestion/ExitPlanMode permission bridge depends on CLI stream/control behavior and will be wired when provider lifecycle is integrated into coordinator.
 
 ## Milestone 9: Gemini Adapter
 
