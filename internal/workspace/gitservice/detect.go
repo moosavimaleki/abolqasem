@@ -96,6 +96,73 @@ func Detect(ctx context.Context, localPath string) (Snapshot, error) {
 	return snapshot, nil
 }
 
+func Init(ctx context.Context, localPath string) (BranchActionResult, error) {
+	localPath = strings.TrimSpace(localPath)
+	result := BranchActionResult{SnapshotChanged: true}
+	if localPath == "" {
+		return branchFailure(result, "Project path required", "Choose a project before initializing git.", ""), nil
+	}
+	if err := os.MkdirAll(localPath, 0o755); err != nil {
+		return BranchActionResult{}, err
+	}
+	if output, err := gitOutput(ctx, localPath, "init"); err != nil {
+		return branchFailure(result, "Initialize git failed", err.Error(), output), nil
+	}
+	snapshot, _ := Detect(ctx, localPath)
+	result.OK = true
+	result.BranchName = snapshot.BranchName
+	return result, nil
+}
+
+func ReadPatch(ctx context.Context, localPath string, path string) (string, error) {
+	snapshot, err := Detect(ctx, localPath)
+	if err != nil {
+		return "", err
+	}
+	if snapshot.Status != StatusReady {
+		return "", nil
+	}
+	path = cleanDiffPath(path)
+	if path == "" {
+		return "", nil
+	}
+	file, ok := findDiffFile(snapshot.Files, path)
+	if !ok {
+		return "", nil
+	}
+	if file.IsUntracked {
+		output, err := gitRawOutput(ctx, snapshot.RepositoryRoot, "diff", "--no-index", "--", os.DevNull, path)
+		if err != nil {
+			var commandErr gitCommandError
+			if errors.As(err, &commandErr) && commandErr.output != "" {
+				return commandErr.output, nil
+			}
+			return "", err
+		}
+		return output, nil
+	}
+	patch, err := gitRawOutput(ctx, snapshot.RepositoryRoot, "diff", "--", path)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(patch) != "" {
+		return patch, nil
+	}
+	return gitRawOutput(ctx, snapshot.RepositoryRoot, "diff", "--cached", "--", path)
+}
+
+func GenerateCommitMessage(_ context.Context, _ string, paths []string) (string, string) {
+	cleaned := cleanPaths(paths)
+	switch len(cleaned) {
+	case 0:
+		return "", ""
+	case 1:
+		return "Update " + filepath.Base(cleaned[0]), ""
+	default:
+		return "Update " + strconv.Itoa(len(cleaned)) + " files", strings.Join(cleaned, "\n")
+	}
+}
+
 func diffFiles(ctx context.Context, root string) []DiffFile {
 	statusOutput, err := gitRawOutput(ctx, root, "status", "--porcelain=v1")
 	if err != nil || strings.TrimSpace(statusOutput) == "" {

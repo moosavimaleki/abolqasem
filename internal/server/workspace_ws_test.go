@@ -75,6 +75,122 @@ func TestWorkspaceCommandRoutingCreatesProjectAndChat(t *testing.T) {
 	}
 }
 
+func TestWorkspaceCommandRoutingHandlesProjectAndChatMutations(t *testing.T) {
+	withWorkspaceComposerStore(t)
+	conn := newTestWorkspaceConnection(nil)
+	projectDir := t.TempDir()
+
+	projectID := mustCreateWorkspaceProject(t, conn, projectDir)
+	assertWorkspaceAck(t, conn.handle(protocol.ClientEnvelope{
+		V:    protocol.ProtocolVersion,
+		Type: protocol.EnvelopeCommand,
+		ID:   "project-rename",
+		Command: mustWorkspaceRawCommand(t, map[string]any{
+			"type":      protocol.CommandProjectRename,
+			"projectId": projectID,
+			"title":     "Sidebar Name",
+		}),
+	}), "project-rename")
+
+	chatID := mustCreateWorkspaceChat(t, conn, projectID)
+	assertWorkspaceAck(t, conn.handle(protocol.ClientEnvelope{
+		V:    protocol.ProtocolVersion,
+		Type: protocol.EnvelopeCommand,
+		ID:   "chat-rename",
+		Command: mustWorkspaceRawCommand(t, map[string]any{
+			"type":   protocol.CommandChatRename,
+			"chatId": chatID,
+			"title":  "Renamed Chat",
+		}),
+	}), "chat-rename")
+	forkResponse := conn.handle(protocol.ClientEnvelope{
+		V:       protocol.ProtocolVersion,
+		Type:    protocol.EnvelopeCommand,
+		ID:      "chat-fork",
+		Command: mustWorkspaceRawCommand(t, map[string]any{"type": protocol.CommandChatFork, "chatId": chatID}),
+	})
+	assertWorkspaceAck(t, forkResponse, "chat-fork")
+	forkResult, ok := forkResponse.Result.(map[string]any)
+	if !ok || forkResult["chatId"] == "" {
+		t.Fatalf("expected fork chat id, got %#v", forkResponse.Result)
+	}
+	assertWorkspaceAck(t, conn.handle(protocol.ClientEnvelope{
+		V:       protocol.ProtocolVersion,
+		Type:    protocol.EnvelopeCommand,
+		ID:      "chat-archive",
+		Command: mustWorkspaceRawCommand(t, map[string]any{"type": protocol.CommandChatArchive, "chatId": chatID}),
+	}), "chat-archive")
+	assertWorkspaceAck(t, conn.handle(protocol.ClientEnvelope{
+		V:       protocol.ProtocolVersion,
+		Type:    protocol.EnvelopeCommand,
+		ID:      "chat-unarchive",
+		Command: mustWorkspaceRawCommand(t, map[string]any{"type": protocol.CommandChatUnarchive, "chatId": chatID}),
+	}), "chat-unarchive")
+	assertWorkspaceAck(t, conn.handle(protocol.ClientEnvelope{
+		V:       protocol.ProtocolVersion,
+		Type:    protocol.EnvelopeCommand,
+		ID:      "chat-delete",
+		Command: mustWorkspaceRawCommand(t, map[string]any{"type": protocol.CommandChatDelete, "chatId": chatID}),
+	}), "chat-delete")
+
+	state, err := workspaceStore().LoadState()
+	if err != nil {
+		t.Fatalf("LoadState returned error: %v", err)
+	}
+	project := state.ProjectsByID[projectID]
+	if project.SidebarTitle == nil || *project.SidebarTitle != "Sidebar Name" {
+		t.Fatalf("expected renamed project sidebar title, got %#v", project)
+	}
+	chat := state.ChatsByID[chatID]
+	if chat.Title != "Renamed Chat" || chat.DeletedAt == 0 {
+		t.Fatalf("expected renamed deleted chat, got %#v", chat)
+	}
+}
+
+func TestWorkspaceCommandRoutingHandlesGitAndHistoryCommands(t *testing.T) {
+	withWorkspaceComposerStore(t)
+	conn := newTestWorkspaceConnection(nil)
+	projectID := mustCreateWorkspaceProject(t, conn, t.TempDir())
+	chatID := mustCreateWorkspaceChat(t, conn, projectID)
+
+	gitResponse := conn.handle(protocol.ClientEnvelope{
+		V:       protocol.ProtocolVersion,
+		Type:    protocol.EnvelopeCommand,
+		ID:      "git-init",
+		Command: mustWorkspaceRawCommand(t, map[string]any{"type": protocol.CommandChatInitGit, "chatId": chatID}),
+	})
+	assertWorkspaceAck(t, gitResponse, "git-init")
+
+	messageResponse := conn.handle(protocol.ClientEnvelope{
+		V:    protocol.ProtocolVersion,
+		Type: protocol.EnvelopeCommand,
+		ID:   "commit-message",
+		Command: mustWorkspaceRawCommand(t, map[string]any{
+			"type":   protocol.CommandChatGenerateCommitMessage,
+			"chatId": chatID,
+			"paths":  []string{"internal/server/workspace_ws.go"},
+		}),
+	})
+	assertWorkspaceAck(t, messageResponse, "commit-message")
+	result, ok := messageResponse.Result.(map[string]any)
+	if !ok || result["subject"] == "" {
+		t.Fatalf("expected generated commit message, got %#v", messageResponse.Result)
+	}
+
+	historyResponse := conn.handle(protocol.ClientEnvelope{
+		V:    protocol.ProtocolVersion,
+		Type: protocol.EnvelopeCommand,
+		ID:   "history",
+		Command: mustWorkspaceRawCommand(t, map[string]any{
+			"type":         protocol.CommandChatLoadHistory,
+			"chatId":       chatID,
+			"beforeCursor": "",
+			"limit":        25,
+		}),
+	})
+	assertWorkspaceAck(t, historyResponse, "history")
+}
+
 func TestWorkspaceSubscriptionRegistryBroadcastsOnlyRelatedTopics(t *testing.T) {
 	withWorkspaceComposerStore(t)
 	withWorkspaceConnectionRegistry(t)
@@ -183,6 +299,64 @@ func newTestWorkspaceConnection(writeFn func(protocol.ServerEnvelope) error) *wo
 		hub:           newWorkspaceTerminalHub(),
 		writeFn:       writeFn,
 		subscriptions: map[string]workspaceSubscription{},
+	}
+}
+
+func mustCreateWorkspaceProject(t *testing.T, conn *workspaceConnection, localPath string) string {
+	t.Helper()
+	response := conn.handle(protocol.ClientEnvelope{
+		V:    protocol.ProtocolVersion,
+		Type: protocol.EnvelopeCommand,
+		ID:   "project-create",
+		Command: mustWorkspaceRawCommand(t, map[string]any{
+			"type":      protocol.CommandProjectCreate,
+			"localPath": localPath,
+			"title":     "Project",
+		}),
+	})
+	if response == nil || response.Type != protocol.EnvelopeAck {
+		t.Fatalf("unexpected project create response: %#v", response)
+	}
+	result, ok := response.Result.(map[string]any)
+	if !ok {
+		t.Fatalf("unexpected project create result: %#v", response.Result)
+	}
+	projectID, ok := result["projectId"].(string)
+	if !ok || projectID == "" {
+		t.Fatalf("expected project id in result, got %#v", result)
+	}
+	return projectID
+}
+
+func mustCreateWorkspaceChat(t *testing.T, conn *workspaceConnection, projectID string) string {
+	t.Helper()
+	response := conn.handle(protocol.ClientEnvelope{
+		V:    protocol.ProtocolVersion,
+		Type: protocol.EnvelopeCommand,
+		ID:   "chat-create",
+		Command: mustWorkspaceRawCommand(t, map[string]any{
+			"type":      protocol.CommandChatCreate,
+			"projectId": projectID,
+		}),
+	})
+	if response == nil || response.Type != protocol.EnvelopeAck {
+		t.Fatalf("unexpected chat create response: %#v", response)
+	}
+	result, ok := response.Result.(map[string]any)
+	if !ok {
+		t.Fatalf("unexpected chat create result: %#v", response.Result)
+	}
+	chatID, ok := result["chatId"].(string)
+	if !ok || chatID == "" {
+		t.Fatalf("expected chat id in result, got %#v", result)
+	}
+	return chatID
+}
+
+func assertWorkspaceAck(t *testing.T, response *protocol.ServerEnvelope, id string) {
+	t.Helper()
+	if response == nil || response.Type != protocol.EnvelopeAck || response.ID != id {
+		t.Fatalf("unexpected ack response for %s: %#v", id, response)
 	}
 }
 

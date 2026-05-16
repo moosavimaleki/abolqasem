@@ -489,7 +489,7 @@ Output:
 - [workspace_composer.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_composer.go)
 - [workspace_ws_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_ws_test.go)
 
-### Task 2.3: Command router `[in-progress]`
+### Task 2.3: Command router `[done]`
 
 Commandهای Kanna باید mirror شوند:
 
@@ -560,21 +560,26 @@ terminal.close
 
 Acceptance criteria:
 
-- هر command handler جدا و قابل تست باشد.
-- خطاها structured باشند.
-- command ID در response حفظ شود.
-- commandهای هنوز پیاده‌سازی‌نشده باید error سازگار بدهند، نه silently ignore.
+- [x] هر command handler جدا و قابل تست باشد.
+- [x] خطاها structured باشند.
+- [x] command ID در response حفظ شود.
+- [x] commandهای هنوز پیاده‌سازی‌نشده باید error سازگار بدهند، نه silently ignore.
 
 Output:
 
 - `system.ping` implemented.
 - `settings.readAppSettings` implemented.
 - `settings.writeAppSettingsPatch` supports `locale` persistence.
-- Unimplemented commands return Kanna-compatible error envelopes.
-
-Remaining:
-
-- Dispatch all Kanna commands to real Go services as their milestones are implemented.
+- Unimplemented commands return Kanna-compatible error envelopes with the original command ID.
+- Project commands now route to Go services: `project.open`, `project.create`, `project.rename`, `project.remove`, `project.readDiffPatch`.
+- Chat commands now route to Go services: create/fork/rename/archive/unarchive/delete/mark-read/send/queue/cancel/tool/history/export.
+- Git commands now route to Go services where implemented: diff refresh, git init, GitHub publish info, branch list/checkout/create/merge/sync, commit, discard, ignore, generated commit message.
+- Every command in `protocol.go` has an explicit router case; unsupported project ordering is an explicit structured error instead of falling through.
+- [workspace_ws.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_ws.go)
+- [workspace_commands.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_commands.go)
+- [workspace_git_commands.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_git_commands.go)
+- [workspace_ws_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_ws_test.go)
+- [detect.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/workspace/gitservice/detect.go)
 
 ## Milestone 3: Event Store در Go
 

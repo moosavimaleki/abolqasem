@@ -159,6 +159,13 @@ func (r *workspaceConnectionRegistry) broadcastAppSettings(snapshot map[string]a
 	r.broadcastTopic(appSettingsSubscription, protocol.SnapshotAppSettings, snapshot)
 }
 
+func (r *workspaceConnectionRegistry) broadcastProjectGit(projectID string) {
+	if strings.TrimSpace(projectID) == "" {
+		return
+	}
+	r.broadcastTopic(projectGitSubscription+projectID, protocol.SnapshotProjectGit, workspaceProjectGitSnapshot(projectID))
+}
+
 func workspaceAgentCoordinator() *agent.Coordinator {
 	dir := workspaceDataDir()
 	workspaceCoordinatorMu.Lock()

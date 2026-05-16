@@ -293,6 +293,42 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 		workspaceConnections.broadcast("")
 		response := protocol.AckEnvelope(envelope.ID, map[string]any{"projectId": project.ID})
 		return &response
+	case protocol.CommandProjectCreate:
+		project, err := workspaceCreateProject(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		workspaceConnections.broadcast("")
+		response := protocol.AckEnvelope(envelope.ID, map[string]any{"projectId": project.ID})
+		return &response
+	case protocol.CommandProjectRename:
+		if err := workspaceRenameProject(envelope.Command); err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		workspaceConnections.broadcast("")
+		response := protocol.AckEnvelope(envelope.ID, workspaceAck())
+		return &response
+	case protocol.CommandProjectRemove:
+		if err := workspaceRemoveProject(envelope.Command); err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		workspaceConnections.broadcast("")
+		response := protocol.AckEnvelope(envelope.ID, workspaceAck())
+		return &response
+	case protocol.CommandSidebarReorderProjectGroups:
+		response := protocol.ErrorEnvelope(envelope.ID, protocol.CommandSidebarReorderProjectGroups+" is not implemented in the Go workspace backend yet")
+		return &response
+	case protocol.CommandProjectReadDiffPatch:
+		result, err := workspaceReadDiffPatch(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		response := protocol.AckEnvelope(envelope.ID, result)
+		return &response
 	case protocol.CommandChatCreate:
 		var payload struct {
 			ProjectID string `json:"projectId"`
@@ -308,6 +344,54 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 		}
 		workspaceConnections.broadcast(chat.ID)
 		response := protocol.AckEnvelope(envelope.ID, map[string]any{"chatId": chat.ID})
+		return &response
+	case protocol.CommandChatFork:
+		result, chatID, err := workspaceForkChat(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		workspaceConnections.broadcast(chatID)
+		response := protocol.AckEnvelope(envelope.ID, result)
+		return &response
+	case protocol.CommandChatRename:
+		chatID, err := workspaceRenameChat(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		workspaceConnections.broadcast(chatID)
+		response := protocol.AckEnvelope(envelope.ID, workspaceAck())
+		return &response
+	case protocol.CommandChatArchive:
+		chatID, err := workspaceArchiveChat(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		workspaceConnections.broadcast(chatID)
+		response := protocol.AckEnvelope(envelope.ID, workspaceAck())
+		return &response
+	case protocol.CommandChatUnarchive:
+		chatID, err := workspaceUnarchiveChat(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		workspaceConnections.broadcast(chatID)
+		response := protocol.AckEnvelope(envelope.ID, workspaceAck())
+		return &response
+	case protocol.CommandChatDelete:
+		chatID, err := workspaceDeleteChat(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		workspaceConnections.broadcast(chatID)
+		response := protocol.AckEnvelope(envelope.ID, workspaceAck())
+		return &response
+	case protocol.CommandChatSetDraftProtection:
+		response := protocol.AckEnvelope(envelope.ID, workspaceAck())
 		return &response
 	case protocol.CommandChatSend:
 		command, err := decodeSendCommand(envelope.Command)
@@ -410,6 +494,139 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 		workspaceConnections.broadcast(chatID)
 		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
 		return &response
+	case protocol.CommandChatRefreshDiffs:
+		snapshot, projectID, err := workspaceRefreshDiffs(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		workspaceConnections.broadcastProjectGit(projectID)
+		response := protocol.AckEnvelope(envelope.ID, snapshot)
+		return &response
+	case protocol.CommandChatInitGit:
+		result, projectID, err := workspaceInitGit(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		workspaceConnections.broadcastProjectGit(projectID)
+		response := protocol.AckEnvelope(envelope.ID, result)
+		return &response
+	case protocol.CommandChatGetGitHubPublishInfo:
+		result, err := workspaceGetGitHubPublishInfo(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		response := protocol.AckEnvelope(envelope.ID, result)
+		return &response
+	case protocol.CommandChatCheckGitHubRepoAvailability:
+		result, err := workspaceCheckGitHubRepoAvailability(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		response := protocol.AckEnvelope(envelope.ID, result)
+		return &response
+	case protocol.CommandChatPublishToGitHub:
+		result, projectID, err := workspacePublishToGitHub(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		workspaceConnections.broadcastProjectGit(projectID)
+		response := protocol.AckEnvelope(envelope.ID, result)
+		return &response
+	case protocol.CommandChatListBranches:
+		result, err := workspaceListBranches(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		response := protocol.AckEnvelope(envelope.ID, result)
+		return &response
+	case protocol.CommandChatPreviewMergeBranch:
+		result, err := workspacePreviewMergeBranch(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		response := protocol.AckEnvelope(envelope.ID, result)
+		return &response
+	case protocol.CommandChatMergeBranch:
+		result, projectID, err := workspaceMergeBranch(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		workspaceConnections.broadcastProjectGit(projectID)
+		response := protocol.AckEnvelope(envelope.ID, result)
+		return &response
+	case protocol.CommandChatSyncBranch:
+		result, projectID, err := workspaceSyncBranch(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		workspaceConnections.broadcastProjectGit(projectID)
+		response := protocol.AckEnvelope(envelope.ID, result)
+		return &response
+	case protocol.CommandChatCheckoutBranch:
+		result, projectID, err := workspaceCheckoutBranch(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		workspaceConnections.broadcastProjectGit(projectID)
+		response := protocol.AckEnvelope(envelope.ID, result)
+		return &response
+	case protocol.CommandChatCreateBranch:
+		result, projectID, err := workspaceCreateBranch(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		workspaceConnections.broadcastProjectGit(projectID)
+		response := protocol.AckEnvelope(envelope.ID, result)
+		return &response
+	case protocol.CommandChatGenerateCommitMessage:
+		result, err := workspaceGenerateCommitMessage(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		response := protocol.AckEnvelope(envelope.ID, result)
+		return &response
+	case protocol.CommandChatCommitDiffs:
+		result, projectID, err := workspaceCommitDiffs(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		workspaceConnections.broadcastProjectGit(projectID)
+		response := protocol.AckEnvelope(envelope.ID, result)
+		return &response
+	case protocol.CommandChatDiscardDiffFile:
+		result, projectID, err := workspaceDiscardDiffFile(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		workspaceConnections.broadcastProjectGit(projectID)
+		response := protocol.AckEnvelope(envelope.ID, result)
+		return &response
+	case protocol.CommandChatIgnoreDiffFile:
+		result, projectID, err := workspaceIgnoreDiffFile(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		workspaceConnections.broadcastProjectGit(projectID)
+		response := protocol.AckEnvelope(envelope.ID, result)
+		return &response
+	case protocol.CommandChatStopDraining:
+		response := protocol.AckEnvelope(envelope.ID, workspaceAck())
+		return &response
 	case protocol.CommandAppReadManagement:
 		response := protocol.AckEnvelope(envelope.ID, workspaceManagementSnapshot())
 		return &response
@@ -448,6 +665,14 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 	case protocol.CommandUpdateInstall:
 		result := workspaceInstallUpdate()
 		workspaceConnections.broadcastUpdate(workspaceUpdateSnapshot())
+		response := protocol.AckEnvelope(envelope.ID, result)
+		return &response
+	case protocol.CommandChatLoadHistory:
+		result, err := workspaceLoadChatHistory(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
 		response := protocol.AckEnvelope(envelope.ID, result)
 		return &response
 	case protocol.CommandTerminalCreate:
@@ -618,7 +843,7 @@ func workspaceSnapshotForTopic(topic protocol.SubscriptionTopic) (string, any) {
 	case protocol.TopicChat:
 		return protocol.SnapshotChat, workspaceChatSnapshot(topic.ChatID, subscriptionRecentLimit(topic))
 	case protocol.TopicProjectGit:
-		return protocol.SnapshotProjectGit, nil
+		return protocol.SnapshotProjectGit, workspaceProjectGitSnapshot(topic.ProjectID)
 	case protocol.TopicTerminal:
 		return protocol.SnapshotTerminal, workspaceTerminals.snapshot(topic.TerminalID)
 	default:
