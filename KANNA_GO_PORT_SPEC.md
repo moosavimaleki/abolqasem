@@ -1654,12 +1654,21 @@ Output:
 - `browser.killLocalHttpServer` kills the process bound to the requested listening port.
 - BrowserPanel keeps using the existing socket contract and frontend code path.
 
-### Task 18.2: Browser panel cache/state
+### Task 18.2: Browser panel cache/state ✅
 
 Acceptance criteria:
 
-- state مورد انتظار BrowserPanel حفظ شود.
-- project-specific browser preview behavior با Kanna یکی باشد.
+- [x] state مورد انتظار BrowserPanel حفظ شود.
+- [x] project-specific browser preview behavior با Kanna یکی باشد.
+
+Output:
+
+- [browserPanelCache.ts](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/web-react/src/client/lib/browserPanelCache.ts)
+- [browserPanelCache.test.ts](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/web-react/src/client/lib/browserPanelCache.test.ts)
+- [BrowserPanel.tsx](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/web-react/src/client/components/chat-ui/BrowserPanel.tsx)
+- BrowserPanel local HTTP server cache is now scoped per project.
+- BrowserPanel loads, refreshes, and removes cached local server state by project.
+- Existing right-sidebar browser state keeps per-project address/history/zoom behavior.
 
 ## Milestone 19: Quick Actions
 

@@ -80,7 +80,7 @@ function BrowserPanelImpl({ projectId, socket, onRunQuickAction }: BrowserPanelP
   const zoom = browserState?.zoom ?? 1
   const [addressDraft, setAddressDraft] = useState(address)
   const [iframeVersion, setIframeVersion] = useState(0)
-  const [localServers, setLocalServers] = useState<LocalHttpServerInfo[]>(() => getCachedLocalHttpServers() ?? [])
+  const [localServers, setLocalServers] = useState<LocalHttpServerInfo[]>(() => getCachedLocalHttpServers(projectId) ?? [])
   const [isLoadingServers, setIsLoadingServers] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
   const [quickActions, setQuickActions] = useState<ProjectQuickAction[]>(() => getCachedProjectQuickActions(projectId) ?? [])
@@ -97,7 +97,7 @@ function BrowserPanelImpl({ projectId, socket, onRunQuickAction }: BrowserPanelP
   const visibleServers = shouldShowOtherServers ? localServers : projectServers
 
   const refreshLocalServers = useCallback((options: { silent?: boolean } = {}) => {
-    const hasCachedServers = getCachedLocalHttpServers() !== null
+    const hasCachedServers = getCachedLocalHttpServers(projectId) !== null
     if (!options.silent) {
       setIsLoadingServers(true)
     }
@@ -113,7 +113,7 @@ function BrowserPanelImpl({ projectId, socket, onRunQuickAction }: BrowserPanelP
   }, [projectId, socket])
 
   const killServer = useCallback((server: LocalHttpServerInfo) => {
-    setLocalServers(removeCachedLocalHttpServer(server.port))
+    setLocalServers(removeCachedLocalHttpServer(server.port, projectId))
     void socket.command({ type: "browser.killLocalHttpServer", port: server.port })
       .then(() => refreshLocalServers({ silent: true }))
       .catch((error) => setServerError(error instanceof Error ? error.message : String(error)))
@@ -166,7 +166,7 @@ function BrowserPanelImpl({ projectId, socket, onRunQuickAction }: BrowserPanelP
 
   useEffect(() => {
     if (address) return
-    const cachedServers = getCachedLocalHttpServers()
+    const cachedServers = getCachedLocalHttpServers(projectId)
     if (cachedServers) {
       setLocalServers(cachedServers)
     } else {

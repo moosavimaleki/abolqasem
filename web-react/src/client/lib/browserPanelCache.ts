@@ -1,8 +1,8 @@
 import type { LocalHttpServerInfo, ProjectQuickAction } from "../../shared/protocol"
 import type { KannaSocket } from "../app/socket"
 
-let localHttpServersCache: LocalHttpServerInfo[] | null = null
-let localHttpServersRequest: Promise<LocalHttpServerInfo[]> | null = null
+const localHttpServersCacheByProjectId = new Map<string, LocalHttpServerInfo[]>()
+const localHttpServersRequestByProjectId = new Map<string, Promise<LocalHttpServerInfo[]>>()
 
 const quickActionsCacheByProjectId = new Map<string, ProjectQuickAction[]>()
 const quickActionsRequestByProjectId = new Map<string, Promise<ProjectQuickAction[]>>()
@@ -11,30 +11,38 @@ function visibleLocalHttpServers(servers: LocalHttpServerInfo[]) {
   return servers.filter((server) => server.status >= 200 && server.status < 400)
 }
 
-export function getCachedLocalHttpServers() {
-  return localHttpServersCache
+function localHttpServerCacheKey(projectId?: string) {
+  return projectId || "__global__"
+}
+
+export function getCachedLocalHttpServers(projectId?: string) {
+  return localHttpServersCacheByProjectId.get(localHttpServerCacheKey(projectId)) ?? null
 }
 
 export function refreshCachedLocalHttpServers(socket: KannaSocket, projectId?: string) {
-  if (localHttpServersRequest) return localHttpServersRequest
+  const cacheKey = localHttpServerCacheKey(projectId)
+  const existingRequest = localHttpServersRequestByProjectId.get(cacheKey)
+  if (existingRequest) return existingRequest
 
-  localHttpServersRequest = socket.command<LocalHttpServerInfo[]>({
+  const request = socket.command<LocalHttpServerInfo[]>({
     type: "browser.listLocalHttpServers",
     projectId,
   }).then((servers) => {
     const visibleServers = visibleLocalHttpServers(servers)
-    localHttpServersCache = visibleServers
+    localHttpServersCacheByProjectId.set(cacheKey, visibleServers)
     return visibleServers
   }).finally(() => {
-    localHttpServersRequest = null
+    localHttpServersRequestByProjectId.delete(cacheKey)
   })
 
-  return localHttpServersRequest
+  localHttpServersRequestByProjectId.set(cacheKey, request)
+  return request
 }
 
-export function removeCachedLocalHttpServer(port: number) {
-  const nextServers = (localHttpServersCache ?? []).filter((server) => server.port !== port)
-  localHttpServersCache = nextServers
+export function removeCachedLocalHttpServer(port: number, projectId?: string) {
+  const cacheKey = localHttpServerCacheKey(projectId)
+  const nextServers = (localHttpServersCacheByProjectId.get(cacheKey) ?? []).filter((server) => server.port !== port)
+  localHttpServersCacheByProjectId.set(cacheKey, nextServers)
   return nextServers
 }
 
