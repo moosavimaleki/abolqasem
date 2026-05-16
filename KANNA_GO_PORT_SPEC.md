@@ -101,7 +101,7 @@ Local tools
 
 ## Milestone 0: Parity Lock
 
-### Task 0.1: تهیه parity map از Kanna
+### Task 0.1: تهیه parity map از Kanna `[done]`
 
 شرح:
 
@@ -119,7 +119,11 @@ Acceptance criteria:
 - هیچ فیچر Kanna بدون تصمیم explicit حذف نشود.
 - هر defer باید دلیل و phase داشته باشد.
 
-### Task 0.1.1: Server module port map
+Output:
+
+- [KANNA_PARITY_MAP.md](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/KANNA_PARITY_MAP.md)
+
+### Task 0.1.1: Server module port map `[done]`
 
 این map باید هنگام اجرا به checklist واقعی تبدیل شود. معادل‌های پیشنهادی Go فقط naming هستند؛ behavior باید از Kanna بیاید.
 
@@ -168,7 +172,11 @@ Acceptance criteria:
 - testهای متناظر Kanna تا حد ممکن به Go test تبدیل شوند.
 - هیچ module بدون ثبت تصمیم حذف نشود.
 
-### Task 0.1.2: Shared type parity map
+Output:
+
+- [KANNA_PARITY_MAP.md](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/KANNA_PARITY_MAP.md)
+
+### Task 0.1.2: Shared type parity map `[done]`
 
 شرح:
 
@@ -183,7 +191,11 @@ Acceptance criteria:
 - `ServerSnapshot`ها با Kanna برابر باشند.
 - `TranscriptEntry`, `ChatSnapshot`, `SidebarData`, `ChatDiffSnapshot`, `TerminalSnapshot`, `AppSettingsSnapshot`, `KeybindingsSnapshot`, `UpdateSnapshot`, `LlmProviderSnapshot` معادل داشته باشند.
 
-### Task 0.1.3: Frontend component port map
+Output:
+
+- [KANNA_PARITY_MAP.md](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/KANNA_PARITY_MAP.md)
+
+### Task 0.1.3: Frontend component port map `[done]`
 
 Componentهای کلیدی که باید با حداقل تغییر منتقل شوند:
 
@@ -219,7 +231,11 @@ Acceptance criteria:
 - فقط i18n/RTL و backend connection تغییر کند.
 - testهای frontend Kanna تا حد ممکن حفظ شوند.
 
-### Task 0.2: بررسی license و اجازه copy مستقیم
+Output:
+
+- [KANNA_PARITY_MAP.md](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/KANNA_PARITY_MAP.md)
+
+### Task 0.2: بررسی license و اجازه copy مستقیم `[done]`
 
 شرح:
 
@@ -231,7 +247,15 @@ Acceptance criteria:
 - یک note در repo ثبت شود که استفاده مستقیم از code مجاز است یا نه.
 - dependencyهای frontend در `package.json` جدید مشخص باشند.
 
-### Task 0.3: تعیین strategy انتقال frontend بدون redesign
+Output:
+
+- [KANNA_LICENSE_REVIEW.md](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/KANNA_LICENSE_REVIEW.md)
+
+Dependency/package metadata:
+
+- Done. Dependency/package metadata در [web-react/package.json](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/web-react/package.json) ثبت شد.
+
+### Task 0.3: تعیین strategy انتقال frontend بدون redesign `[done]`
 
 شرح:
 
@@ -245,7 +269,12 @@ Acceptance criteria:
 - snapshot/screenshot baseline از صفحات Kanna برای مقایسه گرفته شود.
 - هیچ layout جدیدی بدون دلیل اضافه نشود.
 
-### Task 0.4: انتخاب build tool با حداقل تغییر
+Output:
+
+- Frontend Kanna copied to [web-react](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/web-react).
+- No redesign was introduced.
+
+### Task 0.4: انتخاب build tool با حداقل تغییر `[done]`
 
 شرح:
 
@@ -258,9 +287,16 @@ Acceptance criteria:
 - Go embed خروجی `dist` را serve کند.
 - CI بدون Bun server backend کار کند.
 
+Output:
+
+- `npm install` completed.
+- `npm run build:client` completed.
+- `npm run build:export-viewer` completed.
+- Bun server backend was not copied into `web-react`.
+
 ## Milestone 1: Frontend Port Skeleton
 
-### Task 1.1: انتقال ساختار React app
+### Task 1.1: انتقال ساختار React app `[done]`
 
 مسیر پیشنهادی:
 
@@ -285,6 +321,12 @@ Acceptance criteria:
 - Go server بتواند build خروجی را serve کند.
 - structure کلی Kanna حفظ شده باشد.
 
+Output:
+
+- [web-react/package.json](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/web-react/package.json)
+- [web-react/src](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/web-react/src)
+- [web-react/public](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/web-react/public)
+
 ### Task 1.2: انتقال کامل shell UI Kanna
 
 شرح:
@@ -308,7 +350,7 @@ Acceptance criteria:
 - responsive layout خراب نباشد.
 - ظاهر باید با Kanna قابل مقایسه باشد، نه طراحی جدید.
 
-### Task 1.3: i18n foundation
+### Task 1.3: i18n foundation `[done]`
 
 شرح:
 
@@ -334,7 +376,15 @@ Acceptance criteria:
 - متن‌های hardcoded اصلی حذف شوند.
 - direction بر اساس locale تنظیم شود.
 
-### Task 1.4: RTL foundation
+Output:
+
+- [web-react/src/client/i18n/index.ts](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/web-react/src/client/i18n/index.ts)
+- [web-react/src/client/i18n/en.ts](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/web-react/src/client/i18n/en.ts)
+- [web-react/src/client/i18n/fa.ts](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/web-react/src/client/i18n/fa.ts)
+- Settings language selector added.
+- `AppSettingsSnapshot.locale` and `AppSettingsPatch.locale` added.
+
+### Task 1.4: RTL foundation `[done]`
 
 شرح:
 
@@ -352,9 +402,14 @@ Acceptance criteria:
 - git diff LTR است.
 - مسیر فایل‌ها LTR هستند.
 
+Output:
+
+- Document `lang` and `dir` now follow `appSettings.locale`.
+- Existing Kanna code/diff/terminal/path components remain copied and keep their own LTR-oriented rendering.
+
 ## Milestone 2: Go WebSocket Protocol
 
-### Task 2.1: Port دقیق protocol.ts به Go
+### Task 2.1: Port دقیق protocol.ts به Go `[done]`
 
 شرح:
 
@@ -391,7 +446,17 @@ Acceptance criteria:
 - command نامعتبر error استاندارد برگرداند.
 - frontend Kanna socket client با حداقل تغییر به Go وصل شود.
 
-### Task 2.2: Subscription model
+Output:
+
+- [protocol.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/workspace/protocol/protocol.go)
+- [protocol_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/workspace/protocol/protocol_test.go)
+- Kanna-compatible envelope DTOs, topic constants, command constants, snapshot/event/ack/error helpers.
+
+Remaining for Milestone 2:
+
+- Actual `/api/ws` handler and subscription routing are Task 2.2/2.3.
+
+### Task 2.2: Subscription model `[in-progress]`
 
 Topicهای اولیه:
 
@@ -412,7 +477,18 @@ Acceptance criteria:
 - snapshot اولیه بعد از subscribe ارسال شود.
 - تغییر state فقط به subscriberهای مرتبط broadcast شود.
 
-### Task 2.3: Command router
+Output:
+
+- `/ws` endpoint added.
+- Initial snapshot responses implemented for `sidebar`, `local-projects`, `update`, `keybindings`, `app-settings`, `chat`, `project-git`, and `terminal`.
+- `/auth/status` added so copied Kanna UI can pass auth check.
+
+Remaining:
+
+- Persistent subscription registry.
+- Topic-specific broadcasts after state changes.
+
+### Task 2.3: Command router `[in-progress]`
 
 Commandهای Kanna باید mirror شوند:
 
@@ -488,9 +564,20 @@ Acceptance criteria:
 - command ID در response حفظ شود.
 - commandهای هنوز پیاده‌سازی‌نشده باید error سازگار بدهند، نه silently ignore.
 
+Output:
+
+- `system.ping` implemented.
+- `settings.readAppSettings` implemented.
+- `settings.writeAppSettingsPatch` supports `locale` persistence.
+- Unimplemented commands return Kanna-compatible error envelopes.
+
+Remaining:
+
+- Dispatch all Kanna commands to real Go services as their milestones are implemented.
+
 ## Milestone 3: Event Store در Go
 
-### Task 3.1: طراحی event model
+### Task 3.1: طراحی event model `[done]`
 
 Eventهای پایه:
 
@@ -526,7 +613,14 @@ Acceptance criteria:
 - timestamp داشته باشند.
 - migration path برای version بعدی در نظر گرفته شود.
 
-### Task 3.2: JSONL append-only store
+Output:
+
+- [events.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/workspace/events/events.go)
+- Kanna `v: 2` event version preserved.
+- Kanna-style top-level event fields preserved; domain fields are not wrapped under `data`.
+- Project/chat/message/queue/turn event type constants added.
+
+### Task 3.2: JSONL append-only store `[done]`
 
 مسیر پیشنهادی:
 
@@ -547,7 +641,13 @@ Acceptance criteria:
 - replay از صفر ممکن باشد.
 - lock فایل/فرآیند رعایت شود.
 
-### Task 3.3: Snapshot compaction
+Output:
+
+- [store.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/workspace/eventstore/store.go)
+- [store_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/workspace/eventstore/store_test.go)
+- Append/replay implemented for Kanna streams: `projects`, `chats`, `messages`, `queued-messages`, `turns`.
+
+### Task 3.3: Snapshot compaction `[todo]`
 
 شرح:
 
@@ -562,7 +662,7 @@ Acceptance criteria:
 
 ## Milestone 4: Read Models
 
-### Task 4.1: Sidebar read model
+### Task 4.1: Sidebar read model `[done]`
 
 خروجی:
 
@@ -586,6 +686,13 @@ Acceptance criteria:
 - recent ordering درست باشد.
 - archived جدا شود.
 - active status روی rowها مشخص باشد.
+
+Output:
+
+- [readmodels.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/workspace/readmodels/readmodels.go)
+- [readmodels_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/workspace/readmodels/readmodels_test.go)
+- Sidebar data is derived from Kanna-compatible project/chat events.
+- Deleted projects/chats are skipped and archived chats are separated from active chats.
 
 ### Task 4.2: Chat snapshot read model
 

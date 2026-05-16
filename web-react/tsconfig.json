@@ -1,0 +1,37 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": false,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": false,
+    "types": ["bun"],
+    "baseUrl": "."
+  },
+  "include": [
+    "vite.config.ts",
+    "vite.export-viewer.config.ts",
+    "src/main.tsx",
+    "src/index.css",
+    "src/export-viewer/**/*.ts",
+    "src/export-viewer/**/*.tsx",
+    "src/shared/**/*.ts",
+    "src/client/**/*.ts",
+    "src/client/**/*.tsx"
+  ],
+  "exclude": [
+    "src/server",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "dist"
+  ]
+}

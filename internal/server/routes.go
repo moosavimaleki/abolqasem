@@ -29,6 +29,8 @@ func setupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/session/", handleAPISessionMessages)
 	mux.HandleFunc("/api/file-preview", handleAPIFilePreview)
 	mux.HandleFunc("/api/events", handleAPIEvents)
+	mux.HandleFunc("/ws", handleWorkspaceWS)
+	mux.HandleFunc("/auth/status", handleWorkspaceAuthStatus)
 
 	rootFS := fs.FS(os.DirFS("web"))
 	if webFS != nil {

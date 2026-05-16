@@ -19,6 +19,7 @@ type AppSettings struct {
 	HookFollowMode                  string            `json:"hook_follow_mode"`
 	IgnoreHookNavigationWhileTyping bool              `json:"ignore_hook_navigation_while_typing"`
 	FilesystemDiscovery             bool              `json:"filesystem_discovery"`
+	Locale                          string            `json:"locale"`
 	DefaultAgent                    string            `json:"default_agent"`
 	AgentModels                     map[string]string `json:"agent_models"`
 }
@@ -29,6 +30,7 @@ func DefaultAppSettings() AppSettings {
 		HookFollowMode:                  HookFollowAuto,
 		IgnoreHookNavigationWhileTyping: true,
 		FilesystemDiscovery:             true,
+		Locale:                          "en",
 		DefaultAgent:                    "codex",
 		AgentModels:                     map[string]string{"codex": ""},
 	}
@@ -90,6 +92,10 @@ func NormalizeSettings(settings AppSettings) AppSettings {
 	settings.DefaultAgent = normalizeAgentName(settings.DefaultAgent)
 	if settings.DefaultAgent == "" {
 		settings.DefaultAgent = defaults.DefaultAgent
+	}
+	settings.Locale = strings.TrimSpace(strings.ToLower(settings.Locale))
+	if settings.Locale != "fa" && settings.Locale != "en" {
+		settings.Locale = defaults.Locale
 	}
 	settings.AgentModels = normalizeAgentModels(settings.AgentModels)
 	return settings

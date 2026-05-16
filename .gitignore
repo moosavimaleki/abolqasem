@@ -9,6 +9,8 @@ dist/
 /codex-rtl
 /ai-agent-manager
 /ai-session-viewer
+web-react/node_modules/
+web-react/dist/
 
 # Test binary, built with `go test -c`
 *.test
