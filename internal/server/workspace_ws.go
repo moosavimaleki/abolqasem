@@ -336,6 +336,14 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 		c.emitWorkspaceSnapshots(chatID)
 		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
 		return &response
+	case protocol.CommandChatExportStandalone:
+		result, err := workspaceExportStandalone(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		response := protocol.AckEnvelope(envelope.ID, result)
+		return &response
 	case protocol.CommandChatRespondTool:
 		command, err := decodeToolResponseCommand(envelope.Command)
 		if err != nil {

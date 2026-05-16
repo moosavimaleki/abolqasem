@@ -1715,14 +1715,23 @@ Output:
 
 ## Milestone 21: Share And Standalone Export
 
-### Task 21.1: Standalone transcript export
+### Task 21.1: Standalone transcript export ✅
 
 Acceptance criteria:
 
-- `chat.exportStandalone` پیاده شود.
-- attachment modes مطابق Kanna باشد: `metadata`, `bundle`.
-- themeهای export مطابق Kanna باشد: `light`, `dark`.
-- output با viewer/export Kanna سازگار باشد.
+- [x] `chat.exportStandalone` پیاده شود.
+- [x] attachment modes مطابق Kanna باشد: `metadata`, `bundle`.
+- [x] themeهای export مطابق Kanna باشد: `light`, `dark`.
+- [x] output با viewer/export Kanna سازگار باشد.
+
+Output:
+
+- [workspace_standalone_export.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_standalone_export.go)
+- [workspace_standalone_export_test.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_standalone_export_test.go)
+- [workspace_ws.go](/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/internal/server/workspace_ws.go)
+- `chat.exportStandalone` now writes Kanna-compatible export directories under `.kanna/exports`.
+- Export copies the built standalone viewer, writes `transcript.json`, supports `metadata` and `bundle` attachment modes, and rewrites local paths to `/workspace`.
+- Share upload behavior and success/failure result shapes match Kanna.
 
 ### Task 21.2: Share dialog support
 
