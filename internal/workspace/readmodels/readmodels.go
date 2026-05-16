@@ -17,24 +17,122 @@ type ProjectRecord struct {
 }
 
 type ChatRecord struct {
-	ID              string  `json:"id"`
-	ProjectID       string  `json:"projectId"`
-	Title           string  `json:"title"`
-	CreatedAt       int64   `json:"createdAt"`
-	UpdatedAt       int64   `json:"updatedAt"`
-	DeletedAt       int64   `json:"deletedAt,omitempty"`
-	ArchivedAt      int64   `json:"archivedAt,omitempty"`
-	Unread          bool    `json:"unread"`
-	Provider        *string `json:"provider"`
-	PlanMode        bool    `json:"planMode"`
-	LastMessageAt   int64   `json:"lastMessageAt,omitempty"`
-	LastTurnOutcome *string `json:"lastTurnOutcome"`
+	ID                      string  `json:"id"`
+	ProjectID               string  `json:"projectId"`
+	Title                   string  `json:"title"`
+	CreatedAt               int64   `json:"createdAt"`
+	UpdatedAt               int64   `json:"updatedAt"`
+	DeletedAt               int64   `json:"deletedAt,omitempty"`
+	ArchivedAt              int64   `json:"archivedAt,omitempty"`
+	Unread                  bool    `json:"unread"`
+	Provider                *string `json:"provider"`
+	PlanMode                bool    `json:"planMode"`
+	SessionToken            *string `json:"sessionToken"`
+	PendingForkSessionToken *string `json:"pendingForkSessionToken,omitempty"`
+	HasMessages             bool    `json:"hasMessages,omitempty"`
+	LastMessageAt           int64   `json:"lastMessageAt,omitempty"`
+	LastTurnOutcome         *string `json:"lastTurnOutcome"`
 }
 
 type StoreState struct {
-	ProjectsByID     map[string]ProjectRecord
-	ProjectIDsByPath map[string]string
-	ChatsByID        map[string]ChatRecord
+	ProjectsByID           map[string]ProjectRecord
+	ProjectIDsByPath       map[string]string
+	ChatsByID              map[string]ChatRecord
+	QueuedMessagesByChatID map[string][]QueuedChatMessage
+}
+
+type KannaStatus string
+
+const (
+	StatusIdle           KannaStatus = "idle"
+	StatusStarting       KannaStatus = "starting"
+	StatusRunning        KannaStatus = "running"
+	StatusWaitingForUser KannaStatus = "waiting_for_user"
+	StatusFailed         KannaStatus = "failed"
+)
+
+type ChatAttachment struct {
+	ID           string `json:"id"`
+	Kind         string `json:"kind"`
+	DisplayName  string `json:"displayName"`
+	AbsolutePath string `json:"absolutePath"`
+	RelativePath string `json:"relativePath"`
+	ContentURL   string `json:"contentUrl"`
+	MimeType     string `json:"mimeType"`
+	Size         int64  `json:"size"`
+}
+
+type QueuedChatMessage struct {
+	ID           string           `json:"id"`
+	Content      string           `json:"content"`
+	Attachments  []ChatAttachment `json:"attachments"`
+	CreatedAt    int64            `json:"createdAt"`
+	Provider     *string          `json:"provider,omitempty"`
+	Model        string           `json:"model,omitempty"`
+	ModelOptions map[string]any   `json:"modelOptions,omitempty"`
+	PlanMode     *bool            `json:"planMode,omitempty"`
+}
+
+type TranscriptEntry map[string]any
+
+type ChatRuntime struct {
+	ChatID       string      `json:"chatId"`
+	ProjectID    string      `json:"projectId"`
+	LocalPath    string      `json:"localPath"`
+	Title        string      `json:"title"`
+	Status       KannaStatus `json:"status"`
+	IsDraining   bool        `json:"isDraining"`
+	Provider     *string     `json:"provider"`
+	PlanMode     bool        `json:"planMode"`
+	SessionToken *string     `json:"sessionToken"`
+}
+
+type ChatHistorySnapshot struct {
+	HasOlder    bool    `json:"hasOlder"`
+	OlderCursor *string `json:"olderCursor"`
+	RecentLimit int     `json:"recentLimit"`
+}
+
+type ChatTranscriptSnapshot struct {
+	Messages []TranscriptEntry   `json:"messages"`
+	History  ChatHistorySnapshot `json:"history"`
+}
+
+type ChatSnapshot struct {
+	Runtime            ChatRuntime            `json:"runtime"`
+	QueuedMessages     []QueuedChatMessage    `json:"queuedMessages"`
+	Messages           []TranscriptEntry      `json:"messages"`
+	History            ChatHistorySnapshot    `json:"history"`
+	AvailableProviders []ProviderCatalogEntry `json:"availableProviders"`
+}
+
+type ProviderCatalogEntry struct {
+	ID               string                 `json:"id"`
+	Label            string                 `json:"label"`
+	DefaultModel     string                 `json:"defaultModel"`
+	DefaultEffort    string                 `json:"defaultEffort,omitempty"`
+	SupportsPlanMode bool                   `json:"supportsPlanMode"`
+	Models           []ProviderModelOption  `json:"models"`
+	Efforts          []ProviderEffortOption `json:"efforts"`
+}
+
+type ProviderModelOption struct {
+	ID                         string                        `json:"id"`
+	Label                      string                        `json:"label"`
+	SupportsEffort             bool                          `json:"supportsEffort"`
+	Aliases                    []string                      `json:"aliases,omitempty"`
+	ContextWindowOptions       []ProviderContextWindowOption `json:"contextWindowOptions,omitempty"`
+	SupportsMaxReasoningEffort bool                          `json:"supportsMaxReasoningEffort,omitempty"`
+}
+
+type ProviderEffortOption struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+}
+
+type ProviderContextWindowOption struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
 }
 
 type SidebarData struct {
@@ -70,9 +168,10 @@ type SidebarChatRow struct {
 
 func EmptyState() StoreState {
 	return StoreState{
-		ProjectsByID:     map[string]ProjectRecord{},
-		ProjectIDsByPath: map[string]string{},
-		ChatsByID:        map[string]ChatRecord{},
+		ProjectsByID:           map[string]ProjectRecord{},
+		ProjectIDsByPath:       map[string]string{},
+		ChatsByID:              map[string]ChatRecord{},
+		QueuedMessagesByChatID: map[string][]QueuedChatMessage{},
 	}
 }
 
@@ -196,6 +295,103 @@ func Apply(state StoreState, event events.Event) StoreState {
 		record.Unread = data.Unread
 		record.UpdatedAt = event.Timestamp
 		state.ChatsByID[data.ChatID] = record
+	case events.TypeMessageAppended:
+		var data struct {
+			ChatID string          `json:"chatId"`
+			Entry  TranscriptEntry `json:"entry"`
+		}
+		if event.DecodeData(&data) != nil || data.ChatID == "" {
+			return state
+		}
+		record := state.ChatsByID[data.ChatID]
+		record.HasMessages = true
+		if data.Entry["kind"] == "user_prompt" {
+			if createdAt, ok := numberAsInt64(data.Entry["createdAt"]); ok {
+				record.LastMessageAt = createdAt
+				if createdAt > record.UpdatedAt {
+					record.UpdatedAt = createdAt
+				}
+			}
+		}
+		state.ChatsByID[data.ChatID] = record
+	case events.TypeQueuedMessageEnqueued:
+		var data struct {
+			ChatID  string            `json:"chatId"`
+			Message QueuedChatMessage `json:"message"`
+		}
+		if event.DecodeData(&data) != nil || data.ChatID == "" {
+			return state
+		}
+		state.QueuedMessagesByChatID[data.ChatID] = append(state.QueuedMessagesByChatID[data.ChatID], cloneQueuedMessage(data.Message))
+		record := state.ChatsByID[data.ChatID]
+		record.UpdatedAt = event.Timestamp
+		state.ChatsByID[data.ChatID] = record
+	case events.TypeQueuedMessageRemoved:
+		var data struct {
+			ChatID          string `json:"chatId"`
+			QueuedMessageID string `json:"queuedMessageId"`
+		}
+		if event.DecodeData(&data) != nil || data.ChatID == "" {
+			return state
+		}
+		existing := state.QueuedMessagesByChatID[data.ChatID]
+		next := existing[:0]
+		for _, message := range existing {
+			if message.ID != data.QueuedMessageID {
+				next = append(next, message)
+			}
+		}
+		if len(next) == 0 {
+			delete(state.QueuedMessagesByChatID, data.ChatID)
+		} else {
+			state.QueuedMessagesByChatID[data.ChatID] = next
+		}
+		record := state.ChatsByID[data.ChatID]
+		record.UpdatedAt = event.Timestamp
+		state.ChatsByID[data.ChatID] = record
+	case events.TypeTurnStarted:
+		state = markChatTimestamp(state, event, nil)
+	case events.TypeTurnFinished:
+		outcome := "success"
+		state = markChatTimestamp(state, event, func(record *ChatRecord) {
+			record.Unread = true
+			record.LastTurnOutcome = &outcome
+		})
+	case events.TypeTurnFailed:
+		outcome := "failed"
+		state = markChatTimestamp(state, event, func(record *ChatRecord) {
+			record.Unread = true
+			record.LastTurnOutcome = &outcome
+		})
+	case events.TypeTurnCancelled:
+		outcome := "cancelled"
+		state = markChatTimestamp(state, event, func(record *ChatRecord) {
+			record.LastTurnOutcome = &outcome
+		})
+	case events.TypeSessionTokenSet:
+		var data struct {
+			ChatID       string  `json:"chatId"`
+			SessionToken *string `json:"sessionToken"`
+		}
+		if event.DecodeData(&data) != nil || data.ChatID == "" {
+			return state
+		}
+		record := state.ChatsByID[data.ChatID]
+		record.SessionToken = data.SessionToken
+		record.UpdatedAt = event.Timestamp
+		state.ChatsByID[data.ChatID] = record
+	case events.TypePendingForkSessionTokenSet:
+		var data struct {
+			ChatID                  string  `json:"chatId"`
+			PendingForkSessionToken *string `json:"pendingForkSessionToken"`
+		}
+		if event.DecodeData(&data) != nil || data.ChatID == "" {
+			return state
+		}
+		record := state.ChatsByID[data.ChatID]
+		record.PendingForkSessionToken = data.PendingForkSessionToken
+		record.UpdatedAt = event.Timestamp
+		state.ChatsByID[data.ChatID] = record
 	}
 	return state
 }
@@ -253,6 +449,57 @@ func DeriveSidebarData(state StoreState) SidebarData {
 	return SidebarData{ProjectGroups: groups}
 }
 
+func DeriveStatus(chat ChatRecord, activeStatus KannaStatus) KannaStatus {
+	if activeStatus != "" {
+		return activeStatus
+	}
+	if chat.LastTurnOutcome != nil && *chat.LastTurnOutcome == "failed" {
+		return StatusFailed
+	}
+	return StatusIdle
+}
+
+func DeriveChatSnapshot(
+	state StoreState,
+	activeStatuses map[string]KannaStatus,
+	drainingChatIDs map[string]bool,
+	chatID string,
+	transcript ChatTranscriptSnapshot,
+) *ChatSnapshot {
+	chat, ok := state.ChatsByID[chatID]
+	if !ok || chat.DeletedAt != 0 {
+		return nil
+	}
+	project, ok := state.ProjectsByID[chat.ProjectID]
+	if !ok || project.DeletedAt != 0 {
+		return nil
+	}
+
+	queuedMessages := state.QueuedMessagesByChatID[chat.ID]
+	clonedQueued := make([]QueuedChatMessage, 0, len(queuedMessages))
+	for _, message := range queuedMessages {
+		clonedQueued = append(clonedQueued, cloneQueuedMessage(message))
+	}
+
+	return &ChatSnapshot{
+		Runtime: ChatRuntime{
+			ChatID:       chat.ID,
+			ProjectID:    project.ID,
+			LocalPath:    project.LocalPath,
+			Title:        chat.Title,
+			Status:       DeriveStatus(chat, activeStatuses[chat.ID]),
+			IsDraining:   drainingChatIDs[chat.ID],
+			Provider:     chat.Provider,
+			PlanMode:     chat.PlanMode,
+			SessionToken: chat.SessionToken,
+		},
+		QueuedMessages:     clonedQueued,
+		Messages:           transcript.Messages,
+		History:            transcript.History,
+		AvailableProviders: ServerProviders(),
+	}
+}
+
 func chatsForProject(state StoreState, projectID string) []ChatRecord {
 	chats := make([]ChatRecord, 0)
 	for _, chat := range state.ChatsByID {
@@ -295,8 +542,89 @@ func markChatTimestamp(state StoreState, event events.Event, update func(*ChatRe
 		return state
 	}
 	record := state.ChatsByID[data.ChatID]
-	update(&record)
+	if update != nil {
+		update(&record)
+	}
 	record.UpdatedAt = event.Timestamp
 	state.ChatsByID[data.ChatID] = record
 	return state
+}
+
+func cloneQueuedMessage(message QueuedChatMessage) QueuedChatMessage {
+	cloned := message
+	cloned.Attachments = append([]ChatAttachment(nil), message.Attachments...)
+	if message.ModelOptions != nil {
+		cloned.ModelOptions = map[string]any{}
+		for key, value := range message.ModelOptions {
+			cloned.ModelOptions[key] = value
+		}
+	}
+	return cloned
+}
+
+func numberAsInt64(value any) (int64, bool) {
+	switch typed := value.(type) {
+	case int64:
+		return typed, true
+	case int:
+		return int64(typed), true
+	case float64:
+		return int64(typed), true
+	default:
+		return 0, false
+	}
+}
+
+func ServerProviders() []ProviderCatalogEntry {
+	return []ProviderCatalogEntry{
+		{
+			ID:               "claude",
+			Label:            "Claude",
+			DefaultModel:     "claude-sonnet-4-6",
+			DefaultEffort:    "high",
+			SupportsPlanMode: true,
+			Models: []ProviderModelOption{
+				{
+					ID:                         "claude-opus-4-7",
+					Label:                      "Opus 4.7",
+					SupportsEffort:             true,
+					Aliases:                    []string{"opus"},
+					ContextWindowOptions:       []ProviderContextWindowOption{{ID: "200k", Label: "200k"}, {ID: "1m", Label: "1M"}},
+					SupportsMaxReasoningEffort: true,
+				},
+				{
+					ID:                   "claude-sonnet-4-6",
+					Label:                "Sonnet 4.6",
+					SupportsEffort:       true,
+					Aliases:              []string{"sonnet"},
+					ContextWindowOptions: []ProviderContextWindowOption{{ID: "200k", Label: "200k"}, {ID: "1m", Label: "1M"}},
+				},
+				{
+					ID:             "claude-haiku-4-5-20251001",
+					Label:          "Haiku 4.5",
+					SupportsEffort: true,
+					Aliases:        []string{"haiku"},
+				},
+			},
+			Efforts: []ProviderEffortOption{
+				{ID: "low", Label: "Low"},
+				{ID: "medium", Label: "Medium"},
+				{ID: "high", Label: "High"},
+				{ID: "max", Label: "Max"},
+			},
+		},
+		{
+			ID:               "codex",
+			Label:            "Codex",
+			DefaultModel:     "gpt-5.5",
+			SupportsPlanMode: true,
+			Models: []ProviderModelOption{
+				{ID: "gpt-5.5", Label: "GPT-5.5", SupportsEffort: false},
+				{ID: "gpt-5.4", Label: "GPT-5.4", SupportsEffort: false},
+				{ID: "gpt-5.3-codex", Label: "GPT-5.3 Codex", SupportsEffort: false},
+				{ID: "gpt-5.3-codex-spark", Label: "GPT-5.3 Codex Spark", SupportsEffort: false},
+			},
+			Efforts: []ProviderEffortOption{},
+		},
+	}
 }

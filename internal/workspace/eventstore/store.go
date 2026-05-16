@@ -35,8 +35,8 @@ type SnapshotFile struct {
 }
 
 type QueuedMessageSet struct {
-	ChatID  string `json:"chatId"`
-	Entries []any  `json:"entries"`
+	ChatID  string                         `json:"chatId"`
+	Entries []readmodels.QueuedChatMessage `json:"entries"`
 }
 
 type Store struct {
@@ -150,10 +150,11 @@ func (s *Store) Compact(state readmodels.StoreState) error {
 	}
 
 	snapshot := SnapshotFile{
-		V:           events.Version,
-		GeneratedAt: time.Now().UnixMilli(),
-		Projects:    activeProjects(state),
-		Chats:       activeChats(state),
+		V:              events.Version,
+		GeneratedAt:    time.Now().UnixMilli(),
+		Projects:       activeProjects(state),
+		Chats:          activeChats(state),
+		QueuedMessages: queuedMessages(state),
 	}
 	payload, err := json.MarshalIndent(snapshot, "", "  ")
 	if err != nil {
@@ -229,6 +230,9 @@ func (s *Store) loadSnapshotLocked() (readmodels.StoreState, error) {
 	}
 	for _, chat := range snapshot.Chats {
 		state.ChatsByID[chat.ID] = chat
+	}
+	for _, queuedSet := range snapshot.QueuedMessages {
+		state.QueuedMessagesByChatID[queuedSet.ChatID] = append([]readmodels.QueuedChatMessage(nil), queuedSet.Entries...)
 	}
 	return state, nil
 }
@@ -348,6 +352,23 @@ func activeChats(state readmodels.StoreState) []readmodels.ChatRecord {
 		return chats[i].UpdatedAt > chats[j].UpdatedAt
 	})
 	return chats
+}
+
+func queuedMessages(state readmodels.StoreState) []QueuedMessageSet {
+	sets := make([]QueuedMessageSet, 0, len(state.QueuedMessagesByChatID))
+	for chatID, entries := range state.QueuedMessagesByChatID {
+		if len(entries) == 0 {
+			continue
+		}
+		sets = append(sets, QueuedMessageSet{
+			ChatID:  chatID,
+			Entries: append([]readmodels.QueuedChatMessage(nil), entries...),
+		})
+	}
+	sort.Slice(sets, func(i, j int) bool {
+		return sets[i].ChatID < sets[j].ChatID
+	})
+	return sets
 }
 
 func eventPriority(eventType string) int {

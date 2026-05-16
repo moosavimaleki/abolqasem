@@ -701,7 +701,7 @@ Output:
 - Sidebar data is derived from Kanna-compatible project/chat events.
 - Deleted projects/chats are skipped and archived chats are separated from active chats.
 
-### Task 4.2: Chat snapshot read model
+### Task 4.2: Chat snapshot read model `[done]`
 
 خروجی:
 
@@ -721,6 +721,14 @@ Acceptance criteria:
 - runtime status از active turn derive شود.
 - queued messages برگردند.
 - provider catalog به snapshot اضافه شود.
+
+Output:
+
+- `DeriveChatSnapshot` mirrors Kanna `deriveChatSnapshot`.
+- Runtime includes chat/project metadata, status, draining state, provider, plan mode, and session token.
+- Queued messages are cloned from read model state.
+- Transcript messages/history are passed through with Kanna `ChatHistorySnapshot` shape.
+- Available providers include the Kanna server provider catalog for `claude` and `codex`.
 
 ### Task 4.3: Local projects read model
 

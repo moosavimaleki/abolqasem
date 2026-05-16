@@ -91,3 +91,87 @@ func TestDeriveSidebarDataSeparatesArchivedChats(t *testing.T) {
 		t.Fatalf("expected 1 archived chat, got %d", len(group.ArchivedChats))
 	}
 }
+
+func TestDeriveChatSnapshotIncludesProviders(t *testing.T) {
+	provider := "claude"
+	planMode := true
+	sessionToken := "session-1"
+	state := EmptyState()
+	state.ProjectsByID["project-1"] = ProjectRecord{
+		ID:        "project-1",
+		LocalPath: "/tmp/project",
+		Title:     "Project",
+		CreatedAt: 1,
+		UpdatedAt: 1,
+	}
+	state.ProjectIDsByPath["/tmp/project"] = "project-1"
+	state.ChatsByID["chat-1"] = ChatRecord{
+		ID:              "chat-1",
+		ProjectID:       "project-1",
+		Title:           "Chat",
+		CreatedAt:       1,
+		UpdatedAt:       1,
+		Provider:        &provider,
+		PlanMode:        true,
+		SessionToken:    &sessionToken,
+		LastTurnOutcome: nil,
+	}
+	state.QueuedMessagesByChatID["chat-1"] = []QueuedChatMessage{{
+		ID:          "queued-1",
+		Content:     "follow up",
+		Attachments: []ChatAttachment{},
+		CreatedAt:   2,
+		Provider:    &provider,
+		Model:       "claude-sonnet-4-6",
+		PlanMode:    &planMode,
+	}}
+
+	chat := DeriveChatSnapshot(
+		state,
+		map[string]KannaStatus{},
+		map[string]bool{},
+		"chat-1",
+		ChatTranscriptSnapshot{
+			Messages: []TranscriptEntry{},
+			History: ChatHistorySnapshot{
+				HasOlder:    false,
+				OlderCursor: nil,
+				RecentLimit: 200,
+			},
+		},
+	)
+
+	if chat == nil {
+		t.Fatal("expected chat snapshot")
+	}
+	if chat.Runtime.Provider == nil || *chat.Runtime.Provider != "claude" {
+		t.Fatalf("expected claude provider, got %#v", chat.Runtime.Provider)
+	}
+	if len(chat.QueuedMessages) != 1 || chat.QueuedMessages[0].Content != "follow up" {
+		t.Fatalf("unexpected queued messages: %#v", chat.QueuedMessages)
+	}
+	if chat.History.RecentLimit != 200 {
+		t.Fatalf("expected recent limit 200, got %d", chat.History.RecentLimit)
+	}
+	if len(chat.AvailableProviders) <= 1 {
+		t.Fatalf("expected multiple providers, got %#v", chat.AvailableProviders)
+	}
+	var codexModels []string
+	for _, provider := range chat.AvailableProviders {
+		if provider.ID != "codex" {
+			continue
+		}
+		for _, model := range provider.Models {
+			codexModels = append(codexModels, model.ID)
+		}
+	}
+	expected := []string{"gpt-5.5", "gpt-5.4", "gpt-5.3-codex", "gpt-5.3-codex-spark"}
+	if len(codexModels) != len(expected) {
+		t.Fatalf("expected codex models %#v, got %#v", expected, codexModels)
+	}
+	for index := range expected {
+		if codexModels[index] != expected[index] {
+			t.Fatalf("expected codex models %#v, got %#v", expected, codexModels)
+		}
+	}
+}
