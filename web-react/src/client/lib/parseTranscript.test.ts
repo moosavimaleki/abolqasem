@@ -27,14 +27,14 @@ describe("processTranscriptMessages", () => {
       entry({
         kind: "tool_result",
         toolId: "tool-1",
-        content: "/Users/jake/Projects/kanna\n",
+        content: "/Users/jake/Projects/abolqasem\n",
       }),
     ])
 
     expect(messages).toHaveLength(1)
     expect(messages[0]?.kind).toBe("tool")
     if (messages[0]?.kind !== "tool") throw new Error("unexpected message")
-    expect(messages[0].result).toBe("/Users/jake/Projects/kanna\n")
+    expect(messages[0].result).toBe("/Users/jake/Projects/abolqasem\n")
   })
 
   test("hydrates ask-user-question results with typed answers", () => {
@@ -98,8 +98,8 @@ describe("processTranscriptMessages", () => {
           id: "file-1",
           kind: "file",
           displayName: "spec.pdf",
-          absolutePath: "/tmp/project/.kanna/uploads/spec.pdf",
-          relativePath: "./.kanna/uploads/spec.pdf",
+          absolutePath: "/tmp/project/.abolqasem/uploads/spec.pdf",
+          relativePath: "./.abolqasem/uploads/spec.pdf",
           contentUrl: "/api/projects/project-1/uploads/spec.pdf/content",
           mimeType: "application/pdf",
           size: 1234,
@@ -110,7 +110,7 @@ describe("processTranscriptMessages", () => {
     expect(messages[0]?.kind).toBe("user_prompt")
     if (messages[0]?.kind !== "user_prompt") throw new Error("unexpected message")
     expect(messages[0].attachments).toHaveLength(1)
-    expect(messages[0].attachments?.[0]?.relativePath).toBe("./.kanna/uploads/spec.pdf")
+    expect(messages[0].attachments?.[0]?.relativePath).toBe("./.abolqasem/uploads/spec.pdf")
   })
 
   test("preserves context window update entries", () => {
@@ -130,6 +130,25 @@ describe("processTranscriptMessages", () => {
     if (messages[0]?.kind !== "context_window_updated") throw new Error("unexpected message")
     expect(messages[0].usage.maxTokens).toBe(258_400)
     expect(messages[0].usage.compactsAutomatically).toBe(true)
+  })
+
+  test("preserves rate limit update entries", () => {
+    const messages = processTranscriptMessages([
+      entry({
+        kind: "rate_limit_updated",
+        rateLimits: {
+          limitId: "codex",
+          primary: { usedPercent: 30, windowDurationMins: 300 },
+          secondary: { usedPercent: 40, windowDurationMins: 10080 },
+        },
+        hidden: true,
+      }),
+    ])
+
+    expect(messages[0]?.kind).toBe("rate_limit_updated")
+    if (messages[0]?.kind !== "rate_limit_updated") throw new Error("unexpected message")
+    expect(messages[0].rateLimits.primary?.usedPercent).toBe(30)
+    expect(messages[0].hidden).toBe(true)
   })
 
   test("preserves structured Claude ask-user-question results when a later echoed tool result arrives", () => {

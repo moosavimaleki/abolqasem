@@ -16,6 +16,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -26,6 +27,17 @@ var (
 	safeSkillIDRE       = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`)
 	skillsSearchBaseURL = "https://skills.sh/api/search"
 	runSkillCLICommand  = defaultRunSkillCLICommand
+	skillOperations     = newSkillOperationTracker()
+)
+
+const (
+	skillOperationInstall = "install"
+	skillOperationRemove  = "uninstall"
+
+	skillOperationQueued    = "queued"
+	skillOperationRunning   = "running"
+	skillOperationSucceeded = "succeeded"
+	skillOperationFailed    = "failed"
 )
 
 type skillSearchResult struct {
@@ -77,10 +89,50 @@ type skillUninstallResult struct {
 	Stderr  string   `json:"stderr"`
 }
 
+type skillOperationSummary struct {
+	ID         string   `json:"id"`
+	Kind       string   `json:"kind"`
+	Source     string   `json:"source,omitempty"`
+	SkillID    string   `json:"skillId"`
+	Status     string   `json:"status"`
+	Error      string   `json:"error,omitempty"`
+	Command    []string `json:"command,omitempty"`
+	CWD        string   `json:"cwd,omitempty"`
+	Stdout     string   `json:"stdout,omitempty"`
+	Stderr     string   `json:"stderr,omitempty"`
+	EnqueuedAt string   `json:"enqueuedAt"`
+	StartedAt  string   `json:"startedAt,omitempty"`
+	FinishedAt string   `json:"finishedAt,omitempty"`
+}
+
+type skillOperationsSnapshot struct {
+	Operations []skillOperationSummary `json:"operations"`
+}
+
 type skillCommandOutput struct {
 	CWD    string
 	Stdout string
 	Stderr string
+}
+
+type skillOperation struct {
+	summary skillOperationSummary
+	done    chan struct{}
+}
+
+type skillOperationTracker struct {
+	mu         sync.Mutex
+	runMu      sync.Mutex
+	sequence   int64
+	operations map[string]*skillOperation
+	order      []string
+}
+
+func newSkillOperationTracker() *skillOperationTracker {
+	return &skillOperationTracker{
+		operations: map[string]*skillOperation{},
+		order:      []string{},
+	}
 }
 
 func workspaceSearchSkills(raw json.RawMessage) (skillSearchSnapshot, error) {
@@ -102,7 +154,22 @@ func workspaceInstallSkill(raw json.RawMessage) (skillInstallResult, error) {
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return skillInstallResult{}, err
 	}
-	return installSkill(payload.Source, payload.SkillID)
+	operation, err := skillOperations.startInstall(payload.Source, payload.SkillID)
+	if err != nil {
+		return skillInstallResult{}, err
+	}
+	summary := skillOperations.wait(operation)
+	if summary.Status == skillOperationFailed {
+		return skillInstallResult{}, errors.New(summary.Error)
+	}
+	return skillInstallResult{
+		Source:  summary.Source,
+		SkillID: summary.SkillID,
+		Command: summary.Command,
+		CWD:     summary.CWD,
+		Stdout:  summary.Stdout,
+		Stderr:  summary.Stderr,
+	}, nil
 }
 
 func workspaceUninstallSkill(raw json.RawMessage) (skillUninstallResult, error) {
@@ -112,7 +179,216 @@ func workspaceUninstallSkill(raw json.RawMessage) (skillUninstallResult, error) 
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return skillUninstallResult{}, err
 	}
-	return uninstallSkill(payload.SkillID)
+	operation, err := skillOperations.startUninstall(payload.SkillID)
+	if err != nil {
+		return skillUninstallResult{}, err
+	}
+	summary := skillOperations.wait(operation)
+	if summary.Status == skillOperationFailed {
+		return skillUninstallResult{}, errors.New(summary.Error)
+	}
+	return skillUninstallResult{
+		SkillID: summary.SkillID,
+		Command: summary.Command,
+		CWD:     summary.CWD,
+		Stdout:  summary.Stdout,
+		Stderr:  summary.Stderr,
+	}, nil
+}
+
+func workspaceListSkillOperations() skillOperationsSnapshot {
+	return skillOperations.snapshot()
+}
+
+func (t *skillOperationTracker) startInstall(source string, skillID string) (*skillOperation, error) {
+	safeSource, err := assertSafeSkillSource(source)
+	if err != nil {
+		return nil, err
+	}
+	safeSkillID, err := assertSafeSkillID(skillID)
+	if err != nil {
+		return nil, err
+	}
+
+	operation, created := t.enqueue(skillOperationInstall, safeSource, safeSkillID)
+	if created {
+		go t.runInstall(operation)
+	}
+	return operation, nil
+}
+
+func (t *skillOperationTracker) startUninstall(skillID string) (*skillOperation, error) {
+	safeSkillID, err := assertSafeSkillID(skillID)
+	if err != nil {
+		return nil, err
+	}
+
+	operation, created := t.enqueue(skillOperationRemove, "", safeSkillID)
+	if created {
+		go t.runUninstall(operation)
+	}
+	return operation, nil
+}
+
+func (t *skillOperationTracker) enqueue(kind string, source string, skillID string) (*skillOperation, bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if active := t.activeOperationLocked(kind, source, skillID); active != nil {
+		return active, false
+	}
+
+	t.sequence++
+	now := skillOperationTimestamp(time.Now())
+	operation := &skillOperation{
+		summary: skillOperationSummary{
+			ID:         fmt.Sprintf("skill-%s-%d", kind, t.sequence),
+			Kind:       kind,
+			Source:     source,
+			SkillID:    skillID,
+			Status:     skillOperationQueued,
+			EnqueuedAt: now,
+		},
+		done: make(chan struct{}),
+	}
+	t.operations[operation.summary.ID] = operation
+	t.order = append(t.order, operation.summary.ID)
+	t.trimLocked()
+	return operation, true
+}
+
+func (t *skillOperationTracker) activeOperationLocked(kind string, source string, skillID string) *skillOperation {
+	for _, operation := range t.operations {
+		summary := operation.summary
+		if summary.Kind != kind || summary.SkillID != skillID {
+			continue
+		}
+		if kind == skillOperationInstall && summary.Source != source {
+			continue
+		}
+		if isActiveSkillOperationStatus(summary.Status) {
+			return operation
+		}
+	}
+	return nil
+}
+
+func (t *skillOperationTracker) runInstall(operation *skillOperation) {
+	t.runMu.Lock()
+	defer t.runMu.Unlock()
+
+	t.markRunning(operation)
+	result, err := installSkill(operation.summary.Source, operation.summary.SkillID)
+	t.finish(operation, skillOperationResult{
+		command: result.Command,
+		cwd:     result.CWD,
+		stdout:  result.Stdout,
+		stderr:  result.Stderr,
+	}, err)
+}
+
+func (t *skillOperationTracker) runUninstall(operation *skillOperation) {
+	t.runMu.Lock()
+	defer t.runMu.Unlock()
+
+	t.markRunning(operation)
+	result, err := uninstallSkill(operation.summary.SkillID)
+	t.finish(operation, skillOperationResult{
+		command: result.Command,
+		cwd:     result.CWD,
+		stdout:  result.Stdout,
+		stderr:  result.Stderr,
+	}, err)
+}
+
+type skillOperationResult struct {
+	command []string
+	cwd     string
+	stdout  string
+	stderr  string
+}
+
+func (t *skillOperationTracker) markRunning(operation *skillOperation) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	operation.summary.Status = skillOperationRunning
+	operation.summary.StartedAt = skillOperationTimestamp(time.Now())
+}
+
+func (t *skillOperationTracker) finish(operation *skillOperation, result skillOperationResult, err error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	defer close(operation.done)
+
+	operation.summary.Command = result.command
+	operation.summary.CWD = result.cwd
+	operation.summary.Stdout = result.stdout
+	operation.summary.Stderr = result.stderr
+	operation.summary.FinishedAt = skillOperationTimestamp(time.Now())
+	if err != nil {
+		operation.summary.Status = skillOperationFailed
+		operation.summary.Error = err.Error()
+		return
+	}
+	operation.summary.Status = skillOperationSucceeded
+}
+
+func (t *skillOperationTracker) wait(operation *skillOperation) skillOperationSummary {
+	<-operation.done
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return cloneSkillOperationSummary(operation.summary)
+}
+
+func (t *skillOperationTracker) snapshot() skillOperationsSnapshot {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	operations := make([]skillOperationSummary, 0, len(t.order))
+	for i := len(t.order) - 1; i >= 0; i-- {
+		operation := t.operations[t.order[i]]
+		if operation == nil {
+			continue
+		}
+		operations = append(operations, cloneSkillOperationSummary(operation.summary))
+	}
+	return skillOperationsSnapshot{Operations: operations}
+}
+
+func (t *skillOperationTracker) trimLocked() {
+	const maxCompletedSkillOperations = 50
+
+	completed := 0
+	for i := len(t.order) - 1; i >= 0; i-- {
+		operation := t.operations[t.order[i]]
+		if operation == nil || isActiveSkillOperationStatus(operation.summary.Status) {
+			continue
+		}
+		completed++
+		if completed <= maxCompletedSkillOperations {
+			continue
+		}
+		delete(t.operations, t.order[i])
+		t.order = append(t.order[:i], t.order[i+1:]...)
+	}
+}
+
+func cloneSkillOperationSummary(summary skillOperationSummary) skillOperationSummary {
+	clone := summary
+	if summary.Command != nil {
+		clone.Command = append([]string{}, summary.Command...)
+	}
+	return clone
+}
+
+func isActiveSkillOperationStatus(status string) bool {
+	return status == skillOperationQueued || status == skillOperationRunning
+}
+
+func skillOperationTimestamp(value time.Time) string {
+	return value.UTC().Format(time.RFC3339Nano)
 }
 
 func assertSafeSkillSource(source string) (string, error) {

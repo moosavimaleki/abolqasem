@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -95,6 +96,41 @@ func TestDetectDiffSnapshotIncludesChangedFileTypes(t *testing.T) {
 	}
 }
 
+func TestDetectIncludesBranchHistory(t *testing.T) {
+	requireGit(t)
+	root := t.TempDir()
+	runGit(t, root, "init")
+	runGit(t, root, "config", "user.email", "test@example.com")
+	runGit(t, root, "config", "user.name", "Test User")
+	runGit(t, root, "remote", "add", "origin", "https://github.com/acme/repo.git")
+	writeFile(t, filepath.Join(root, "README.md"), "hello\n")
+	runGit(t, root, "add", ".")
+	runGit(t, root, "commit", "-m", "Initial commit", "-m", "Set up repository")
+	sha := strings.TrimSpace(runGitOutput(t, root, "rev-parse", "HEAD"))
+	runGit(t, root, "tag", "v1.0.0")
+
+	snapshot, err := Detect(context.Background(), root)
+	if err != nil {
+		t.Fatalf("Detect returned error: %v", err)
+	}
+	if len(snapshot.BranchHistory.Entries) != 1 {
+		t.Fatalf("expected one history entry, got %#v", snapshot.BranchHistory)
+	}
+	entry := snapshot.BranchHistory.Entries[0]
+	if entry.SHA != sha || entry.Summary != "Initial commit" || entry.Description != "Set up repository" {
+		t.Fatalf("unexpected history entry: %#v", entry)
+	}
+	if entry.AuthorName != "Test User" || entry.AuthoredAt == "" {
+		t.Fatalf("expected author metadata, got %#v", entry)
+	}
+	if len(entry.Tags) != 1 || entry.Tags[0] != "v1.0.0" {
+		t.Fatalf("expected tag, got %#v", entry.Tags)
+	}
+	if entry.GitHubURL != "https://github.com/acme/repo/commit/"+sha {
+		t.Fatalf("unexpected GitHub URL: %q", entry.GitHubURL)
+	}
+}
+
 func requireGit(t *testing.T) {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
@@ -110,6 +146,17 @@ func runGit(t *testing.T, dir string, args ...string) {
 	if err != nil {
 		t.Fatalf("git %v failed: %v\n%s", args, err, output)
 	}
+}
+
+func runGitOutput(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v failed: %v\n%s", args, err, output)
+	}
+	return string(output)
 }
 
 func writeFile(t *testing.T, path string, content string) {

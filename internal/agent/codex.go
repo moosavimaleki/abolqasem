@@ -217,6 +217,7 @@ type codexClient struct {
 
 func startCodexClient(ctx context.Context) (*codexClient, error) {
 	cmd := exec.CommandContext(ctx, "codex", "app-server")
+	cmd.Env = state.CurrentProviderProxyEnv()
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err

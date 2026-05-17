@@ -1,36 +1,116 @@
 import { LegendList, type LegendListRef } from "@legendapp/list/react"
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { ArrowDown, Flower, Upload } from "lucide-react"
+import { ArrowDown, BookOpen, Loader2, Upload } from "lucide-react"
 import { AnimatedShinyText } from "../../components/ui/animated-shiny-text"
+import { AbolqasemLogo } from "../../components/AbolqasemLogo"
+import { ConversationMinimap, type MessageIndexItem } from "../../components/chat-ui/ConversationMinimap"
 import { DrainingIndicator } from "../../components/messages/DrainingIndicator"
 import { QueuedUserMessage } from "../../components/messages/QueuedUserMessage"
 import { OpenLocalLinkProvider, type OpenLocalLinkTarget } from "../../components/messages/shared"
 import { ProcessingMessage } from "../../components/messages/ProcessingMessage"
 import { ContextMenu, ContextMenuTrigger } from "../../components/ui/context-menu"
+import { Dialog, DialogBody, DialogContent } from "../../components/ui/dialog"
 import { OpenExternalContextMenuContent } from "../../components/open-external-menu"
+import { FilePreviewPanel, type FilePreviewResponse } from "../../components/file-preview/FilePreviewPanel"
+import { ReaderDialog } from "../../components/messages/ReaderDialog"
+import { getAppearanceTextStyle, isDarkAppearanceTheme, useReaderAppearanceSettings } from "../../components/appearance/ReaderAppearance"
 import { cn } from "../../lib/utils"
-import { shouldOpenLocalFileLinkInEditor } from "../../lib/pathUtils"
 import {
   buildResolvedTranscriptRows,
-  KannaTranscriptRow,
+  AbolqasemTranscriptRow,
+  PromptCheckpointProvider,
   type ResolvedTranscriptRow,
   useStableResolvedRows,
-} from "../KannaTranscript"
-import type { KannaState } from "../useKannaState"
+} from "../AbolqasemTranscript"
+import type { AbolqasemState } from "../useAbolqasemState"
 import {
   CHAT_NAVBAR_OFFSET_PX,
 } from "./utils"
+import { buildAssistantReaderDocument, type AssistantReaderDocument } from "./readerBlocks"
 import type { EditorPreset } from "../../../shared/protocol"
+import type { ChatCheckpointSummary, HydratedTranscriptMessage, TranscriptIndexItem } from "../../../shared/types"
 import { useI18n } from "../../i18n/context"
+
+const CHECKPOINT_PROMPT_PREVIEW_MAX = 120
+const PROMPT_CHECKPOINT_MAX_DELAY_MS = 30 * 60 * 1000
+
+function checkpointPromptPreview(value: string) {
+  const normalized = value.trim().split(/\s+/).filter(Boolean).join(" ")
+  return Array.from(normalized).slice(0, CHECKPOINT_PROMPT_PREVIEW_MAX).join("")
+}
+
+function getMessageCreatedAt(message: HydratedTranscriptMessage) {
+  const createdAt = Date.parse(message.timestamp)
+  return Number.isFinite(createdAt) ? createdAt : null
+}
+
+function isCheckpointNearPrompt(checkpoint: ChatCheckpointSummary, createdAt: number | null) {
+  if (createdAt === null) return true
+  return checkpoint.createdAt <= createdAt + 1000
+    && createdAt <= checkpoint.createdAt + PROMPT_CHECKPOINT_MAX_DELAY_MS
+}
+
+function buildPromptCheckpointMap(
+  messages: HydratedTranscriptMessage[],
+  checkpoints: ChatCheckpointSummary[],
+  activeChatId: string | null,
+) {
+  const result = new Map<string, ChatCheckpointSummary>()
+  if (!activeChatId || checkpoints.length === 0) {
+    return result
+  }
+
+  const promptCheckpoints = checkpoints
+    .filter((checkpoint) => (
+      checkpoint.chatId === activeChatId
+      && checkpoint.trigger === "before_user_prompt"
+      && !checkpoint.restoreOf
+    ))
+    .sort((left, right) => left.createdAt - right.createdAt)
+  const promptMessages = messages
+    .filter((message) => message.kind === "user_prompt")
+    .map((message) => ({
+      message,
+      createdAt: getMessageCreatedAt(message),
+      preview: checkpointPromptPreview(message.content),
+    }))
+  const usedMessageIds = new Set<string>()
+
+  for (const checkpoint of promptCheckpoints) {
+    const promptPreview = checkpointPromptPreview(checkpoint.promptPreview ?? "")
+    const exactPrompt = promptMessages.find(({ message, createdAt, preview }) => (
+      !usedMessageIds.has(message.id)
+      && promptPreview.length > 0
+      && preview === promptPreview
+      && isCheckpointNearPrompt(checkpoint, createdAt)
+    ))
+    const fallbackPrompt = exactPrompt ?? promptMessages.find(({ message, createdAt }) => (
+      !usedMessageIds.has(message.id)
+      && isCheckpointNearPrompt(checkpoint, createdAt)
+    ))
+    if (!fallbackPrompt) continue
+
+    usedMessageIds.add(fallbackPrompt.message.id)
+    result.set(fallbackPrompt.message.id, checkpoint)
+  }
+
+  return result
+}
+
+type TranscriptViewportRow = ResolvedTranscriptRow & {
+  promptCheckpoint?: ChatCheckpointSummary
+}
 
 interface ChatTranscriptViewportProps {
   activeChatId: string | null
   listRef: React.RefObject<LegendListRef | null>
-  messages: KannaState["messages"]
-  queuedMessages: KannaState["queuedMessages"]
+  messages: AbolqasemState["messages"]
+  conversationIndex?: TranscriptIndexItem[]
+  conversationIndexLoading?: boolean
+  queuedMessages: AbolqasemState["queuedMessages"]
   transcriptPaddingBottom: number
   localPath: string | null | undefined
-  latestToolIds: KannaState["latestToolIds"]
+  latestToolIds: AbolqasemState["latestToolIds"]
   isHistoryLoading: boolean
   hasOlderHistory: boolean
   isProcessing: boolean
@@ -41,9 +121,11 @@ interface ChatTranscriptViewportProps {
   onStopDraining: () => void
   onSteerQueuedMessage: (queuedMessageId: string) => Promise<void>
   onRemoveQueuedMessage: (queuedMessageId: string) => Promise<void>
-  onOpenLocalLink: KannaState["handleOpenLocalLink"]
-  onAskUserQuestionSubmit: KannaState["handleAskUserQuestion"]
-  onExitPlanModeConfirm: KannaState["handleExitPlanMode"]
+  onOpenLocalLink: AbolqasemState["handleOpenLocalLink"]
+  onAskUserQuestionSubmit: AbolqasemState["handleAskUserQuestion"]
+  onExitPlanModeConfirm: AbolqasemState["handleExitPlanMode"]
+  checkpoints?: ChatCheckpointSummary[]
+  onRestoreCheckpoint?: AbolqasemState["handleRestoreCheckpoint"]
   showScrollButton: boolean
   onIsAtEndChange: (isAtEnd: boolean) => void
   scrollToBottom: () => void
@@ -56,12 +138,16 @@ interface ChatTranscriptViewportProps {
   editorCommandTemplate?: string
   platform?: NodeJS.Platform
   headerOffsetPx?: number
+  onMinimapScrollToMessage?: (item: MessageIndexItem) => Promise<void>
+  onMinimapLoadMessage?: (item: MessageIndexItem) => Promise<void>
 }
 
 export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
   activeChatId,
   listRef,
   messages,
+  conversationIndex = [],
+  conversationIndexLoading = false,
   queuedMessages,
   transcriptPaddingBottom,
   localPath,
@@ -79,6 +165,8 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
   onOpenLocalLink,
   onAskUserQuestionSubmit,
   onExitPlanModeConfirm,
+  checkpoints = [],
+  onRestoreCheckpoint,
   showScrollButton,
   onIsAtEndChange,
   scrollToBottom,
@@ -91,30 +179,85 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
   editorCommandTemplate,
   platform = "darwin",
   headerOffsetPx = CHAT_NAVBAR_OFFSET_PX,
+  onMinimapScrollToMessage,
+  onMinimapLoadMessage,
 }: ChatTranscriptViewportProps) {
-  const { t } = useI18n()
+  const { t, direction } = useI18n()
+  const [appearanceSettings] = useReaderAppearanceSettings()
   const previousRowCountRef = useRef(0)
   const localLinkMenuTriggerRef = useRef<HTMLSpanElement | null>(null)
   const [toolGroupExpanded, setToolGroupExpanded] = useState<Record<string, boolean>>({})
   const [localLinkMenuTarget, setLocalLinkMenuTarget] = useState<OpenLocalLinkTarget | null>(null)
+  const [filePreviewTarget, setFilePreviewTarget] = useState<OpenLocalLinkTarget | null>(null)
+  const [filePreview, setFilePreview] = useState<FilePreviewResponse | null>(null)
+  const [filePreviewLoading, setFilePreviewLoading] = useState(false)
+  const [filePreviewError, setFilePreviewError] = useState<string | null>(null)
+  const [readerDocument, setReaderDocument] = useState<AssistantReaderDocument | null>(null)
+  const [floatingReaderMessageId, setFloatingReaderMessageId] = useState<string | null>(null)
   const isMac = platform === "darwin"
-
+  const transcriptAppearanceStyle = useMemo(() => getAppearanceTextStyle(appearanceSettings), [appearanceSettings])
+  const transcriptAppearanceClassName = useMemo(() => cn(
+    "appearance-content reader-article",
+    isDarkAppearanceTheme(appearanceSettings.theme) && "prose-invert",
+  ), [appearanceSettings.theme])
   const rawRows = useMemo(() => buildResolvedTranscriptRows(messages, {
     isLoading: isProcessing,
     localPath: localPath ?? undefined,
     latestToolIds,
   }), [isProcessing, latestToolIds, localPath, messages])
   const resolvedRows = useStableResolvedRows(rawRows)
+  const promptCheckpointByMessageId = useMemo(
+    () => buildPromptCheckpointMap(messages, checkpoints, activeChatId),
+    [activeChatId, checkpoints, messages],
+  )
+  const rowsWithCheckpoints = useMemo<TranscriptViewportRow[]>(() => {
+    if (promptCheckpointByMessageId.size === 0) {
+      return resolvedRows
+    }
+
+    return resolvedRows.map((row) => {
+      const promptCheckpoint = row.kind === "single" && row.message.kind === "user_prompt"
+        ? promptCheckpointByMessageId.get(row.message.id)
+        : undefined
+      return promptCheckpoint ? { ...row, promptCheckpoint } : row
+    })
+  }, [promptCheckpointByMessageId, resolvedRows])
+  const checkpointRenderVersion = useMemo(
+    () => Array.from(promptCheckpointByMessageId.entries())
+      .map(([messageId, checkpoint]) => `${messageId}:${checkpoint.id}`)
+      .join("|"),
+    [promptCheckpointByMessageId],
+  )
+  const listExtraData = useMemo(() => ({
+    appearanceSettings,
+    checkpointRenderVersion,
+    toolGroupExpanded,
+  }), [appearanceSettings, checkpointRenderVersion, toolGroupExpanded])
+  const floatingReaderDocument = useMemo(
+    () => buildAssistantReaderDocument(messages, floatingReaderMessageId),
+    [floatingReaderMessageId, messages],
+  )
+  const loadedMessageIds = useMemo(() => new Set(messages.map((message) => message.id)), [messages])
+  const minimapItems = useMemo<MessageIndexItem[]>(() => {
+    return conversationIndex
+      .filter((item) => item.role === "user")
+      .map((item) => ({
+        ...item,
+        loaded: loadedMessageIds.has(item.id),
+      }))
+  }, [conversationIndex, loadedMessageIds])
 
   useEffect(() => {
     setToolGroupExpanded({})
+    setReaderDocument(null)
+    setFloatingReaderMessageId(null)
   }, [activeChatId])
 
   useEffect(() => {
     const previousRowCount = previousRowCountRef.current
-    previousRowCountRef.current = resolvedRows.length
+    previousRowCountRef.current = rowsWithCheckpoints.length
 
-    if (previousRowCount > 0 || resolvedRows.length === 0) {
+    if (previousRowCount > 0 || rowsWithCheckpoints.length === 0) {
       return
     }
 
@@ -123,7 +266,36 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
       void listRef.current?.scrollToEnd?.({ animated: false })
     })
     return () => window.cancelAnimationFrame(frameId)
-  }, [listRef, onIsAtEndChange, resolvedRows.length])
+  }, [listRef, onIsAtEndChange, rowsWithCheckpoints.length])
+
+  const updateFloatingReaderMessage = useCallback(() => {
+    const scrollNode = listRef.current?.getScrollableNode?.()
+    if (!(scrollNode instanceof HTMLElement)) {
+      setFloatingReaderMessageId(null)
+      return
+    }
+
+    const scrollRect = scrollNode.getBoundingClientRect()
+    const followY = scrollRect.bottom - Math.max(72, transcriptPaddingBottom + 22)
+    const rows = Array.from(scrollNode.querySelectorAll<HTMLElement>("[data-reader-message-id]"))
+    let nextMessageId: string | null = null
+
+    for (const row of rows) {
+      const rect = row.getBoundingClientRect()
+      const messageId = row.dataset.readerMessageId
+      if (!messageId) continue
+
+      const rowContainsFollowLine = rect.top <= followY && rect.bottom >= followY
+      const mainButtonStillBelowViewport = rect.bottom > scrollRect.bottom - Math.max(96, transcriptPaddingBottom + 44)
+      const rowStillReadable = rect.bottom > scrollRect.top + headerOffsetPx + 80
+      if (rowContainsFollowLine && mainButtonStillBelowViewport && rowStillReadable) {
+        nextMessageId = messageId
+        break
+      }
+    }
+
+    setFloatingReaderMessageId((current) => current === nextMessageId ? current : nextMessageId)
+  }, [headerOffsetPx, listRef, transcriptPaddingBottom])
 
   const handleToolGroupExpandedChange = useCallback((groupId: string, next: boolean) => {
     setToolGroupExpanded((current) => (
@@ -168,12 +340,15 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
 
       const handleNativeScroll = () => {
         handleScroll({ currentTarget: scrollNode })
+        updateFloatingReaderMessage()
       }
 
       scrollNode.addEventListener("scroll", handleNativeScroll, { passive: true })
+      window.addEventListener("resize", updateFloatingReaderMessage)
       handleNativeScroll()
       cleanup = () => {
         scrollNode.removeEventListener("scroll", handleNativeScroll)
+        window.removeEventListener("resize", updateFloatingReaderMessage)
       }
     })
 
@@ -181,7 +356,7 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
       window.cancelAnimationFrame(frameId)
       cleanup?.()
     }
-  }, [activeChatId, handleScroll, listRef, resolvedRows.length])
+  }, [activeChatId, handleScroll, listRef, resolvedRows.length, updateFloatingReaderMessage])
 
   const handleStartReached = useCallback(() => {
     if (isHistoryLoading || !hasOlderHistory) {
@@ -192,8 +367,7 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
 
   const handleOpenLocalLinkClick = useCallback((target: OpenLocalLinkTarget) => {
     if (target.trigger !== "contextmenu") {
-      const action = shouldOpenLocalFileLinkInEditor(target.path) ? "open_editor" : "open_default"
-      void onOpenLocalLink(target, action)
+      setFilePreviewTarget(target)
       return
     }
 
@@ -211,22 +385,83 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
         view: window,
       }))
     })
-  }, [onOpenLocalLink])
+  }, [])
 
-  const renderItem = useCallback(({ item }: { item: ResolvedTranscriptRow }) => (
-    <div className="mx-auto w-full max-w-[800px] pb-5" data-transcript-row-id={item.id}>
-      <KannaTranscriptRow
+  useEffect(() => {
+    if (!filePreviewTarget) {
+      setFilePreview(null)
+      setFilePreviewError(null)
+      setFilePreviewLoading(false)
+      return
+    }
+
+    const controller = new AbortController()
+    const params = new URLSearchParams({
+      path: filePreviewTarget.path,
+      full: "1",
+    })
+    if (filePreviewTarget.line && filePreviewTarget.line > 0) {
+      params.set("line", String(filePreviewTarget.line))
+    }
+
+    setFilePreviewLoading(true)
+    setFilePreviewError(null)
+    fetch(`/api/file-preview?${params.toString()}`, {
+      signal: controller.signal,
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(await response.text() || `File preview failed with ${response.status}`)
+        }
+        return response.json() as Promise<FilePreviewResponse>
+      })
+      .then((payload) => {
+        if (!controller.signal.aborted) setFilePreview(payload)
+      })
+      .catch((err: unknown) => {
+        if (controller.signal.aborted) return
+        setFilePreview(null)
+        setFilePreviewError(err instanceof Error ? err.message : String(err))
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setFilePreviewLoading(false)
+      })
+
+    return () => {
+      controller.abort()
+    }
+  }, [filePreviewTarget])
+
+  const renderItem = useCallback(({ item }: { item: TranscriptViewportRow }) => {
+    const readerMessageId = item.kind === "single" && item.message.kind === "assistant_text"
+      ? item.message.id
+      : undefined
+
+    return (
+    <div
+      className={cn("mx-auto w-full max-w-[800px] pb-5", transcriptAppearanceClassName)}
+      dir={direction}
+      style={transcriptAppearanceStyle}
+      data-transcript-row-id={item.id}
+      data-reader-message-id={readerMessageId}
+    >
+      <AbolqasemTranscriptRow
         row={item}
         toolGroupExpanded={item.kind === "tool-group" ? (toolGroupExpanded[item.id] ?? false) : undefined}
         onToolGroupExpandedChange={handleToolGroupExpandedChange}
         onAskUserQuestionSubmit={onAskUserQuestionSubmit}
         onExitPlanModeConfirm={onExitPlanModeConfirm}
+        promptCheckpoint={item.kind === "single" && item.message.kind === "user_prompt" ? item.promptCheckpoint : undefined}
+        onRestoreCheckpoint={onRestoreCheckpoint}
       />
     </div>
-  ), [handleToolGroupExpandedChange, onAskUserQuestionSubmit, onExitPlanModeConfirm, toolGroupExpanded])
+    )
+  }, [direction, handleToolGroupExpandedChange, onAskUserQuestionSubmit, onExitPlanModeConfirm, onRestoreCheckpoint, toolGroupExpanded, transcriptAppearanceClassName, transcriptAppearanceStyle])
 
   const listHeader = (
-    <div className="mx-auto w-full max-w-[800px]" style={{ paddingTop: `${headerOffsetPx}px` }}>
+    <div className="mx-auto w-full max-w-[800px]" dir={direction} style={{ paddingTop: `${headerOffsetPx}px` }}>
       {isHistoryLoading ? (
         <div className="flex justify-center pb-4">
           <span className="text-sm translate-y-[-0.5px]">
@@ -243,7 +478,7 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
   )
 
   const listFooter = (
-    <div className="mx-auto w-full max-w-[800px]">
+    <div className={cn("mx-auto w-full max-w-[800px]", transcriptAppearanceClassName)} dir={direction} style={transcriptAppearanceStyle}>
       {isProcessing ? <ProcessingMessage status={runtimeStatus ?? undefined} /> : null}
       {queuedMessages.map((message) => (
         <QueuedUserMessage
@@ -263,30 +498,87 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
       ) : null}
     </div>
   )
+  const showFloatingReader = Boolean(floatingReaderDocument) && !readerDocument
 
   return (
     <>
       <OpenLocalLinkProvider onOpenLocalLink={handleOpenLocalLinkClick}>
-        <LegendList<ResolvedTranscriptRow>
-          ref={listRef}
-          data={resolvedRows}
-          extraData={toolGroupExpanded}
-          keyExtractor={keyExtractor}
-          renderItem={renderItem}
-          estimatedItemSize={96}
-          initialScrollAtEnd
-          maintainScrollAtEnd
-          maintainScrollAtEndThreshold={0.1}
-          maintainVisibleContentPosition
-          onScroll={handleScroll}
-          onStartReached={handleStartReached}
-          onStartReachedThreshold={0.1}
-          className="h-full flex-1 overflow-x-hidden overscroll-y-contain px-3 scroll-pt-[72px] [scrollbar-gutter:auto]"
-          contentContainerStyle={{ paddingBottom: transcriptPaddingBottom + 10 }}
-          ListHeaderComponent={listHeader}
-          ListFooterComponent={listFooter}
-        />
+        <PromptCheckpointProvider
+          checkpointByMessageId={promptCheckpointByMessageId}
+          onRestoreCheckpoint={onRestoreCheckpoint}
+        >
+          <div className="relative flex min-h-0 flex-1">
+            <LegendList<TranscriptViewportRow>
+              ref={listRef}
+              data={rowsWithCheckpoints}
+              extraData={listExtraData}
+              keyExtractor={keyExtractor}
+              renderItem={renderItem}
+              estimatedItemSize={96}
+              initialScrollAtEnd
+              maintainScrollAtEnd
+              maintainScrollAtEndThreshold={0.1}
+              maintainVisibleContentPosition
+              onScroll={handleScroll}
+              onStartReached={handleStartReached}
+              onStartReachedThreshold={0.1}
+              className="h-full flex-1 overflow-x-hidden overscroll-y-contain px-3 scroll-pt-[72px] [direction:ltr] [scrollbar-gutter:auto]"
+              contentContainerStyle={{ paddingBottom: transcriptPaddingBottom + 10 }}
+              ListHeaderComponent={listHeader}
+              ListFooterComponent={listFooter}
+            />
+            {(conversationIndexLoading || minimapItems.length > 0) && onMinimapScrollToMessage ? (
+              <ConversationMinimap
+                items={minimapItems}
+                loading={conversationIndexLoading}
+                onScrollToMessage={onMinimapScrollToMessage}
+                onLoadMessage={onMinimapLoadMessage}
+                side={direction === "rtl" ? "left" : "right"}
+                topOffsetPx={headerOffsetPx + 10}
+                bottomOffsetPx={Math.max(12, transcriptPaddingBottom + 10)}
+              />
+            ) : null}
+          </div>
+        </PromptCheckpointProvider>
       </OpenLocalLinkProvider>
+
+      <Dialog open={Boolean(filePreviewTarget)} onOpenChange={(open) => {
+        if (!open) {
+          setFilePreviewTarget(null)
+        }
+      }}>
+        <DialogContent hideClose className="w-[min(92vw,1040px)] max-w-none rounded-3xl p-0">
+          <DialogBody className="p-0">
+            {filePreviewLoading ? (
+              <div className="flex min-h-[360px] items-center justify-center gap-3 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>{t.common.loading}…</span>
+              </div>
+            ) : filePreviewError ? (
+              <div className="m-4 rounded-2xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                {filePreviewError}
+              </div>
+            ) : filePreview ? (
+              <FilePreviewPanel
+                preview={filePreview}
+                compact
+                showOpenRoute
+                onClose={() => setFilePreviewTarget(null)}
+                className="border-0"
+              />
+            ) : null}
+          </DialogBody>
+        </DialogContent>
+      </Dialog>
+
+      <ReaderDialog
+        open={Boolean(readerDocument)}
+        title={readerDocument?.title ?? "Reader"}
+        content={readerDocument?.content ?? ""}
+        onOpenChange={(open) => {
+          if (!open) setReaderDocument(null)
+        }}
+      />
 
       <ContextMenu onOpenChange={(open) => {
         if (!open) {
@@ -329,21 +621,21 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
         >
           <div className="mx-auto flex h-full max-w-[800px] items-center justify-center">
             <div className="flex flex-col items-center justify-center gap-4 text-muted-foreground opacity-70">
-              <Flower strokeWidth={1.5} className="kanna-empty-state-flower size-8 text-muted-foreground" />
+              <AbolqasemLogo className="abolqasem-empty-state-flower size-8 text-muted-foreground" />
               <div
-                className="kanna-empty-state-text flex max-w-xs items-center text-center text-base font-normal text-muted-foreground"
+                className="abolqasem-empty-state-text flex max-w-xs items-center text-center text-base font-normal text-muted-foreground"
                 aria-label={emptyStateText}
               >
                 <span className="relative inline-grid place-items-start">
                   <span className="invisible col-start-1 row-start-1 flex items-center whitespace-pre">
                     <span>{emptyStateText}</span>
-                    <span className="kanna-typewriter-cursor-slot" aria-hidden="true" />
+                    <span className="abolqasem-typewriter-cursor-slot" aria-hidden="true" />
                   </span>
                   <span className="col-start-1 row-start-1 flex items-center whitespace-pre">
                     <span>{typedEmptyStateText}</span>
-                    <span className="kanna-typewriter-cursor-slot" aria-hidden="true">
+                    <span className="abolqasem-typewriter-cursor-slot" aria-hidden="true">
                       <span
-                        className="kanna-typewriter-cursor"
+                        className="abolqasem-typewriter-cursor"
                         data-typing-complete={isEmptyStateTypingComplete ? "true" : "false"}
                       />
                     </span>
@@ -385,10 +677,34 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
           <ArrowDown className="h-5 w-5" />
         </button>
       </div>
+
+      <div
+        style={{
+          bottom: transcriptPaddingBottom - 20,
+          left: "max(14px, calc(50% - 456px))",
+        }}
+        className={cn(
+          "absolute z-10 transition-all duration-300 ease-[cubic-bezier(0.2,1.35,0.32,1)]",
+          showFloatingReader
+            ? "scale-100 opacity-100 blur-0"
+            : "pointer-events-none translate-y-2 scale-75 opacity-0 blur-sm",
+        )}
+      >
+        <button
+          type="button"
+          onClick={() => {
+            if (floatingReaderDocument) setReaderDocument(floatingReaderDocument)
+          }}
+          className="relative flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border border-border bg-background/95 text-muted-foreground shadow-[0_16px_44px_rgba(0,0,0,0.18)] transition-colors before:absolute before:inset-1 before:-z-10 before:rounded-full before:bg-primary/15 before:blur-lg hover:text-foreground dark:bg-slate-800/95"
+          aria-label="Open reader"
+        >
+          <BookOpen className="h-4 w-4" />
+        </button>
+      </div>
     </>
   )
 })
 
-function keyExtractor(item: ResolvedTranscriptRow) {
+function keyExtractor(item: TranscriptViewportRow) {
   return item.id
 }

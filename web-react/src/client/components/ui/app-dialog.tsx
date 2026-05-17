@@ -18,6 +18,7 @@ interface ConfirmDialogOptions {
   confirmLabel?: string
   cancelLabel?: string
   confirmVariant?: "default" | "destructive" | "secondary"
+  dir?: "ltr" | "rtl"
 }
 
 interface PromptDialogOptions {
@@ -30,12 +31,14 @@ interface PromptDialogOptions {
   resetValue?: string
   confirmLabel?: string
   cancelLabel?: string
+  dir?: "ltr" | "rtl"
 }
 
 interface AlertDialogOptions {
   title: string
   description?: string
   closeLabel?: string
+  dir?: "ltr" | "rtl"
 }
 
 interface AppDialogContextValue {
@@ -62,6 +65,16 @@ type DialogState =
     }
 
 const AppDialogContext = createContext<AppDialogContextValue | null>(null)
+
+function resolveDialogDirection(value: string | undefined, fallback: "ltr" | "rtl" = "ltr") {
+  const text = value ?? ""
+  for (const char of text) {
+    if ((char >= "؀" && char <= "ۿ") || (char >= "ݐ" && char <= "ݿ") || (char >= "ࢠ" && char <= "ࣿ")) {
+      return "rtl"
+    }
+  }
+  return fallback
+}
 
 export function AppDialogProvider({ children }: { children: ReactNode }) {
   const [dialogState, setDialogState] = useState<DialogState | null>(null)
@@ -127,6 +140,10 @@ export function AppDialogProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AppDialogContextValue>(() => ({ confirm, prompt, alert }), [alert, confirm, prompt])
 
+  const dialogDirection = dialogState?.options.dir
+    ?? resolveDialogDirection(`${dialogState?.options.title ?? ""}
+${dialogState?.options.description ?? ""}`, (typeof document !== "undefined" && document.documentElement.dir === "rtl") ? "rtl" : "ltr")
+
   return (
     <AppDialogContext.Provider value={value}>
       {children}
@@ -139,6 +156,7 @@ export function AppDialogProvider({ children }: { children: ReactNode }) {
       >
         <DialogContent
           size="sm"
+          dir={dialogDirection}
           onKeyDown={(event) => {
             if (event.key !== "Enter" || event.shiftKey || !dialogState || dialogState.kind !== "confirm") return
             event.preventDefault()
@@ -148,9 +166,9 @@ export function AppDialogProvider({ children }: { children: ReactNode }) {
           {dialogState ? (
             <>
               <DialogBody className="space-y-4">
-                <DialogTitle>{dialogState.options.title}</DialogTitle>
+                <DialogTitle className="pe-8 leading-snug">{dialogState.options.title}</DialogTitle>
                 {dialogState.options.description ? (
-                  <DialogDescription>{dialogState.options.description}</DialogDescription>
+                  <DialogDescription className="whitespace-pre-line text-start leading-6">{dialogState.options.description}</DialogDescription>
                 ) : null}
                 {dialogState.kind === "prompt" ? (
                   <Input

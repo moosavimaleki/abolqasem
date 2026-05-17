@@ -55,23 +55,18 @@ func workspaceProjectPathFromCommand(raw json.RawMessage) (string, error) {
 }
 
 func workspaceProjectLocalPathRequired(projectID string) (string, error) {
-	projectID = strings.TrimSpace(projectID)
-	if projectID == "" {
-		return "", errors.New("projectId is required")
-	}
-	state, err := workspaceStore().LoadState()
+	project, err := workspaceRuntimeProjectRequired(projectID)
 	if err != nil {
 		return "", err
 	}
-	project, ok := state.ProjectsByID[projectID]
-	if !ok || project.DeletedAt != 0 || strings.TrimSpace(project.LocalPath) == "" {
+	if strings.TrimSpace(project.LocalPath) == "" {
 		return "", errors.New("project not found")
 	}
 	return resolveWorkspaceLocalPath(project.LocalPath), nil
 }
 
 func projectQuickActionsPath(projectPath string) string {
-	return filepath.Join(resolveWorkspaceLocalPath(projectPath), ".kanna", projectQuickActionsFileName)
+	return filepath.Join(resolveWorkspaceLocalPath(projectPath), ".abolqasem", projectQuickActionsFileName)
 }
 
 func readProjectQuickActions(projectPath string) ([]projectQuickAction, error) {

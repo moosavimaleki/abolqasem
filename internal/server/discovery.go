@@ -3,6 +3,7 @@ package server
 import (
 	"ai-agent-manager/internal/state"
 	"log"
+	"strings"
 	"sync"
 	"time"
 )
@@ -24,6 +25,7 @@ func DiscoverSessionsOnce() {
 			EventKey:  "discovery:" + time.Now().Format(time.RFC3339Nano),
 			UpdatedAt: time.Now().Format(time.RFC3339),
 		})
+		workspaceConnections.broadcast("")
 	}
 }
 
@@ -58,5 +60,27 @@ func runDiscovery() (state.DiscoveryReport, error) {
 	if err := state.SaveState(appState); err != nil {
 		return report, err
 	}
+	workspaceSyncDiscoveredLegacySessions(report.ChangedSessionKeys)
 	return report, nil
+}
+
+func workspaceSyncDiscoveredLegacySessions(sessionKeys []string) {
+	if len(sessionKeys) == 0 {
+		return
+	}
+	keys := make(map[string]struct{}, len(sessionKeys))
+	for _, key := range sessionKeys {
+		if key = strings.TrimSpace(key); key != "" {
+			keys[key] = struct{}{}
+		}
+	}
+	if len(keys) == 0 {
+		return
+	}
+	for _, meta := range workspaceLegacySessionMetas() {
+		if _, ok := keys[meta.Key]; !ok {
+			continue
+		}
+		_ = workspaceSyncMaterializedLegacyChat(meta)
+	}
 }

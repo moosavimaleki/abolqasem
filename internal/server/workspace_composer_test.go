@@ -4,8 +4,10 @@ import (
 	"context"
 	"testing"
 
+	"ai-agent-manager/internal/providers/catalog"
 	"ai-agent-manager/internal/state"
 	"ai-agent-manager/internal/workspace/agent"
+	"ai-agent-manager/internal/workspace/eventstore"
 	"ai-agent-manager/internal/workspace/readmodels"
 	"ai-agent-manager/internal/workspace/transcript"
 )
@@ -16,10 +18,16 @@ func withWorkspaceComposerStore(t *testing.T) {
 	previousDataDir := workspaceDataDir
 	previousCoordinator := workspaceCoordinator
 	previousCoordinatorDir := workspaceCoordinatorDir
+	previousTurnStarterFactory := workspaceTurnStarterFactory
 	previousLegacyState := workspaceLoadLegacyState
 	workspaceDataDir = func() string { return dir }
 	workspaceCoordinator = nil
 	workspaceCoordinatorDir = ""
+	workspaceTurnStarterFactory = func(*eventstore.Store) agent.TurnStarter {
+		return agent.TurnStarterFunc(func(context.Context, agent.TurnRequest) (agent.Turn, error) {
+			return &workspaceComposerTestTurn{}, nil
+		})
+	}
 	workspaceLoadLegacyState = func() (*state.AppState, error) {
 		return &state.AppState{Sessions: map[string]state.SessionMeta{}}, nil
 	}
@@ -27,8 +35,19 @@ func withWorkspaceComposerStore(t *testing.T) {
 		workspaceDataDir = previousDataDir
 		workspaceCoordinator = previousCoordinator
 		workspaceCoordinatorDir = previousCoordinatorDir
+		workspaceTurnStarterFactory = previousTurnStarterFactory
 		workspaceLoadLegacyState = previousLegacyState
 	})
+}
+
+type workspaceComposerTestTurn struct{}
+
+func (workspaceComposerTestTurn) Cancel() error {
+	return nil
+}
+
+func (workspaceComposerTestTurn) RespondTool(context.Context, agent.ToolResponse) error {
+	return nil
 }
 
 func TestWorkspaceComposerCreatesChatAndSendsPrompt(t *testing.T) {
@@ -42,11 +61,13 @@ func TestWorkspaceComposerCreatesChatAndSendsPrompt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("workspaceCreateChat returned error: %v", err)
 	}
+	requestedModel := "gpt-5.5"
+	expectedModel := catalog.NormalizeServerModel("codex", requestedModel)
 	result, err := workspaceAgentCoordinator().Send(context.Background(), agent.SendCommand{
 		ChatID:   chat.ID,
 		Content:  "hello",
 		Provider: "codex",
-		Model:    "gpt-5.5",
+		Model:    requestedModel,
 		PlanMode: true,
 	})
 	if err != nil {
@@ -63,8 +84,17 @@ func TestWorkspaceComposerCreatesChatAndSendsPrompt(t *testing.T) {
 	if snapshot.Runtime.Provider == nil || *snapshot.Runtime.Provider != "codex" {
 		t.Fatalf("expected codex provider, got %#v", snapshot.Runtime.Provider)
 	}
-	if len(snapshot.Messages) != 1 || transcript.Kind(snapshot.Messages[0]) != transcript.KindUserPrompt {
-		t.Fatalf("expected one user prompt, got %#v", snapshot.Messages)
+	if len(snapshot.Messages) != 2 {
+		t.Fatalf("expected system init and user prompt, got %#v", snapshot.Messages)
+	}
+	if transcript.Kind(snapshot.Messages[0]) != transcript.KindSystemInit {
+		t.Fatalf("expected system init first, got %#v", snapshot.Messages[0])
+	}
+	if snapshot.Messages[0]["provider"] != "codex" || snapshot.Messages[0]["model"] != expectedModel {
+		t.Fatalf("unexpected system init metadata: %#v", snapshot.Messages[0])
+	}
+	if transcript.Kind(snapshot.Messages[1]) != transcript.KindUserPrompt {
+		t.Fatalf("expected user prompt second, got %#v", snapshot.Messages[1])
 	}
 }
 

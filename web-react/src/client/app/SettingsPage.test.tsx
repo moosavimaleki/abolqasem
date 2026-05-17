@@ -22,7 +22,7 @@ const SAMPLE_RELEASES = [
     id: 1,
     name: "v0.8.1",
     tag_name: "v0.8.1",
-    html_url: "https://github.com/jakemor/kanna/releases/tag/v0.8.1",
+    html_url: "https://github.com/jakemor/abolqasem/releases/tag/v0.8.1",
     published_at: "2026-03-19T16:53:08Z",
     body: "## Improvements\n- Better cursor color",
     prerelease: false,
@@ -32,7 +32,7 @@ const SAMPLE_RELEASES = [
     id: 2,
     name: null,
     tag_name: "v0.9.0-beta.1",
-    html_url: "https://github.com/jakemor/kanna/releases/tag/v0.9.0-beta.1",
+    html_url: "https://github.com/jakemor/abolqasem/releases/tag/v0.9.0-beta.1",
     published_at: "2026-03-20T12:00:00Z",
     body: "",
     prerelease: true,
@@ -76,7 +76,7 @@ describe("fetchGithubReleases", () => {
       })
     })
 
-    expect(requestedUrl).toBe("https://api.github.com/repos/jakemor/kanna/releases")
+    expect(requestedUrl).toBe("https://api.github.com/repos/jakemor/abolqasem/releases")
     expect(requestedAcceptHeader).toBe("application/vnd.github+json")
     expect(releases).toEqual([SAMPLE_RELEASES[0]])
   })
@@ -168,8 +168,8 @@ describe("SkillsSection", () => {
 
 describe("getKeybindingsSubtitle", () => {
   test("renders the active keybindings path", () => {
-    expect(getKeybindingsSubtitle("~/.kanna-dev/keybindings.json")).toBe(
-      "Edit global app shortcuts stored in ~/.kanna-dev/keybindings.json."
+    expect(getKeybindingsSubtitle("~/.abolqasem-dev/keybindings.json")).toBe(
+      "Edit global app shortcuts stored in ~/.abolqasem-dev/keybindings.json."
     )
   })
 })
@@ -223,14 +223,14 @@ describe("ChangelogSection", () => {
       />
     )
 
-    expect(html).not.toContain("You are currently running this version of Kanna.")
+    expect(html).not.toContain("You are currently running this version of Abolqasem.")
     expect(html).toContain("Current")
     expect(html).toContain("Update")
     expect(html).toContain("Update")
     expect(html).toContain("v0.8.1")
     expect(html).toContain("Better cursor color")
     expect(html).toContain('aria-label="View release on GitHub"')
-    expect(html).toContain("https://github.com/jakemor/kanna/releases/tag/v0.8.1")
+    expect(html).toContain("https://github.com/jakemor/abolqasem/releases/tag/v0.8.1")
     expect(html).toContain("Prerelease")
     expect(html).toContain("No release notes were provided.")
     expect(html).toContain(formatPublishedDate("2026-03-19T16:53:08Z"))

@@ -12,6 +12,39 @@ STARTUP="${AI_AGENT_MANAGER_DEV_STARTUP:-hook}"
 HOOK_SCOPE="${AI_AGENT_MANAGER_DEV_HOOK_SCOPE:-user}"
 INSTALL_HOOKS="${AI_AGENT_MANAGER_DEV_INSTALL_HOOKS:-1}"
 OPEN_AFTER_INSTALL="${AI_AGENT_MANAGER_DEV_OPEN:-1}"
+DEV_PROXY="${AI_AGENT_MANAGER_DEV_PROXY:-}"
+DEV_NO_PROXY="${AI_AGENT_MANAGER_DEV_NO_PROXY:-${NO_PROXY:-${no_proxy:-}}}"
+
+if [ "$DEV_PROXY" != "" ] && [ "$DEV_PROXY" != "0" ] && [ "$DEV_PROXY" != "off" ]; then
+  if [ "$DEV_NO_PROXY" = "" ]; then
+    DEV_NO_PROXY="127.0.0.1,localhost,::1"
+  else
+    DEV_NO_PROXY="$DEV_NO_PROXY,127.0.0.1,localhost,::1"
+  fi
+  export HTTP_PROXY="$DEV_PROXY"
+  export HTTPS_PROXY="$DEV_PROXY"
+  export ALL_PROXY="$DEV_PROXY"
+  export http_proxy="$DEV_PROXY"
+  export https_proxy="$DEV_PROXY"
+  export all_proxy="$DEV_PROXY"
+  export NO_PROXY="$DEV_NO_PROXY"
+  export no_proxy="$DEV_NO_PROXY"
+  printf 'Using dev proxy for local server install/update steps: %s\n' "$DEV_PROXY"
+
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl --user import-environment HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY http_proxy https_proxy all_proxy no_proxy >/dev/null 2>&1 || true
+  fi
+  if command -v launchctl >/dev/null 2>&1; then
+    launchctl setenv HTTP_PROXY "$HTTP_PROXY" >/dev/null 2>&1 || true
+    launchctl setenv HTTPS_PROXY "$HTTPS_PROXY" >/dev/null 2>&1 || true
+    launchctl setenv ALL_PROXY "$ALL_PROXY" >/dev/null 2>&1 || true
+    launchctl setenv NO_PROXY "$NO_PROXY" >/dev/null 2>&1 || true
+    launchctl setenv http_proxy "$http_proxy" >/dev/null 2>&1 || true
+    launchctl setenv https_proxy "$https_proxy" >/dev/null 2>&1 || true
+    launchctl setenv all_proxy "$all_proxy" >/dev/null 2>&1 || true
+    launchctl setenv no_proxy "$no_proxy" >/dev/null 2>&1 || true
+  fi
+fi
 
 cd "$ROOT_DIR"
 

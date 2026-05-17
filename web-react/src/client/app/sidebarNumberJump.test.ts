@@ -19,7 +19,7 @@ const KEYBINDINGS: KeybindingsSnapshot = {
     openAddProject: ["cmd+alt+o"],
   },
   warning: null,
-  filePathDisplay: "~/.kanna/keybindings.json",
+  filePathDisplay: "~/.abolqasem/keybindings.json",
 }
 
 const nowMs = 1_000_000

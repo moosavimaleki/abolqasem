@@ -2,10 +2,13 @@ package state
 
 import (
 	"os"
+	"strings"
 	"testing"
+
+	"ai-agent-manager/internal/providers/catalog"
 )
 
-func TestApplySettingsPatchPersistsKannaSettings(t *testing.T) {
+func TestApplySettingsPatchPersistsAbolqasemSettings(t *testing.T) {
 	original := stateDir
 	stateDir = t.TempDir()
 	t.Cleanup(func() { stateDir = original })
@@ -16,6 +19,9 @@ func TestApplySettingsPatchPersistsKannaSettings(t *testing.T) {
 	editorPreset := "vscode"
 	editorCommand := "code -g {{file}}:{{line}}"
 	codexModel := "gpt-5.4"
+	proxyMode := ProviderProxyModeCustom
+	httpProxy := " http://127.0.0.1:7890 "
+	noProxy := " localhost,127.0.0.1 "
 	fastMode := true
 	planMode := true
 	analytics := true
@@ -31,6 +37,11 @@ func TestApplySettingsPatchPersistsKannaSettings(t *testing.T) {
 		Editor: &EditorSettingsPatch{
 			Preset:          &editorPreset,
 			CommandTemplate: &editorCommand,
+		},
+		ProviderProxy: &ProviderProxySettingsPatch{
+			Mode:      &proxyMode,
+			HTTPProxy: &httpProxy,
+			NoProxy:   &noProxy,
 		},
 		DefaultProvider: "codex",
 		ProviderDefaults: map[string]ProviderPreferencePatch{
@@ -60,6 +71,9 @@ func TestApplySettingsPatchPersistsKannaSettings(t *testing.T) {
 	if loaded.Editor.Preset != "vscode" || loaded.Editor.CommandTemplate != editorCommand {
 		t.Fatalf("unexpected editor settings: %#v", loaded.Editor)
 	}
+	if loaded.ProviderProxy.Mode != ProviderProxyModeCustom || loaded.ProviderProxy.HTTPProxy != "http://127.0.0.1:7890" || loaded.ProviderProxy.NoProxy != "localhost,127.0.0.1" {
+		t.Fatalf("unexpected provider proxy settings: %#v", loaded.ProviderProxy)
+	}
 	if loaded.DefaultProvider != "codex" {
 		t.Fatalf("unexpected default provider: %q", loaded.DefaultProvider)
 	}
@@ -79,7 +93,7 @@ func TestLoadSettingsNormalizesCorruptOrInvalidValues(t *testing.T) {
 		"theme": "purple",
 		"terminal": {"scrollback_lines": 10, "min_column_width": 1},
 		"default_provider": "gemini",
-		"provider_defaults": {"codex": {"model": ""}}
+		"provider_defaults": {"codex": {"model": "gpt-5.5"}}
 	}`), 0o644); err != nil {
 		t.Fatalf("write settings failed: %v", err)
 	}
@@ -94,7 +108,85 @@ func TestLoadSettingsNormalizesCorruptOrInvalidValues(t *testing.T) {
 	if loaded.Terminal != defaults.Terminal {
 		t.Fatalf("expected default terminal settings, got %#v", loaded.Terminal)
 	}
-	if loaded.DefaultProvider != defaults.DefaultProvider {
-		t.Fatalf("expected default provider, got %q", loaded.DefaultProvider)
+	if loaded.DefaultProvider != "gemini" {
+		t.Fatalf("expected gemini default provider, got %q", loaded.DefaultProvider)
 	}
+	if loaded.ProviderDefaults["codex"].Model != catalog.CodexRuntimeDefaultModel() {
+		t.Fatalf("expected runtime codex model default, got %q", loaded.ProviderDefaults["codex"].Model)
+	}
+}
+
+func TestApplyProviderProxyEnvRemovesInheritedProxyByDefault(t *testing.T) {
+	env := []string{
+		"PATH=/bin",
+		"HTTP_PROXY=http://old-proxy",
+		"HTTPS_PROXY=http://old-proxy",
+		"NO_PROXY=old.local",
+		"HOME=/tmp",
+	}
+	next := ApplyProviderProxyEnv(env, DefaultAppSettings())
+	if !containsEnv(next, "PATH=/bin") || !containsEnv(next, "HOME=/tmp") {
+		t.Fatalf("expected non-proxy env to remain, got %#v", next)
+	}
+	for _, key := range []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"} {
+		if containsEnvKey(next, key) {
+			t.Fatalf("expected %s to be removed, got %#v", key, next)
+		}
+	}
+}
+
+func TestApplyProviderProxyEnvSetsCustomProxy(t *testing.T) {
+	settings := DefaultAppSettings()
+	settings.ProviderProxy = ProviderProxySettings{
+		Mode:      ProviderProxyModeCustom,
+		HTTPProxy: "http://127.0.0.1:7890",
+		NoProxy:   "localhost,127.0.0.1",
+	}
+	next := ApplyProviderProxyEnv([]string{"PATH=/bin", "http_proxy=http://old"}, settings)
+	for _, entry := range []string{
+		"HTTP_PROXY=http://127.0.0.1:7890",
+		"HTTPS_PROXY=http://127.0.0.1:7890",
+		"ALL_PROXY=http://127.0.0.1:7890",
+		"http_proxy=http://127.0.0.1:7890",
+		"https_proxy=http://127.0.0.1:7890",
+		"all_proxy=http://127.0.0.1:7890",
+		"NO_PROXY=localhost,127.0.0.1",
+		"no_proxy=localhost,127.0.0.1",
+	} {
+		if !containsEnv(next, entry) {
+			t.Fatalf("expected %q in env, got %#v", entry, next)
+		}
+	}
+}
+
+func TestNormalizeProviderProxySettingsKeepsCustomModeWithoutHttpProxy(t *testing.T) {
+	settings := normalizeProviderProxySettings(ProviderProxySettings{
+		Mode:    ProviderProxyModeCustom,
+		NoProxy: " localhost ",
+	})
+	if settings.Mode != ProviderProxyModeCustom {
+		t.Fatalf("expected custom mode to be preserved, got %#v", settings)
+	}
+	if settings.HTTPProxy != "" || settings.NoProxy != "localhost" {
+		t.Fatalf("unexpected normalization result: %#v", settings)
+	}
+}
+
+func containsEnv(env []string, expected string) bool {
+	for _, entry := range env {
+		if entry == expected {
+			return true
+		}
+	}
+	return false
+}
+
+func containsEnvKey(env []string, key string) bool {
+	prefix := key + "="
+	for _, entry := range env {
+		if strings.HasPrefix(entry, prefix) {
+			return true
+		}
+	}
+	return false
 }

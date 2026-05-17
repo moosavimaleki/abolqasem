@@ -69,6 +69,29 @@ func TestManagerReturnsExistingSnapshotForSameTerminal(t *testing.T) {
 	}
 }
 
+func TestManagerRootPIDsByCWD(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("windows pipe fallback is covered by build; interactive shell behavior is platform-specific")
+	}
+	manager := NewManager(nil)
+	cwd := t.TempDir()
+	snapshot, err := manager.Create(context.Background(), CreateRequest{TerminalID: "term-1", CWD: cwd})
+	if err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+	defer manager.Close("term-1")
+	if snapshot.CWD != cwd {
+		t.Fatalf("expected cwd %q, got %q", cwd, snapshot.CWD)
+	}
+	pids := manager.RootPIDsByCWD(cwd)
+	if len(pids) != 1 || pids[0] <= 0 {
+		t.Fatalf("expected one root pid for cwd %q, got %#v", cwd, pids)
+	}
+	if other := manager.RootPIDsByCWD(t.TempDir()); len(other) != 0 {
+		t.Fatalf("expected no root pids for unrelated cwd, got %#v", other)
+	}
+}
+
 func waitForEvent(t *testing.T, mu *sync.Mutex, events *[]Event, eventType string, contains string) bool {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)

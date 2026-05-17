@@ -23,7 +23,7 @@ func TestTokenizeExternalCommandTemplateKeepsQuotedArgumentsTogether(t *testing.
 func TestBuildExternalEditorCommandBuildsPresetGotoCommand(t *testing.T) {
 	withExternalCommandMocks(t, externalCommandMocks{})
 	command, err := buildExternalEditorCommand(externalEditorCommandArgs{
-		LocalPath:   "/Users/jake/Projects/kanna/src/client/app/App.tsx",
+		LocalPath:   "/Users/jake/Projects/abolqasem/src/client/app/App.tsx",
 		IsDirectory: false,
 		Line:        12,
 		Column:      3,
@@ -38,7 +38,7 @@ func TestBuildExternalEditorCommandBuildsPresetGotoCommand(t *testing.T) {
 	}
 	expected := externalCommandSpec{
 		Command: "code",
-		Args:    []string{"--goto", "/Users/jake/Projects/kanna/src/client/app/App.tsx:12:3"},
+		Args:    []string{"--goto", "/Users/jake/Projects/abolqasem/src/client/app/App.tsx:12:3"},
 	}
 	if !reflect.DeepEqual(command, expected) {
 		t.Fatalf("unexpected editor command: %#v", command)
@@ -48,7 +48,7 @@ func TestBuildExternalEditorCommandBuildsPresetGotoCommand(t *testing.T) {
 func TestBuildExternalEditorCommandBuildsDirectoryProjectCommand(t *testing.T) {
 	withExternalCommandMocks(t, externalCommandMocks{})
 	command, err := buildExternalEditorCommand(externalEditorCommandArgs{
-		LocalPath:   "/Users/jake/Projects/kanna",
+		LocalPath:   "/Users/jake/Projects/abolqasem",
 		IsDirectory: true,
 		Editor: workspaceEditorOpenSettings{
 			Preset:          editorPresetCursor,
@@ -59,7 +59,7 @@ func TestBuildExternalEditorCommandBuildsDirectoryProjectCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildExternalEditorCommand returned error: %v", err)
 	}
-	expected := externalCommandSpec{Command: "cursor", Args: []string{"/Users/jake/Projects/kanna"}}
+	expected := externalCommandSpec{Command: "cursor", Args: []string{"/Users/jake/Projects/abolqasem"}}
 	if !reflect.DeepEqual(command, expected) {
 		t.Fatalf("unexpected editor command: %#v", command)
 	}
@@ -67,7 +67,7 @@ func TestBuildExternalEditorCommandBuildsDirectoryProjectCommand(t *testing.T) {
 
 func TestBuildExternalEditorCommandUsesCustomTemplate(t *testing.T) {
 	command, err := buildExternalEditorCommand(externalEditorCommandArgs{
-		LocalPath:   "/Users/jake/Projects/kanna/src/client/app/App.tsx",
+		LocalPath:   "/Users/jake/Projects/abolqasem/src/client/app/App.tsx",
 		IsDirectory: false,
 		Line:        12,
 		Column:      1,
@@ -82,7 +82,7 @@ func TestBuildExternalEditorCommandUsesCustomTemplate(t *testing.T) {
 	}
 	expected := externalCommandSpec{
 		Command: "my-editor",
-		Args:    []string{"/Users/jake/Projects/kanna/src/client/app/App.tsx", "--line", "12"},
+		Args:    []string{"/Users/jake/Projects/abolqasem/src/client/app/App.tsx", "--line", "12"},
 	}
 	if !reflect.DeepEqual(command, expected) {
 		t.Fatalf("unexpected editor command: %#v", command)
@@ -92,7 +92,7 @@ func TestBuildExternalEditorCommandUsesCustomTemplate(t *testing.T) {
 func TestBuildExternalEditorCommandBuildsXcodeLineCommand(t *testing.T) {
 	withExternalCommandMocks(t, externalCommandMocks{})
 	command, err := buildExternalEditorCommand(externalEditorCommandArgs{
-		LocalPath:   "/Users/jake/Projects/kanna/App.swift",
+		LocalPath:   "/Users/jake/Projects/abolqasem/App.swift",
 		IsDirectory: false,
 		Line:        24,
 		Column:      2,
@@ -105,29 +105,29 @@ func TestBuildExternalEditorCommandBuildsXcodeLineCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildExternalEditorCommand returned error: %v", err)
 	}
-	expected := externalCommandSpec{Command: "xed", Args: []string{"-l", "24", "/Users/jake/Projects/kanna/App.swift"}}
+	expected := externalCommandSpec{Command: "xed", Args: []string{"-l", "24", "/Users/jake/Projects/abolqasem/App.swift"}}
 	if !reflect.DeepEqual(command, expected) {
 		t.Fatalf("unexpected editor command: %#v", command)
 	}
 }
 
 func TestBuildExternalPreviewCommand(t *testing.T) {
-	command, err := buildExternalPreviewCommand("/Users/jake/Projects/kanna/mock.png", false, "darwin")
+	command, err := buildExternalPreviewCommand("/Users/jake/Projects/abolqasem/mock.png", false, "darwin")
 	if err != nil {
 		t.Fatalf("buildExternalPreviewCommand returned error: %v", err)
 	}
-	expected := externalCommandSpec{Command: "open", Args: []string{"-a", "Preview", "/Users/jake/Projects/kanna/mock.png"}}
+	expected := externalCommandSpec{Command: "open", Args: []string{"-a", "Preview", "/Users/jake/Projects/abolqasem/mock.png"}}
 	if !reflect.DeepEqual(command, expected) {
 		t.Fatalf("unexpected preview command: %#v", command)
 	}
-	if _, err := buildExternalPreviewCommand("/Users/jake/Projects/kanna/mock.png", false, "linux"); err == nil || !strings.Contains(err.Error(), "Preview is only available on macOS") {
+	if _, err := buildExternalPreviewCommand("/Users/jake/Projects/abolqasem/mock.png", false, "linux"); err == nil || !strings.Contains(err.Error(), "Preview is only available on macOS") {
 		t.Fatalf("expected non-macOS preview error, got %v", err)
 	}
 }
 
 func TestBuildExternalDefaultOpenCommand(t *testing.T) {
-	mac := buildExternalDefaultOpenCommand("/Users/jake/Projects/kanna/mock.png", "darwin")
-	if !reflect.DeepEqual(mac, externalCommandSpec{Command: "open", Args: []string{"/Users/jake/Projects/kanna/mock.png"}}) {
+	mac := buildExternalDefaultOpenCommand("/Users/jake/Projects/abolqasem/mock.png", "darwin")
+	if !reflect.DeepEqual(mac, externalCommandSpec{Command: "open", Args: []string{"/Users/jake/Projects/abolqasem/mock.png"}}) {
 		t.Fatalf("unexpected mac command: %#v", mac)
 	}
 	linux := buildExternalDefaultOpenCommand("/tmp/mock.png", "linux")

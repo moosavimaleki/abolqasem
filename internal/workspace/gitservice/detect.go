@@ -32,30 +32,46 @@ type DiffFile struct {
 	Size        int64  `json:"size,omitempty"`
 }
 
+type BranchHistoryEntry struct {
+	SHA         string   `json:"sha"`
+	Summary     string   `json:"summary"`
+	Description string   `json:"description"`
+	AuthorName  string   `json:"authorName,omitempty"`
+	AuthoredAt  string   `json:"authoredAt"`
+	Tags        []string `json:"tags"`
+	GitHubURL   string   `json:"githubUrl,omitempty"`
+}
+
+type BranchHistorySnapshot struct {
+	Entries []BranchHistoryEntry `json:"entries"`
+}
+
 type Snapshot struct {
-	Status            string     `json:"status"`
-	Files             []DiffFile `json:"files"`
-	RepositoryRoot    string     `json:"repositoryRoot,omitempty"`
-	BranchName        string     `json:"branchName,omitempty"`
-	DefaultBranchName string     `json:"defaultBranchName,omitempty"`
-	HasOriginRemote   *bool      `json:"hasOriginRemote,omitempty"`
-	OriginRepoSlug    string     `json:"originRepoSlug,omitempty"`
-	HasUpstream       *bool      `json:"hasUpstream,omitempty"`
-	AheadCount        *int       `json:"aheadCount,omitempty"`
-	BehindCount       *int       `json:"behindCount,omitempty"`
-	LastFetchedAt     string     `json:"lastFetchedAt,omitempty"`
+	Status            string                `json:"status"`
+	Files             []DiffFile            `json:"files"`
+	RepositoryRoot    string                `json:"repositoryRoot,omitempty"`
+	BranchName        string                `json:"branchName,omitempty"`
+	DefaultBranchName string                `json:"defaultBranchName,omitempty"`
+	HasOriginRemote   *bool                 `json:"hasOriginRemote,omitempty"`
+	OriginRepoSlug    string                `json:"originRepoSlug,omitempty"`
+	HasUpstream       *bool                 `json:"hasUpstream,omitempty"`
+	AheadCount        *int                  `json:"aheadCount,omitempty"`
+	BehindCount       *int                  `json:"behindCount,omitempty"`
+	LastFetchedAt     string                `json:"lastFetchedAt,omitempty"`
+	BranchHistory     BranchHistorySnapshot `json:"branchHistory"`
+	Checkpoints       any                   `json:"checkpoints,omitempty"`
 }
 
 func Detect(ctx context.Context, localPath string) (Snapshot, error) {
 	localPath = strings.TrimSpace(localPath)
 	if localPath == "" {
-		return Snapshot{Status: StatusUnknown, Files: []DiffFile{}}, nil
+		return Snapshot{Status: StatusUnknown, Files: []DiffFile{}, BranchHistory: BranchHistorySnapshot{Entries: []BranchHistoryEntry{}}}, nil
 	}
 
 	root, err := gitOutput(ctx, localPath, "rev-parse", "--show-toplevel")
 	if err != nil {
 		if isNoRepoError(err) {
-			return Snapshot{Status: StatusNoRepo, Files: []DiffFile{}}, nil
+			return Snapshot{Status: StatusNoRepo, Files: []DiffFile{}, BranchHistory: BranchHistorySnapshot{Entries: []BranchHistoryEntry{}}}, nil
 		}
 		return Snapshot{}, err
 	}
@@ -65,6 +81,7 @@ func Detect(ctx context.Context, localPath string) (Snapshot, error) {
 		Status:         StatusReady,
 		Files:          []DiffFile{},
 		RepositoryRoot: root,
+		BranchHistory:  BranchHistorySnapshot{Entries: []BranchHistoryEntry{}},
 	}
 	if branch, err := gitOutput(ctx, root, "branch", "--show-current"); err == nil {
 		snapshot.BranchName = branch
@@ -93,6 +110,7 @@ func Detect(ctx context.Context, localPath string) (Snapshot, error) {
 		snapshot.HasUpstream = &value
 	}
 	snapshot.Files = diffFiles(ctx, root)
+	snapshot.BranchHistory = branchHistory(ctx, root, firstNonEmptyGitRef(snapshot.BranchName, "HEAD"), snapshot.OriginRepoSlug, 20)
 	return snapshot, nil
 }
 
@@ -169,15 +187,17 @@ func diffFiles(ctx context.Context, root string) []DiffFile {
 		return []DiffFile{}
 	}
 
+	numstatByPath := diffNumstatByPath(ctx, root)
 	filesByPath := map[string]DiffFile{}
 	for _, line := range strings.Split(statusOutput, "\n") {
 		file, ok := parseStatusLine(root, line)
 		if !ok {
 			continue
 		}
-		additions, deletions := numstatForPath(ctx, root, file.Path)
-		file.Additions = additions
-		file.Deletions = deletions
+		if stat, ok := numstatByPath[file.Path]; ok {
+			file.Additions = stat.additions
+			file.Deletions = stat.deletions
+		}
 		file.PatchDigest = patchDigest(file)
 		filesByPath[file.Path] = file
 	}
@@ -245,10 +265,25 @@ func fillFileMetadata(root string, file *DiffFile) {
 	}
 }
 
-func numstatForPath(ctx context.Context, root string, path string) (int, int) {
-	additions, deletions := parseNumstat(mustGitOutput(ctx, root, "diff", "--numstat", "--", path))
-	cachedAdditions, cachedDeletions := parseNumstat(mustGitOutput(ctx, root, "diff", "--cached", "--numstat", "--", path))
-	return additions + cachedAdditions, deletions + cachedDeletions
+type diffNumstat struct {
+	additions int
+	deletions int
+}
+
+func diffNumstatByPath(ctx context.Context, root string) map[string]diffNumstat {
+	stats := map[string]diffNumstat{}
+	mergeNumstatByPath(stats, parseNumstatByPath(mustGitOutput(ctx, root, "diff", "--numstat")))
+	mergeNumstatByPath(stats, parseNumstatByPath(mustGitOutput(ctx, root, "diff", "--cached", "--numstat")))
+	return stats
+}
+
+func mergeNumstatByPath(target map[string]diffNumstat, source map[string]diffNumstat) {
+	for path, stat := range source {
+		current := target[path]
+		current.additions += stat.additions
+		current.deletions += stat.deletions
+		target[path] = current
+	}
 }
 
 func mustGitOutput(ctx context.Context, root string, args ...string) string {
@@ -259,22 +294,49 @@ func mustGitOutput(ctx context.Context, root string, args ...string) string {
 	return output
 }
 
-func parseNumstat(output string) (int, int) {
-	additions := 0
-	deletions := 0
+func parseNumstatByPath(output string) map[string]diffNumstat {
+	stats := map[string]diffNumstat{}
 	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) < 2 {
+		fields := strings.Split(line, "\t")
+		if len(fields) < 3 {
 			continue
 		}
+		path := normalizeNumstatPath(strings.Join(fields[2:], "\t"))
+		if path == "" {
+			continue
+		}
+		stat := stats[path]
 		if value, err := strconv.Atoi(fields[0]); err == nil {
-			additions += value
+			stat.additions += value
 		}
 		if value, err := strconv.Atoi(fields[1]); err == nil {
-			deletions += value
+			stat.deletions += value
 		}
+		stats[path] = stat
 	}
-	return additions, deletions
+	return stats
+}
+
+func normalizeNumstatPath(path string) string {
+	path = strings.TrimSpace(strings.Trim(path, `"`))
+	if path == "" {
+		return ""
+	}
+	if strings.Contains(path, " => ") {
+		path = normalizeRenamedNumstatPath(path)
+	}
+	return filepath.ToSlash(path)
+}
+
+func normalizeRenamedNumstatPath(path string) string {
+	openBrace := strings.LastIndex(path, "{")
+	closeBrace := strings.LastIndex(path, "}")
+	arrow := strings.LastIndex(path, " => ")
+	if openBrace >= 0 && closeBrace > openBrace && arrow > openBrace && arrow < closeBrace {
+		return path[:openBrace] + strings.TrimSpace(path[arrow+4:closeBrace]) + path[closeBrace+1:]
+	}
+	parts := strings.Split(path, " => ")
+	return strings.TrimSpace(parts[len(parts)-1])
 }
 
 func patchDigest(file DiffFile) string {

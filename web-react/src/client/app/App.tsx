@@ -1,28 +1,36 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom"
-import { Flower } from "lucide-react"
 import { StandaloneShareDialog } from "../components/chat-ui/StandaloneShareDialog"
+import { AbolqasemLogo } from "../components/AbolqasemLogo"
+import { AbolqasemSplashLogo } from "../components/AbolqasemSplashLogo"
 import { AppDialogProvider } from "../components/ui/app-dialog"
 import { Button } from "../components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card"
 import { Input } from "../components/ui/input"
 import { TooltipProvider } from "../components/ui/tooltip"
+import { Loader2 } from "lucide-react"
+import { getAppearanceThemeClassName, useDocumentAppearanceTheme, useReaderAppearanceSettings } from "../components/appearance/ReaderAppearance"
 import { APP_NAME, SDK_CLIENT_APP } from "../../shared/branding"
 import { useChatSoundPreferencesStore } from "../stores/chatSoundPreferencesStore"
 import type { ChatSoundPreference } from "../stores/chatSoundPreferencesStore"
 import { playChatNotificationSound, shouldPlayChatSound } from "../lib/chatSounds"
 import { getChatSoundBurstCount, getNotificationTitleCount } from "./chatNotifications"
-import { KannaSidebar } from "./KannaSidebar"
+import { cn } from "../lib/utils"
+import { AbolqasemSidebar } from "./AbolqasemSidebar"
 import { ChatPage } from "./ChatPage"
 import { LocalProjectsPage } from "./LocalProjectsPage"
 import { SettingsPage } from "./SettingsPage"
-import { useKannaState } from "./useKannaState"
+import { FileRoutePage } from "./FileRoutePage"
+import { useAbolqasemState, type SessionForkOperation } from "./useAbolqasemState"
+import { chatRoute, settingsRoute } from "./routes"
 import type { AppSettingsSnapshot } from "../../shared/types"
-import { getDictionary, getLocaleDirection, normalizeLocale } from "../i18n"
+import { getDictionary, getLocaleDirection, LOCALE_STORAGE_KEY, normalizeLocale } from "../i18n"
 import { I18nProvider } from "../i18n/context"
 
-const VERSION_SEEN_STORAGE_KEY = "kanna:last-seen-version"
+const VERSION_SEEN_STORAGE_KEY = "abolqasem:last-seen-version"
 const AUTH_STATUS_RETRY_DELAY_MS = 500
+const SPLASH_MIN_VISIBLE_MS = 420
+const STARTUP_SPLASH_MIN_VISIBLE_MS = 1200
 
 interface AuthStatusResponse {
   enabled: boolean
@@ -34,6 +42,136 @@ type AppAuthState =
   | { status: "ready" }
   | { status: "locked"; error: string | null }
 
+function SplashScreen({
+  locale,
+  appearanceClassName,
+  title,
+  subtitle,
+}: {
+  locale: "fa" | "en"
+  appearanceClassName?: string
+  title: string
+  subtitle: string
+}) {
+  return (
+    <div
+      dir={getLocaleDirection(locale)}
+      className={cn(
+        "abolqasem-splash-screen min-h-[100dvh] overflow-hidden bg-background text-foreground",
+        appearanceClassName,
+      )}
+    >
+      <main className="abolqasem-splash" aria-label={`${title} loading screen`}>
+        <div className="abolqasem-splash-aura" />
+        <section className="flex flex-col items-center">
+          <div className="abolqasem-splash-logo-card">
+            <AbolqasemSplashLogo className="abolqasem-splash-logo" />
+          </div>
+          <div className="abolqasem-splash-brand">
+            <h1>{title}</h1>
+            <p>{subtitle}</p>
+            <div className="abolqasem-splash-loader" aria-hidden="true">
+              <span />
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  )
+}
+
+function providerDisplayName(provider: SessionForkOperation["targetProvider"]) {
+  switch (provider) {
+    case "claude":
+      return "Claude"
+    case "codex":
+      return "Codex"
+    case "gemini":
+      return "Gemini"
+    default:
+      return ""
+  }
+}
+
+function SessionForkLockOverlay({
+  operation,
+  locale,
+}: {
+  operation: SessionForkOperation
+  locale: "fa" | "en"
+}) {
+  const providerName = providerDisplayName(operation.targetProvider)
+  const title = locale === "fa"
+    ? operation.kind === "convert_preview"
+      ? "در حال آماده‌سازی Fork"
+      : operation.kind === "convert"
+        ? `در حال ساخت سشن ${providerName}`
+        : "در حال Fork کردن چت"
+    : operation.kind === "convert_preview"
+      ? "Preparing fork"
+      : operation.kind === "convert"
+        ? `Creating ${providerName} session`
+        : "Forking chat"
+  const detail = locale === "fa"
+    ? "چند لحظه صبر کنید؛ تاریخچه و فایل native سشن در حال آماده‌سازی است."
+    : "Please wait while the chat history and native session file are prepared."
+
+  return (
+    <div
+      className="fixed inset-0 z-[1000] flex cursor-wait items-center justify-center bg-background/70 px-4 text-foreground backdrop-blur-md"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+      dir={getLocaleDirection(locale)}
+    >
+      <div className="w-full max-w-md overflow-hidden rounded-[2rem] border border-border/70 bg-card/95 shadow-2xl">
+        <div className="relative p-7">
+          <div className="absolute -top-16 end-8 h-36 w-36 rounded-full bg-primary/15 blur-3xl" aria-hidden="true" />
+          <div className="relative flex items-start gap-4">
+            <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+              <Loader2 className="h-6 w-6 animate-spin" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-base font-semibold">{title}</div>
+              <div className="mt-1 line-clamp-2 text-sm text-muted-foreground">{operation.sourceTitle}</div>
+              <div className="mt-4 rounded-2xl border border-border/60 bg-muted/35 px-4 py-3 text-sm text-muted-foreground">
+                {detail}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function useMinimumVisibility(visible: boolean, minimumVisibleMs = SPLASH_MIN_VISIBLE_MS) {
+  const [isVisible, setIsVisible] = useState(visible)
+  const visibleSinceRef = useRef(visible ? performance.now() : 0)
+
+  useEffect(() => {
+    if (visible) {
+      visibleSinceRef.current = performance.now()
+      setIsVisible(true)
+      return
+    }
+
+    if (!isVisible) return
+
+    const elapsedMs = Math.max(0, performance.now() - visibleSinceRef.current)
+    const delayMs = Math.max(0, minimumVisibleMs - elapsedMs)
+    const timeoutId = window.setTimeout(() => {
+      setIsVisible(false)
+    }, delayMs)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+    }
+  }, [isVisible, minimumVisibleMs, visible])
+
+  return isVisible
+}
+
 export function getAppAuthStateFromStatus(payload: Partial<AuthStatusResponse>): AppAuthState {
   if (!payload.enabled || payload.authenticated) {
     return { status: "ready" }
@@ -44,6 +182,10 @@ export function getAppAuthStateFromStatus(payload: Partial<AuthStatusResponse>):
 
 export function shouldRetryAuthStatusRequest(responseOk: boolean | null) {
   return responseOk !== true
+}
+
+export function shouldShowStartupSplash(initialBootComplete: boolean, sidebarReady: boolean, chatReady: boolean) {
+  return !initialBootComplete && (!sidebarReady || !chatReady)
 }
 
 function PasswordScreen({
@@ -74,7 +216,7 @@ function PasswordScreen({
       <Card className="w-full max-w-md rounded-3xl border border-border bg-card shadow-sm">
         <CardHeader className="flex flex-col p-2 space-y-3 px-6 pt-6 pb-5 pl-[28px]">
           <div className="flex items-center gap-3">
-            <Flower className="h-5 w-5 text-logo" />
+            <AbolqasemLogo className="h-5 w-5 text-logo" />
             <div>
               <CardTitle className="font-logo text-xl uppercase text-slate-600 dark:text-slate-100">{APP_NAME}</CardTitle>
             </div>
@@ -91,7 +233,7 @@ function PasswordScreen({
               </div>
             ) : null}
             <Input
-              id="kanna-password"
+              id="abolqasem-password"
               type="password"
               autoComplete="current-password"
               value={password}
@@ -200,31 +342,52 @@ export function shouldPlayChatNotificationSound(
 
 export function applyDocumentLocale(
   localeValue: string | null | undefined,
-  root: Pick<HTMLElement, "lang" | "dir"> = document.documentElement
+  root: Pick<HTMLElement, "lang" | "dir"> = document.documentElement,
+  storage: Pick<Storage, "setItem"> | null = typeof window === "undefined" ? null : window.localStorage
 ) {
   const locale = normalizeLocale(localeValue)
   root.lang = locale
   root.dir = getLocaleDirection(locale)
+  try {
+    storage?.setItem(LOCALE_STORAGE_KEY, locale)
+  } catch {
+    // Locale still applies when localStorage is unavailable.
+  }
   return locale
 }
 
-function KannaLayout() {
+export function getDocumentBootstrapLocale(root: Pick<HTMLElement, "lang"> = document.documentElement) {
+  return normalizeLocale(root.lang)
+}
+
+function AbolqasemLayout() {
   const location = useLocation()
   const navigate = useNavigate()
   const params = useParams()
-  const state = useKannaState(params.chatId ?? null)
+  const state = useAbolqasemState(params.chatId ?? null)
+  const [appearanceSettings] = useReaderAppearanceSettings()
   const chatSoundPreference = useChatSoundPreferencesStore((store) => store.chatSoundPreference)
   const chatSoundId = useChatSoundPreferencesStore((store) => store.chatSoundId)
   const showMobileOpenButton = location.pathname === "/"
   const currentVersion = SDK_CLIENT_APP.split("/")[1] ?? "unknown"
-  const locale = normalizeLocale(state.appSettings?.locale)
-  const previousSidebarDataRef = useRef<ReturnType<typeof useKannaState>["sidebarData"] | null>(null)
+  const settingsLocale = state.appSettings?.locale
+  const locale = settingsLocale ? normalizeLocale(settingsLocale) : getDocumentBootstrapLocale()
+  const [initialBootComplete, setInitialBootComplete] = useState(false)
+  const bootReady = state.sidebarReady && state.chatReady
+  const showStartupSplash = useMinimumVisibility(
+    shouldShowStartupSplash(initialBootComplete, state.sidebarReady, state.chatReady),
+    STARTUP_SPLASH_MIN_VISIBLE_MS
+  )
+  const previousSidebarDataRef = useRef<ReturnType<typeof useAbolqasemState>["sidebarData"] | null>(null)
   const handleSidebarCreateChat = useCallback((projectId: string) => {
     void state.handleCreateChat(projectId)
   }, [state.handleCreateChat])
   const handleSidebarForkChat = useCallback((chat: Parameters<typeof state.handleForkChat>[0]) => {
     void state.handleForkChat(chat)
   }, [state.handleForkChat])
+  const handleSidebarConvertChat = useCallback((chat: Parameters<typeof state.handleConvertChat>[0], provider: Parameters<typeof state.handleConvertChat>[1]) => {
+    void state.handleConvertChat(chat, provider)
+  }, [state.handleConvertChat])
   const handleSidebarRenameChat = useCallback((chat: Parameters<typeof state.handleRenameChat>[0]) => {
     void state.handleRenameChat(chat)
   }, [state.handleRenameChat])
@@ -259,14 +422,15 @@ function KannaLayout() {
     void state.handleReorderProjectGroups(projectIds)
   }, [state.handleReorderProjectGroups])
   const handleOpenChangelog = useCallback(() => {
-    navigate("/settings/changelog")
+    navigate(settingsRoute("changelog"))
   }, [navigate])
   const sidebarElement = useMemo(() => (
-    <KannaSidebar
+    <AbolqasemSidebar
       data={state.sidebarData}
       activeChatId={state.activeChatId}
       connectionStatus={state.connectionStatus}
       ready={state.sidebarReady}
+      pendingArchiveChatIds={state.pendingArchiveChatIds}
       open={state.sidebarOpen}
       collapsed={state.sidebarCollapsed}
       showMobileOpenButton={showMobileOpenButton}
@@ -276,6 +440,7 @@ function KannaLayout() {
       onExpand={state.expandSidebar}
       onCreateChat={handleSidebarCreateChat}
       onForkChat={handleSidebarForkChat}
+      onConvertChat={handleSidebarConvertChat}
       currentProjectId={state.activeProjectId}
       keybindings={state.keybindings}
       onRenameChat={handleSidebarRenameChat}
@@ -298,6 +463,7 @@ function KannaLayout() {
     handleOpenAddProjectModal,
     handleSidebarCopyPath,
     handleSidebarCreateChat,
+    handleSidebarConvertChat,
     handleSidebarArchiveChat,
     handleSidebarDeleteChat,
     handleOpenArchivedChat,
@@ -318,6 +484,7 @@ function KannaLayout() {
     state.editorLabel,
     state.expandSidebar,
     state.openSidebar,
+    state.pendingArchiveChatIds,
     state.sidebarCollapsed,
     state.sidebarData,
     state.sidebarOpen,
@@ -326,11 +493,16 @@ function KannaLayout() {
   ])
 
   useEffect(() => {
+    if (!bootReady || initialBootComplete) return
+    setInitialBootComplete(true)
+  }, [bootReady, initialBootComplete])
+
+  useEffect(() => {
     const seenVersion = window.localStorage.getItem(VERSION_SEEN_STORAGE_KEY)
     const shouldRedirect = shouldRedirectToChangelog(location.pathname, currentVersion, seenVersion)
     window.localStorage.setItem(VERSION_SEEN_STORAGE_KEY, currentVersion)
     if (!shouldRedirect) return
-    navigate("/settings/changelog", { replace: true })
+    navigate(settingsRoute("changelog"), { replace: true })
   }, [currentVersion, location.pathname, navigate])
 
   useLayoutEffect(() => {
@@ -360,8 +532,9 @@ function KannaLayout() {
   }, [state.sidebarData])
 
   useEffect(() => {
-    applyDocumentLocale(state.appSettings?.locale)
-  }, [state.appSettings?.locale])
+    if (!settingsLocale) return
+    applyDocumentLocale(settingsLocale)
+  }, [settingsLocale])
 
   useEffect(() => {
     const burstCount = getChatSoundBurstCount(previousSidebarDataRef.current, state.sidebarData)
@@ -373,9 +546,22 @@ function KannaLayout() {
     void playChatNotificationSound(chatSoundId, burstCount).catch(() => undefined)
   }, [chatSoundId, chatSoundPreference, state.appSettings, state.sidebarData])
 
+  if (showStartupSplash) {
+    return (
+      <I18nProvider locale={locale}>
+        <SplashScreen
+          locale={locale}
+          appearanceClassName={getAppearanceThemeClassName(appearanceSettings)}
+          title={APP_NAME}
+          subtitle={getDictionary(locale).common.loading}
+        />
+      </I18nProvider>
+    )
+  }
+
   return (
     <I18nProvider locale={locale}>
-      <div className="flex h-[100dvh] min-h-[100dvh] overflow-hidden">
+      <div className={cn("flex h-[100dvh] min-h-[100dvh] overflow-hidden bg-background text-foreground", getAppearanceThemeClassName(appearanceSettings))}>
         {sidebarElement}
         <Outlet context={state} />
         <StandaloneShareDialog
@@ -389,6 +575,9 @@ function KannaLayout() {
           onOpenLink={state.handleOpenStandaloneShareLink}
           onCopyLink={state.handleCopyStandaloneShareLink}
         />
+        {state.sessionForkOperation ? (
+          <SessionForkLockOverlay operation={state.sessionForkOperation} locale={locale} />
+        ) : null}
       </div>
     </I18nProvider>
   )
@@ -396,12 +585,19 @@ function KannaLayout() {
 
 export function App() {
   const auth = useAppAuthState()
+  const [appearanceSettings] = useReaderAppearanceSettings()
+  useDocumentAppearanceTheme(appearanceSettings)
+  const locale = normalizeLocale(document.documentElement.lang)
+  const dictionary = getDictionary(locale)
 
   if (auth.state.status === "checking") {
     return (
-      <div className="flex min-h-[100dvh] items-center justify-center bg-background text-sm text-muted-foreground">
-        {getDictionary(normalizeLocale(document.documentElement.lang)).app.checkingSession}
-      </div>
+      <SplashScreen
+        locale={locale}
+        appearanceClassName={getAppearanceThemeClassName(appearanceSettings)}
+        title={APP_NAME}
+        subtitle={dictionary.app.checkingSession}
+      />
     )
   }
 
@@ -413,14 +609,28 @@ export function App() {
     <TooltipProvider>
       <AppDialogProvider>
         <Routes>
-          <Route element={<KannaLayout />}>
+          <Route element={<AbolqasemLayout />}>
             <Route path="/" element={<LocalProjectsPage />} />
-            <Route path="/settings" element={<Navigate to="/settings/general" replace />} />
-            <Route path="/settings/:sectionId" element={<SettingsPage />} />
-            <Route path="/chat/:chatId" element={<ChatPage />} />
+            <Route path="/settings" element={<Navigate to={settingsRoute("general")} replace />} />
+            <Route path="/settings/:sectionId" element={<LegacySettingsRedirect />} />
+            <Route path="/chat/:chatId" element={<LegacyChatRedirect />} />
+            <Route path="/_/settings" element={<Navigate to={settingsRoute("general")} replace />} />
+            <Route path="/_/settings/:sectionId" element={<SettingsPage />} />
+            <Route path="/_/chat/:chatId" element={<ChatPage />} />
           </Route>
+          <Route path="*" element={<FileRoutePage />} />
         </Routes>
       </AppDialogProvider>
     </TooltipProvider>
   )
+}
+
+function LegacyChatRedirect() {
+  const params = useParams()
+  return <Navigate to={params.chatId ? chatRoute(params.chatId) : "/"} replace />
+}
+
+function LegacySettingsRedirect() {
+  const params = useParams()
+  return <Navigate to={settingsRoute(params.sectionId ?? "general")} replace />
 }

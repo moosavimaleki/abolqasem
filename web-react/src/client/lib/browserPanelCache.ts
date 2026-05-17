@@ -1,5 +1,5 @@
 import type { LocalHttpServerInfo, ProjectQuickAction } from "../../shared/protocol"
-import type { KannaSocket } from "../app/socket"
+import type { AbolqasemSocket } from "../app/socket"
 
 const localHttpServersCacheByProjectId = new Map<string, LocalHttpServerInfo[]>()
 const localHttpServersRequestByProjectId = new Map<string, Promise<LocalHttpServerInfo[]>>()
@@ -19,7 +19,7 @@ export function getCachedLocalHttpServers(projectId?: string) {
   return localHttpServersCacheByProjectId.get(localHttpServerCacheKey(projectId)) ?? null
 }
 
-export function refreshCachedLocalHttpServers(socket: KannaSocket, projectId?: string) {
+export function refreshCachedLocalHttpServers(socket: AbolqasemSocket, projectId?: string) {
   const cacheKey = localHttpServerCacheKey(projectId)
   const existingRequest = localHttpServersRequestByProjectId.get(cacheKey)
   if (existingRequest) return existingRequest
@@ -50,7 +50,7 @@ export function getCachedProjectQuickActions(projectId: string) {
   return quickActionsCacheByProjectId.get(projectId)
 }
 
-export function refreshCachedProjectQuickActions(socket: KannaSocket, projectId: string) {
+export function refreshCachedProjectQuickActions(socket: AbolqasemSocket, projectId: string) {
   const existingRequest = quickActionsRequestByProjectId.get(projectId)
   if (existingRequest) return existingRequest
 
@@ -68,7 +68,7 @@ export function refreshCachedProjectQuickActions(socket: KannaSocket, projectId:
   return request
 }
 
-export function writeCachedProjectQuickActions(socket: KannaSocket, projectId: string, actions: ProjectQuickAction[]) {
+export function writeCachedProjectQuickActions(socket: AbolqasemSocket, projectId: string, actions: ProjectQuickAction[]) {
   quickActionsCacheByProjectId.set(projectId, actions)
   return socket.command<ProjectQuickAction[]>({
     type: "project.writeQuickActions",

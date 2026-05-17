@@ -218,6 +218,11 @@ build_target() {
   CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags="-s -w" -o "$out" "$PKG"
 }
 
+prepare_web_assets() {
+  command -v npm >/dev/null 2>&1 || die "npm is required to build the embedded web app"
+  sh "$(dirname "$0")/prepare-web-assets.sh"
+}
+
 build_all_targets() {
   rm -rf "$DIST"
   mkdir -p "$DIST"
@@ -250,6 +255,7 @@ INSTALL_DIR="$(default_bin_dir)"
 INSTALL_PATH="$INSTALL_DIR/$APP$TARGET_SUFFIX"
 
 install_go_if_missing
+prepare_web_assets
 
 if [ "$BUILD_ALL" = "1" ]; then
   build_all_targets

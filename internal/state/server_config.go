@@ -2,6 +2,7 @@ package state
 
 import (
 	"encoding/json"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -30,11 +31,57 @@ func DefaultBaseURL(port int) string {
 	return "http://127.0.0.1:" + strconv.Itoa(port)
 }
 
+func normalizeLoopbackBaseURL(value string) (string, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", false
+	}
+
+	parsed, err := url.Parse(value)
+	if err != nil {
+		return "", false
+	}
+	if !strings.EqualFold(parsed.Scheme, "http") || parsed.Host == "" || parsed.User != nil {
+		return "", false
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", false
+	}
+	if parsed.Path != "" && parsed.Path != "/" {
+		return "", false
+	}
+
+	host := parsed.Hostname()
+	if !isLoopbackHost(host) {
+		return "", false
+	}
+
+	port, err := strconv.Atoi(parsed.Port())
+	if err != nil || port <= 0 || port > 65535 {
+		return "", false
+	}
+
+	return DefaultBaseURL(port), true
+}
+
+func isLoopbackHost(host string) bool {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return false
+	}
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
 func LoadServerBaseURL() string {
 	if value := strings.TrimSpace(os.Getenv(BaseURLEnvName)); value != "" {
-		if _, err := url.ParseRequestURI(value); err == nil {
-			return value
+		if normalized, ok := normalizeLoopbackBaseURL(value); ok {
+			return normalized
 		}
+		return DefaultBaseURL(DefaultPort)
 	}
 
 	data, err := os.ReadFile(GetServerConfigPath())
@@ -46,10 +93,10 @@ func LoadServerBaseURL() string {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return DefaultBaseURL(DefaultPort)
 	}
-	if _, err := url.ParseRequestURI(cfg.BaseURL); err != nil {
-		return DefaultBaseURL(DefaultPort)
+	if normalized, ok := normalizeLoopbackBaseURL(cfg.BaseURL); ok {
+		return normalized
 	}
-	return cfg.BaseURL
+	return DefaultBaseURL(DefaultPort)
 }
 
 func SaveServerBaseURL(baseURL string) error {
@@ -73,14 +120,14 @@ func LoadServerPID() int {
 }
 
 func SaveServerRuntime(baseURL string, pid int) error {
-	baseURL = strings.TrimSpace(baseURL)
-	if baseURL == "" {
-		baseURL = DefaultBaseURL(DefaultPort)
+	normalizedBaseURL, ok := normalizeLoopbackBaseURL(baseURL)
+	if !ok {
+		normalizedBaseURL = DefaultBaseURL(DefaultPort)
 	}
 	if pid < 0 {
 		pid = 0
 	}
-	data, err := json.MarshalIndent(ServerConfig{BaseURL: baseURL, PID: pid}, "", "  ")
+	data, err := json.MarshalIndent(ServerConfig{BaseURL: normalizedBaseURL, PID: pid}, "", "  ")
 	if err != nil {
 		return err
 	}

@@ -2,7 +2,7 @@ package transcript
 
 import "testing"
 
-func TestNewCreatesKannaTranscriptEntryShape(t *testing.T) {
+func TestNewCreatesAbolqasemTranscriptEntryShape(t *testing.T) {
 	entry := New(KindAssistantText, map[string]any{"text": "hello"})
 	if Kind(entry) != KindAssistantText {
 		t.Fatalf("expected assistant kind, got %q", Kind(entry))

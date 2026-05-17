@@ -45,7 +45,10 @@ describe("rightSidebarStore", () => {
     useRightSidebarStore.getState().togglePanel(PROJECT_ID, "browser")
     expect(useRightSidebarStore.getState().projects[PROJECT_ID]?.rightPanel).toBe("browser")
 
-    useRightSidebarStore.getState().togglePanel(PROJECT_ID, "browser")
+    useRightSidebarStore.getState().togglePanel(PROJECT_ID, "files")
+    expect(useRightSidebarStore.getState().projects[PROJECT_ID]?.rightPanel).toBe("files")
+
+    useRightSidebarStore.getState().togglePanel(PROJECT_ID, "files")
     expect(useRightSidebarStore.getState().projects[PROJECT_ID]?.rightPanel).toBe("hidden")
   })
 
@@ -104,7 +107,10 @@ describe("rightSidebarStore", () => {
     const migrated = await migrateRightSidebarStore({
       projects: {
         [PROJECT_ID]: {
-          rightPanel: "browser",
+          rightPanel: "files",
+        },
+        "project-2": {
+          rightPanel: "not-a-panel" as never,
         },
       },
     })
@@ -113,11 +119,34 @@ describe("rightSidebarStore", () => {
       size: DEFAULT_RIGHT_SIDEBAR_SIZE,
       projects: {
         [PROJECT_ID]: {
-          rightPanel: "browser",
+          rightPanel: "files",
+        },
+        "project-2": {
+          rightPanel: "hidden",
         },
       },
       projectUi: {},
       projectBrowser: {},
+    })
+  })
+
+  test("migration drops removed checkpoint view mode", async () => {
+    const migrated = await migrateRightSidebarStore({
+      projectUi: {
+        [PROJECT_ID]: {
+          viewMode: "checkpoints",
+          collapsedPaths: { "src/app.ts": false },
+          summary: "summary",
+          description: "description",
+        },
+      },
+    })
+
+    expect(migrated.projectUi[PROJECT_ID]).toEqual({
+      viewMode: "history",
+      collapsedPaths: { "src/app.ts": false },
+      summary: "summary",
+      description: "description",
     })
   })
 

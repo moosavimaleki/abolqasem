@@ -47,9 +47,9 @@ var serverCmd = &cobra.Command{
 			log.Printf("Warning: failed to persist server URL: %v", err)
 		}
 
-		server.DiscoverSessionsOnce()
-		server.StartDiscoveryLoop(90 * time.Second)
 		server.SetWebFS(viewer.WebAssets)
+		go server.DiscoverSessionsOnce()
+		server.StartDiscoveryLoop(90 * time.Second)
 		if err := server.Serve(listener); err != nil {
 			log.Fatalf("Server error: %v", err)
 		}

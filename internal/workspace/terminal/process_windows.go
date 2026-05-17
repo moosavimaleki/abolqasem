@@ -56,6 +56,13 @@ func (p *pipeProcess) Kill() error {
 	return p.cmd.Process.Kill()
 }
 
+func (p *pipeProcess) PID() int {
+	if p.cmd.Process == nil {
+		return 0
+	}
+	return p.cmd.Process.Pid
+}
+
 func (p *pipeProcess) Wait() (int, *int) {
 	err := p.cmd.Wait()
 	if err == nil {

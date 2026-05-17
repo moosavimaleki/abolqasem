@@ -17,7 +17,7 @@ export function CompactSummaryMessage({ message }: Props) {
         expandedContent={
           <VerticalLineContainer className="my-4 text-xs">
             <div className="prose prose-sm dark:prose-invert max-w-none">
-              <ReactMarkdown remarkPlugins={[remarkGfm]} components={createMarkdownComponents()}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={createMarkdownComponents({ source: message.summary })}>
                 {message.summary}
               </ReactMarkdown>
             </div>

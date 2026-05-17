@@ -1,4 +1,5 @@
 import type { ReactNode } from "react"
+import type { AgentProvider } from "../../../../shared/types"
 import { Archive, Code, Copy, EyeOff, FolderOpen, Pencil, Split, Trash2, UserRoundPlus } from "lucide-react"
 import {
   ContextMenu,
@@ -99,6 +100,7 @@ export function ChatRowMenu({
   onShare,
   onOpenInFinder,
   onFork,
+  onConvert,
   onArchive,
   onDelete,
   children,
@@ -108,6 +110,7 @@ export function ChatRowMenu({
   onShare: () => void
   onOpenInFinder: () => void
   onFork: () => void
+  onConvert: (provider: AgentProvider) => void
   onArchive: () => void
   onDelete: () => void
   children: ReactNode
@@ -157,6 +160,20 @@ export function ChatRowMenu({
           <Split className="h-3.5 w-3.5" />
           <span className="text-xs font-medium">{t.common.fork}</span>
         </ContextMenuItem>
+        {(["claude", "codex", "gemini"] as const).map((provider) => (
+          <ContextMenuItem
+            key={provider}
+            disabled={!canFork}
+            onSelect={(event) => {
+              event.preventDefault()
+              if (!canFork) return
+              onConvert(provider)
+            }}
+          >
+            <Split className="h-3.5 w-3.5" />
+            <span className="text-xs font-medium">{t.sidebar.forkToProvider(provider === "claude" ? "Claude" : provider === "codex" ? "Codex" : "Gemini")}</span>
+          </ContextMenuItem>
+        ))}
         <ContextMenuItem
           onSelect={(event) => {
             event.preventDefault()

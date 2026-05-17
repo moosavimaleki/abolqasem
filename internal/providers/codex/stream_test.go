@@ -117,6 +117,50 @@ func TestStreamNormalizerMapsTokenUsage(t *testing.T) {
 	}
 }
 
+func TestStreamNormalizerMapsRateLimits(t *testing.T) {
+	events := NewStreamNormalizer().HandleNotification(notification("account/rateLimits/updated", map[string]any{
+		"rateLimits": map[string]any{
+			"limitId": "codex",
+			"credits": map[string]any{
+				"hasCredits": true,
+				"unlimited":  false,
+				"balance":    "12.34",
+			},
+			"primary": map[string]any{
+				"usedPercent":        42.5,
+				"windowDurationMins": 300,
+				"resetsAt":           1700000000,
+			},
+			"secondary": map[string]any{
+				"usedPercent":        12,
+				"windowDurationMins": 10080,
+			},
+		},
+	}))
+	if len(events) != 1 || events[0].Type != "transcript" {
+		t.Fatalf("unexpected events: %#v", events)
+	}
+	if events[0].Entry["kind"] != "rate_limit_updated" {
+		t.Fatalf("unexpected entry: %#v", events[0].Entry)
+	}
+	if _, ok := events[0].Entry["hidden"]; ok {
+		t.Fatalf("expected visible entry, got %#v", events[0].Entry)
+	}
+	limits := events[0].Entry["rateLimits"].(map[string]any)
+	credits := limits["credits"].(map[string]any)
+	primary := limits["primary"].(map[string]any)
+	secondary := limits["secondary"].(map[string]any)
+	if credits["balance"] != "12.34" || credits["hasCredits"] != true {
+		t.Fatalf("unexpected credits: %#v", credits)
+	}
+	if primary["usedPercent"] != float64(42.5) || primary["windowDurationMins"] != float64(300) {
+		t.Fatalf("unexpected primary window: %#v", primary)
+	}
+	if secondary["usedPercent"] != float64(12) || secondary["windowDurationMins"] != float64(10080) {
+		t.Fatalf("unexpected secondary window: %#v", secondary)
+	}
+}
+
 func TestStreamNormalizerMapsCompaction(t *testing.T) {
 	events := NewStreamNormalizer().HandleNotification(notification("thread/compacted", map[string]any{
 		"threadId": "thread-1",

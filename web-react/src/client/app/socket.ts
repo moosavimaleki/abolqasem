@@ -17,7 +17,7 @@ type StatusListener = (status: SocketStatus) => void
 const STALE_CONNECTION_MS = 25_000
 const HEARTBEAT_INTERVAL_MS = 15_000
 const PING_TIMEOUT_MS = 4_000
-const SEND_TO_STARTING_PROFILE_STORAGE_KEY = "kanna:profile-send-to-starting"
+const SEND_TO_STARTING_PROFILE_STORAGE_KEY = "abolqasem:profile-send-to-starting"
 
 interface SubscriptionEntry<TSnapshot, TEvent = never> {
   topic: SubscriptionTopic
@@ -34,7 +34,7 @@ function isSendToStartingProfilingEnabled() {
   }
 }
 
-export class KannaSocket {
+export class AbolqasemSocket {
   private readonly url: string
   private ws: WebSocket | null = null
   private started = false
@@ -192,6 +192,9 @@ export class KannaSocket {
       while (this.outboundQueue.length > 0) {
         const envelope = this.outboundQueue.shift()
         if (envelope) {
+          if (envelope.type === "subscribe" || envelope.type === "unsubscribe") {
+            continue
+          }
           this.sendNow(envelope)
         }
       }
@@ -209,7 +212,7 @@ export class KannaSocket {
       }
 
       if (isSendToStartingProfilingEnabled() && payload.type === "snapshot" && payload.snapshot.type === "chat" && payload.snapshot.data?.runtime.status === "starting") {
-        console.debug("[kanna/send->starting][client-ws]", {
+        console.debug("[abolqasem/send->starting][client-ws]", {
           stage: "socket_message_received",
           receivedAt,
           payloadBytes: rawText.length,
@@ -220,7 +223,7 @@ export class KannaSocket {
       }
 
       if (isSendToStartingProfilingEnabled() && payload.type === "ack") {
-        console.debug("[kanna/send->starting][client-ws]", {
+        console.debug("[abolqasem/send->starting][client-ws]", {
           stage: "socket_ack_received",
           receivedAt,
           payloadBytes: rawText.length,

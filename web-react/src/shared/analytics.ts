@@ -1,4 +1,4 @@
-export const ANALYTICS_ENDPOINT = "https://kanna.sh/api/t"
+export const ANALYTICS_ENDPOINT = "https://abolqasem.sh/api/t"
 
 export const ANALYTICS_STATIC_EVENT_NAMES = [
   "app_launch",

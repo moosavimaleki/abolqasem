@@ -12,10 +12,11 @@ import (
 )
 
 var (
-	ErrChatAlreadyRunning      = errors.New("chat is already running")
-	ErrQueuedNotFound          = errors.New("queued message not found")
-	ErrPendingToolNotFound     = errors.New("pending tool not found")
-	ErrToolResponseUnsupported = errors.New("active turn does not support tool responses")
+	ErrChatAlreadyRunning       = errors.New("chat is already running")
+	ErrQueuedNotFound           = errors.New("queued message not found")
+	ErrPendingToolNotFound      = errors.New("pending tool not found")
+	ErrToolResponseUnsupported  = errors.New("active turn does not support tool responses")
+	ErrTurnStarterNotConfigured = errors.New("turn starter is not configured")
 )
 
 type Store interface {
@@ -57,6 +58,14 @@ type ToolEventRecorder interface {
 	RecordToolResult(chatID string, toolUseID string, result any) error
 }
 
+type SystemInitRecorder interface {
+	EnsureSystemInit(chatID string, provider string, model string) error
+}
+
+type CheckpointRecorder interface {
+	RecordCheckpointBeforeUserPrompt(chatID string, content string, attachments []readmodels.ChatAttachment, steered bool) error
+}
+
 type TurnStarterFunc func(ctx context.Context, request TurnRequest) (Turn, error)
 
 func (fn TurnStarterFunc) StartTurn(ctx context.Context, request TurnRequest) (Turn, error) {
@@ -80,7 +89,7 @@ type ActiveTurn struct {
 	Effort      string
 	ServiceTier string
 	PlanMode    bool
-	Status      readmodels.KannaStatus
+	Status      readmodels.AbolqasemStatus
 	Turn        Turn
 	StartedAt   time.Time
 	Cancel      context.CancelFunc
@@ -122,14 +131,18 @@ type QueueMessageInput struct {
 }
 
 type TurnRequest struct {
-	ChatID      string
-	Provider    string
-	Content     string
-	Attachments []readmodels.ChatAttachment
-	Model       string
-	Effort      string
-	ServiceTier string
-	PlanMode    bool
+	ChatID                  string
+	ProjectID               string
+	LocalPath               string
+	Provider                string
+	Content                 string
+	Attachments             []readmodels.ChatAttachment
+	Model                   string
+	Effort                  string
+	ServiceTier             string
+	PlanMode                bool
+	SessionToken            string
+	PendingForkSessionToken string
 }
 
 type SendResult struct {
@@ -174,7 +187,7 @@ type TurnEvent struct {
 func NewCoordinator(store Store, starter TurnStarter, onStateChange func(chatID string)) *Coordinator {
 	if starter == nil {
 		starter = TurnStarterFunc(func(context.Context, TurnRequest) (Turn, error) {
-			return noopTurn{}, nil
+			return nil, ErrTurnStarterNotConfigured
 		})
 	}
 	if onStateChange == nil {
@@ -188,11 +201,11 @@ func NewCoordinator(store Store, starter TurnStarter, onStateChange func(chatID 
 	}
 }
 
-func (c *Coordinator) ActiveStatuses() map[string]readmodels.KannaStatus {
+func (c *Coordinator) ActiveStatuses() map[string]readmodels.AbolqasemStatus {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	statuses := map[string]readmodels.KannaStatus{}
+	statuses := map[string]readmodels.AbolqasemStatus{}
 	for chatID, turn := range c.active {
 		statuses[chatID] = turn.Status
 	}
@@ -458,6 +471,16 @@ func (c *Coordinator) startTurn(
 		c.clearActive(chatID)
 		return err
 	}
+	if recorder, ok := c.store.(SystemInitRecorder); ok {
+		if err := recorder.EnsureSystemInit(chatID, resolvedProvider, settings.model); err != nil {
+			cancel()
+			c.clearActive(chatID)
+			return err
+		}
+	}
+	if recorder, ok := c.store.(CheckpointRecorder); ok {
+		_ = recorder.RecordCheckpointBeforeUserPrompt(chatID, content, attachments, steered)
+	}
 	if err := c.store.AppendUserPrompt(chatID, content, attachments, steered); err != nil {
 		cancel()
 		c.clearActive(chatID)
@@ -470,14 +493,17 @@ func (c *Coordinator) startTurn(
 	}
 
 	turn, err := c.starter.StartTurn(turnCtx, TurnRequest{
-		ChatID:      chatID,
-		Provider:    resolvedProvider,
-		Content:     content,
-		Attachments: attachments,
-		Model:       settings.model,
-		Effort:      settings.effort,
-		ServiceTier: settings.serviceTier,
-		PlanMode:    settings.planMode,
+		ChatID:                  chatID,
+		ProjectID:               chat.ProjectID,
+		Provider:                resolvedProvider,
+		Content:                 content,
+		Attachments:             attachments,
+		Model:                   settings.model,
+		Effort:                  settings.effort,
+		ServiceTier:             settings.serviceTier,
+		PlanMode:                settings.planMode,
+		SessionToken:            derefString(chat.SessionToken),
+		PendingForkSessionToken: derefString(chat.PendingForkSessionToken),
 	})
 	if err != nil {
 		cancel()
@@ -673,16 +699,23 @@ func providerSettings(provider string, model string, modelOptions *catalog.Model
 		}
 	}
 
-	options := catalog.NormalizeCodexModelOptions(modelOptions, legacyEffort)
+	if entry.ID == "codex" {
+		options := catalog.NormalizeCodexModelOptions(modelOptions, legacyEffort)
+		return resolvedProviderSettings{
+			model:       catalog.NormalizeServerModel(entry.ID, model),
+			effort:      options.ReasoningEffort,
+			serviceTier: catalog.CodexServiceTierFromModelOptions(options),
+			planMode:    entry.SupportsPlanMode && planMode,
+		}
+	}
+
 	return resolvedProviderSettings{
-		model:       catalog.NormalizeServerModel(entry.ID, model),
-		effort:      options.ReasoningEffort,
-		serviceTier: catalog.CodexServiceTierFromModelOptions(options),
-		planMode:    entry.SupportsPlanMode && planMode,
+		model:    catalog.NormalizeServerModel(entry.ID, model),
+		planMode: entry.SupportsPlanMode && planMode,
 	}
 }
 
-func initialStatus(provider string) readmodels.KannaStatus {
+func initialStatus(provider string) readmodels.AbolqasemStatus {
 	if provider == "claude" {
 		return readmodels.StatusRunning
 	}

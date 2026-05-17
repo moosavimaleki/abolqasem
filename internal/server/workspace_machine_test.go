@@ -23,7 +23,7 @@ func TestWorkspaceMachineNameStripsLocalNetworkSuffix(t *testing.T) {
 	}
 }
 
-func TestWorkspacePlatformMatchesKannaNodePlatform(t *testing.T) {
+func TestWorkspacePlatformMatchesAbolqasemNodePlatform(t *testing.T) {
 	withWorkspaceMachineMocks(t, "windows", "host", "", errMockCommand)
 	if got := workspacePlatform(); got != "win32" {
 		t.Fatalf("workspacePlatform() = %q, expected win32", got)

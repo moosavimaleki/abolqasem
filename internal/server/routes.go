@@ -1,8 +1,10 @@
 package server
 
 import (
+	"ai-agent-manager/internal/state"
 	"io/fs"
 	"net/http"
+	"net/http/pprof"
 	"net/url"
 	"os"
 	"strings"
@@ -19,6 +21,8 @@ func setupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/sessions", handleAPISessions)
 	mux.HandleFunc("/api/search", handleAPISearch)
 	mux.HandleFunc("/api/settings", handleAPISettings)
+	mux.HandleFunc("/api/resources", handleAPIResources)
+	mux.HandleFunc("/api/resources/compact", handleAPIResourceCompact)
 	mux.HandleFunc("/api/actions/reload-sessions", handleAPIReloadSessions)
 	mux.HandleFunc("/api/actions/restart-server", handleAPIRestartServer)
 	mux.HandleFunc("/api/hooks/status", handleAPIHooksStatus)
@@ -28,11 +32,15 @@ func setupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/hook", handleAPIHook)
 	mux.HandleFunc("/api/session/", handleAPISessionMessages)
 	mux.HandleFunc("/api/file-preview", handleAPIFilePreview)
+	mux.HandleFunc("/api/file-context", handleAPIFileContext)
 	mux.HandleFunc("/api/projects/", handleAPIProjects)
 	mux.HandleFunc("/api/events", handleAPIEvents)
 	mux.HandleFunc("/ws", handleWorkspaceWS)
 	mux.HandleFunc("/auth/status", handleWorkspaceAuthStatus)
 	mux.HandleFunc("/auth/logout", handleWorkspaceAuthLogout)
+	if strings.TrimSpace(os.Getenv("AI_AGENT_MANAGER_PPROF")) == "1" {
+		registerPprofRoutes(mux)
+	}
 
 	rootFS := fs.FS(os.DirFS("web"))
 	if webFS != nil {
@@ -45,12 +53,27 @@ func setupRoutes(mux *http.ServeMux) {
 	})
 	mux.Handle("/legacy/", http.StripPrefix("/legacy/", fileServer))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" ||
+			strings.HasPrefix(r.URL.Path, "/_/") || r.URL.Path == "/_" ||
+			r.URL.Path == "/settings" || strings.HasPrefix(r.URL.Path, "/settings/") ||
+			r.URL.Path == "/chat" || strings.HasPrefix(r.URL.Path, "/chat/") {
+			serveAppIndex(w, rootFS)
+			return
+		}
 		if isLocalFileRoute(r.URL.Path) {
 			serveAppIndex(w, rootFS)
 			return
 		}
 		fileServer.ServeHTTP(w, r)
 	})
+}
+
+func registerPprofRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("/debug/pprof/", pprof.Index)
+	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
 }
 
 func serveAppIndex(w http.ResponseWriter, rootFS fs.FS) {
@@ -60,7 +83,36 @@ func serveAppIndex(w http.ResponseWriter, rootFS fs.FS) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = w.Write(data)
+	_, _ = w.Write(rewriteAppIndexForDocumentLocale(rewriteAppIndexForRootRoute(data)))
+}
+
+func rewriteAppIndexForRootRoute(data []byte) []byte {
+	content := string(data)
+	content = strings.ReplaceAll(content, `href="./`, `href="/`)
+	content = strings.ReplaceAll(content, `src="./`, `src="/`)
+	return []byte(content)
+}
+
+func rewriteAppIndexForDocumentLocale(data []byte) []byte {
+	locale := "en"
+	if settings, err := state.LoadSettings(); err == nil {
+		normalized := state.NormalizeSettings(settings)
+		if normalized.Locale == "fa" || normalized.Locale == "en" {
+			locale = normalized.Locale
+		}
+	}
+
+	dir := "ltr"
+	if locale == "fa" {
+		dir = "rtl"
+	}
+
+	content := string(data)
+	replacement := `<html lang="` + locale + `" dir="` + dir + `" data-abolqasem-locale="server">`
+	if strings.Contains(content, `<html lang="en" dir="ltr" data-abolqasem-locale="default">`) {
+		return []byte(strings.Replace(content, `<html lang="en" dir="ltr" data-abolqasem-locale="default">`, replacement, 1))
+	}
+	return []byte(strings.Replace(content, `<html lang="en">`, replacement, 1))
 }
 
 func isLocalFileRoute(rawPath string) bool {

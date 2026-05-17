@@ -216,7 +216,7 @@ function renderAttachmentPreviewBody(
       <div className="space-y-3">
         {previewState.truncated ? <PreviewNotice message={t?.attachments.previewTruncated ?? "Preview truncated to 1024 KB."} /> : null}
         <div className="prose prose-sm max-w-none overflow-auto rounded-xl border border-border bg-background p-4 prose-invert">
-          <Markdown remarkPlugins={[remarkGfm]} components={createMarkdownComponents()}>
+          <Markdown remarkPlugins={[remarkGfm]} components={createMarkdownComponents({ source: previewState.content })}>
             {previewState.content}
           </Markdown>
         </div>

@@ -1,14 +1,15 @@
-export const APP_NAME = "Kanna"
-export const CLI_COMMAND = "kanna"
-export const DATA_ROOT_NAME = ".kanna"
-export const DEV_DATA_ROOT_NAME = ".kanna-dev"
-export const PACKAGE_NAME = "kanna-code"
-export const RUNTIME_PROFILE_ENV_VAR = "KANNA_RUNTIME_PROFILE"
+export const APP_NAME = "Abolqasem"
+export const CLI_COMMAND = "ai-agent-manager"
+export const LOCAL_UI_URL = "http://127.0.0.1:9090/"
+export const DATA_ROOT_NAME = ".abolqasem"
+export const DEV_DATA_ROOT_NAME = ".abolqasem-dev"
+export const PACKAGE_NAME = "abolqasem-code"
+export const RUNTIME_PROFILE_ENV_VAR = "ABOLQASEM_RUNTIME_PROFILE"
 // Read version from package.json — JSON import works in both Bun and Vite
 import pkg from "../../package.json"
 export const APP_VERSION = pkg.version
-export const SDK_CLIENT_APP = `kanna/${pkg.version}`
-export const LOG_PREFIX = "[kanna]"
+export const SDK_CLIENT_APP = `abolqasem/${pkg.version}`
+export const LOG_PREFIX = "[abolqasem]"
 export const DEFAULT_NEW_PROJECT_ROOT = `~/${APP_NAME}`
 
 export type RuntimeProfile = "dev" | "prod"

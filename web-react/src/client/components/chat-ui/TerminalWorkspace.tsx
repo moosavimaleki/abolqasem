@@ -1,6 +1,6 @@
 import { Fragment, memo, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { Eraser, Plus, X } from "lucide-react"
-import type { SocketStatus, KannaSocket } from "../../app/socket"
+import type { SocketStatus, AbolqasemSocket } from "../../app/socket"
 import { Button } from "../ui/button"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "../ui/resizable"
 import { HotkeyTooltip, HotkeyTooltipContent, HotkeyTooltipTrigger } from "../ui/tooltip"
@@ -12,7 +12,7 @@ import { useI18n } from "../../i18n/context"
 interface Props {
   projectId: string
   layout: ProjectTerminalLayout
-  socket: KannaSocket
+  socket: AbolqasemSocket
   connectionStatus: SocketStatus
   scrollback: number
   minColumnWidth: number
@@ -33,7 +33,7 @@ interface TerminalWorkspacePaneProps {
   isLast: boolean
   minTerminalWidth: number
   path: string | null
-  socket: KannaSocket
+  socket: AbolqasemSocket
   scrollback: number
   connectionStatus: SocketStatus
   clearVersion: number

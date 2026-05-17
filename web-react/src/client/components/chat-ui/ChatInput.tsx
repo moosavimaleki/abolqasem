@@ -126,10 +126,13 @@ interface Props {
   availableProviders: ProviderCatalogEntry[]
   contextWindowSnapshot?: ContextWindowSnapshot | null
   previousPrompt?: string | null
+  onJumpToPreviousUserPrompt?: () => void | Promise<void>
 }
 
 export interface ChatInputHandle {
   enqueueFiles: (files: File[]) => void
+  insertText: (text: string) => void
+  appendText: (text: string) => void
 }
 
 function withNormalizedContextWindow(
@@ -156,19 +159,30 @@ function getEffectiveComposerState(
     return composerState
   }
 
-  return activeProvider === "claude"
-    ? {
+  if (activeProvider === "claude") {
+    return {
       provider: "claude",
       model: providerDefaults.claude.model,
       modelOptions: { ...providerDefaults.claude.modelOptions },
       planMode: composerState.planMode,
     }
-    : {
-      provider: "codex",
-      model: providerDefaults.codex.model,
-      modelOptions: { ...providerDefaults.codex.modelOptions },
+  }
+
+  if (activeProvider === "gemini") {
+    return {
+      provider: "gemini",
+      model: providerDefaults.gemini.model,
+      modelOptions: { ...providerDefaults.gemini.modelOptions },
       planMode: composerState.planMode,
     }
+  }
+
+  return {
+    provider: "codex",
+    model: providerDefaults.codex.model,
+    modelOptions: { ...providerDefaults.codex.modelOptions },
+    planMode: composerState.planMode,
+  }
 }
 
 const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
@@ -184,10 +198,11 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
   availableProviders,
   contextWindowSnapshot = null,
   previousPrompt = null,
+  onJumpToPreviousUserPrompt,
 }, forwardedRef) {
-  const { t } = useI18n()
+  const { t, direction } = useI18n()
+  const isRtl = direction === "rtl"
   const {
-    getDraft,
     setDraft,
     clearDraft,
     getAttachmentDrafts,
@@ -198,6 +213,7 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
     providerDefaults,
     getComposerState,
     initializeComposerForChat,
+    setComposerState,
     setChatComposerModel,
     setChatComposerPlanMode,
     resetChatComposerFromProvider,
@@ -205,7 +221,8 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const composerChatId = chatId ?? NEW_CHAT_COMPOSER_ID
   const storedComposerState = useChatPreferencesStore((state) => state.chatStates[composerChatId])
   const composerState = storedComposerState ?? getComposerState(composerChatId)
-  const [value, setValue] = useState(() => (chatId ? getDraft(chatId) : ""))
+  const persistedDraft = useChatInputStore((state) => (chatId ? (state.drafts[chatId] ?? "") : ""))
+  const [value, setValue] = useState(() => persistedDraft)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const isStandalone = useIsStandalone()
   const [attachments, setAttachments] = useState<ComposerAttachment[]>(() => hydrateComposerAttachments(chatId ? getAttachmentDrafts(chatId) : []))
@@ -316,6 +333,10 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
   useEffect(() => {
     latestChatIdRef.current = chatId ?? null
   }, [chatId])
+
+  useEffect(() => {
+    setValue(persistedDraft)
+  }, [persistedDraft])
 
   useEffect(() => {
     initializeComposerForChat(composerChatId)
@@ -508,9 +529,61 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
     processUploadQueue()
   }, [processUploadQueue, projectId, t])
 
+  const insertText = useCallback((insertedText: string) => {
+    if (!insertedText) return
+
+    const textarea = textareaRef.current
+    const selectionStart = textarea?.selectionStart ?? value.length
+    const selectionEnd = textarea?.selectionEnd ?? selectionStart
+    const nextValue = replaceTextSelection({
+      value,
+      insertedText,
+      selectionStart,
+      selectionEnd,
+    })
+    const nextCaretPosition = selectionStart + insertedText.length
+
+    setValue(nextValue)
+    if (chatId) setDraft(chatId, nextValue)
+
+    requestAnimationFrame(() => {
+      autoResize()
+      onLayoutChange?.()
+      const currentTextarea = textareaRef.current
+      if (!currentTextarea) return
+      currentTextarea.focus()
+      currentTextarea.selectionStart = nextCaretPosition
+      currentTextarea.selectionEnd = nextCaretPosition
+    })
+  }, [autoResize, chatId, onLayoutChange, setDraft, value])
+
+  const appendText = useCallback((insertedText: string) => {
+    if (!insertedText) return
+
+    const prefix = value.length > 0 && !value.endsWith("\n") ? "\n" : ""
+    const suffix = insertedText.endsWith("\n") ? "" : "\n"
+    const nextValue = `${value}${prefix}${insertedText}${suffix}`
+    const nextCaretPosition = nextValue.length
+
+    setValue(nextValue)
+    if (chatId) setDraft(chatId, nextValue)
+
+    requestAnimationFrame(() => {
+      autoResize()
+      onLayoutChange?.()
+      const currentTextarea = textareaRef.current
+      if (!currentTextarea) return
+      currentTextarea.focus()
+      currentTextarea.selectionStart = nextCaretPosition
+      currentTextarea.selectionEnd = nextCaretPosition
+    })
+  }, [autoResize, chatId, onLayoutChange, setDraft, value])
+
   useImperativeHandle(forwardedRef, () => ({
+    appendText,
     enqueueFiles,
-  }), [enqueueFiles])
+    insertText,
+  }), [appendText, enqueueFiles, insertText])
 
   async function handleSubmit() {
     if (!canSubmit || hasPendingUploads) return
@@ -523,8 +596,10 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
     let modelOptions: ModelOptions
     if (providerPrefs.provider === "claude") {
       modelOptions = { claude: { ...providerPrefs.modelOptions } }
-    } else {
+    } else if (providerPrefs.provider === "codex") {
       modelOptions = { codex: { ...providerPrefs.modelOptions } }
+    } else {
+      modelOptions = { gemini: { ...providerPrefs.modelOptions } }
     }
     const submitOptions = {
       provider: selectedProvider,
@@ -533,6 +608,11 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
       planMode: showPlanMode ? providerPrefs.planMode : false,
       attachments: attachmentsForSubmit,
     }
+    const submittedComposerState: ComposerState = {
+      ...providerPrefs,
+      modelOptions: { ...providerPrefs.modelOptions },
+      planMode: submitOptions.planMode,
+    } as ComposerState
     setValue("")
     if (chatId) clearDraft(chatId)
     if (textareaRef.current) textareaRef.current.style.height = "auto"
@@ -543,6 +623,7 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
     try {
       await onSubmit(nextValue, submitOptions)
+      setComposerState(composerChatId, submittedComposerState)
       previousAttachments.forEach(cleanupAttachmentPreview)
     } catch (error) {
       console.error("[ChatInput] Submit failed:", error)
@@ -570,6 +651,12 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
     if (event.key === "Escape" && canCancel) {
       event.preventDefault()
       onCancel?.()
+      return
+    }
+
+    if (event.key === "ArrowUp" && event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey && onJumpToPreviousUserPrompt) {
+      event.preventDefault()
+      void onJumpToPreviousUserPrompt()
       return
     }
 
@@ -622,6 +709,20 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
     if (!hasClipboardTextPayload(event.clipboardData)) {
       event.preventDefault()
     }
+  }
+
+  function handleDragOver(event: React.DragEvent<HTMLTextAreaElement>) {
+    if (!Array.from(event.dataTransfer.types).includes("application/x-ai-agent-manager-project-path")) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = "copy"
+  }
+
+  function handleDrop(event: React.DragEvent<HTMLTextAreaElement>) {
+    const projectPath = event.dataTransfer.getData("application/x-ai-agent-manager-project-path")
+    if (!projectPath) return
+
+    event.preventDefault()
+    insertText(` ${projectPath} `)
   }
 
   function handleAttachmentPreview(attachment: ComposerAttachment) {
@@ -686,12 +787,12 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
             </ScrollArea>
           ) : null}
 
-          <div className="flex items-end max-w-[840px] mx-auto border dark:bg-card/40 backdrop-blur-lg border-border rounded-[29px] pr-1.5">
+          <div className="flex items-end max-w-[840px] mx-auto border dark:bg-card/40 backdrop-blur-lg border-border rounded-[29px] px-1.5">
             <label
               aria-label={t.composer.addAttachment}
               className={cn(
                 buttonVariants({ variant: "ghost", size: "icon" }),
-                "relative md:hidden flex-shrink-0 ml-1 mb-1 h-10 w-10 rounded-full text-muted-foreground hover:text-foreground",
+                "relative md:hidden flex-shrink-0 mx-1 mb-1 h-10 w-10 rounded-full text-muted-foreground hover:text-foreground",
                 disabled && "pointer-events-none opacity-50",
               )}
             >
@@ -724,9 +825,11 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 autoResize()
               }}
               onPaste={handlePaste}
+              onDragOver={handleDragOver}
+              onDrop={handleDrop}
               onKeyDown={handleKeyDown}
               disabled={disabled}
-              className="flex-1 text-base p-3 md:p-4 !pr-2 pl-0 md:pl-6 resize-none max-h-[200px] outline-none bg-transparent border-0 shadow-none"
+              className="flex-1 text-base px-2 py-3 md:px-4 md:py-4 resize-none max-h-[200px] outline-none bg-transparent border-0 shadow-none"
             />
             <Button
               type="button"
@@ -742,12 +845,15 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
               }}
               disabled={disabled || (!canCancel && !canSubmit) || hasPendingUploads}
               size="icon"
-              className="flex-shrink-0 bg-slate-600 text-white dark:bg-white dark:text-slate-900 rounded-full cursor-pointer h-10 w-10 md:h-11 md:w-11 mb-1 -mr-0.5 md:mr-0 md:mb-1.5 touch-manipulation disabled:bg-white/60 disabled:text-slate-700"
+              className={cn(
+                "h-10 w-10 flex-shrink-0 cursor-pointer rounded-full bg-slate-600 text-white touch-manipulation disabled:bg-white/60 disabled:text-slate-700 md:h-11 md:w-11 dark:bg-white dark:text-slate-900",
+                isRtl ? "mb-1 -ml-0.5 md:mb-1.5 md:ml-0" : "mb-1 -mr-0.5 md:mb-1.5 md:mr-0",
+              )}
             >
               {hasTextToSend ? (
                 <ArrowUp className="h-5 w-5 md:h-6 md:w-6" />
               ) : canCancel ? (
-                <div className="w-3 h-3 md:w-4 md:h-4 rounded-xs bg-current" />
+                <div className="h-3 w-3 rounded-xs bg-current md:h-4 md:w-4" />
               ) : (
                 <ArrowUp className="h-5 w-5 md:h-6 md:w-6" />
               )}
@@ -796,7 +902,7 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   break
                 case "fastMode":
                   updateComposerState(
-                    (state) => state.provider === "claude"
+                    (state) => state.provider !== "codex"
                       ? state
                       : { ...state, modelOptions: { ...state.modelOptions, fastMode: change.fastMode } }
                   )
@@ -817,7 +923,12 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
         </div>
 
         {activeContextWindow ? (
-          <div className="absolute right-[29px] top-1/2 translate-x-1/2 -translate-y-1/2 hidden md:block">
+          <div
+            className={cn(
+              "absolute top-1/2 -translate-y-1/2 hidden md:block",
+              isRtl ? "left-[29px] -translate-x-1/2" : "right-[29px] translate-x-1/2"
+            )}
+          >
             <ContextWindowMeter usage={activeContextWindow} />
           </div>
         ) : null}

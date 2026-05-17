@@ -27,8 +27,14 @@ var statusCmd = &cobra.Command{
 		}
 		if isServiceInstalled() {
 			fmt.Println("Startup mode: service")
+			outLog, errLog := serviceLogPaths()
+			fmt.Printf("Server stdout log: %s\n", outLog)
+			fmt.Printf("Server stderr log: %s\n", errLog)
 		} else {
 			fmt.Println("Startup mode: hook or manual")
+			outLog, errLog := backgroundServerLogPaths()
+			fmt.Printf("Server stdout log: %s\n", outLog)
+			fmt.Printf("Server stderr log: %s\n", errLog)
 		}
 		fmt.Printf("State dir: %s\n", state.GetStateDir())
 		fmt.Printf("Sessions: %d\n", len(appState.Sessions))

@@ -1,6 +1,6 @@
 {
-  "name": "Kanna",
-  "short_name": "Kanna",
+  "name": "Abolqasem",
+  "short_name": "Abolqasem",
   "description": "A beautiful local web UI for coding agents.",
   "start_url": "/",
   "scope": "/",
@@ -33,14 +33,14 @@
       "sizes": "3824x2482",
       "type": "image/png",
       "form_factor": "wide",
-      "label": "Kanna light theme chat view"
+      "label": "Abolqasem light theme chat view"
     },
     {
       "src": "/screenshot.png",
       "sizes": "3824x2482",
       "type": "image/png",
       "form_factor": "wide",
-      "label": "Kanna dark theme chat view"
+      "label": "Abolqasem dark theme chat view"
     }
   ]
 }

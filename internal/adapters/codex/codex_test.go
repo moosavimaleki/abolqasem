@@ -46,8 +46,8 @@ command = "echo keep"
 	if !strings.Contains(string(installed), "echo keep") {
 		t.Fatalf("expected existing hook to remain: %s", string(installed))
 	}
-	if !strings.Contains(string(installed), "UserPromptSubmit") || !strings.Contains(string(installed), " __ensure-server") {
-		t.Fatalf("expected prompt hook to ensure server startup: %s", string(installed))
+	if !strings.Contains(string(installed), "UserPromptSubmit") || !strings.Contains(string(installed), " hook --agent codex") {
+		t.Fatalf("expected prompt hook to record codex events: %s", string(installed))
 	}
 
 	if err := adapter.UninstallHook(adapters.ScopeUser); err != nil {
@@ -126,6 +126,22 @@ timeout = 1
 	}
 	if !strings.Contains(config, "timeout = 3") {
 		t.Fatalf("expected timeout to be repaired: %s", config)
+	}
+}
+
+func TestNormalizeHookInputCapturesPromptSubmit(t *testing.T) {
+	event, err := (&CodexAdapter{}).NormalizeHookInput([]byte(`{
+		"hook_event_name": "UserPromptSubmit",
+		"session_id": "session-1",
+		"transcript_path": "/tmp/session.jsonl",
+		"cwd": "/tmp/project",
+		"prompt": "برگرد به checkpoint"
+	}`))
+	if err != nil {
+		t.Fatalf("NormalizeHookInput returned error: %v", err)
+	}
+	if event.HookEventName != "UserPromptSubmit" || event.PromptPreview != "برگرد به checkpoint" {
+		t.Fatalf("unexpected hook event: %#v", event)
 	}
 }
 

@@ -51,7 +51,7 @@ func TestProjectQuickActionsTruncateAndLimit(t *testing.T) {
 	}
 }
 
-func TestWorkspaceProjectQuickActionsPersistInKannaDir(t *testing.T) {
+func TestWorkspaceProjectQuickActionsPersistInAbolqasemDir(t *testing.T) {
 	withWorkspaceComposerStore(t)
 	projectDir := t.TempDir()
 	project, err := workspaceOpenProject(projectDir, "Project")
@@ -76,7 +76,7 @@ func TestWorkspaceProjectQuickActionsPersistInKannaDir(t *testing.T) {
 		t.Fatalf("unexpected written quick actions: %#v", written)
 	}
 
-	filePath := filepath.Join(projectDir, ".kanna", "quick-actions.json")
+	filePath := filepath.Join(projectDir, ".abolqasem", "quick-actions.json")
 	if _, err := os.Stat(filePath); err != nil {
 		t.Fatalf("expected quick-actions file at %s: %v", filePath, err)
 	}

@@ -1,12 +1,14 @@
 import { useEffect, useLayoutEffect, useRef, type RefObject } from "react"
 import type { GroupImperativeHandle } from "react-resizable-panels"
 import { interpolateLayout, TERMINAL_TOGGLE_ANIMATION_DURATION_MS } from "./terminalToggleAnimation"
+import { getOrderedRightSidebarLayout, type RightSidebarLayoutDirection } from "./ChatPage/rightSidebarLayout"
 
 type UseRightSidebarToggleAnimationParams = {
   projectId: string | null
   shouldRenderRightSidebarLayout: boolean
   showRightSidebar: boolean
   rightSidebarSizePercent: number
+  direction: RightSidebarLayoutDirection
 }
 
 type UseRightSidebarToggleAnimationResult = {
@@ -21,6 +23,7 @@ export function useRightSidebarToggleAnimation({
   shouldRenderRightSidebarLayout,
   showRightSidebar,
   rightSidebarSizePercent,
+  direction,
 }: UseRightSidebarToggleAnimationParams): UseRightSidebarToggleAnimationResult {
   const panelGroupRef = useRef<GroupImperativeHandle | null>(null)
   const sidebarPanelRef = useRef<HTMLDivElement | null>(null)
@@ -91,7 +94,7 @@ export function useRightSidebarToggleAnimation({
       (Math.abs(currentLayout[0] - targetLayout[0]) < 0.1 &&
       Math.abs(currentLayout[1] - targetLayout[1]) < 0.1)
     ) {
-      group.setLayout({ workspace: targetLayout[0], rightSidebar: targetLayout[1] })
+      group.setLayout(getOrderedRightSidebarLayout(targetLayout[0], targetLayout[1], direction))
       sidebarPanelRef.current?.setAttribute("data-right-sidebar-open", showRightSidebar ? "true" : "false")
       sidebarVisualRef.current?.setAttribute("data-right-sidebar-open", showRightSidebar ? "true" : "false")
       sidebarVisualRef.current?.setAttribute("data-right-sidebar-animated", "false")
@@ -102,20 +105,20 @@ export function useRightSidebarToggleAnimation({
     sidebarPanelRef.current?.setAttribute("data-right-sidebar-open", showRightSidebar ? "true" : "false")
     sidebarVisualRef.current?.setAttribute("data-right-sidebar-open", showRightSidebar ? "true" : "false")
     sidebarVisualRef.current?.setAttribute("data-right-sidebar-animated", "true")
-    group.setLayout({ workspace: currentLayout[0], rightSidebar: currentLayout[1] })
+    group.setLayout(getOrderedRightSidebarLayout(currentLayout[0], currentLayout[1], direction))
     const startTime = performance.now()
 
     const step = (now: number) => {
       const progress = Math.min(1, (now - startTime) / TERMINAL_TOGGLE_ANIMATION_DURATION_MS)
       const nextLayout = interpolateLayout(currentLayout, targetLayout, progress)
-      group.setLayout({ workspace: nextLayout[0], rightSidebar: nextLayout[1] })
+      group.setLayout(getOrderedRightSidebarLayout(nextLayout[0], nextLayout[1], direction))
 
       if (progress < 1) {
         animationFrameRef.current = window.requestAnimationFrame(step)
         return
       }
 
-      group.setLayout({ workspace: targetLayout[0], rightSidebar: targetLayout[1] })
+      group.setLayout(getOrderedRightSidebarLayout(targetLayout[0], targetLayout[1], direction))
       animationFrameRef.current = null
       animationTimeoutRef.current = window.setTimeout(() => {
         isAnimatingRef.current = false
@@ -124,7 +127,7 @@ export function useRightSidebarToggleAnimation({
     }
 
     animationFrameRef.current = window.requestAnimationFrame(step)
-  }, [projectId, rightSidebarSizePercent, shouldRenderRightSidebarLayout, showRightSidebar])
+  }, [direction, projectId, rightSidebarSizePercent, shouldRenderRightSidebarLayout, showRightSidebar])
 
   useEffect(() => {
     if (shouldRenderRightSidebarLayout) return

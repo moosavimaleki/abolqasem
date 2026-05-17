@@ -1,15 +1,15 @@
 import { memo } from "react"
 import { TerminalWorkspace } from "../../components/chat-ui/TerminalWorkspace"
 import { useTerminalLayoutStore } from "../../stores/terminalLayoutStore"
-import type { KannaState } from "../useKannaState"
+import type { AbolqasemState } from "../useAbolqasemState"
 
 interface TerminalWorkspaceShellProps {
   projectId: string
   fixedTerminalHeight: number
   terminalLayout: ReturnType<typeof useTerminalLayoutStore.getState>["projects"][string]
   addTerminal: ReturnType<typeof useTerminalLayoutStore.getState>["addTerminal"]
-  socket: KannaState["socket"]
-  connectionStatus: KannaState["connectionStatus"]
+  socket: AbolqasemState["socket"]
+  connectionStatus: AbolqasemState["connectionStatus"]
   scrollback: number
   minColumnWidth: number
   splitTerminalShortcut?: string[]

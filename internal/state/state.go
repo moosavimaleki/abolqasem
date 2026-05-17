@@ -14,9 +14,11 @@ import (
 type HookEvent struct {
 	Agent          string `json:"agent"`
 	SessionID      string `json:"session_id"`
+	HookEventName  string `json:"hook_event_name,omitempty"`
 	TranscriptPath string `json:"transcript_path"`
 	Cwd            string `json:"cwd"`
 	ProjectName    string `json:"project_name,omitempty"`
+	PromptPreview  string `json:"prompt_preview,omitempty"`
 	LastPreview    string `json:"last_preview,omitempty"`
 	Model          string `json:"model,omitempty"`
 	UpdatedAt      string `json:"updated_at,omitempty"`
@@ -44,9 +46,10 @@ type SessionMeta struct {
 
 // AppState holds the global state of the application.
 type AppState struct {
-	Sessions         map[string]SessionMeta `json:"sessions"`
-	LatestSessionKey string                 `json:"latest_session_key"`
-	LatestSessionID  string                 `json:"latest_session_id,omitempty"`
+	Sessions          map[string]SessionMeta `json:"sessions"`
+	UnreadSessionKeys map[string]bool        `json:"unread_session_keys,omitempty"`
+	LatestSessionKey  string                 `json:"latest_session_key"`
+	LatestSessionID   string                 `json:"latest_session_id,omitempty"`
 }
 
 func SessionKey(agent, sessionID string) string {
@@ -65,8 +68,10 @@ func NormalizeAndValidateEvent(event HookEvent) HookEvent {
 	}
 
 	event.Cwd = strings.TrimSpace(event.Cwd)
+	event.HookEventName = strings.TrimSpace(event.HookEventName)
 	event.TranscriptPath = normalizePath(event.TranscriptPath)
 	event.ProjectName = strings.TrimSpace(event.ProjectName)
+	event.PromptPreview = sanitizePreview(event.PromptPreview)
 	event.LastPreview = sanitizePreview(event.LastPreview)
 	event.Model = strings.TrimSpace(event.Model)
 	event.InvalidReason = strings.TrimSpace(event.InvalidReason)
@@ -95,6 +100,12 @@ func NormalizeAndValidateEvent(event HookEvent) HookEvent {
 }
 
 func UpsertSession(appState *AppState, event HookEvent) SessionMeta {
+	if appState.Sessions == nil {
+		appState.Sessions = map[string]SessionMeta{}
+	}
+	if appState.UnreadSessionKeys == nil {
+		appState.UnreadSessionKeys = map[string]bool{}
+	}
 	event = NormalizeAndValidateEvent(event)
 	event.SessionID = canonicalSessionIDForEvent(appState, event)
 	key := SessionKey(event.Agent, event.SessionID)
@@ -145,11 +156,25 @@ func UpsertSession(appState *AppState, event HookEvent) SessionMeta {
 	if event.LastPreview != "" {
 		meta.LastPreview = event.LastPreview
 	}
+	if event.PromptPreview != "" {
+		if meta.FirstPreview == "" {
+			meta.FirstPreview = event.PromptPreview
+		}
+		if meta.LastPreview == "" {
+			meta.LastPreview = event.PromptPreview
+		}
+		if meta.MessageCountEstimate == 0 {
+			meta.MessageCountEstimate = 1
+		}
+	}
 
 	appState.Sessions[key] = meta
 	if shouldMarkLatest(appState, meta) {
 		appState.LatestSessionKey = key
 		appState.LatestSessionID = event.SessionID
+	}
+	if shouldMarkSessionUnread(existing, ok, meta, staleEvent) {
+		appState.UnreadSessionKeys[key] = true
 	}
 	return meta
 }
@@ -185,10 +210,21 @@ func canonicalSessionIDForEvent(appState *AppState, event HookEvent) string {
 
 	canonicalKey := SessionKey(event.Agent, merged.SessionID)
 	merged.Key = canonicalKey
+	unread := false
 	for _, meta := range matched {
+		if appState.UnreadSessionKeys != nil && appState.UnreadSessionKeys[meta.Key] {
+			unread = true
+			delete(appState.UnreadSessionKeys, meta.Key)
+		}
 		delete(appState.Sessions, meta.Key)
 	}
 	appState.Sessions[canonicalKey] = merged
+	if unread {
+		if appState.UnreadSessionKeys == nil {
+			appState.UnreadSessionKeys = map[string]bool{}
+		}
+		appState.UnreadSessionKeys[canonicalKey] = true
+	}
 	if appState.LatestSessionKey != "" {
 		for _, meta := range matched {
 			if appState.LatestSessionKey == meta.Key {
@@ -198,6 +234,31 @@ func canonicalSessionIDForEvent(appState *AppState, event HookEvent) string {
 		}
 	}
 	return merged.SessionID
+}
+
+func shouldMarkSessionUnread(existing SessionMeta, existed bool, next SessionMeta, staleEvent bool) bool {
+	if staleEvent {
+		return false
+	}
+	if !existed {
+		return false
+	}
+	if next.UpdatedAt.After(existing.UpdatedAt) {
+		return true
+	}
+	return next.LastPreview != existing.LastPreview
+}
+
+func MarkSessionRead(appState *AppState, sessionKey string) bool {
+	if appState == nil || len(appState.UnreadSessionKeys) == 0 {
+		return false
+	}
+	sessionKey = strings.TrimSpace(sessionKey)
+	if sessionKey == "" || !appState.UnreadSessionKeys[sessionKey] {
+		return false
+	}
+	delete(appState.UnreadSessionKeys, sessionKey)
+	return true
 }
 
 func shouldMarkLatest(appState *AppState, meta SessionMeta) bool {
@@ -366,11 +427,35 @@ func deriveSessionName(firstPreview, lastPreview, sessionID string) string {
 		normalizeSessionTitle(lastPreview),
 		sessionID,
 	} {
-		if candidate != "" {
+		if candidate != "" && !IsAgentBootstrapPrompt(candidate) {
 			return SanitizeSessionName(candidate)
 		}
 	}
 	return "نشست بدون نام"
+}
+
+func IsAgentBootstrapPrompt(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return false
+	}
+	lower := strings.ToLower(value)
+	normalized := strings.Join(strings.Fields(strings.ReplaceAll(strings.ReplaceAll(lower, "\r\n", "\n"), "\r", "\n")), " ")
+	if strings.Contains(normalized, "agents.md instructions for ") {
+		return true
+	}
+	if strings.Contains(normalized, "claude.md instructions for ") {
+		return true
+	}
+	if strings.Contains(normalized, "<environment_context>") &&
+		strings.Contains(normalized, "<cwd>") &&
+		strings.Contains(normalized, "<shell>") {
+		return true
+	}
+	if strings.Contains(normalized, "<instructions>") && strings.Contains(normalized, "</instructions>") {
+		return true
+	}
+	return false
 }
 
 func preferPersianTitle(value string) string {

@@ -77,7 +77,8 @@ func SaveState(state *AppState) error {
 
 func newAppState() *AppState {
 	return &AppState{
-		Sessions: make(map[string]SessionMeta),
+		Sessions:          make(map[string]SessionMeta),
+		UnreadSessionKeys: make(map[string]bool),
 	}
 }
 
@@ -87,6 +88,9 @@ func migrateState(appState *AppState) *AppState {
 	}
 	if appState.Sessions == nil {
 		appState.Sessions = make(map[string]SessionMeta)
+	}
+	if appState.UnreadSessionKeys == nil {
+		appState.UnreadSessionKeys = make(map[string]bool)
 	}
 
 	migrated := make(map[string]SessionMeta, len(appState.Sessions))
@@ -136,6 +140,16 @@ func migrateState(appState *AppState) *AppState {
 		normalized[meta.Key] = meta
 	}
 	appState.Sessions = normalized
+	normalizedUnread := make(map[string]bool, len(appState.UnreadSessionKeys))
+	for key, unread := range appState.UnreadSessionKeys {
+		if !unread {
+			continue
+		}
+		if _, ok := appState.Sessions[key]; ok {
+			normalizedUnread[key] = true
+		}
+	}
+	appState.UnreadSessionKeys = normalizedUnread
 
 	if appState.LatestSessionKey == "" && appState.LatestSessionID != "" {
 		for key, meta := range appState.Sessions {

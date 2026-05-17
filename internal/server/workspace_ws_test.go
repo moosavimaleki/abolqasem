@@ -2,9 +2,13 @@ package server
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 
+	"ai-agent-manager/internal/workspace/events"
 	"ai-agent-manager/internal/workspace/protocol"
+	"ai-agent-manager/internal/workspace/transcript"
 )
 
 func TestWorkspaceCommandRoutingHandlesSystemPing(t *testing.T) {
@@ -189,6 +193,62 @@ func TestWorkspaceCommandRoutingHandlesGitAndHistoryCommands(t *testing.T) {
 		}),
 	})
 	assertWorkspaceAck(t, historyResponse, "history")
+}
+
+func TestWorkspaceCommandRoutingForksGeminiChatIntoNativeSession(t *testing.T) {
+	withWorkspaceComposerStore(t)
+	conn := newTestWorkspaceConnection(nil)
+	projectDir := t.TempDir()
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("GEMINI_CLI_HOME", filepath.Join(homeDir, ".gemini"))
+
+	projectID := mustCreateWorkspaceProject(t, conn, projectDir)
+	chatID := mustCreateWorkspaceChat(t, conn, projectID)
+	appendWorkspaceEvent(t, workspaceStore(), events.StreamChats, events.TypeChatProviderSet, 101, map[string]any{
+		"chatId":   chatID,
+		"provider": "gemini",
+	})
+	appendWorkspaceEvent(t, workspaceStore(), events.StreamMessages, events.TypeMessageAppended, 102, map[string]any{
+		"chatId": chatID,
+		"entry":  transcript.New(transcript.KindUserPrompt, map[string]any{"content": "hello from gemini"}),
+	})
+	appendWorkspaceEvent(t, workspaceStore(), events.StreamMessages, events.TypeMessageAppended, 103, map[string]any{
+		"chatId": chatID,
+		"entry":  transcript.New(transcript.KindAssistantText, map[string]any{"text": "assistant reply"}),
+	})
+
+	forkResponse := conn.handle(protocol.ClientEnvelope{
+		V:       protocol.ProtocolVersion,
+		Type:    protocol.EnvelopeCommand,
+		ID:      "chat-fork-gemini",
+		Command: mustWorkspaceRawCommand(t, map[string]any{"type": protocol.CommandChatFork, "chatId": chatID}),
+	})
+	assertWorkspaceAck(t, forkResponse, "chat-fork-gemini")
+	forkResult, ok := forkResponse.Result.(map[string]any)
+	if !ok {
+		t.Fatalf("expected fork result map, got %#v", forkResponse.Result)
+	}
+	forkChatID, _ := forkResult["chatId"].(string)
+	if forkChatID == "" {
+		t.Fatalf("expected fork chat id, got %#v", forkResult)
+	}
+
+	state, err := workspaceStore().LoadState()
+	if err != nil {
+		t.Fatalf("LoadState returned error: %v", err)
+	}
+	forkChat := state.ChatsByID[forkChatID]
+	if forkChat.SessionToken == nil || *forkChat.SessionToken == "" {
+		t.Fatalf("expected native gemini session token on fork, got %#v", forkChat)
+	}
+	if forkChat.PendingForkSessionToken != nil {
+		t.Fatalf("expected no pending fork token on gemini native fork, got %#v", forkChat.PendingForkSessionToken)
+	}
+	registryPath := filepath.Join(homeDir, ".gemini", "projects.json")
+	if _, err := os.Stat(registryPath); err != nil {
+		t.Fatalf("expected gemini registry after fork export: %v", err)
+	}
 }
 
 func TestWorkspaceSubscriptionRegistryBroadcastsOnlyRelatedTopics(t *testing.T) {

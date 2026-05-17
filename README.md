@@ -28,6 +28,13 @@ cd ai-agent-manager
 scripts/install.sh
 ```
 
+برای توسعه فرانت، سورس داخل `web-react/` است. پوشه `web/` خروجی generated برای embed شدن داخل باینری Go است و با دستور زیر دوباره ساخته می‌شود:
+
+```bash
+sh scripts/prepare-web-assets.sh
+make build
+```
+
 اسکریپت‌های نصب به صورت پیش‌فرض این کارها را انجام می‌دهند:
 
 - binary را نصب می‌کنند

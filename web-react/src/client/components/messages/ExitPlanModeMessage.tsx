@@ -76,7 +76,7 @@ export function ExitPlanModeMessage({ message, onConfirm, isLatest }: Props) {
           )}
           {input?.plan ? (
             <div className="prose prose-sm dark:prose-invert max-w-none">
-              <Markdown remarkPlugins={[remarkGfm]} components={createMarkdownComponents()}>
+              <Markdown remarkPlugins={[remarkGfm]} components={createMarkdownComponents({ source: input.plan })}>
                 {input.plan}
               </Markdown>
               <div className="mt-5" />

@@ -128,6 +128,13 @@ export function processTranscriptMessages(entries: TranscriptEntry[]): HydratedT
           usage: entry.usage,
         })
         break
+      case "rate_limit_updated":
+        messages.push({
+          ...createBaseMessage(entry),
+          kind: "rate_limit_updated",
+          rateLimits: entry.rateLimits,
+        })
+        break
       case "compact_boundary":
         messages.push({
           ...createBaseMessage(entry),

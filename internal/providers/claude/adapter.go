@@ -7,6 +7,7 @@ import (
 	"io"
 	"os/exec"
 
+	"ai-agent-manager/internal/state"
 	"ai-agent-manager/internal/workspace/readmodels"
 	"ai-agent-manager/internal/workspace/transcript"
 )
@@ -23,6 +24,11 @@ type PromptRequest struct {
 	SessionToken string
 	ForkSession  bool
 	Prompt       string
+}
+
+type PromptResult struct {
+	Entries      []readmodels.TranscriptEntry
+	SessionToken string
 }
 
 func NewAdapter(executable string) *Adapter {
@@ -56,26 +62,38 @@ func (a *Adapter) BuildArgs(request PromptRequest) []string {
 }
 
 func (a *Adapter) RunPrompt(ctx context.Context, request PromptRequest) ([]readmodels.TranscriptEntry, error) {
+	result, err := a.RunPromptResult(ctx, request)
+	return result.Entries, err
+}
+
+func (a *Adapter) RunPromptResult(ctx context.Context, request PromptRequest) (PromptResult, error) {
 	cmd := exec.CommandContext(ctx, a.Executable, a.BuildArgs(request)...)
+	cmd.Env = state.CurrentProviderProxyEnv()
 	if request.CWD != "" {
 		cmd.Dir = request.CWD
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return nil, err
+		return PromptResult{}, err
 	}
 	if err := cmd.Start(); err != nil {
-		return nil, err
+		return PromptResult{}, err
 	}
-	entries, parseErr := ParseStream(stdout)
+	result, parseErr := ParseStreamResult(stdout)
 	waitErr := cmd.Wait()
 	if parseErr != nil {
-		return entries, parseErr
+		return result, parseErr
 	}
-	return entries, waitErr
+	return result, waitErr
 }
 
 func ParseStream(reader io.Reader) ([]readmodels.TranscriptEntry, error) {
+	result, err := ParseStreamResult(reader)
+	return result.Entries, err
+}
+
+func ParseStreamResult(reader io.Reader) (PromptResult, error) {
+	var result PromptResult
 	var entries []readmodels.TranscriptEntry
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
@@ -83,14 +101,19 @@ func ParseStream(reader io.Reader) ([]readmodels.TranscriptEntry, error) {
 		line := scanner.Bytes()
 		var event map[string]any
 		if err := json.Unmarshal(line, &event); err != nil {
-			return entries, err
+			result.Entries = entries
+			return result, err
+		}
+		if token := eventSessionToken(event); token != "" {
+			result.SessionToken = token
 		}
 		entries = append(entries, entriesFromEvent(event)...)
 	}
+	result.Entries = entries
 	if err := scanner.Err(); err != nil {
-		return entries, err
+		return result, err
 	}
-	return entries, nil
+	return result, nil
 }
 
 func entriesFromEvent(event map[string]any) []readmodels.TranscriptEntry {
@@ -118,6 +141,15 @@ func eventType(event map[string]any) string {
 		return value
 	}
 	return stringValue(event["event"])
+}
+
+func eventSessionToken(event map[string]any) string {
+	for _, key := range []string{"session_id", "sessionId", "sessionToken"} {
+		if value := stringValue(event[key]); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func assistantText(event map[string]any) string {

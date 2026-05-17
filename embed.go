@@ -2,5 +2,5 @@ package viewer
 
 import "embed"
 
-//go:embed web/*
+//go:embed all:web
 var WebAssets embed.FS

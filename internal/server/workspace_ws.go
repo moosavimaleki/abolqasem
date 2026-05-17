@@ -2,6 +2,7 @@ package server
 
 import (
 	"ai-agent-manager/internal/analytics"
+	"ai-agent-manager/internal/providers/catalog"
 	"ai-agent-manager/internal/state"
 	"ai-agent-manager/internal/workspace/protocol"
 	"ai-agent-manager/internal/workspace/terminal"
@@ -119,11 +120,38 @@ func (c *workspaceConnection) handle(envelope protocol.ClientEnvelope) *protocol
 		c.unsubscribe(envelope.ID)
 		return nil
 	case protocol.EnvelopeCommand:
+		if c.shouldHandleCommandAsync(envelope.Command) {
+			c.handleCommandAsync(envelope)
+			return nil
+		}
 		return c.handleCommand(envelope)
 	default:
 		response := protocol.ErrorEnvelope(envelope.ID, "unsupported envelope type")
 		return &response
 	}
+}
+
+func (c *workspaceConnection) shouldHandleCommandAsync(raw json.RawMessage) bool {
+	commandType, err := protocol.CommandType(raw)
+	if err != nil {
+		return false
+	}
+	switch commandType {
+	case protocol.CommandSkillsInstall, protocol.CommandSkillsUninstall:
+		return true
+	default:
+		return false
+	}
+}
+
+func (c *workspaceConnection) handleCommandAsync(envelope protocol.ClientEnvelope) {
+	go func() {
+		response := c.handleCommand(envelope)
+		if response == nil {
+			return
+		}
+		_ = c.write(*response)
+	}()
 }
 
 func (c *workspaceConnection) handleSubscribe(envelope protocol.ClientEnvelope) *protocol.ServerEnvelope {
@@ -261,6 +289,33 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 	case protocol.CommandSkillsListInstalled:
 		response := protocol.AckEnvelope(envelope.ID, listInstalledSkills(""))
 		return &response
+	case protocol.CommandSkillsListOperations:
+		response := protocol.AckEnvelope(envelope.ID, workspaceListSkillOperations())
+		return &response
+	case protocol.CommandMCPList:
+		result, err := workspaceMCPList(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		response := protocol.AckEnvelope(envelope.ID, result)
+		return &response
+	case protocol.CommandMCPSave:
+		result, err := workspaceMCPSave(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		response := protocol.AckEnvelope(envelope.ID, result)
+		return &response
+	case protocol.CommandMCPRemove:
+		result, err := workspaceMCPRemove(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		response := protocol.AckEnvelope(envelope.ID, result)
+		return &response
 	case protocol.CommandSystemOpenExternal:
 		if err := workspaceOpenExternal(envelope.Command); err != nil {
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
@@ -354,6 +409,23 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 		workspaceConnections.broadcast(chatID)
 		response := protocol.AckEnvelope(envelope.ID, result)
 		return &response
+	case protocol.CommandChatConvertPreview:
+		result, err := workspacePreviewConvertChat(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		response := protocol.AckEnvelope(envelope.ID, result)
+		return &response
+	case protocol.CommandChatConvert:
+		result, chatID, err := workspaceConvertChat(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		workspaceConnections.broadcast(chatID)
+		response := protocol.AckEnvelope(envelope.ID, result)
+		return &response
 	case protocol.CommandChatRename:
 		chatID, err := workspaceRenameChat(envelope.Command)
 		if err != nil {
@@ -398,6 +470,14 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 		if err != nil {
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
+		}
+		if _, ok := workspaceLegacySessionByChatID(command.ChatID); ok {
+			chatID, err := workspaceMaterializeLegacyChat(command.ChatID)
+			if err != nil {
+				response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+				return &response
+			}
+			command.ChatID = chatID
 		}
 		result, err := workspaceAgentCoordinator().Send(context.Background(), command)
 		if err != nil {
@@ -500,7 +580,7 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
 		}
-		workspaceConnections.broadcastProjectGit(projectID)
+		workspaceConnections.broadcastProjectGitSnapshot(projectID, snapshot)
 		response := protocol.AckEnvelope(envelope.ID, snapshot)
 		return &response
 	case protocol.CommandChatInitGit:
@@ -624,6 +704,24 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 		workspaceConnections.broadcastProjectGit(projectID)
 		response := protocol.AckEnvelope(envelope.ID, result)
 		return &response
+	case protocol.CommandChatListCheckpoints:
+		result, err := workspaceListCheckpoints(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		response := protocol.AckEnvelope(envelope.ID, result)
+		return &response
+	case protocol.CommandChatRestoreCheckpoint:
+		result, projectID, err := workspaceRestoreCheckpoint(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		workspaceConnections.broadcast(result.Checkpoint.ChatID)
+		workspaceConnections.broadcastProjectGit(projectID)
+		response := protocol.AckEnvelope(envelope.ID, result)
+		return &response
 	case protocol.CommandChatStopDraining:
 		chatID, err := decodeChatID(envelope.Command)
 		if err != nil {
@@ -652,6 +750,7 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 			response := protocol.ErrorEnvelope(envelope.ID, "failed to reload sessions")
 			return &response
 		}
+		workspaceConnections.broadcast("")
 		response := protocol.AckEnvelope(envelope.ID, map[string]any{"status": "ok", "report": report})
 		return &response
 	case protocol.CommandAppRestart:
@@ -674,8 +773,24 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 		workspaceConnections.broadcastUpdate(workspaceUpdateSnapshot())
 		response := protocol.AckEnvelope(envelope.ID, result)
 		return &response
+	case protocol.CommandChatReadTranscriptIndex:
+		result, err := workspaceReadChatTranscriptIndex(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		response := protocol.AckEnvelope(envelope.ID, result)
+		return &response
 	case protocol.CommandChatLoadHistory:
 		result, err := workspaceLoadChatHistory(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		response := protocol.AckEnvelope(envelope.ID, result)
+		return &response
+	case protocol.CommandChatLoadHistoryAround:
+		result, err := workspaceLoadChatHistoryAround(envelope.Command)
 		if err != nil {
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
@@ -850,7 +965,7 @@ func workspaceSnapshotForTopic(topic protocol.SubscriptionTopic) (string, any) {
 	case protocol.TopicChat:
 		return protocol.SnapshotChat, workspaceChatSnapshot(topic.ChatID, subscriptionRecentLimit(topic))
 	case protocol.TopicProjectGit:
-		return protocol.SnapshotProjectGit, workspaceProjectGitSnapshot(topic.ProjectID)
+		return protocol.SnapshotProjectGit, workspaceProjectGitSubscriptionSnapshot(topic.ProjectID)
 	case protocol.TopicTerminal:
 		return protocol.SnapshotTerminal, workspaceTerminals.snapshot(topic.TerminalID)
 	default:
@@ -911,6 +1026,10 @@ func (h *workspaceTerminalHub) broadcast(event terminal.Event) {
 
 func (h *workspaceTerminalHub) snapshot(terminalID string) *terminal.Snapshot {
 	return h.manager.Snapshot(terminalID)
+}
+
+func (h *workspaceTerminalHub) rootPIDsByCWD(cwd string) []int {
+	return h.manager.RootPIDsByCWD(cwd)
 }
 
 func (h *workspaceTerminalHub) create(raw json.RawMessage) (terminal.Snapshot, error) {
@@ -997,11 +1116,17 @@ func workspaceAppSettingsSnapshot() map[string]any {
 			"preset":          settings.Editor.Preset,
 			"commandTemplate": settings.Editor.CommandTemplate,
 		},
-		"defaultProvider":  settings.DefaultProvider,
-		"providerDefaults": providerDefaultsSnapshot(settings.ProviderDefaults),
-		"management":       workspaceManagementSnapshot(),
-		"warning":          nil,
-		"filePathDisplay":  state.GetSettingsFilePath(),
+		"providerProxy": map[string]any{
+			"mode":      settings.ProviderProxy.Mode,
+			"httpProxy": settings.ProviderProxy.HTTPProxy,
+			"noProxy":   settings.ProviderProxy.NoProxy,
+		},
+		"defaultProvider":    settings.DefaultProvider,
+		"providerDefaults":   providerDefaultsSnapshot(settings.ProviderDefaults),
+		"availableProviders": catalog.ServerProviders(),
+		"management":         workspaceManagementSnapshot(),
+		"warning":            nil,
+		"filePathDisplay":    state.GetSettingsFilePath(),
 	}
 }
 

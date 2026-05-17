@@ -59,7 +59,25 @@ func TestLegacyViewerRouteRedirectsToSlash(t *testing.T) {
 	}
 }
 
-func TestWorkspaceAuthDisabledEndpointsMatchKannaShape(t *testing.T) {
+func TestAppIndexRouteRewritesRelativeAssetsForDeepRoutes(t *testing.T) {
+	previous := webFS
+	webFS = fstest.MapFS{"web/index.html": {Data: []byte(`<script src="./assets/app.js"></script><link href="./assets/app.css">`)}}
+	t.Cleanup(func() { webFS = previous })
+
+	mux := http.NewServeMux()
+	setupRoutes(mux)
+
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/_/chat/chat-1", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected app index status 200, got %d", response.Code)
+	}
+	if body := response.Body.String(); strings.Contains(body, `src="./`) || strings.Contains(body, `href="./`) {
+		t.Fatalf("expected deep app route to use root-relative asset paths, got %q", body)
+	}
+}
+
+func TestWorkspaceAuthDisabledEndpointsMatchAbolqasemShape(t *testing.T) {
 	mux := http.NewServeMux()
 	setupRoutes(mux)
 

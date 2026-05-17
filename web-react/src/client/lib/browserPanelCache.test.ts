@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test"
-import type { KannaSocket } from "../app/socket"
+import type { AbolqasemSocket } from "../app/socket"
 import type { LocalHttpServerInfo } from "../../shared/protocol"
 import {
   getCachedLocalHttpServers,
@@ -7,10 +7,10 @@ import {
   removeCachedLocalHttpServer,
 } from "./browserPanelCache"
 
-function createSocket(responses: Record<string, LocalHttpServerInfo[]>): KannaSocket {
+function createSocket(responses: Record<string, LocalHttpServerInfo[]>): AbolqasemSocket {
   return {
     command: (command: { projectId?: string }) => Promise.resolve(responses[command.projectId ?? "__global__"] ?? []),
-  } as unknown as KannaSocket
+  } as unknown as AbolqasemSocket
 }
 
 describe("browserPanelCache", () => {

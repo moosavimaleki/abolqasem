@@ -1,5 +1,5 @@
 import { useState, type ComponentType, type SVGProps } from "react"
-import { Box, Brain, Gauge, ListTodo, LockOpen, SquareMenu, SquareMinus } from "lucide-react"
+import { Box, Brain, Gauge, ListTodo, LockOpen, Sparkles, SquareMenu, SquareMinus } from "lucide-react"
 import {
   CLAUDE_CONTEXT_WINDOW_OPTIONS,
   CLAUDE_REASONING_OPTIONS,
@@ -10,6 +10,7 @@ import {
   type ClaudeReasoningEffort,
   type CodexModelOptions,
   type CodexReasoningEffort,
+  type GeminiModelOptions,
   type ProviderCatalogEntry,
   supportsClaudeMaxReasoningEffort,
 } from "../../../shared/types"
@@ -50,6 +51,7 @@ function OpenAIIcon({ className, ...props }: SVGProps<SVGSVGElement>) {
 export const PROVIDER_ICONS: Record<AgentProvider, IconComponent> = {
   claude: AnthropicIcon,
   codex: OpenAIIcon,
+  gemini: Sparkles,
 }
 
 export function PopoverMenuItem({
@@ -146,7 +148,7 @@ interface ChatPreferenceControlsProps {
   providerLocked?: boolean
   showCodexCliRequirementHints?: boolean
   model: string
-  modelOptions: ClaudeModelOptions | CodexModelOptions
+  modelOptions: ClaudeModelOptions | CodexModelOptions | GeminiModelOptions
   onProviderChange?: (provider: AgentProvider) => void
   onModelChange: (provider: AgentProvider, model: string) => void
   onModelOptionChange: (change: ModelOptionChange) => void
@@ -179,6 +181,10 @@ export function ChatPreferenceControls({
   const showPlanMode = includePlanMode && providerConfig?.supportsPlanMode && onPlanModeChange
   const claudeModelOptions = selectedProvider === "claude" ? modelOptions as ClaudeModelOptions : null
   const codexModelOptions = selectedProvider === "codex" ? modelOptions as CodexModelOptions : null
+  const showReasoningPicker = selectedProvider === "claude" || selectedProvider === "codex"
+  const reasoningLabel = selectedProvider === "claude"
+    ? CLAUDE_REASONING_OPTIONS.find((effort) => effort.id === claudeModelOptions?.reasoningEffort)?.label ?? claudeModelOptions?.reasoningEffort
+    : CODEX_REASONING_OPTIONS.find((effort) => effort.id === codexModelOptions?.reasoningEffort)?.label ?? codexModelOptions?.reasoningEffort
   const contextWindowOptions = providerConfig.models.find((candidate) => candidate.id === model)?.contextWindowOptions ?? []
   const selectedContextWindow = claudeModelOptions?.contextWindow ?? CLAUDE_CONTEXT_WINDOW_OPTIONS[0].id
   const ContextWindowIcon = selectedContextWindow === "1m" ? SquareMenu : SquareMinus
@@ -249,15 +255,12 @@ export function ChatPreferenceControls({
         })}
       </InputPopover>
 
+      {showReasoningPicker ? (
       <InputPopover
         trigger={(
           <>
             <Brain className="h-3.5 w-3.5" />
-            <span>{
-              selectedProvider === "claude"
-                ? CLAUDE_REASONING_OPTIONS.find((effort) => effort.id === modelOptions.reasoningEffort)?.label ?? modelOptions.reasoningEffort
-                : CODEX_REASONING_OPTIONS.find((effort) => effort.id === modelOptions.reasoningEffort)?.label ?? modelOptions.reasoningEffort
-            }</span>
+            <span>{reasoningLabel}</span>
           </>
         )}
       >
@@ -270,7 +273,7 @@ export function ChatPreferenceControls({
                   onModelOptionChange({ type: "claudeReasoningEffort", effort: effort.id })
                   close()
                 }}
-                selected={modelOptions.reasoningEffort === effort.id}
+                selected={claudeModelOptions?.reasoningEffort === effort.id}
                 icon={<Brain className="h-4 w-4 text-muted-foreground" />}
                 label={effort.label}
                 disabled={effort.id === "max" && !supportsClaudeMaxReasoningEffort(model)}
@@ -283,13 +286,14 @@ export function ChatPreferenceControls({
                   onModelOptionChange({ type: "codexReasoningEffort", effort: effort.id })
                   close()
                 }}
-                selected={modelOptions.reasoningEffort === effort.id}
+                selected={codexModelOptions?.reasoningEffort === effort.id}
                 icon={<Brain className="h-4 w-4 text-muted-foreground" />}
                 label={effort.label}
               />
             ))
         )}
       </InputPopover>
+      ) : null}
 
       {selectedProvider === "claude" && contextWindowOptions.length > 1 ? (
         <InputPopover

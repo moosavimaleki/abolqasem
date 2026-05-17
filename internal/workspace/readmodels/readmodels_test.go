@@ -3,6 +3,7 @@ package readmodels
 import (
 	"testing"
 
+	"ai-agent-manager/internal/providers/catalog"
 	"ai-agent-manager/internal/workspace/events"
 )
 
@@ -37,6 +38,9 @@ func TestDeriveSidebarData(t *testing.T) {
 	if len(group.Chats) != 1 {
 		t.Fatalf("expected 1 chat, got %d", len(group.Chats))
 	}
+	if len(group.PreviewChats) != 1 {
+		t.Fatalf("expected 1 preview chat, got %d", len(group.PreviewChats))
+	}
 	if group.Chats[0].ChatID != "chat-1" {
 		t.Fatalf("expected chat-1, got %q", group.Chats[0].ChatID)
 	}
@@ -61,6 +65,55 @@ func TestDeriveSidebarDataSkipsDeletedProject(t *testing.T) {
 	sidebar := DeriveSidebarData(Replay([]events.Event{opened, removed}))
 	if len(sidebar.ProjectGroups) != 0 {
 		t.Fatalf("expected no project groups, got %d", len(sidebar.ProjectGroups))
+	}
+}
+
+func TestDeriveSidebarDataOrdersProjectsByLatestChatActivity(t *testing.T) {
+	projectOneOpened, _ := events.NewAt(events.TypeProjectOpened, 100, map[string]any{
+		"projectId": "project-1",
+		"localPath": "/tmp/project-1",
+		"title":     "project 1",
+	})
+	projectTwoOpened, _ := events.NewAt(events.TypeProjectOpened, 200, map[string]any{
+		"projectId": "project-2",
+		"localPath": "/tmp/project-2",
+		"title":     "project 2",
+	})
+	chatOneCreated, _ := events.NewAt(events.TypeChatCreated, 300, map[string]any{
+		"chatId":    "chat-1",
+		"projectId": "project-1",
+		"title":     "chat 1",
+	})
+	chatTwoCreated, _ := events.NewAt(events.TypeChatCreated, 400, map[string]any{
+		"chatId":    "chat-2",
+		"projectId": "project-2",
+		"title":     "chat 2",
+	})
+	projectOneMessage, _ := events.NewAt(events.TypeMessageAppended, 500, map[string]any{
+		"chatId": "chat-1",
+		"entry": map[string]any{
+			"kind":      "user_prompt",
+			"content":   "latest activity",
+			"createdAt": int64(900),
+		},
+	})
+
+	sidebar := DeriveSidebarData(Replay([]events.Event{
+		projectOneOpened,
+		projectTwoOpened,
+		chatOneCreated,
+		chatTwoCreated,
+		projectOneMessage,
+	}))
+
+	if len(sidebar.ProjectGroups) != 2 {
+		t.Fatalf("expected 2 project groups, got %d", len(sidebar.ProjectGroups))
+	}
+	if sidebar.ProjectGroups[0].GroupKey != "project-1" {
+		t.Fatalf("expected project-1 to sort first after latest chat activity, got %#v", sidebar.ProjectGroups)
+	}
+	if sidebar.ProjectGroups[1].GroupKey != "project-2" {
+		t.Fatalf("expected project-2 to sort second, got %#v", sidebar.ProjectGroups)
 	}
 }
 
@@ -89,6 +142,105 @@ func TestDeriveSidebarDataSeparatesArchivedChats(t *testing.T) {
 	}
 	if len(group.ArchivedChats) != 1 {
 		t.Fatalf("expected 1 archived chat, got %d", len(group.ArchivedChats))
+	}
+}
+
+func TestPopulateSidebarBucketsUsesRecentChatsOrFiveFallback(t *testing.T) {
+	now := int64(1700000000000)
+	recent := now - 60*60*1000
+	old := now - 48*60*60*1000
+	group := SidebarProjectGroup{
+		Chats: []SidebarChatRow{
+			{ChatID: "chat-recent", CreationTime: recent},
+			{ChatID: "chat-old", CreationTime: old},
+		},
+	}
+	PopulateSidebarBuckets(&group, now)
+	if len(group.PreviewChats) != 1 || group.PreviewChats[0].ChatID != "chat-recent" {
+		t.Fatalf("expected recent chat preview, got %#v", group.PreviewChats)
+	}
+	if len(group.OlderChats) != 1 || group.OlderChats[0].ChatID != "chat-old" {
+		t.Fatalf("expected old chat in older bucket, got %#v", group.OlderChats)
+	}
+	if group.DefaultCollapsed {
+		t.Fatal("expected recent group to stay expanded by default")
+	}
+
+	oldOnly := SidebarProjectGroup{Chats: []SidebarChatRow{
+		{ChatID: "chat-1", CreationTime: old},
+		{ChatID: "chat-2", CreationTime: old - 1},
+		{ChatID: "chat-3", CreationTime: old - 2},
+		{ChatID: "chat-4", CreationTime: old - 3},
+		{ChatID: "chat-5", CreationTime: old - 4},
+		{ChatID: "chat-6", CreationTime: old - 5},
+	}}
+	PopulateSidebarBuckets(&oldOnly, now)
+	if len(oldOnly.PreviewChats) != 5 || len(oldOnly.OlderChats) != 1 {
+		t.Fatalf("expected 5 fallback previews and 1 older chat, got previews=%d older=%d", len(oldOnly.PreviewChats), len(oldOnly.OlderChats))
+	}
+	if !oldOnly.DefaultCollapsed {
+		t.Fatal("expected old-only group to collapse by default")
+	}
+}
+
+func TestDeriveSidebarDataTracksAssistantActivityTimestamp(t *testing.T) {
+	opened, _ := events.NewAt(events.TypeProjectOpened, 100, map[string]any{
+		"projectId": "project-1",
+		"localPath": "/tmp/project",
+		"title":     "project",
+	})
+	created, _ := events.NewAt(events.TypeChatCreated, 200, map[string]any{
+		"chatId":    "chat-1",
+		"projectId": "project-1",
+		"title":     "chat",
+	})
+	userPrompt, _ := events.NewAt(events.TypeMessageAppended, 300, map[string]any{
+		"chatId": "chat-1",
+		"entry": map[string]any{
+			"kind":      "user_prompt",
+			"content":   "سلام",
+			"createdAt": int64(300),
+		},
+	})
+	assistantText, _ := events.NewAt(events.TypeMessageAppended, 350, map[string]any{
+		"chatId": "chat-1",
+		"entry": map[string]any{
+			"kind":      "assistant_text",
+			"text":      "پاسخ تازه",
+			"createdAt": int64(400),
+		},
+	})
+
+	sidebar := DeriveSidebarData(Replay([]events.Event{opened, created, userPrompt, assistantText}))
+	chat := sidebar.ProjectGroups[0].Chats[0]
+	if chat.LastMessageAt == nil || *chat.LastMessageAt != 400 {
+		t.Fatalf("expected assistant activity timestamp 400, got %#v", chat.LastMessageAt)
+	}
+}
+
+func TestDeriveSidebarDataUsesRestoredCheckpointActivityTimestamp(t *testing.T) {
+	opened, _ := events.NewAt(events.TypeProjectOpened, 100, map[string]any{
+		"projectId": "project-1",
+		"localPath": "/tmp/project",
+		"title":     "project",
+	})
+	created, _ := events.NewAt(events.TypeChatCreated, 200, map[string]any{
+		"chatId":    "chat-1",
+		"projectId": "project-1",
+		"title":     "chat",
+	})
+	restored, _ := events.NewAt(events.TypeChatRestoredToCheckpoint, 500, map[string]any{
+		"chatId": "chat-1",
+		"messages": []TranscriptEntry{
+			{"kind": "user_prompt", "createdAt": int64(300), "content": "سلام"},
+			{"kind": "assistant_text", "createdAt": int64(400), "text": "پاسخ تازه"},
+		},
+	})
+
+	sidebar := DeriveSidebarData(Replay([]events.Event{opened, created, restored}))
+	chat := sidebar.ProjectGroups[0].Chats[0]
+	if chat.LastMessageAt == nil || *chat.LastMessageAt != 500 {
+		t.Fatalf("expected restored checkpoint to sort by the restore activity timestamp 500, got %#v", chat.LastMessageAt)
 	}
 }
 
@@ -128,7 +280,7 @@ func TestDeriveChatSnapshotIncludesProviders(t *testing.T) {
 
 	chat := DeriveChatSnapshot(
 		state,
-		map[string]KannaStatus{},
+		map[string]AbolqasemStatus{},
 		map[string]bool{},
 		"chat-1",
 		ChatTranscriptSnapshot{
@@ -165,7 +317,15 @@ func TestDeriveChatSnapshotIncludesProviders(t *testing.T) {
 			codexModels = append(codexModels, model.ID)
 		}
 	}
-	expected := []string{"gpt-5.5", "gpt-5.4", "gpt-5.3-codex", "gpt-5.3-codex-spark"}
+	var expected []string
+	for _, provider := range catalog.ServerProviders() {
+		if provider.ID != "codex" {
+			continue
+		}
+		for _, model := range provider.Models {
+			expected = append(expected, model.ID)
+		}
+	}
 	if len(codexModels) != len(expected) {
 		t.Fatalf("expected codex models %#v, got %#v", expected, codexModels)
 	}
@@ -220,7 +380,7 @@ func TestDeriveLocalProjectsSnapshotPrefersSavedProject(t *testing.T) {
 	if project.ChatCount != 1 {
 		t.Fatalf("expected chat count 1, got %d", project.ChatCount)
 	}
-	if project.LastOpenedAt != 30 {
-		t.Fatalf("expected last opened at 30, got %d", project.LastOpenedAt)
+	if project.LastOpenedAt != 40 {
+		t.Fatalf("expected last opened at 40, got %d", project.LastOpenedAt)
 	}
 }

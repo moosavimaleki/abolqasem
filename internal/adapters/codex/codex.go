@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	toml "github.com/pelletier/go-toml/v2"
 )
@@ -69,8 +70,8 @@ func (a *CodexAdapter) InstallHook(scope adapters.InstallScope) error {
 	} else if removedLegacyPrompt {
 		hooks[legacyPromptSubmitHookEvent] = legacyPromptBlocks
 	}
-	promptBlocks := ensureHookBlocks(hooks[promptSubmitHookEvent])
-	hooks[promptSubmitHookEvent], _ = ensureCodexEnsureServerHook(promptBlocks)
+	promptBlocks, _ := removeCodexEnsureServerHook(ensureHookBlocks(hooks[promptSubmitHookEvent]))
+	hooks[promptSubmitHookEvent], _ = ensureCodexHook(promptBlocks)
 
 	if len(data) > 0 {
 		if err := os.WriteFile(configPath+".bak", data, 0o644); err != nil {
@@ -105,9 +106,13 @@ func (a *CodexAdapter) UninstallHook(scope adapters.InstallScope) error {
 	stopBlocks := ensureHookBlocks(hooks["Stop"])
 	newBlocks, removed := removeCodexHook(stopBlocks)
 	promptBlocks := ensureHookBlocks(hooks[promptSubmitHookEvent])
-	newPromptBlocks, removedPrompt := removeCodexEnsureServerHook(promptBlocks)
+	newPromptBlocks, removedPromptCodex := removeCodexHook(promptBlocks)
+	newPromptBlocks, removedPromptEnsure := removeCodexEnsureServerHook(newPromptBlocks)
+	removedPrompt := removedPromptCodex || removedPromptEnsure
 	legacyPromptBlocks := ensureHookBlocks(hooks[legacyPromptSubmitHookEvent])
-	newLegacyPromptBlocks, removedLegacyPrompt := removeCodexEnsureServerHook(legacyPromptBlocks)
+	newLegacyPromptBlocks, removedLegacyPromptCodex := removeCodexHook(legacyPromptBlocks)
+	newLegacyPromptBlocks, removedLegacyPromptEnsure := removeCodexEnsureServerHook(newLegacyPromptBlocks)
+	removedLegacyPrompt := removedLegacyPromptCodex || removedLegacyPromptEnsure
 	if !removed && !removedPrompt && !removedLegacyPrompt {
 		return fmt.Errorf("hook not found")
 	}
@@ -152,22 +157,37 @@ func (a *CodexAdapter) IsHookInstalled(scope adapters.InstallScope) (bool, error
 	if !ok {
 		return false, nil
 	}
-	for _, block := range ensureHookBlocks(hooks["Stop"]) {
+	return hasCodexHook(ensureHookBlocks(hooks["Stop"])) && hasCodexHook(ensureHookBlocks(hooks[promptSubmitHookEvent])), nil
+}
+
+func hasCodexHook(blocks []map[string]any) bool {
+	for _, block := range blocks {
 		for _, inner := range ensureHookEntries(block["hooks"]) {
 			if adapters.IsCommandMatch(stringValue(inner["command"]), "codex") {
-				return true, nil
+				return true
 			}
 		}
 	}
-	return false, nil
+	return false
 }
 
 func (a *CodexAdapter) NormalizeHookInput(input []byte) (state.HookEvent, error) {
-	var event state.HookEvent
-	if err := json.Unmarshal(input, &event); err != nil {
-		return event, err
+	var raw map[string]any
+	if err := json.Unmarshal(input, &raw); err != nil {
+		return state.HookEvent{}, err
 	}
-	event.Agent = "codex"
+	event := state.HookEvent{
+		Agent:          "codex",
+		SessionID:      firstString(raw, "session_id", "sessionId", "thread_id", "threadId"),
+		HookEventName:  firstString(raw, "hook_event_name", "hookEventName", "event_name", "eventName", "event", "type", "name"),
+		TranscriptPath: firstString(raw, "transcript_path", "transcriptPath", "transcript"),
+		Cwd:            firstString(raw, "cwd", "current_working_directory", "working_directory", "workspace"),
+		ProjectName:    firstString(raw, "project_name", "projectName"),
+		PromptPreview:  firstString(raw, "prompt_preview", "promptPreview", "prompt", "user_prompt", "userPrompt", "message", "input"),
+		LastPreview:    firstString(raw, "last_preview", "lastPreview", "last_response", "lastResponse", "response"),
+		Model:          firstString(raw, "model"),
+		UpdatedAt:      firstString(raw, "updated_at", "updatedAt"),
+	}
 	return state.NormalizeAndValidateEvent(event), nil
 }
 
@@ -289,6 +309,45 @@ func removeCodexEnsureServerHook(blocks []map[string]any) ([]map[string]any, boo
 		result = append(result, block)
 	}
 	return result, changed
+}
+
+func firstString(raw map[string]any, keys ...string) string {
+	keySet := map[string]bool{}
+	for _, key := range keys {
+		keySet[strings.ToLower(key)] = true
+		if value := stringValue(raw[key]); value != "" {
+			return value
+		}
+	}
+	return findStringByKey(raw, keySet, 0)
+}
+
+func findStringByKey(value any, keys map[string]bool, depth int) string {
+	if depth > 6 {
+		return ""
+	}
+	switch typed := value.(type) {
+	case map[string]any:
+		for key, item := range typed {
+			if keys[strings.ToLower(key)] {
+				if text := stringValue(item); text != "" {
+					return text
+				}
+			}
+		}
+		for _, item := range typed {
+			if text := findStringByKey(item, keys, depth+1); text != "" {
+				return text
+			}
+		}
+	case []any:
+		for _, item := range typed {
+			if text := findStringByKey(item, keys, depth+1); text != "" {
+				return text
+			}
+		}
+	}
+	return ""
 }
 
 func ensureMap(target map[string]any, key string) map[string]any {

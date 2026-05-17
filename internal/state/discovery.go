@@ -26,9 +26,10 @@ type DiscoveryRoot struct {
 }
 
 type DiscoveryReport struct {
-	Found   int
-	Added   int
-	Updated int
+	Found              int
+	Added              int
+	Updated            int
+	ChangedSessionKeys []string
 }
 
 type transcriptProbe struct {
@@ -99,8 +100,10 @@ func DiscoverSessionsInRoots(appState *AppState, roots []DiscoveryRoot) (Discove
 			before, existed, meta := upsertDiscoveredSession(appState, pathIndex, root, path, fileInfo.ModTime())
 			if !existed {
 				report.Added++
+				report.ChangedSessionKeys = append(report.ChangedSessionKeys, meta.Key)
 			} else if !sameSessionMeta(before, meta) {
 				report.Updated++
+				report.ChangedSessionKeys = append(report.ChangedSessionKeys, meta.Key)
 			}
 			pathIndex[transcriptPathIndexKey(meta.Agent, meta.TranscriptPath)] = meta.SessionID
 			return nil
@@ -143,7 +146,13 @@ func geminiConfigDir(home string) string {
 }
 
 func upsertDiscoveredSession(appState *AppState, pathIndex map[string]string, root DiscoveryRoot, transcriptPath string, updatedAt time.Time) (SessionMeta, bool, SessionMeta) {
+	if existing, ok := unchangedDiscoveredSession(appState, pathIndex, root, transcriptPath, updatedAt); ok {
+		return existing, true, existing
+	}
 	probe := probeTranscript(transcriptPath)
+	if root.Agent == "gemini" {
+		probe = mergeTranscriptProbes(probe, resolveGeminiTranscriptProbe(transcriptPath))
+	}
 	sessionID := firstNonEmptyString(
 		pathIndex[transcriptPathIndexKey(root.Agent, transcriptPath)],
 		probe.SessionID,
@@ -162,6 +171,24 @@ func upsertDiscoveredSession(appState *AppState, pathIndex map[string]string, ro
 	before, existed := appState.Sessions[key]
 	meta := UpsertSession(appState, event)
 	return before, existed, meta
+}
+
+func unchangedDiscoveredSession(appState *AppState, pathIndex map[string]string, root DiscoveryRoot, transcriptPath string, updatedAt time.Time) (SessionMeta, bool) {
+	sessionID := pathIndex[transcriptPathIndexKey(root.Agent, transcriptPath)]
+	if strings.TrimSpace(sessionID) == "" {
+		return SessionMeta{}, false
+	}
+	meta, ok := appState.Sessions[SessionKey(root.Agent, sessionID)]
+	if !ok {
+		return SessionMeta{}, false
+	}
+	if strings.TrimSpace(meta.TranscriptPath) == "" || filepath.Clean(meta.TranscriptPath) != filepath.Clean(transcriptPath) {
+		return SessionMeta{}, false
+	}
+	if !meta.UpdatedAt.Equal(updatedAt) {
+		return SessionMeta{}, false
+	}
+	return meta, true
 }
 
 func discoveredCodexSessionID(root DiscoveryRoot, transcriptPath string) string {
@@ -314,6 +341,19 @@ func mergeProbe(probe *transcriptProbe, raw any) {
 	if probe.ProjectName == "" {
 		probe.ProjectName = findStringByKey(raw, projectNameKeys, 0)
 	}
+}
+
+func mergeTranscriptProbes(primary transcriptProbe, fallback transcriptProbe) transcriptProbe {
+	if primary.SessionID == "" {
+		primary.SessionID = fallback.SessionID
+	}
+	if primary.Cwd == "" {
+		primary.Cwd = fallback.Cwd
+	}
+	if primary.ProjectName == "" {
+		primary.ProjectName = fallback.ProjectName
+	}
+	return primary
 }
 
 var (

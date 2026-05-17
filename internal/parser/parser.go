@@ -2,6 +2,7 @@ package parser
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"ai-agent-manager/internal/render"
+	"ai-agent-manager/internal/state"
 )
 
 var ErrTranscriptUnavailable = errors.New("transcript is unavailable")
@@ -28,6 +30,16 @@ type Message struct {
 	Direction string     `json:"direction"`
 	Index     int        `json:"index"`
 	CreatedAt *time.Time `json:"created_at"`
+}
+
+type SearchableMessage struct {
+	ID        string
+	SessionID string
+	Role      string
+	Kind      string
+	Text      string
+	Index     int
+	CreatedAt *time.Time
 }
 
 type ParseResult struct {
@@ -71,18 +83,61 @@ type SearchMatch struct {
 	CreatedAt *time.Time `json:"created_at"`
 }
 
+type CacheStats struct {
+	FullEntries       int `json:"full_entries"`
+	SummaryEntries    int `json:"summary_entries"`
+	EstimatedBytes    int `json:"estimated_bytes"`
+	MaxBytes          int `json:"max_bytes"`
+	MaxEntries        int `json:"max_entries"`
+	SummaryMaxEntries int `json:"summary_max_entries"`
+}
+
 type cacheEntry struct {
-	mtime    time.Time
-	size     int64
-	messages []Message
+	mtime          time.Time
+	size           int64
+	messages       []Message
+	searchTexts    []string
+	lastAccess     time.Time
+	estimatedBytes int
+}
+
+type summaryCacheEntry struct {
+	mtime      time.Time
+	size       int64
+	summary    SessionSummary
+	lastAccess time.Time
 }
 
 var (
-	cacheMu sync.Mutex
-	cache   = map[string]cacheEntry{}
+	cacheMu      sync.Mutex
+	cache        = map[string]cacheEntry{}
+	summaryCache = map[string]summaryCacheEntry{}
+	cacheBytes   int
 )
 
-const maxStructuredJSONBytes = 64 * 1024 * 1024
+const (
+	maxStructuredJSONBytes = 64 * 1024 * 1024
+
+	parserCacheTTL      = 10 * time.Minute
+	parserCacheMaxItems = 16
+	parserCacheMaxBytes = 128 * 1024 * 1024
+
+	summaryCacheTTL      = 30 * time.Minute
+	summaryCacheMaxItems = 512
+)
+
+func Stats() CacheStats {
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
+	return CacheStats{
+		FullEntries:       len(cache),
+		SummaryEntries:    len(summaryCache),
+		EstimatedBytes:    cacheBytes,
+		MaxBytes:          parserCacheMaxBytes,
+		MaxEntries:        parserCacheMaxItems,
+		SummaryMaxEntries: summaryCacheMaxItems,
+	}
+}
 
 func ParseMessages(agent, sessionID, transcriptPath string, opts ParseOptions) (*ParseResult, error) {
 	if strings.TrimSpace(transcriptPath) == "" {
@@ -134,25 +189,45 @@ func GetSessionSummary(agent, sessionID, transcriptPath string) (SessionSummary,
 	if strings.TrimSpace(transcriptPath) == "" {
 		return SessionSummary{}, ErrTranscriptUnavailable
 	}
-	messages, err := loadMessages(agent, sessionID, transcriptPath)
+	info, err := os.Stat(transcriptPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return SessionSummary{}, ErrTranscriptUnavailable
+		}
+		return SessionSummary{}, err
+	}
+	cacheKey := agent + "|" + filepath.Clean(transcriptPath)
+	if summary, ok := getParserSummaryCacheEntry(cacheKey, info); ok {
+		return summary, nil
+	}
+	summary := SessionSummary{}
+	firstAnyPreview := ""
+	lastPreview := ""
+	err = StreamSearchableMessages(agent, sessionID, transcriptPath, func(message SearchableMessage) bool {
+		summary.MessageCountEstimate++
+		if strings.TrimSpace(message.Text) == "" {
+			return true
+		}
+		isBootstrap := state.IsAgentBootstrapPrompt(message.Text)
+		if firstAnyPreview == "" && !isBootstrap {
+			firstAnyPreview = inlinePreview(message.Text)
+		}
+		if strings.EqualFold(strings.TrimSpace(message.Role), "user") && !isBootstrap {
+			if summary.FirstPreview == "" {
+				summary.FirstPreview = inlinePreview(message.Text)
+			}
+		}
+		lastPreview = message.Text
+		return true
+	})
 	if err != nil {
 		return SessionSummary{}, err
 	}
-	summary := SessionSummary{MessageCountEstimate: len(messages)}
-	for _, message := range messages {
-		if strings.TrimSpace(message.Text) == "" {
-			continue
-		}
-		summary.FirstPreview = inlinePreview(message.Text)
-		break
+	if summary.FirstPreview == "" {
+		summary.FirstPreview = firstAnyPreview
 	}
-	for i := len(messages) - 1; i >= 0; i-- {
-		if strings.TrimSpace(messages[i].Text) == "" {
-			continue
-		}
-		summary.LastPreview = trimPreview(messages[i].Text)
-		break
-	}
+	summary.LastPreview = trimPreview(lastPreview)
+	setParserSummaryCacheEntry(cacheKey, info, summary)
 	return summary, nil
 }
 
@@ -175,70 +250,75 @@ func SearchMessages(agent, sessionID, transcriptPath string, opts SearchOptions)
 		opts.SnippetRunes = 180
 	}
 
-	info, err := os.Stat(transcriptPath)
+	queryLower := strings.ToLower(query)
+	err := StreamSearchableMessages(agent, sessionID, transcriptPath, func(message SearchableMessage) bool {
+		if !strings.Contains(strings.ToLower(message.Text), queryLower) {
+			return true
+		}
+		result.Matches = append(result.Matches, SearchMatch{
+			MessageID: message.ID,
+			Role:      message.Role,
+			Index:     message.Index,
+			Snippet:   searchSnippet(message.Text, queryLower, opts.SnippetRunes),
+			CreatedAt: message.CreatedAt,
+		})
+		return len(result.Matches) < opts.Limit
+	})
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, ErrTranscriptUnavailable) {
 			return result, ErrTranscriptUnavailable
 		}
 		return result, err
 	}
+	return result, nil
+}
 
-	queryLower := strings.ToLower(query)
-	if shouldTryStructuredJSON(transcriptPath, info.Size()) {
-		messages, err := loadStructuredJSONMessages(agent, sessionID, transcriptPath)
-		if err == nil {
-			for _, message := range messages {
-				if appendSearchMatch(&result, message, queryLower, opts) {
-					break
-				}
-			}
-			return result, nil
+func StreamSearchableMessages(agent, sessionID, transcriptPath string, visit func(SearchableMessage) bool) error {
+	if strings.TrimSpace(transcriptPath) == "" {
+		return ErrTranscriptUnavailable
+	}
+	info, err := os.Stat(transcriptPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return ErrTranscriptUnavailable
 		}
+		return err
 	}
 
 	file, err := os.Open(transcriptPath)
 	if err != nil {
-		return result, err
+		return err
 	}
 	defer file.Close()
 
 	reader := bufio.NewReader(file)
 	lineIndex := 0
+	emitted := 0
 	for {
-		line, err := reader.ReadBytes('\n')
+		line, readErr := reader.ReadBytes('\n')
 		if len(line) > 0 {
 			lineIndex++
 			raw := map[string]any{}
 			if decodeErr := json.Unmarshal(bytesTrimSpace(line), &raw); decodeErr == nil {
-				if msg := extractMessage(agent, raw, sessionID, lineIndex); msg != nil {
-					if appendSearchMatch(&result, *msg, queryLower, opts) {
-						break
+				if msg := extractSearchableMessage(agent, raw, sessionID, lineIndex); msg != nil {
+					emitted++
+					if !visit(*msg) {
+						return nil
 					}
 				}
 			}
 		}
-		if err != nil {
-			if errors.Is(err, io.EOF) {
+		if readErr != nil {
+			if errors.Is(readErr, io.EOF) {
 				break
 			}
-			return result, err
+			return readErr
 		}
 	}
-	return result, nil
-}
-
-func appendSearchMatch(result *SearchResult, message Message, queryLower string, opts SearchOptions) bool {
-	if !strings.Contains(strings.ToLower(message.Text), queryLower) {
-		return false
+	if emitted == 0 && shouldTryStructuredJSON(transcriptPath, info.Size()) {
+		return streamStructuredJSONMessages(agent, sessionID, transcriptPath, visit)
 	}
-	result.Matches = append(result.Matches, SearchMatch{
-		MessageID: message.ID,
-		Role:      message.Role,
-		Index:     message.Index,
-		Snippet:   searchSnippet(message.Text, queryLower, opts.SnippetRunes),
-		CreatedAt: message.CreatedAt,
-	})
-	return len(result.Matches) >= opts.Limit
+	return nil
 }
 
 func searchSnippet(text, queryLower string, maxRunes int) string {
@@ -304,13 +384,9 @@ func loadMessages(agent, sessionID, transcriptPath string) ([]Message, error) {
 	}
 
 	cacheKey := agent + "|" + filepath.Clean(transcriptPath)
-	cacheMu.Lock()
-	if entry, ok := cache[cacheKey]; ok && entry.size == info.Size() && entry.mtime.Equal(info.ModTime()) {
-		cached := append([]Message(nil), entry.messages...)
-		cacheMu.Unlock()
-		return cached, nil
+	if entry, ok := getParserCacheEntry(cacheKey, info); ok {
+		return entry.messages, nil
 	}
-	cacheMu.Unlock()
 
 	file, err := os.Open(transcriptPath)
 	if err != nil {
@@ -345,14 +421,195 @@ func loadMessages(agent, sessionID, transcriptPath string) ([]Message, error) {
 		}
 	}
 
-	cacheMu.Lock()
-	cache[cacheKey] = cacheEntry{
+	setParserCacheEntry(cacheKey, cacheEntry{
 		mtime:    info.ModTime(),
 		size:     info.Size(),
-		messages: append([]Message(nil), messages...),
-	}
-	cacheMu.Unlock()
+		messages: messages,
+	})
 	return messages, nil
+}
+
+func loadSearchableMessages(agent, sessionID, transcriptPath string) ([]Message, []string, error) {
+	info, err := os.Stat(transcriptPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil, ErrTranscriptUnavailable
+		}
+		return nil, nil, err
+	}
+
+	cacheKey := agent + "|" + filepath.Clean(transcriptPath)
+	if entry, ok := getParserCacheEntry(cacheKey, info); ok {
+		if len(entry.searchTexts) != len(entry.messages) {
+			entry.searchTexts = buildSearchTexts(entry.messages)
+			setParserCacheEntry(cacheKey, entry)
+		}
+		return entry.messages, entry.searchTexts, nil
+	}
+
+	messages, err := loadMessages(agent, sessionID, transcriptPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	searchTexts := buildSearchTexts(messages)
+
+	entry, _ := getParserCacheEntry(cacheKey, info)
+	entry.searchTexts = searchTexts
+	setParserCacheEntry(cacheKey, entry)
+	return messages, searchTexts, nil
+}
+
+func getParserCacheEntry(cacheKey string, info os.FileInfo) (cacheEntry, bool) {
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
+
+	entry, ok := cache[cacheKey]
+	if !ok || entry.size != info.Size() || !entry.mtime.Equal(info.ModTime()) {
+		if ok {
+			removeParserCacheEntryLocked(cacheKey)
+		}
+		return cacheEntry{}, false
+	}
+	now := time.Now()
+	if now.Sub(entry.lastAccess) > parserCacheTTL {
+		removeParserCacheEntryLocked(cacheKey)
+		return cacheEntry{}, false
+	}
+	entry.lastAccess = now
+	cache[cacheKey] = entry
+	return entry, true
+}
+
+func setParserCacheEntry(cacheKey string, entry cacheEntry) {
+	if cacheKey == "" || len(entry.messages) == 0 {
+		return
+	}
+	entry.lastAccess = time.Now()
+	entry.estimatedBytes = estimateParserCacheEntryBytes(entry)
+	if entry.estimatedBytes > parserCacheMaxBytes/2 {
+		return
+	}
+
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
+
+	if _, ok := cache[cacheKey]; ok {
+		removeParserCacheEntryLocked(cacheKey)
+	}
+	cache[cacheKey] = entry
+	cacheBytes += entry.estimatedBytes
+	evictParserCacheLocked(time.Now())
+}
+
+func removeParserCacheEntryLocked(cacheKey string) {
+	if entry, ok := cache[cacheKey]; ok {
+		cacheBytes -= entry.estimatedBytes
+		if cacheBytes < 0 {
+			cacheBytes = 0
+		}
+		delete(cache, cacheKey)
+	}
+}
+
+func evictParserCacheLocked(now time.Time) {
+	for key, entry := range cache {
+		if now.Sub(entry.lastAccess) > parserCacheTTL {
+			removeParserCacheEntryLocked(key)
+		}
+	}
+	for len(cache) > parserCacheMaxItems || cacheBytes > parserCacheMaxBytes {
+		oldestKey := ""
+		var oldest time.Time
+		for key, entry := range cache {
+			if oldestKey == "" || entry.lastAccess.Before(oldest) {
+				oldestKey = key
+				oldest = entry.lastAccess
+			}
+		}
+		if oldestKey == "" {
+			return
+		}
+		removeParserCacheEntryLocked(oldestKey)
+	}
+}
+
+func estimateParserCacheEntryBytes(entry cacheEntry) int {
+	total := 256 + len(entry.messages)*256 + len(entry.searchTexts)*64
+	for _, message := range entry.messages {
+		total += len(message.ID) + len(message.SessionID) + len(message.Role) + len(message.Kind)
+		total += len(message.Text) + len(message.HTML) + len(message.Direction)
+	}
+	for _, text := range entry.searchTexts {
+		total += len(text)
+	}
+	return total
+}
+
+func getParserSummaryCacheEntry(cacheKey string, info os.FileInfo) (SessionSummary, bool) {
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
+
+	entry, ok := summaryCache[cacheKey]
+	if !ok || entry.size != info.Size() || !entry.mtime.Equal(info.ModTime()) {
+		if ok {
+			delete(summaryCache, cacheKey)
+		}
+		return SessionSummary{}, false
+	}
+	now := time.Now()
+	if now.Sub(entry.lastAccess) > summaryCacheTTL {
+		delete(summaryCache, cacheKey)
+		return SessionSummary{}, false
+	}
+	entry.lastAccess = now
+	summaryCache[cacheKey] = entry
+	return entry.summary, true
+}
+
+func setParserSummaryCacheEntry(cacheKey string, info os.FileInfo, summary SessionSummary) {
+	if cacheKey == "" {
+		return
+	}
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
+
+	summaryCache[cacheKey] = summaryCacheEntry{
+		mtime:      info.ModTime(),
+		size:       info.Size(),
+		summary:    summary,
+		lastAccess: time.Now(),
+	}
+	evictParserSummaryCacheLocked(time.Now())
+}
+
+func evictParserSummaryCacheLocked(now time.Time) {
+	for key, entry := range summaryCache {
+		if now.Sub(entry.lastAccess) > summaryCacheTTL {
+			delete(summaryCache, key)
+		}
+	}
+	for len(summaryCache) > summaryCacheMaxItems {
+		oldestKey := ""
+		var oldest time.Time
+		for key, entry := range summaryCache {
+			if oldestKey == "" || entry.lastAccess.Before(oldest) {
+				oldestKey = key
+				oldest = entry.lastAccess
+			}
+		}
+		if oldestKey == "" {
+			return
+		}
+		delete(summaryCache, oldestKey)
+	}
+}
+
+func buildSearchTexts(messages []Message) []string {
+	searchTexts := make([]string, len(messages))
+	for index, message := range messages {
+		searchTexts[index] = strings.ToLower(message.Text)
+	}
+	return searchTexts
 }
 
 func shouldTryStructuredJSON(transcriptPath string, size int64) bool {
@@ -379,6 +636,23 @@ func loadStructuredJSONMessages(agent, sessionID, transcriptPath string) ([]Mess
 	return messages, nil
 }
 
+func streamStructuredJSONMessages(agent, sessionID, transcriptPath string, visit func(SearchableMessage) bool) error {
+	data, err := os.ReadFile(transcriptPath)
+	if err != nil {
+		return err
+	}
+
+	var raw any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	keepGoing := true
+	nextIndex := 0
+	collectStructuredSearchableMessages(agent, sessionID, raw, 0, &nextIndex, &keepGoing, visit)
+	return nil
+}
+
 func collectStructuredMessages(agent, sessionID string, value any, messages *[]Message, depth int) {
 	if depth > 8 {
 		return
@@ -396,6 +670,37 @@ func collectStructuredMessages(agent, sessionID string, value any, messages *[]M
 		for _, key := range []string{"messages", "history", "turns", "contents", "conversation", "entries", "items", "curatedHistory"} {
 			if child, ok := typed[key]; ok {
 				collectStructuredMessages(agent, sessionID, child, messages, depth+1)
+			}
+		}
+	}
+}
+
+func collectStructuredSearchableMessages(agent, sessionID string, value any, depth int, nextIndex *int, keepGoing *bool, visit func(SearchableMessage) bool) {
+	if depth > 8 || !*keepGoing {
+		return
+	}
+	switch typed := value.(type) {
+	case []any:
+		for _, item := range typed {
+			collectStructuredSearchableMessages(agent, sessionID, item, depth+1, nextIndex, keepGoing, visit)
+			if !*keepGoing {
+				return
+			}
+		}
+	case map[string]any:
+		if msg := extractSearchableMessage(agent, typed, sessionID, 0); msg != nil {
+			(*nextIndex)++
+			msg.Index = *nextIndex
+			msg.ID = fmt.Sprintf("evt_%s_%d", sessionID, msg.Index)
+			*keepGoing = visit(*msg)
+			return
+		}
+		for _, key := range []string{"messages", "history", "turns", "contents", "conversation", "entries", "items", "curatedHistory"} {
+			if child, ok := typed[key]; ok {
+				collectStructuredSearchableMessages(agent, sessionID, child, depth+1, nextIndex, keepGoing, visit)
+				if !*keepGoing {
+					return
+				}
 			}
 		}
 	}
@@ -449,6 +754,14 @@ func findMessageIndex(messages []Message, cursor string) int {
 }
 
 func extractMessage(agent string, raw map[string]any, sessionID string, index int) *Message {
+	msg := extractSearchableMessage(agent, raw, sessionID, index)
+	if msg == nil {
+		return nil
+	}
+	return searchableToMessage(*msg)
+}
+
+func extractSearchableMessage(agent string, raw map[string]any, sessionID string, index int) *SearchableMessage {
 	switch strings.ToLower(agent) {
 	case "codex":
 		return extractCodexMessage(raw, sessionID, index)
@@ -461,7 +774,7 @@ func extractMessage(agent string, raw map[string]any, sessionID string, index in
 	}
 }
 
-func extractCodexMessage(raw map[string]any, sessionID string, index int) *Message {
+func extractCodexMessage(raw map[string]any, sessionID string, index int) *SearchableMessage {
 	payload := asMap(raw["payload"])
 	eventType := stringValue(payload["type"])
 	if eventType == "" {
@@ -470,19 +783,19 @@ func extractCodexMessage(raw map[string]any, sessionID string, index int) *Messa
 
 	switch eventType {
 	case "user_message":
-		return newMessage(sessionID, index, "user", "message", firstNonEmpty(
+		return newSearchableMessage(sessionID, index, "user", "message", firstNonEmpty(
 			flattenText(payload["message"]),
 			flattenText(payload["text"]),
 			flattenText(raw["message"]),
 		), extractTimestamp(raw, payload))
 	case "agent_message":
-		return newMessage(sessionID, index, "assistant", "message", firstNonEmpty(
+		return newSearchableMessage(sessionID, index, "assistant", "message", firstNonEmpty(
 			flattenText(payload["message"]),
 			flattenText(payload["text"]),
 			flattenText(payload["content"]),
 		), extractTimestamp(raw, payload))
 	case "tool_call", "command_output", "tool_result":
-		return newMessage(sessionID, index, "tool", "tool", firstNonEmpty(
+		return newSearchableMessage(sessionID, index, "tool", "tool", firstNonEmpty(
 			flattenText(payload["output"]),
 			flattenText(payload["message"]),
 			flattenText(raw["output"]),
@@ -490,14 +803,14 @@ func extractCodexMessage(raw map[string]any, sessionID string, index int) *Messa
 		), extractTimestamp(raw, payload))
 	}
 
-	if text := firstNonEmpty(flattenText(payload["message"]), flattenText(raw["message"]), flattenText(raw["text"]), flattenText(raw["content"])); text != "" {
+	if text := firstNonEmpty(flattenText(payload["message"]), flattenText(payload["content"]), flattenText(raw["message"]), flattenText(raw["text"]), flattenText(raw["content"])); text != "" {
 		role := firstNonEmpty(stringValue(payload["role"]), stringValue(raw["role"]), "assistant")
-		return newMessage(sessionID, index, role, "message", text, extractTimestamp(raw, payload))
+		return newSearchableMessage(sessionID, index, normalizeRole(role), "message", text, extractTimestamp(raw, payload))
 	}
 	return nil
 }
 
-func extractClaudeMessage(raw map[string]any, sessionID string, index int) *Message {
+func extractClaudeMessage(raw map[string]any, sessionID string, index int) *SearchableMessage {
 	message := asMap(raw["message"])
 	role := firstNonEmpty(stringValue(message["role"]), stringValue(raw["role"]))
 	kind := "message"
@@ -520,10 +833,10 @@ func extractClaudeMessage(raw map[string]any, sessionID string, index int) *Mess
 		role = "tool"
 		kind = "tool"
 	}
-	return newMessage(sessionID, index, role, kind, text, extractTimestamp(raw, message))
+	return newSearchableMessage(sessionID, index, normalizeRole(role), kind, text, extractTimestamp(raw, message))
 }
 
-func extractGeminiMessage(raw map[string]any, sessionID string, index int) *Message {
+func extractGeminiMessage(raw map[string]any, sessionID string, index int) *SearchableMessage {
 	role := normalizeRole(firstNonEmpty(stringValue(raw["role"]), stringValue(raw["speaker"])))
 	kind := "message"
 	text := firstNonEmpty(
@@ -542,7 +855,7 @@ func extractGeminiMessage(raw map[string]any, sessionID string, index int) *Mess
 	if role == "tool" {
 		kind = "tool"
 	}
-	return newMessage(sessionID, index, role, kind, text, extractTimestamp(raw))
+	return newSearchableMessage(sessionID, index, role, kind, text, extractTimestamp(raw))
 }
 
 func normalizeRole(role string) string {
@@ -555,7 +868,7 @@ func normalizeRole(role string) string {
 	}
 }
 
-func extractGenericMessage(raw map[string]any, sessionID string, index int) *Message {
+func extractGenericMessage(raw map[string]any, sessionID string, index int) *SearchableMessage {
 	role := firstNonEmpty(stringValue(raw["role"]), stringValue(raw["event_type"]), "assistant")
 	kind := "message"
 	if role == "command_output" || role == "tool_call" || role == "tool" {
@@ -573,24 +886,36 @@ func extractGenericMessage(raw map[string]any, sessionID string, index int) *Mes
 	if text == "" {
 		return nil
 	}
-	return newMessage(sessionID, index, role, kind, text, extractTimestamp(raw))
+	return newSearchableMessage(sessionID, index, normalizeRole(role), kind, text, extractTimestamp(raw))
 }
 
-func newMessage(sessionID string, index int, role, kind, text string, createdAt *time.Time) *Message {
+func newSearchableMessage(sessionID string, index int, role, kind, text string, createdAt *time.Time) *SearchableMessage {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return nil
 	}
-	return &Message{
+	return &SearchableMessage{
 		ID:        fmt.Sprintf("evt_%s_%d", sessionID, index),
 		SessionID: sessionID,
 		Role:      role,
 		Kind:      kind,
 		Text:      text,
-		HTML:      render.MarkdownToHTML(text),
-		Direction: DetectDirection(text),
 		Index:     index,
 		CreatedAt: createdAt,
+	}
+}
+
+func searchableToMessage(message SearchableMessage) *Message {
+	return &Message{
+		ID:        message.ID,
+		SessionID: message.SessionID,
+		Role:      message.Role,
+		Kind:      message.Kind,
+		Text:      message.Text,
+		HTML:      render.MarkdownToHTML(message.Text),
+		Direction: DetectDirection(message.Text),
+		Index:     message.Index,
+		CreatedAt: message.CreatedAt,
 	}
 }
 
@@ -688,5 +1013,5 @@ func inlinePreview(value string) string {
 }
 
 func bytesTrimSpace(value []byte) []byte {
-	return []byte(strings.TrimSpace(string(value)))
+	return bytes.TrimSpace(value)
 }

@@ -68,7 +68,7 @@ function createRect(top: number, height = 80): ClientRect {
 }
 
 describe("LocalProjectsSection", () => {
-  test("places show less between the collapsed slice and remaining chats", () => {
+  test("places show less after the expanded chat list", () => {
     const projectGroups: SidebarProjectGroup[] = [{
       groupKey: "project-a",
       title: "Project A",
@@ -90,8 +90,8 @@ describe("LocalProjectsSection", () => {
     const html = renderSection(projectGroups, { expandedGroups: new Set(["project-a"]) })
 
     expect(html).toContain("Show less")
-    expect(html.indexOf("chat-1")).toBeLessThan(html.indexOf("Show less"))
-    expect(html.indexOf("Show less")).toBeLessThan(html.indexOf("chat-3"))
+    expect(html.indexOf("chat-1")).toBeLessThan(html.indexOf("chat-3"))
+    expect(html.indexOf("chat-3")).toBeLessThan(html.indexOf("Show less"))
   })
 
   test("shows the most recent 5 chats when there are no chats in the last 24 hours", () => {
@@ -160,6 +160,26 @@ describe("LocalProjectsSection", () => {
 
     expect(html).toContain("Renamed Sidebar Project")
     expect(html).not.toContain(">project-a<")
+  })
+
+  test("keeps project header actions in flow so RTL titles do not collide with them", () => {
+    const projectGroups: SidebarProjectGroup[] = [{
+      groupKey: "project-a",
+      title: "Project A",
+      realTitle: "Project A",
+      localPath: "/tmp/project-a",
+      chats: [],
+      previewChats: [],
+      olderChats: [],
+      defaultCollapsed: false,
+    }]
+
+    const html = renderSection(projectGroups, {
+      onNewLocalChat: () => undefined,
+    })
+
+    expect(html).toContain("flex shrink-0 items-center gap-[1px]")
+    expect(html).not.toContain("absolute right-2 flex items-center gap-[1px]")
   })
 
   test("hides the faux new chat row when the empty project is collapsed", () => {

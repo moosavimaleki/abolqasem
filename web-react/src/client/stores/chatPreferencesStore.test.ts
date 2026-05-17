@@ -67,6 +67,11 @@ describe("migrateChatPreferencesState", () => {
           modelOptions: { reasoningEffort: "minimal", fastMode: true },
           planMode: false,
         },
+        gemini: {
+          model: "gemini-3-pro-preview",
+          modelOptions: {},
+          planMode: false,
+        },
       },
       chatStates: {},
       legacyComposerState: {
@@ -107,7 +112,7 @@ describe("migrateChatPreferencesState", () => {
     })
   })
 
-  test("rewrites persisted Codex defaults to gpt-5.5 during migration", () => {
+  test("rewrites persisted Codex defaults to the Abolqasem default during migration", () => {
     const migrated = migrateChatPreferencesState({
       defaultProvider: "last_used",
       providerDefaults: {
@@ -126,7 +131,7 @@ describe("migrateChatPreferencesState", () => {
     })
   })
 
-  test("rewrites persisted Codex composer state to gpt-5.5 during migration", () => {
+  test("rewrites persisted Codex composer state to the Abolqasem default during migration", () => {
     const migrated = migrateChatPreferencesState({
       defaultProvider: "codex",
       providerDefaults: {
@@ -391,6 +396,76 @@ describe("chat preference store", () => {
       model: "gpt-5.5",
       modelOptions: { reasoningEffort: "low", fastMode: true },
       planMode: false,
+    })
+  })
+
+  test("setComposerState records the last used provider for untouched new-chat state", () => {
+    const store = useChatPreferencesStore.getState()
+
+    store.initializeComposerForChat(NEW_CHAT_COMPOSER_ID)
+    store.setComposerState("chat-a", {
+      provider: "codex",
+      model: "gpt-5.5",
+      modelOptions: { reasoningEffort: "low", fastMode: true },
+      planMode: false,
+    })
+
+    expect(useChatPreferencesStore.getState().legacyComposerState).toEqual({
+      provider: "codex",
+      model: "gpt-5.5",
+      modelOptions: { reasoningEffort: "low", fastMode: true },
+      planMode: false,
+    })
+    expect(useChatPreferencesStore.getState().getComposerState(NEW_CHAT_COMPOSER_ID)).toEqual({
+      provider: "codex",
+      model: "gpt-5.5",
+      modelOptions: { reasoningEffort: "low", fastMode: true },
+      planMode: false,
+    })
+  })
+
+  test("setChatComposerProvider records the last used provider for new chats", () => {
+    const store = useChatPreferencesStore.getState()
+
+    store.initializeComposerForChat(NEW_CHAT_COMPOSER_ID)
+    store.setChatComposerProvider("chat-a", "codex")
+
+    expect(useChatPreferencesStore.getState().legacyComposerState).toEqual({
+      provider: "codex",
+      model: "gpt-5.5",
+      modelOptions: { reasoningEffort: "high", fastMode: false },
+      planMode: false,
+    })
+    expect(useChatPreferencesStore.getState().getComposerState(NEW_CHAT_COMPOSER_ID)).toEqual({
+      provider: "codex",
+      model: "gpt-5.5",
+      modelOptions: { reasoningEffort: "high", fastMode: false },
+      planMode: false,
+    })
+  })
+
+  test("setDefaultProvider to last_used refreshes untouched new-chat state from last-used composer", () => {
+    const store = useChatPreferencesStore.getState()
+
+    useChatPreferencesStore.setState({
+      ...INITIAL_STATE,
+      defaultProvider: "claude",
+      legacyComposerState: {
+        provider: "codex",
+        model: "gpt-5.5",
+        modelOptions: { reasoningEffort: "low", fastMode: true },
+        planMode: true,
+      },
+    })
+
+    store.initializeComposerForChat(NEW_CHAT_COMPOSER_ID)
+    store.setDefaultProvider("last_used")
+
+    expect(useChatPreferencesStore.getState().getComposerState(NEW_CHAT_COMPOSER_ID)).toEqual({
+      provider: "codex",
+      model: "gpt-5.5",
+      modelOptions: { reasoningEffort: "low", fastMode: true },
+      planMode: true,
     })
   })
 

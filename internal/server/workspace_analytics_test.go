@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestTrackWorkspaceAnalyticsToggleUsesKannaEventNames(t *testing.T) {
+func TestTrackWorkspaceAnalyticsToggleUsesAbolqasemEventNames(t *testing.T) {
 	reporter := &recordingAnalyticsReporter{}
 	previous := workspaceAnalyticsReporter
 	workspaceAnalyticsReporter = reporter

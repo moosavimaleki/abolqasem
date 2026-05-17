@@ -14,6 +14,7 @@ const (
 	KindResult               = "result"
 	KindStatus               = "status"
 	KindContextWindowUpdated = "context_window_updated"
+	KindRateLimitUpdated     = "rate_limit_updated"
 	KindCompactBoundary      = "compact_boundary"
 	KindCompactSummary       = "compact_summary"
 	KindContextCleared       = "context_cleared"

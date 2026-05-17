@@ -285,7 +285,6 @@ Web frontend
 
 ```txt
 canList
-canResume
 canStart
 canSend
 canSteer

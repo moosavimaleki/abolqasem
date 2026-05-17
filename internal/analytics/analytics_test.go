@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestStaticAnalyticsNamesMatchKanna(t *testing.T) {
+func TestStaticAnalyticsNamesMatchAbolqasem(t *testing.T) {
 	expectedEvents := []string{
 		"app_launch",
 		"project_opened",
@@ -42,7 +42,7 @@ func TestStaticAnalyticsNamesMatchKanna(t *testing.T) {
 	}
 }
 
-func TestLaunchPropertiesMatchKanna(t *testing.T) {
+func TestLaunchPropertiesMatchAbolqasem(t *testing.T) {
 	properties := LaunchProperties(LaunchOptions{
 		Port:        4000,
 		DefaultPort: 3210,

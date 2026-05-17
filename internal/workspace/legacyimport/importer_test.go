@@ -1,6 +1,7 @@
 package legacyimport
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -9,7 +10,7 @@ import (
 	"ai-agent-manager/internal/workspace/transcript"
 )
 
-func TestImportSessionMapsLegacyParserMessagesToReadOnlyChat(t *testing.T) {
+func TestImportSessionMapsParserMessagesToWritableChatIDs(t *testing.T) {
 	created := time.UnixMilli(1_700_000_000_000)
 	updated := created.Add(2 * time.Minute)
 	meta := state.SessionMeta{
@@ -28,8 +29,14 @@ func TestImportSessionMapsLegacyParserMessagesToReadOnlyChat(t *testing.T) {
 
 	imported := ImportSession(meta, messages, ImportOptions{})
 
-	if !imported.ReadOnly {
-		t.Fatal("expected legacy import to be read-only")
+	if imported.ReadOnly {
+		t.Fatal("expected imported TUI session to be writable")
+	}
+	if !strings.HasPrefix(imported.Chat.ID, "chat-") || strings.HasPrefix(imported.Chat.ID, "legacy-") {
+		t.Fatalf("expected normal chat id, got %q", imported.Chat.ID)
+	}
+	if !strings.HasPrefix(imported.Project.ID, "project-") || strings.HasPrefix(imported.Project.ID, "legacy-") {
+		t.Fatalf("expected normal project id, got %q", imported.Project.ID)
 	}
 	if imported.Project.Title != "project" || imported.Project.LocalPath != "/tmp/project" {
 		t.Fatalf("unexpected project: %#v", imported.Project)
@@ -57,7 +64,50 @@ func TestImportSessionMapsLegacyParserMessagesToReadOnlyChat(t *testing.T) {
 	}
 }
 
-func TestLegacyChatIDDeduplicatesByAgentAndTranscriptPath(t *testing.T) {
+func TestImportSessionReplacesGeneratedLegacyTitleWithFirstUserMessage(t *testing.T) {
+	meta := state.SessionMeta{
+		Key:            "codex:aaaa-bbbb-cccc-dddd-eeee",
+		Agent:          "codex",
+		SessionID:      "aaaa-bbbb-cccc-dddd-eeee",
+		SessionName:    "aaaa-bbbb-cccc-dddd-eeee",
+		TranscriptPath: "/tmp/project/session.jsonl",
+		Cwd:            "/tmp/project",
+		ProjectName:    "project",
+	}
+	messages := []parser.Message{
+		{ID: "m1", Role: "assistant", Text: "assistant preface", Index: 1},
+		{ID: "m2", Role: "user", Text: "اولین پیام کاربر", Index: 2},
+	}
+
+	imported := ImportSession(meta, messages, ImportOptions{})
+
+	if imported.Chat.Title != "اولین پیام کاربر" {
+		t.Fatalf("expected title from first user message, got %q", imported.Chat.Title)
+	}
+}
+
+func TestImportSessionKeepsCustomLegacyTitle(t *testing.T) {
+	meta := state.SessionMeta{
+		Key:            "codex:session-1",
+		Agent:          "codex",
+		SessionID:      "session-1",
+		SessionName:    "Custom title",
+		TranscriptPath: "/tmp/project/session.jsonl",
+		Cwd:            "/tmp/project",
+		ProjectName:    "project",
+	}
+	messages := []parser.Message{
+		{ID: "m1", Role: "user", Text: "first prompt", Index: 1},
+	}
+
+	imported := ImportSession(meta, messages, ImportOptions{})
+
+	if imported.Chat.Title != "Custom title" {
+		t.Fatalf("expected custom title to be preserved, got %q", imported.Chat.Title)
+	}
+}
+
+func TestImportedChatIDDeduplicatesByAgentAndTranscriptPath(t *testing.T) {
 	first := state.SessionMeta{
 		Key:            "codex:rollout-1",
 		Agent:          "codex",
@@ -71,8 +121,8 @@ func TestLegacyChatIDDeduplicatesByAgentAndTranscriptPath(t *testing.T) {
 		TranscriptPath: "/tmp/project/session.jsonl",
 	}
 
-	if LegacyChatID(first) != LegacyChatID(second) {
-		t.Fatalf("expected same legacy chat id for same transcript path")
+	if ImportedChatID(first) != ImportedChatID(second) {
+		t.Fatalf("expected same imported chat id for same transcript path")
 	}
 }
 

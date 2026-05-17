@@ -12,7 +12,7 @@ import {
   SquarePen,
   Terminal,
 } from "lucide-react"
-import { APP_NAME, getCliInvocation, SDK_CLIENT_APP } from "../../shared/branding"
+import { getCliInvocation, LOCAL_UI_URL, SDK_CLIENT_APP } from "../../shared/branding"
 import type { LocalProjectsSnapshot } from "../../shared/types"
 import type { SocketStatus } from "../app/socket"
 import { PageHeader } from "../app/PageHeader"
@@ -58,7 +58,7 @@ function CopyButton({ text }: { text: string }) {
 
 function CodeBlock({ children }: { children: string }) {
   return (
-    <div className="grid grid-cols-[1fr_auto] items-center group bg-background border border-border text-foreground rounded-xl p-1.5 pl-3 font-mono text-sm">
+    <div dir="ltr" className="group grid grid-cols-[1fr_auto] items-center rounded-xl border border-border bg-background p-1.5 ps-3 font-mono text-sm text-foreground">
       <pre className="inline-flex items-center gap-2 overflow-x-auto">
         <ChevronRight className="inline h-4 w-4 opacity-40" />
         <code>{children}</code>
@@ -142,7 +142,7 @@ function ProjectCard({
       <TooltipTrigger asChild>
         <button
           className={cn(
-            "border border-border hover:border-primary/30 group rounded-lg bg-card px-4 py-3 flex items-center gap-3 w-full text-left hover:bg-muted/50 transition-colors",
+            "group flex w-full items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 text-start transition-colors hover:border-primary/30 hover:bg-muted/50",
             loading && "opacity-50 cursor-not-allowed"
           )}
           disabled={loading}
@@ -177,13 +177,14 @@ export function LocalDev({
   onOpenProject,
   onCreateProject,
 }: LocalDevProps) {
-  const { t } = useI18n()
+  const { t, direction } = useI18n()
   const projects = useMemo(() => snapshot?.projects ?? [], [snapshot?.projects])
   const isConnecting = connectionStatus === "connecting" || !ready
   const isConnected = connectionStatus === "connected" && ready
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 bg-background overflow-y-auto">
+    <div className="flex-1 flex flex-col min-w-0 bg-background overflow-y-auto [direction:ltr]">
+      <div className="flex min-h-full flex-col" dir={direction}>
       {!isConnected ? (
         <>
           <PageHeader
@@ -205,7 +206,7 @@ export function LocalDev({
                       t.localDev.connectingServer()
                     ) : (
                       <>
-                        {t.localDev.notConnectedPrefix} <code className="bg-background border border-border rounded-md mx-0.5 p-1 font-mono text-xs text-foreground">{getCliInvocation()}</code> {t.localDev.notConnectedSuffix}
+                        {t.localDev.notConnectedPrefix} <code className="bg-background border border-border rounded-md mx-0.5 p-1 font-mono text-xs text-foreground">{getCliInvocation("open")}</code> {t.localDev.notConnectedSuffix}
                       </>
                     )}
                   </span>
@@ -218,7 +219,7 @@ export function LocalDev({
               <SectionHeader>{t.localDev.howItWorks}</SectionHeader>
               <InfoCard>
                 <div className="flex items-center justify-around gap-6 py-4 px-2">
-                  <HowItWorksItem icon={Terminal} title={`${APP_NAME} CLI`} subtitle={t.localDev.cliSubtitle} />
+                  <HowItWorksItem icon={Terminal} title={t.localDev.cliTitle()} subtitle={t.localDev.cliSubtitle} />
                   <HowItWorksConnector />
                   <HowItWorksItem icon={Monitor} title={t.localDev.serverTitle()} subtitle={t.localDev.localWebSocket} />
                   <HowItWorksConnector />
@@ -235,24 +236,24 @@ export function LocalDev({
                 <div className="space-y-4">
                   <Step number={1} title={t.localDev.startApp()}>
                     <p>{t.localDev.runCommand}</p>
-                    <CodeBlock>{getCliInvocation()}</CodeBlock>
+                    <CodeBlock>{getCliInvocation("open")}</CodeBlock>
                   </Step>
 
                   <Step number={2} title={t.localDev.openLocalUi}>
                     <p>{t.localDev.openLocalUiDescription()}</p>
-                    <CodeBlock>http://localhost:3210/local</CodeBlock>
+                    <CodeBlock>{LOCAL_UI_URL}</CodeBlock>
                   </Step>
 
                   <div className="mt-8">
                     <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-4">{t.localDev.notes}</h3>
                     <div className="space-y-3 text-sm">
                       <div className="flex gap-4">
-                        <code className="font-mono text-foreground whitespace-nowrap">{getCliInvocation("").trim()}</code>
-                        <span className="text-muted-foreground">{t.localDev.startCurrentDirectory}</span>
+                        <code className="font-mono text-foreground whitespace-nowrap">{getCliInvocation("status")}</code>
+                        <span className="text-muted-foreground">{t.localDev.checkStatus}</span>
                       </div>
                       <div className="flex gap-4">
-                        <code className="font-mono text-foreground whitespace-nowrap">{getCliInvocation("--no-open")}</code>
-                        <span className="text-muted-foreground">{t.localDev.startWithoutBrowser}</span>
+                        <code className="font-mono text-foreground whitespace-nowrap">{getCliInvocation("service start")}</code>
+                        <span className="text-muted-foreground">{t.localDev.startBackgroundService}</span>
                       </div>
                     </div>
                   </div>
@@ -273,7 +274,7 @@ export function LocalDev({
             <div className="flex items-baseline justify-between mb-3">
               <h2 className="text-[13px] font-medium text-muted-foreground uppercase tracking-wider">{t.localDev.projects}</h2>
               <Button variant="default" size="sm" onClick={() => onNewProjectOpenChange(true)}>
-                <Plus className="h-4 w-4 mr-1.5" />
+                <Plus className="h-4 w-4 me-1.5" />
                 {t.localDev.addProject}
               </Button>
             </div>
@@ -316,6 +317,7 @@ export function LocalDev({
 
       <div className="py-4 text-center">
         <span className="text-xs text-muted-foreground/50">v{SDK_CLIENT_APP.split("/")[1]}</span>
+      </div>
       </div>
     </div>
   )

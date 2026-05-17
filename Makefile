@@ -2,7 +2,10 @@ APP=ai-agent-manager
 PKG=./cmd/ai-agent-manager
 DIST=dist
 
-.PHONY: clean build test build-all
+.PHONY: clean build test build-all web-build
+
+web-build:
+	sh scripts/prepare-web-assets.sh
 
 clean:
 	rm -rf $(DIST)
@@ -12,11 +15,11 @@ test:
 	go vet ./...
 	go test ./...
 
-build:
+build: web-build
 	mkdir -p $(DIST)
 	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X ai-agent-manager/internal/buildinfo.Version=dev" -o $(DIST)/$(APP) $(PKG)
 
-build-all: clean
+build-all: clean web-build
 	mkdir -p $(DIST)
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w -X ai-agent-manager/internal/buildinfo.Version=dev" -o $(DIST)/$(APP)-linux-amd64 $(PKG)
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w -X ai-agent-manager/internal/buildinfo.Version=dev" -o $(DIST)/$(APP)-linux-arm64 $(PKG)

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
-import { applyDocumentLocale, getAppAuthStateFromStatus, shouldPlayChatNotificationSound, shouldRedirectToChangelog, shouldRetryAuthStatusRequest } from "./App"
+import { applyDocumentLocale, getAppAuthStateFromStatus, getDocumentBootstrapLocale, shouldPlayChatNotificationSound, shouldRedirectToChangelog, shouldRetryAuthStatusRequest, shouldShowStartupSplash } from "./App"
 import { getChatNotificationSnapshot, getChatSoundBurstCount, getNotificationTitleCount } from "./chatNotifications"
-import { DEFAULT_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, clampSidebarWidth } from "./KannaSidebar"
+import { DEFAULT_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, clampSidebarWidth } from "./AbolqasemSidebar"
 import { isBrowserUnfocused, shouldPlayChatSound } from "../lib/chatSounds"
 import type { AppSettingsSnapshot, SidebarChatRow } from "../../shared/types"
 
@@ -31,14 +31,29 @@ describe("shouldRedirectToChangelog", () => {
 describe("applyDocumentLocale", () => {
   test("applies Persian as an RTL document language", () => {
     const root = { lang: "", dir: "" }
-    expect(applyDocumentLocale("fa", root)).toBe("fa")
+    const stored: Record<string, string> = {}
+    const storage = { setItem: (key: string, value: string) => { stored[key] = value } }
+    expect(applyDocumentLocale("fa", root, storage)).toBe("fa")
     expect(root).toEqual({ lang: "fa", dir: "rtl" })
+    expect(stored["abolqasem:locale"]).toBe("fa")
   })
 
   test("falls back to English LTR for unknown locale values", () => {
     const root = { lang: "", dir: "" }
-    expect(applyDocumentLocale("de", root)).toBe("en")
+    expect(applyDocumentLocale("de", root, null)).toBe("en")
     expect(root).toEqual({ lang: "en", dir: "ltr" })
+  })
+})
+
+describe("getDocumentBootstrapLocale", () => {
+  test("uses the already-applied document language before app settings arrive", () => {
+    expect(getDocumentBootstrapLocale({ lang: "fa" })).toBe("fa")
+    expect(getDocumentBootstrapLocale({ lang: "en" })).toBe("en")
+  })
+
+  test("falls back to English for an unknown document language", () => {
+    expect(getDocumentBootstrapLocale({ lang: "" })).toBe("en")
+    expect(getDocumentBootstrapLocale({ lang: "de" })).toBe("en")
   })
 })
 
@@ -65,6 +80,16 @@ describe("auth boot helpers", () => {
     expect(shouldRetryAuthStatusRequest(null)).toBe(true)
     expect(shouldRetryAuthStatusRequest(false)).toBe(true)
     expect(shouldRetryAuthStatusRequest(true)).toBe(false)
+  })
+})
+
+describe("shouldShowStartupSplash", () => {
+  test("only shows during the initial app boot until sidebar and chat are ready", () => {
+    expect(shouldShowStartupSplash(false, false, false)).toBe(true)
+    expect(shouldShowStartupSplash(false, true, false)).toBe(true)
+    expect(shouldShowStartupSplash(false, false, true)).toBe(true)
+    expect(shouldShowStartupSplash(false, true, true)).toBe(false)
+    expect(shouldShowStartupSplash(true, false, false)).toBe(false)
   })
 })
 

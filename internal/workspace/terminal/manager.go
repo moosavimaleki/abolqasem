@@ -71,6 +71,7 @@ type process interface {
 	Resize(cols int, rows int) error
 	Kill() error
 	Wait() (int, *int)
+	PID() int
 }
 
 func NewManager(onEvent func(Event)) *Manager {
@@ -185,6 +186,27 @@ func (m *Manager) Close(terminalID string) error {
 		_ = item.process.Close()
 	})
 	return nil
+}
+
+func (m *Manager) RootPIDsByCWD(cwd string) []int {
+	cwd = normalizeCWD(cwd)
+	cwd = filepath.Clean(cwd)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	pids := make([]int, 0)
+	for _, item := range m.sessions {
+		if item == nil || item.status != "running" || item.process == nil {
+			continue
+		}
+		if filepath.Clean(item.cwd) != cwd {
+			continue
+		}
+		pid := item.process.PID()
+		if pid > 0 {
+			pids = append(pids, pid)
+		}
+	}
+	return pids
 }
 
 func (m *Manager) readLoop(item *session) {

@@ -17,13 +17,14 @@ import (
 	"strings"
 	"time"
 
+	"ai-agent-manager/internal/state"
 	"ai-agent-manager/internal/workspace/readmodels"
 )
 
 const (
 	standaloneTranscriptBundleVersion = 1
-	standaloneShareUploadBaseURL      = "https://kanna.sh/api/share"
-	standaloneSharePublicBaseURL      = "https://share.kanna.sh"
+	standaloneShareUploadBaseURL      = "https://abolqasem.sh/api/share"
+	standaloneSharePublicBaseURL      = "https://share.abolqasem.sh"
 	standaloneShareWorkspacePath      = "/workspace"
 	standaloneAssetCacheControl       = "public, max-age=31536000, immutable"
 )
@@ -88,6 +89,12 @@ type standaloneExportDeps struct {
 	UploadFile         func(targetURL string, body []byte, contentType string, cacheControl string) error
 }
 
+type standaloneExportPayload struct {
+	ChatID         string `json:"chatId"`
+	Theme          string `json:"theme"`
+	AttachmentMode string `json:"attachmentMode"`
+}
+
 type preparedStandaloneMessages struct {
 	Messages               []readmodels.TranscriptEntry
 	TotalAttachmentCount   int
@@ -95,17 +102,21 @@ type preparedStandaloneMessages struct {
 }
 
 func workspaceExportStandalone(raw json.RawMessage) (any, error) {
-	var payload struct {
-		ChatID         string `json:"chatId"`
-		Theme          string `json:"theme"`
-		AttachmentMode string `json:"attachmentMode"`
-	}
+	return workspaceExportStandaloneWithDeps(raw, standaloneExportDeps{})
+}
+
+func workspaceExportStandaloneWithDeps(raw json.RawMessage, deps standaloneExportDeps) (any, error) {
+	var payload standaloneExportPayload
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return nil, err
 	}
 	if payload.ChatID == "" {
 		return nil, errors.New("chatId is required")
 	}
+	if meta, ok := workspaceLegacySessionByChatID(payload.ChatID); ok && !workspaceStoredChatExists(payload.ChatID) {
+		return workspaceExportLegacyStandalone(payload, meta, deps)
+	}
+
 	store := workspaceStore()
 	state, err := store.LoadState()
 	if err != nil {
@@ -130,7 +141,22 @@ func workspaceExportStandalone(raw json.RawMessage) (any, error) {
 		Theme:          normalizeStandaloneTheme(payload.Theme),
 		AttachmentMode: normalizeStandaloneAttachmentMode(payload.AttachmentMode),
 		Messages:       transcript.Messages,
-	}, standaloneExportDeps{})
+	}, deps)
+}
+
+func workspaceExportLegacyStandalone(payload standaloneExportPayload, meta state.SessionMeta, deps standaloneExportDeps) (any, error) {
+	imported, err := workspaceImportedLegacySession(meta)
+	if err != nil {
+		return nil, err
+	}
+	return writeStandaloneTranscriptExport(standaloneExportArgs{
+		ChatID:         imported.Chat.ID,
+		Title:          imported.Chat.Title,
+		LocalPath:      imported.Project.LocalPath,
+		Theme:          normalizeStandaloneTheme(payload.Theme),
+		AttachmentMode: normalizeStandaloneAttachmentMode(payload.AttachmentMode),
+		Messages:       imported.Transcript.Messages,
+	}, deps)
 }
 
 func writeStandaloneTranscriptExport(args standaloneExportArgs, deps standaloneExportDeps) (any, error) {
@@ -149,7 +175,7 @@ func writeStandaloneTranscriptExport(args standaloneExportArgs, deps standaloneE
 		uploadFile = uploadStandaloneFile
 	}
 
-	exportRootDir := filepath.Join(resolveWorkspaceLocalPath(args.LocalPath), ".kanna", "exports")
+	exportRootDir := filepath.Join(resolveWorkspaceLocalPath(args.LocalPath), ".abolqasem", "exports")
 	if err := os.MkdirAll(exportRootDir, 0o755); err != nil {
 		return nil, err
 	}

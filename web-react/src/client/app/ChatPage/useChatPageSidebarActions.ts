@@ -15,7 +15,7 @@ import type {
   GitHubRepoAvailabilityResult,
 } from "../../../shared/types"
 import { useAppDialog } from "../../components/ui/app-dialog"
-import type { KannaState } from "../useKannaState"
+import type { AbolqasemState } from "../useAbolqasemState"
 import {
   DIFF_REFRESH_INTERVAL_MS,
   EMPTY_DIFF_SNAPSHOT,
@@ -27,7 +27,7 @@ import {
 export { EMPTY_DIFF_SNAPSHOT }
 
 interface UseChatPageSidebarActionsArgs {
-  state: KannaState
+  state: AbolqasemState
   projectId: string | null
   showRightSidebar: boolean
 }
@@ -42,8 +42,8 @@ export function useChatPageSidebarActions({
   const [wrapDiffLines, setWrapDiffLines] = useState(false)
   const terminalDiffRefreshTimeoutRef = useRef<number | null>(null)
   const wasProcessingRef = useRef(false)
-  const lastProjectGitRefreshProjectIdRef = useRef<string | null>(null)
   const activeChatIdRef = useRef<string | null>(state.activeChatId)
+  const activeChatReadyForDiffsRef = useRef(false)
   const projectPathRef = useRef<string | null>(state.runtime?.localPath ?? state.navbarLocalPath ?? null)
 
   useEffect(() => {
@@ -51,20 +51,19 @@ export function useChatPageSidebarActions({
   }, [state.activeChatId])
 
   useEffect(() => {
+    activeChatReadyForDiffsRef.current = Boolean(
+      state.activeChatId
+      && state.chatSnapshot?.runtime.chatId === state.activeChatId
+    )
+  }, [state.activeChatId, state.chatSnapshot?.runtime.chatId])
+
+  useEffect(() => {
     projectPathRef.current = state.runtime?.localPath ?? state.navbarLocalPath ?? null
   }, [state.navbarLocalPath, state.runtime?.localPath])
 
-  const refreshProjectGitSnapshot = useCallback(() => {
-    const chatId = activeChatIdRef.current
-    if (!chatId) {
-      return
-    }
-    void state.socket.command({ type: "chat.refreshDiffs", chatId }).catch(() => {})
-  }, [state.socket])
-
   const refreshDiffs = useCallback(() => {
     const chatId = activeChatIdRef.current
-    if (!chatId || !showRightSidebar) {
+    if (!chatId || !showRightSidebar || !activeChatReadyForDiffsRef.current) {
       return
     }
     void state.socket.command({ type: "chat.refreshDiffs", chatId }).catch(() => {})
@@ -201,7 +200,8 @@ export function useChatPageSidebarActions({
   }, [dialog, state.socket])
 
   const handleOpenDiffInFinder = useCallback((filePath: string) => {
-    void state.handleOpenExternalPath("open_finder", filePath)
+    const projectPath = projectPathRef.current
+    void state.handleOpenExternalPath("open_finder", resolveDiffFilePath(projectPath, filePath))
   }, [state.handleOpenExternalPath])
 
   const handleCommitDiffs = useCallback(async (args: { paths: string[]; summary: string; description: string; mode: DiffCommitMode }) => {
@@ -304,7 +304,7 @@ export function useChatPageSidebarActions({
         chatId,
       })
       if (result.snapshotChanged) {
-        refreshProjectGitSnapshot()
+        refreshDiffs()
       }
       if (!result.ok) {
         await dialog.alert({
@@ -322,7 +322,7 @@ export function useChatPageSidebarActions({
       })
       return null
     }
-  }, [dialog, refreshProjectGitSnapshot, state.socket])
+  }, [dialog, refreshDiffs, state.socket])
 
   const handleGetGitHubPublishInfo = useCallback(async () => {
     const chatId = activeChatIdRef.current
@@ -379,7 +379,7 @@ export function useChatPageSidebarActions({
         description: args.description.trim() || undefined,
       })
       if (result.snapshotChanged) {
-        refreshProjectGitSnapshot()
+        refreshDiffs()
       }
       if (!result.ok) {
         await dialog.alert({
@@ -397,7 +397,7 @@ export function useChatPageSidebarActions({
       })
       return null
     }
-  }, [dialog, refreshProjectGitSnapshot, state.socket])
+  }, [dialog, refreshDiffs, state.socket])
 
   const handleListBranches = useCallback(async () => {
     const chatId = activeChatIdRef.current
@@ -596,17 +596,6 @@ export function useChatPageSidebarActions({
 
     refreshDiffs()
   }, [projectId, refreshDiffs, showRightSidebar])
-
-  useEffect(() => {
-    if (!projectId || !state.activeChatId) {
-      return
-    }
-    if (lastProjectGitRefreshProjectIdRef.current === projectId) {
-      return
-    }
-    lastProjectGitRefreshProjectIdRef.current = projectId
-    refreshProjectGitSnapshot()
-  }, [projectId, refreshProjectGitSnapshot, state.activeChatId])
 
   useEffect(() => {
     if (!projectId || !showRightSidebar) {

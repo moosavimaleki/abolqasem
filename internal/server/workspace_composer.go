@@ -29,10 +29,13 @@ const (
 )
 
 var (
-	workspaceCoordinatorMu  sync.Mutex
-	workspaceCoordinator    *agent.Coordinator
-	workspaceCoordinatorDir string
-	workspaceConnections    = newWorkspaceConnectionRegistry()
+	workspaceCoordinatorMu      sync.Mutex
+	workspaceCoordinator        *agent.Coordinator
+	workspaceCoordinatorDir     string
+	workspaceConnections        = newWorkspaceConnectionRegistry()
+	workspaceTurnStarterFactory = func(store *eventstore.Store) agent.TurnStarter {
+		return newWorkspaceTurnStarter(store)
+	}
 )
 
 type workspaceEventStore struct {
@@ -163,7 +166,30 @@ func (r *workspaceConnectionRegistry) broadcastProjectGit(projectID string) {
 	if strings.TrimSpace(projectID) == "" {
 		return
 	}
-	r.broadcastTopic(projectGitSubscription+projectID, protocol.SnapshotProjectGit, workspaceProjectGitSnapshot(projectID))
+	subscribers := r.topicSubscribers(projectGitSubscription + projectID)
+	if len(subscribers) == 0 {
+		return
+	}
+	r.broadcastProjectGitTo(subscribers, workspaceProjectGitSnapshot(projectID))
+}
+
+func (r *workspaceConnectionRegistry) broadcastProjectGitSnapshot(projectID string, snapshot any) {
+	if strings.TrimSpace(projectID) == "" {
+		return
+	}
+	subscribers := r.topicSubscribers(projectGitSubscription + projectID)
+	if len(subscribers) == 0 {
+		return
+	}
+	r.broadcastProjectGitTo(subscribers, snapshot)
+}
+
+func (r *workspaceConnectionRegistry) broadcastProjectGitTo(subscribers map[*workspaceConnection][]string, snapshot any) {
+	for conn, subscriptionIDs := range subscribers {
+		for _, subscriptionID := range subscriptionIDs {
+			_ = conn.write(protocol.SnapshotEnvelope(subscriptionID, protocol.SnapshotProjectGit, snapshot))
+		}
+	}
 }
 
 func workspaceAgentCoordinator() *agent.Coordinator {
@@ -174,7 +200,8 @@ func workspaceAgentCoordinator() *agent.Coordinator {
 		return workspaceCoordinator
 	}
 	workspaceCoordinatorDir = dir
-	workspaceCoordinator = agent.NewCoordinator(&workspaceEventStore{store: eventstore.New(dir)}, nil, func(chatID string) {
+	store := eventstore.New(dir)
+	workspaceCoordinator = agent.NewCoordinator(&workspaceEventStore{store: store}, workspaceTurnStarterFactory(store), func(chatID string) {
 		workspaceConnections.broadcast(chatID)
 	})
 	return workspaceCoordinator
@@ -241,7 +268,98 @@ func (s *workspaceEventStore) SetSessionToken(chatID string, sessionToken string
 	if err != nil {
 		return err
 	}
-	return s.store.Append(events.StreamTurns, event)
+	if err := s.store.Append(events.StreamTurns, event); err != nil {
+		return err
+	}
+	clearPending, err := events.New(events.TypePendingForkSessionTokenSet, map[string]any{"chatId": chatID, "pendingForkSessionToken": (*string)(nil)})
+	if err != nil {
+		return err
+	}
+	return s.store.Append(events.StreamTurns, clearPending)
+}
+
+func (s *workspaceEventStore) EnsureSystemInit(chatID string, provider string, model string) error {
+	hasSystemInit, err := s.chatHasSystemInit(chatID)
+	if err != nil {
+		return err
+	}
+	if hasSystemInit {
+		return nil
+	}
+	return s.AppendTranscriptEntry(chatID, transcript.New(transcript.KindSystemInit, workspaceSystemInitFields(provider, model)))
+}
+
+func (s *workspaceEventStore) chatHasSystemInit(chatID string) (bool, error) {
+	messageEvents, err := s.store.Replay(events.StreamMessages)
+	if err != nil {
+		return false, err
+	}
+	for _, event := range messageEvents {
+		if event.Type != events.TypeMessageAppended {
+			continue
+		}
+		var data struct {
+			ChatID string                     `json:"chatId"`
+			Entry  readmodels.TranscriptEntry `json:"entry"`
+		}
+		if event.DecodeData(&data) != nil || data.ChatID != chatID {
+			continue
+		}
+		if transcript.Kind(data.Entry) == transcript.KindSystemInit {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func workspaceSystemInitFields(provider string, model string) map[string]any {
+	provider = strings.TrimSpace(provider)
+	if provider == "" {
+		provider = "codex"
+	}
+	model = strings.TrimSpace(model)
+	if model == "" {
+		model = catalog.GetOrDefault(provider).DefaultModel
+	}
+	return map[string]any{
+		"provider":      provider,
+		"model":         model,
+		"tools":         workspaceSystemTools(provider),
+		"agents":        workspaceSystemAgents(provider),
+		"slashCommands": []string{},
+		"mcpServers":    []map[string]any{},
+	}
+}
+
+func workspaceSystemTools(provider string) []string {
+	if provider == "claude" {
+		return []string{
+			"Skill",
+			"WebFetch",
+			"WebSearch",
+			"Task",
+			"TaskOutput",
+			"Bash",
+			"Glob",
+			"Grep",
+			"Read",
+			"Edit",
+			"Write",
+			"TodoWrite",
+			"KillShell",
+			"AskUserQuestion",
+			"EnterPlanMode",
+			"ExitPlanMode",
+		}
+	}
+	return []string{"Bash", "Write", "Edit", "WebSearch", "TodoWrite", "AskUserQuestion", "ExitPlanMode"}
+}
+
+func workspaceSystemAgents(provider string) []string {
+	if provider == "codex" {
+		return []string{"spawnAgent", "sendInput", "resumeAgent", "wait", "closeAgent"}
+	}
+	return []string{}
 }
 
 func (s *workspaceEventStore) AppendUserPrompt(chatID string, content string, attachments []readmodels.ChatAttachment, steered bool) error {
@@ -251,6 +369,19 @@ func (s *workspaceEventStore) AppendUserPrompt(chatID string, content string, at
 		"steered":     steered,
 	})
 	return s.AppendTranscriptEntry(chatID, entry)
+}
+
+func (s *workspaceEventStore) RecordCheckpointBeforeUserPrompt(chatID string, content string, attachments []readmodels.ChatAttachment, steered bool) error {
+	record, err := workspaceCreateCheckpoint(workspaceCreateCheckpointArgs{
+		ChatID:        chatID,
+		Trigger:       workspaceCheckpointTriggerPrompt,
+		PromptPreview: content,
+	})
+	if err != nil {
+		return err
+	}
+	workspaceConnections.broadcastProjectGit(record.ProjectID)
+	return nil
 }
 
 func (s *workspaceEventStore) AppendTranscriptEntry(chatID string, entry readmodels.TranscriptEntry) error {
@@ -423,11 +554,50 @@ func workspaceCreateChat(projectID string) (readmodels.ChatRecord, error) {
 }
 
 func workspaceMarkChatRead(chatID string) error {
+	chatID = strings.TrimSpace(chatID)
+	if chatID == "" {
+		return errors.New("chatId is required")
+	}
+
+	storeState, err := workspaceStore().LoadStateLight()
+	if err != nil {
+		return err
+	}
+	if err := workspaceClearLegacySessionUnread(chatID, storeState); err != nil {
+		return err
+	}
+
+	chat, ok := storeState.ChatsByID[chatID]
+	if !ok || chat.DeletedAt != 0 {
+		return nil
+	}
+
 	event, err := events.New(events.TypeChatReadStateSet, map[string]any{"chatId": chatID, "unread": false})
 	if err != nil {
 		return err
 	}
 	return workspaceStore().Append(events.StreamChats, event)
+}
+
+func workspaceClearLegacySessionUnread(chatID string, storeState readmodels.StoreState) error {
+	appState, err := workspaceLoadLegacyState()
+	if err != nil || appState == nil {
+		return nil
+	}
+
+	cleared := false
+	if meta, ok := workspaceLegacySessionByChatID(chatID); ok {
+		cleared = state.MarkSessionRead(appState, meta.Key) || cleared
+	}
+	if chat, ok := storeState.ChatsByID[chatID]; ok && chat.DeletedAt == 0 {
+		if meta, ok := workspaceLegacySessionByProviderToken(derefWorkspaceString(chat.Provider), derefWorkspaceString(chat.SessionToken)); ok {
+			cleared = state.MarkSessionRead(appState, meta.Key) || cleared
+		}
+	}
+	if !cleared {
+		return nil
+	}
+	return workspaceSaveLegacyState(appState)
 }
 
 func workspaceAppendAssistantText(chatID string, text string) error {

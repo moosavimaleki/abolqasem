@@ -2,11 +2,14 @@ package readmodels
 
 import (
 	"sort"
+	"time"
 
 	"ai-agent-manager/internal/providers/catalog"
 	"ai-agent-manager/internal/workspace/events"
 	"ai-agent-manager/internal/workspace/transcript"
 )
+
+const sidebarRecentWindowMs = 24 * 60 * 60 * 1000
 
 type ProjectRecord struct {
 	ID           string  `json:"id"`
@@ -43,15 +46,15 @@ type StoreState struct {
 	QueuedMessagesByChatID map[string][]QueuedChatMessage
 }
 
-type KannaStatus string
+type AbolqasemStatus string
 
 const (
-	StatusIdle           KannaStatus = "idle"
-	StatusStarting       KannaStatus = "starting"
-	StatusRunning        KannaStatus = "running"
-	StatusWaitingForUser KannaStatus = "waiting_for_user"
-	StatusFailed         KannaStatus = "failed"
-	StatusCancelled      KannaStatus = "cancelled"
+	StatusIdle           AbolqasemStatus = "idle"
+	StatusStarting       AbolqasemStatus = "starting"
+	StatusRunning        AbolqasemStatus = "running"
+	StatusWaitingForUser AbolqasemStatus = "waiting_for_user"
+	StatusFailed         AbolqasemStatus = "failed"
+	StatusCancelled      AbolqasemStatus = "cancelled"
 )
 
 type ChatAttachment struct {
@@ -79,18 +82,18 @@ type QueuedChatMessage struct {
 type TranscriptEntry = transcript.Entry
 
 type ChatRuntime struct {
-	ChatID           string      `json:"chatId"`
-	ProjectID        string      `json:"projectId"`
-	LocalPath        string      `json:"localPath"`
-	Title            string      `json:"title"`
-	Status           KannaStatus `json:"status"`
-	IsDraining       bool        `json:"isDraining"`
-	Provider         *string     `json:"provider"`
-	PlanMode         bool        `json:"planMode"`
-	SessionToken     *string     `json:"sessionToken"`
-	ReadOnly         bool        `json:"readOnly,omitempty"`
-	CanResume        bool        `json:"canResume,omitempty"`
-	LegacySessionKey string      `json:"legacySessionKey,omitempty"`
+	ChatID                  string          `json:"chatId"`
+	ProjectID               string          `json:"projectId"`
+	LocalPath               string          `json:"localPath"`
+	Title                   string          `json:"title"`
+	Status                  AbolqasemStatus `json:"status"`
+	IsDraining              bool            `json:"isDraining"`
+	Provider                *string         `json:"provider"`
+	PlanMode                bool            `json:"planMode"`
+	SessionToken            *string         `json:"sessionToken"`
+	PendingForkSessionToken *string         `json:"pendingForkSessionToken,omitempty"`
+	ReadOnly                bool            `json:"readOnly,omitempty"`
+	LegacySessionKey        string          `json:"legacySessionKey,omitempty"`
 }
 
 type ChatHistorySnapshot struct {
@@ -167,7 +170,6 @@ type SidebarChatRow struct {
 	HasAutomation    bool    `json:"hasAutomation"`
 	CanFork          bool    `json:"canFork,omitempty"`
 	ReadOnly         bool    `json:"readOnly,omitempty"`
-	CanResume        bool    `json:"canResume,omitempty"`
 	LegacySessionKey string  `json:"legacySessionKey,omitempty"`
 }
 
@@ -246,6 +248,7 @@ func Apply(state StoreState, event events.Event) StoreState {
 		record.UpdatedAt = event.Timestamp
 		record.Unread = false
 		state.ChatsByID[record.ID] = record
+		state = touchProjectTimestampForChat(state, record, event.Timestamp)
 	case events.TypeChatRenamed:
 		var data struct {
 			ChatID string `json:"chatId"`
@@ -258,6 +261,7 @@ func Apply(state StoreState, event events.Event) StoreState {
 		record.Title = data.Title
 		record.UpdatedAt = event.Timestamp
 		state.ChatsByID[data.ChatID] = record
+		state = touchProjectTimestampForChat(state, record, event.Timestamp)
 	case events.TypeChatDeleted:
 		state = markChatTimestamp(state, event, func(record *ChatRecord) { record.DeletedAt = event.Timestamp })
 	case events.TypeChatArchived:
@@ -276,6 +280,7 @@ func Apply(state StoreState, event events.Event) StoreState {
 		record.Provider = &data.Provider
 		record.UpdatedAt = event.Timestamp
 		state.ChatsByID[data.ChatID] = record
+		state = touchProjectTimestampForChat(state, record, event.Timestamp)
 	case events.TypeChatPlanModeSet:
 		var data struct {
 			ChatID   string `json:"chatId"`
@@ -288,6 +293,7 @@ func Apply(state StoreState, event events.Event) StoreState {
 		record.PlanMode = data.PlanMode
 		record.UpdatedAt = event.Timestamp
 		state.ChatsByID[data.ChatID] = record
+		state = touchProjectTimestampForChat(state, record, event.Timestamp)
 	case events.TypeChatReadStateSet:
 		var data struct {
 			ChatID string `json:"chatId"`
@@ -300,6 +306,7 @@ func Apply(state StoreState, event events.Event) StoreState {
 		record.Unread = data.Unread
 		record.UpdatedAt = event.Timestamp
 		state.ChatsByID[data.ChatID] = record
+		state = touchProjectTimestampForChat(state, record, event.Timestamp)
 	case events.TypeMessageAppended:
 		var data struct {
 			ChatID string          `json:"chatId"`
@@ -310,15 +317,29 @@ func Apply(state StoreState, event events.Event) StoreState {
 		}
 		record := state.ChatsByID[data.ChatID]
 		record.HasMessages = true
-		if transcript.Kind(data.Entry) == transcript.KindUserPrompt {
-			if createdAt, ok := numberAsInt64(data.Entry["createdAt"]); ok {
-				record.LastMessageAt = createdAt
-				if createdAt > record.UpdatedAt {
-					record.UpdatedAt = createdAt
-				}
+		messageTimestamp := transcriptEntryActivityTimestamp(data.Entry, event.Timestamp)
+		if messageTimestamp > 0 {
+			record.LastMessageAt = maxInt64(record.LastMessageAt, messageTimestamp)
+			if messageTimestamp > record.UpdatedAt {
+				record.UpdatedAt = messageTimestamp
 			}
 		}
 		state.ChatsByID[data.ChatID] = record
+		state = touchProjectTimestampForChat(state, record, record.UpdatedAt)
+	case events.TypeChatRestoredToCheckpoint:
+		var data struct {
+			ChatID   string            `json:"chatId"`
+			Messages []TranscriptEntry `json:"messages"`
+		}
+		if event.DecodeData(&data) != nil || data.ChatID == "" {
+			return state
+		}
+		record := state.ChatsByID[data.ChatID]
+		record.HasMessages = len(data.Messages) > 0
+		record.LastMessageAt = lastTranscriptEntryTimestamp(data.Messages)
+		record.UpdatedAt = maxInt64(event.Timestamp, record.LastMessageAt)
+		state.ChatsByID[data.ChatID] = record
+		state = touchProjectTimestampForChat(state, record, record.UpdatedAt)
 	case events.TypeQueuedMessageEnqueued:
 		var data struct {
 			ChatID  string            `json:"chatId"`
@@ -331,6 +352,7 @@ func Apply(state StoreState, event events.Event) StoreState {
 		record := state.ChatsByID[data.ChatID]
 		record.UpdatedAt = event.Timestamp
 		state.ChatsByID[data.ChatID] = record
+		state = touchProjectTimestampForChat(state, record, event.Timestamp)
 	case events.TypeQueuedMessageRemoved:
 		var data struct {
 			ChatID          string `json:"chatId"`
@@ -354,6 +376,7 @@ func Apply(state StoreState, event events.Event) StoreState {
 		record := state.ChatsByID[data.ChatID]
 		record.UpdatedAt = event.Timestamp
 		state.ChatsByID[data.ChatID] = record
+		state = touchProjectTimestampForChat(state, record, event.Timestamp)
 	case events.TypeTurnStarted:
 		state = markChatTimestamp(state, event, nil)
 	case events.TypeTurnFinished:
@@ -385,6 +408,7 @@ func Apply(state StoreState, event events.Event) StoreState {
 		record.SessionToken = data.SessionToken
 		record.UpdatedAt = event.Timestamp
 		state.ChatsByID[data.ChatID] = record
+		state = touchProjectTimestampForChat(state, record, event.Timestamp)
 	case events.TypePendingForkSessionTokenSet:
 		var data struct {
 			ChatID                  string  `json:"chatId"`
@@ -397,6 +421,7 @@ func Apply(state StoreState, event events.Event) StoreState {
 		record.PendingForkSessionToken = data.PendingForkSessionToken
 		record.UpdatedAt = event.Timestamp
 		state.ChatsByID[data.ChatID] = record
+		state = touchProjectTimestampForChat(state, record, event.Timestamp)
 	}
 	return state
 }
@@ -413,7 +438,7 @@ func DeriveSidebarData(state StoreState) SidebarData {
 	return DeriveSidebarDataWithStatus(state, nil)
 }
 
-func DeriveSidebarDataWithStatus(state StoreState, activeStatuses map[string]KannaStatus) SidebarData {
+func DeriveSidebarDataWithStatus(state StoreState, activeStatuses map[string]AbolqasemStatus) SidebarData {
 	projects := make([]ProjectRecord, 0, len(state.ProjectsByID))
 	for _, project := range state.ProjectsByID {
 		if project.DeletedAt != 0 {
@@ -453,12 +478,56 @@ func DeriveSidebarDataWithStatus(state StoreState, activeStatuses map[string]Kan
 			}
 			group.Chats = append(group.Chats, row)
 		}
+		PopulateSidebarBuckets(&group, time.Now().UnixMilli())
 		groups = append(groups, group)
 	}
 	return SidebarData{ProjectGroups: groups}
 }
 
-func DeriveStatus(chat ChatRecord, activeStatus KannaStatus) KannaStatus {
+func PopulateSidebarBuckets(group *SidebarProjectGroup, nowMs int64) {
+	if group == nil {
+		return
+	}
+	if len(group.Chats) == 0 {
+		group.PreviewChats = []SidebarChatRow{}
+		group.OlderChats = []SidebarChatRow{}
+		group.DefaultCollapsed = false
+		return
+	}
+
+	recent := make([]SidebarChatRow, 0, len(group.Chats))
+	for _, chat := range group.Chats {
+		if isSidebarChatRecent(sidebarChatRowTimestamp(chat), nowMs) {
+			recent = append(recent, chat)
+		}
+	}
+
+	preview := recent
+	if len(preview) == 0 {
+		limit := 5
+		if len(group.Chats) < limit {
+			limit = len(group.Chats)
+		}
+		preview = append([]SidebarChatRow(nil), group.Chats[:limit]...)
+	}
+
+	previewIDs := make(map[string]bool, len(preview))
+	for _, chat := range preview {
+		previewIDs[chat.ChatID] = true
+	}
+	older := make([]SidebarChatRow, 0, len(group.Chats)-len(previewIDs))
+	for _, chat := range group.Chats {
+		if !previewIDs[chat.ChatID] {
+			older = append(older, chat)
+		}
+	}
+
+	group.PreviewChats = preview
+	group.OlderChats = older
+	group.DefaultCollapsed = len(recent) == 0
+}
+
+func DeriveStatus(chat ChatRecord, activeStatus AbolqasemStatus) AbolqasemStatus {
 	if activeStatus != "" {
 		return activeStatus
 	}
@@ -470,7 +539,7 @@ func DeriveStatus(chat ChatRecord, activeStatus KannaStatus) KannaStatus {
 
 func DeriveChatSnapshot(
 	state StoreState,
-	activeStatuses map[string]KannaStatus,
+	activeStatuses map[string]AbolqasemStatus,
 	drainingChatIDs map[string]bool,
 	chatID string,
 	transcript ChatTranscriptSnapshot,
@@ -492,15 +561,16 @@ func DeriveChatSnapshot(
 
 	return &ChatSnapshot{
 		Runtime: ChatRuntime{
-			ChatID:       chat.ID,
-			ProjectID:    project.ID,
-			LocalPath:    project.LocalPath,
-			Title:        chat.Title,
-			Status:       DeriveStatus(chat, activeStatuses[chat.ID]),
-			IsDraining:   drainingChatIDs[chat.ID],
-			Provider:     chat.Provider,
-			PlanMode:     chat.PlanMode,
-			SessionToken: chat.SessionToken,
+			ChatID:                  chat.ID,
+			ProjectID:               project.ID,
+			LocalPath:               project.LocalPath,
+			Title:                   chat.Title,
+			Status:                  DeriveStatus(chat, activeStatuses[chat.ID]),
+			IsDraining:              drainingChatIDs[chat.ID],
+			Provider:                chat.Provider,
+			PlanMode:                chat.PlanMode,
+			SessionToken:            chat.SessionToken,
+			PendingForkSessionToken: chat.PendingForkSessionToken,
 		},
 		QueuedMessages:     clonedQueued,
 		Messages:           transcript.Messages,
@@ -587,16 +657,38 @@ func chatsForProject(state StoreState, projectID string) []ChatRecord {
 }
 
 func getSidebarChatSortTimestamp(chat ChatRecord) int64 {
-	if chat.LastMessageAt != 0 {
-		return chat.LastMessageAt
-	}
-	return chat.CreatedAt
+	return maxInt64(chat.LastMessageAt, chat.UpdatedAt, chat.CreatedAt)
 }
 
-func sidebarRow(project ProjectRecord, chat ChatRecord, activeStatus KannaStatus) SidebarChatRow {
+func sidebarChatRowTimestamp(chat SidebarChatRow) int64 {
+	if chat.LastMessageAt != nil {
+		return *chat.LastMessageAt
+	}
+	return chat.CreationTime
+}
+
+func isSidebarChatRecent(timestamp int64, nowMs int64) bool {
+	if timestamp == 0 {
+		return false
+	}
+	return maxInt64(0, nowMs-timestamp) < sidebarRecentWindowMs
+}
+
+func maxInt64(values ...int64) int64 {
+	var max int64
+	for _, value := range values {
+		if value > max {
+			max = value
+		}
+	}
+	return max
+}
+
+func sidebarRow(project ProjectRecord, chat ChatRecord, activeStatus AbolqasemStatus) SidebarChatRow {
 	var lastMessageAt *int64
-	if chat.LastMessageAt != 0 {
-		lastMessageAt = &chat.LastMessageAt
+	sortTimestamp := getSidebarChatSortTimestamp(chat)
+	if sortTimestamp != 0 {
+		lastMessageAt = &sortTimestamp
 	}
 	return SidebarChatRow{
 		ID:            chat.ID,
@@ -626,7 +718,60 @@ func markChatTimestamp(state StoreState, event events.Event, update func(*ChatRe
 	}
 	record.UpdatedAt = event.Timestamp
 	state.ChatsByID[data.ChatID] = record
+	state = touchProjectTimestampForChat(state, record, event.Timestamp)
 	return state
+}
+
+func touchProjectTimestampForChat(state StoreState, chat ChatRecord, timestamp int64) StoreState {
+	if chat.ProjectID == "" {
+		return state
+	}
+	project, ok := state.ProjectsByID[chat.ProjectID]
+	if !ok {
+		return state
+	}
+	if timestamp <= project.UpdatedAt {
+		return state
+	}
+	project.UpdatedAt = timestamp
+	state.ProjectsByID[chat.ProjectID] = project
+	return state
+}
+
+func lastUserPromptTimestamp(entries []TranscriptEntry) int64 {
+	for index := len(entries) - 1; index >= 0; index-- {
+		entry := entries[index]
+		if transcript.Kind(entry) != transcript.KindUserPrompt {
+			continue
+		}
+		if createdAt, ok := numberAsInt64(entry["createdAt"]); ok {
+			return createdAt
+		}
+	}
+	return 0
+}
+
+func lastTranscriptEntryTimestamp(entries []TranscriptEntry) int64 {
+	for index := len(entries) - 1; index >= 0; index-- {
+		if timestamp := transcriptEntryTimestamp(entries[index]); timestamp > 0 {
+			return timestamp
+		}
+	}
+	return 0
+}
+
+func transcriptEntryActivityTimestamp(entry TranscriptEntry, fallback int64) int64 {
+	if timestamp := transcriptEntryTimestamp(entry); timestamp > 0 {
+		return timestamp
+	}
+	return fallback
+}
+
+func transcriptEntryTimestamp(entry TranscriptEntry) int64 {
+	if createdAt, ok := numberAsInt64(entry["createdAt"]); ok {
+		return createdAt
+	}
+	return 0
 }
 
 func cloneQueuedMessage(message QueuedChatMessage) QueuedChatMessage {

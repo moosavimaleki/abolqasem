@@ -1,8 +1,42 @@
 package catalog
 
-import "testing"
+import (
+	"context"
+	"sync"
+	"testing"
+)
 
-func TestServerProvidersMatchesKannaCodexModels(t *testing.T) {
+func withCodexRuntimeProbe(t *testing.T, info CodexRuntimeInfo) {
+	t.Helper()
+	oldProbe := codexRuntimeProbe
+	oldOnce := codexRuntimeOnce
+	oldInfo := codexRuntimeInfo
+	codexRuntimeProbe = func(context.Context) CodexRuntimeInfo {
+		return info
+	}
+	codexRuntimeOnce = sync.Once{}
+	codexRuntimeInfo = CodexRuntimeInfo{}
+	t.Cleanup(func() {
+		codexRuntimeProbe = oldProbe
+		codexRuntimeOnce = oldOnce
+		codexRuntimeInfo = oldInfo
+	})
+}
+
+func TestServerProvidersExposeCodexRuntimeModelsWithRuntimeDefault(t *testing.T) {
+	withCodexRuntimeProbe(t, CodexRuntimeInfo{
+		Available:              true,
+		Version:                "0.98.0",
+		DefaultModel:           "gpt-5.2-codex",
+		DefaultReasoningEffort: "medium",
+		Models: []ProviderModelOption{
+			{ID: "gpt-5.2-codex", Label: "gpt-5.2-codex", SupportsEffort: true},
+			{ID: "gpt-5.4", Label: "gpt-5.4", SupportsEffort: true},
+			{ID: "gpt-5.4-mini", Label: "GPT-5.4-Mini", SupportsEffort: true},
+		},
+		SupportsGPT55: false,
+	})
+
 	providers := ServerProviders()
 	var codex ProviderCatalogEntry
 	for _, provider := range providers {
@@ -14,10 +48,13 @@ func TestServerProvidersMatchesKannaCodexModels(t *testing.T) {
 	if codex.ID == "" {
 		t.Fatal("expected codex provider")
 	}
-	if codex.DefaultModel != "gpt-5.5" {
-		t.Fatalf("expected default model gpt-5.5, got %q", codex.DefaultModel)
+	if codex.DefaultModel != "gpt-5.2-codex" {
+		t.Fatalf("expected runtime default model gpt-5.2-codex, got %q", codex.DefaultModel)
 	}
-	expected := []string{"gpt-5.5", "gpt-5.4", "gpt-5.3-codex", "gpt-5.3-codex-spark"}
+	if codex.DefaultEffort != "medium" {
+		t.Fatalf("expected runtime default effort medium, got %q", codex.DefaultEffort)
+	}
+	expected := []string{"gpt-5.2-codex", "gpt-5.4", "gpt-5.4-mini"}
 	if len(codex.Models) != len(expected) {
 		t.Fatalf("expected models %#v, got %#v", expected, codex.Models)
 	}
@@ -28,15 +65,28 @@ func TestServerProvidersMatchesKannaCodexModels(t *testing.T) {
 	}
 }
 
-func TestServerProvidersExcludeGeminiForKannaParity(t *testing.T) {
-	for _, provider := range ServerProviders() {
-		if provider.ID == "gemini" {
-			t.Fatal("gemini must stay legacy-viewer-only for Kanna parity")
-		}
+func TestServerProvidersUsesAbolqasemDefaultForSupportedCodexCLI(t *testing.T) {
+	withCodexRuntimeProbe(t, CodexRuntimeInfo{Available: true, Version: "0.124.0", SupportsGPT55: true})
+
+	codex := GetOrDefault("codex")
+	if codex.DefaultModel != "gpt-5.5" {
+		t.Fatalf("expected Abolqasem default model gpt-5.5, got %q", codex.DefaultModel)
+	}
+}
+
+func TestServerProvidersExposeGemini(t *testing.T) {
+	gemini, ok := Get("gemini")
+	if !ok {
+		t.Fatal("expected gemini provider")
+	}
+	if gemini.DefaultModel == "" || len(gemini.Models) == 0 {
+		t.Fatalf("expected gemini defaults, got %#v", gemini)
 	}
 }
 
 func TestNormalizeModelUsesAliasesAndSafeFallback(t *testing.T) {
+	withCodexRuntimeProbe(t, CodexRuntimeInfo{})
+
 	if got := NormalizeModel("claude", "sonnet"); got != "claude-sonnet-4-6" {
 		t.Fatalf("expected claude sonnet alias, got %q", got)
 	}
@@ -44,6 +94,19 @@ func TestNormalizeModelUsesAliasesAndSafeFallback(t *testing.T) {
 		t.Fatalf("expected codex alias, got %q", got)
 	}
 	if got := NormalizeModel("unknown", "missing"); got != "gpt-5.5" {
+		t.Fatalf("expected safe static codex fallback, got %q", got)
+	}
+}
+
+func TestNormalizeModelUsesRuntimeFallback(t *testing.T) {
+	withCodexRuntimeProbe(t, CodexRuntimeInfo{
+		Available:    true,
+		DefaultModel: "gpt-5.2-codex",
+		Models: []ProviderModelOption{
+			{ID: "gpt-5.2-codex", Label: "gpt-5.2-codex", SupportsEffort: true},
+		},
+	})
+	if got := NormalizeModel("unknown", "missing"); got != "gpt-5.2-codex" {
 		t.Fatalf("expected safe codex fallback, got %q", got)
 	}
 }

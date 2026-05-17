@@ -1,7 +1,8 @@
 import { memo, type RefObject } from "react"
+import type { AgentProvider } from "../../../shared/types"
 import { ChatInput, type ChatInputHandle } from "../../components/chat-ui/ChatInput"
 import type { ContextWindowSnapshot } from "../../lib/contextWindow"
-import type { KannaState } from "../useKannaState"
+import type { AbolqasemState } from "../useAbolqasemState"
 
 interface ChatInputDockProps {
   inputRef: RefObject<HTMLDivElement | null>
@@ -10,14 +11,15 @@ interface ChatInputDockProps {
   chatInputElementRef: RefObject<HTMLTextAreaElement | null>
   activeChatId: string | null
   previousPrompt: string | null
+  onJumpToPreviousUserPrompt?: () => void | Promise<void>
   hasSelectedProject: boolean
   runtimeStatus: string | null
   canCancel: boolean
   projectId: string | null
-  activeProvider: "claude" | "codex" | null
-  availableProviders: KannaState["availableProviders"]
+  activeProvider: AgentProvider | null
+  availableProviders: AbolqasemState["availableProviders"]
   contextWindowSnapshot: ContextWindowSnapshot | null
-  onSubmit: KannaState["handleSend"]
+  onSubmit: AbolqasemState["handleSend"]
   onCancel: () => void
 }
 
@@ -28,6 +30,7 @@ export const ChatInputDock = memo(function ChatInputDock({
   chatInputElementRef,
   activeChatId,
   previousPrompt,
+  onJumpToPreviousUserPrompt,
   hasSelectedProject,
   runtimeStatus,
   canCancel,
@@ -56,6 +59,7 @@ export const ChatInputDock = memo(function ChatInputDock({
           availableProviders={availableProviders}
           contextWindowSnapshot={contextWindowSnapshot}
           previousPrompt={previousPrompt}
+          onJumpToPreviousUserPrompt={onJumpToPreviousUserPrompt}
         />
       </div>
     </div>

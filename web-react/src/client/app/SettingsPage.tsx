@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type KeyboardEvent, type ReactNode } from "react"
+import { useEffect, useMemo, useState, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react"
 import {
   BookText,
   Command,
@@ -10,8 +10,13 @@ import {
   Monitor,
   Moon,
   MessageSquareQuote,
+  MoreHorizontal,
+  Network,
+  Plus,
   Search,
+  Server,
   Settings2,
+  SquarePen,
   Sun,
   DownloadCloud,
   LogOut,
@@ -33,18 +38,27 @@ import {
   type InstalledSkillSummary,
   type KeybindingAction,
   type LlmProviderKind,
+  type ProviderProxyMode,
   type InstalledSkillsSnapshot,
   type SkillInstallResult,
+  type SkillOperationSummary,
+  type SkillOperationsSnapshot,
   type SkillSearchResult,
   type SkillSearchSnapshot,
   type SkillUninstallResult,
+  type McpProviderId,
+  type McpSaveResult,
+  type McpServerConfig,
+  type McpSettingsSnapshot,
+  type McpTransport,
   type UpdateSnapshot,
 } from "../../shared/types"
 import { markdownComponents } from "../components/messages/shared"
 import { ChatPreferenceControls } from "../components/chat-ui/ChatPreferenceControls"
 import { EDITOR_OPTIONS, EditorIcon } from "../components/editor-icons"
 import { Button, buttonVariants } from "../components/ui/button"
-import { Dialog, DialogBody, DialogContent, DialogFooter, DialogTitle } from "../components/ui/dialog"
+import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../components/ui/dialog"
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "../components/ui/context-menu"
 import { Input } from "../components/ui/input"
 import { SettingsHeaderButton } from "../components/ui/settings-header-button"
 import type { EditorPreset } from "../../shared/protocol"
@@ -73,9 +87,10 @@ import {
 } from "../stores/terminalPreferencesStore"
 import { useChatPreferencesStore } from "../stores/chatPreferencesStore"
 import { CHAT_SOUND_OPTIONS, useChatSoundPreferencesStore, type ChatSoundId, type ChatSoundPreference } from "../stores/chatSoundPreferencesStore"
-import type { KannaState } from "./useKannaState"
-import { getDictionary, LOCALE_OPTIONS, normalizeLocale } from "../i18n"
+import type { AbolqasemState } from "./useAbolqasemState"
+import { getDictionary, getLocaleDirection, LOCALE_OPTIONS, normalizeLocale } from "../i18n"
 import { useI18n } from "../i18n/context"
+import { settingsRoute } from "./routes"
 
 const sidebarItems = [
   {
@@ -91,10 +106,22 @@ const sidebarItems = [
     subtitle: "Manage globally installed agent skills from the active skill lock file.",
   },
   {
+    id: "mcp",
+    label: "MCP",
+    icon: Server,
+    subtitle: "Manage shared MCP servers for Codex, Claude Code, and Gemini.",
+  },
+  {
     id: "providers",
     label: "Providers",
     icon: MessageSquareQuote,
     subtitle: "Manage the default chat provider and saved model defaults for Claude Code and Codex.",
+  },
+  {
+    id: "proxy",
+    label: "Proxy",
+    icon: Network,
+    subtitle: "Control proxy environment variables for Claude Code, Codex, and Gemini runs.",
   },
   {
     id: "keybindings",
@@ -124,7 +151,7 @@ const QUICK_RESPONSE_PROVIDER_OPTIONS: Array<{ value: LlmProviderKind; label: st
   { value: "custom", label: "Custom" },
 ]
 
-const GITHUB_RELEASES_URL = "https://api.github.com/repos/jakemor/kanna/releases"
+const GITHUB_RELEASES_URL = "https://api.github.com/repos/jakemor/abolqasem/releases"
 const CHANGELOG_CACHE_TTL_MS = 5 * 60 * 1000
 
 type GithubRelease = {
@@ -282,7 +309,7 @@ export function ChangelogSection({
         <div className="rounded-lg border border-border bg-card/30 px-6 py-8">
           <div className="text-sm font-medium text-foreground">{t.settings.changelog}</div>
           <div className="mt-2 text-sm text-muted-foreground">
-            GitHub did not return any published releases for this repository.
+            {t.settings.noPublishedReleases}
           </div>
         </div>
       ) : null}
@@ -309,7 +336,7 @@ export function ChangelogSection({
             <article
               key={release.id}
               className={cn(
-                "rounded-xl border bg-card/30 pl-6 pr-4 py-4",
+                "rounded-xl border bg-card/30 py-4 pe-4 ps-6",
                 isLatestRelease ? "border-border bg-muted" : "border-border"
               )}
             >
@@ -323,7 +350,7 @@ export function ChangelogSection({
                   <span>{formatPublishedDate(release.published_at)}</span>
                   {release.prerelease ? (
                     <span className="rounded-full border border-border px-2.5 py-1 uppercase tracking-wide">
-                      Prerelease
+                      {t.settings.prerelease}
                     </span>
                   ) : null}
                   
@@ -345,7 +372,7 @@ export function ChangelogSection({
                   href={release.html_url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  aria-label="View release on GitHub"
+                  aria-label={t.settings.viewReleaseOnGithub}
                   className={cn(
                     buttonVariants({ variant: "ghost", size: "icon-sm" }),
                     "h-8 w-8 shrink-0 rounded-md hover:!bg-transparent hover:border-border/0"
@@ -363,7 +390,7 @@ export function ChangelogSection({
                       "h-auto gap-1.5 px-3 py-1.5"
                     )}
                   >
-                    Current
+                    {t.settings.currentRelease}
                   </span>
                   ) : null}
                   
@@ -377,7 +404,7 @@ export function ChangelogSection({
                   >
                     <div className="flex flex-row items-center justify-center gap-2">
                     <DownloadCloud className="size-4"/>
-                    {isUpdating ? "Updating…" : "Update"}
+                    {isUpdating ? t.settings.updating : t.settings.update}
                     </div>
                   </SettingsHeaderButton>
                 ) : null}
@@ -394,7 +421,7 @@ export function ChangelogSection({
                 </Markdown>
               </div>
             ) : (
-              <div className="mt-5 text-sm text-muted-foreground">No release notes were provided.</div>
+              <div className="mt-5 text-sm text-muted-foreground">{t.settings.noReleaseNotes}</div>
             )}
           </article>
           )
@@ -432,22 +459,115 @@ function SkillErrorBlock({ message }: { message: string }) {
   )
 }
 
+function isActiveSkillOperation(operation: SkillOperationSummary | undefined) {
+  return operation?.status === "queued" || operation?.status === "running"
+}
+
+function skillOperationSortValue(operation: SkillOperationSummary) {
+  const value = operation.finishedAt || operation.startedAt || operation.enqueuedAt
+  const timestamp = Date.parse(value)
+  return Number.isFinite(timestamp) ? timestamp : 0
+}
+
+function newerSkillOperation(
+  current: SkillOperationSummary | undefined,
+  next: SkillOperationSummary
+) {
+  if (!current) return next
+  if (isActiveSkillOperation(next) && !isActiveSkillOperation(current)) return next
+  if (!isActiveSkillOperation(next) && isActiveSkillOperation(current)) return current
+  return skillOperationSortValue(next) >= skillOperationSortValue(current) ? next : current
+}
+
+function installOperationKey(source: string | undefined, skillId: string) {
+  return `install:${source || ""}:${skillId}`
+}
+
+function uninstallOperationKey(skillId: string) {
+  return `uninstall:${skillId}`
+}
+
+function skillOperationIdentityKey(operation: SkillOperationSummary) {
+  return operation.kind === "install"
+    ? installOperationKey(operation.source, operation.skillId)
+    : uninstallOperationKey(operation.skillId)
+}
+
+function indexSkillOperations(operations: SkillOperationSummary[]) {
+  return operations.reduce<Record<string, SkillOperationSummary>>((indexed, operation) => {
+    indexed[operation.id] = operation
+    return indexed
+  }, {})
+}
+
+function mergeSkillOperations(
+  current: Record<string, SkillOperationSummary>,
+  backendOperations: SkillOperationSummary[]
+) {
+  const next = indexSkillOperations(backendOperations)
+  const backendKeys = new Set(backendOperations.map(skillOperationIdentityKey))
+
+  for (const operation of Object.values(current)) {
+    if (!operation.id.startsWith("local-")) continue
+    if (backendKeys.has(skillOperationIdentityKey(operation))) continue
+    next[operation.id] = operation
+  }
+  return next
+}
+
+function latestInstallOperationByKey(operations: SkillOperationSummary[]) {
+  const indexed = new Map<string, SkillOperationSummary>()
+  for (const operation of operations) {
+    if (operation.kind !== "install") continue
+    const key = installOperationKey(operation.source, operation.skillId)
+    indexed.set(key, newerSkillOperation(indexed.get(key), operation))
+  }
+  return indexed
+}
+
+function latestUninstallOperationByKey(operations: SkillOperationSummary[]) {
+  const indexed = new Map<string, SkillOperationSummary>()
+  for (const operation of operations) {
+    if (operation.kind !== "uninstall") continue
+    const key = uninstallOperationKey(operation.skillId)
+    indexed.set(key, newerSkillOperation(indexed.get(key), operation))
+  }
+  return indexed
+}
+
 function InstalledSkillCard({
   skill,
-  uninstalling,
+  operation,
   onUninstall,
 }: {
   skill: InstalledSkillSummary
-  uninstalling: boolean
+  operation?: SkillOperationSummary
   onUninstall: () => void
 }) {
+  const { t } = useI18n()
   const href = skill.source ? `https://skills.sh/${skill.source}/${skill.name}` : null
+  const uninstalling = isActiveSkillOperation(operation)
+  const statusMessage = operation?.status === "queued"
+    ? t.settings.queued
+    : operation?.status === "running"
+      ? t.settings.uninstalling
+      : operation?.status === "failed"
+        ? operation.error || t.settings.uninstallFailed
+        : null
 
   return (
     <div className="flex min-w-0 items-center justify-between gap-3 rounded-lg border border-border bg-card/30 p-3">
       <div className="min-w-0">
         <div className="truncate text-sm font-medium text-foreground">{skill.name}</div>
         <div className="truncate text-xs text-muted-foreground">{skill.source || "Unknown source"}</div>
+        {statusMessage ? (
+          <div className={cn(
+            "mt-1 truncate text-xs",
+            operation?.status === "failed" ? "text-destructive" : "text-muted-foreground"
+          )}>
+            {statusMessage}
+          </div>
+        ) : null}
       </div>
       <div className="flex shrink-0 items-center gap-2">
         {href ? (
@@ -477,23 +597,40 @@ function InstalledSkillCard({
 
 function SkillResultCard({
   skill,
-  installing,
+  operation,
   installed,
   message,
   onInstall,
 }: {
   skill: SkillSearchResult
-  installing: boolean
+  operation?: SkillOperationSummary
   installed: boolean
   message?: string
   onInstall: () => void
 }) {
+  const { t } = useI18n()
+  const installing = isActiveSkillOperation(operation)
+  const statusMessage = operation?.status === "queued"
+    ? t.settings.installQueued
+    : operation?.status === "running"
+      ? t.settings.installing
+      : operation?.status === "failed" && !installed
+        ? operation.error || t.settings.installFailed
+        : installed && message
+          ? message
+          : null
+  const statusTone = operation?.status === "failed" && !installed
+    ? "text-destructive"
+    : installed
+      ? "text-emerald-500"
+      : "text-muted-foreground"
+
   return (
     <div className="flex min-w-0 items-center justify-between gap-3 rounded-lg border border-border bg-card/30 p-3">
       <div className="min-w-0">
         <div className="truncate text-sm font-medium text-foreground">{skill.name}</div>
         <div className="truncate text-xs text-muted-foreground">{skill.source} · {formatInstallCount(skill.installs)}</div>
-        {installed && message ? <div className="mt-1 truncate text-xs text-emerald-500">{message}</div> : null}
+        {statusMessage ? <div className={cn("mt-1 truncate text-xs", statusTone)}>{statusMessage}</div> : null}
       </div>
       <div className="flex shrink-0 items-center gap-2">
         <a
@@ -513,8 +650,8 @@ function SkillResultCard({
           onClick={onInstall}
           className="h-6 rounded-full px-2 text-xs"
         >
-          {installing ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
-          {installed ? "Installed" : installing ? "Installing" : "Get"}
+          {installing ? <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" /> : null}
+          {installed ? t.settings.installed : operation?.status === "queued" ? t.settings.queued : installing ? t.settings.installing : t.settings.get}
         </Button>
       </div>
     </div>
@@ -524,8 +661,9 @@ function SkillResultCard({
 export function SkillsSection({
   state,
 }: {
-  state: Pick<KannaState, "connectionStatus" | "socket">
+  state: Pick<AbolqasemState, "connectionStatus" | "socket">
 }) {
+  const { t } = useI18n()
   const socket = state.socket
   const connectionStatus = state.connectionStatus
   const [query, setQuery] = useState("")
@@ -537,37 +675,75 @@ export function SkillsSection({
   const [installedLoading, setInstalledLoading] = useState(false)
   const [installedError, setInstalledError] = useState<string | null>(null)
   const [operationError, setOperationError] = useState<string | null>(null)
-  const [installingSkillId, setInstallingSkillId] = useState<string | null>(null)
-  const [uninstallingSkillId, setUninstallingSkillId] = useState<string | null>(null)
+  const [skillOperations, setSkillOperations] = useState<Record<string, SkillOperationSummary>>({})
   const [installMessages, setInstallMessages] = useState<Record<string, string>>({})
 
-  async function loadInstalledSkills() {
+  const operationList = useMemo(() => Object.values(skillOperations), [skillOperations])
+  const installOperations = useMemo(() => latestInstallOperationByKey(operationList), [operationList])
+  const uninstallOperations = useMemo(() => latestUninstallOperationByKey(operationList), [operationList])
+  const hasActiveSkillOperations = operationList.some(isActiveSkillOperation)
+
+  async function loadInstalledSkills(options?: { quiet?: boolean }) {
     if (connectionStatus !== "connected") {
       setInstalledSkills([])
       setInstalledSkillIds(new Set())
       setInstalledError(null)
-      setInstalledLoading(false)
+      if (!options?.quiet) {
+        setInstalledLoading(false)
+      }
       return
     }
 
     try {
-      setInstalledLoading(true)
+      if (!options?.quiet) {
+        setInstalledLoading(true)
+      }
       setInstalledError(null)
       const snapshot = await socket.command<InstalledSkillsSnapshot>({ type: "skills.listInstalled" })
       setInstalledSkills(snapshot.skills)
       setInstalledSkillIds(new Set(snapshot.skills.map((skill) => skill.name)))
     } catch (error) {
+      if (options?.quiet) {
+        return
+      }
       setInstalledSkills([])
       setInstalledSkillIds(new Set())
-      setInstalledError(error instanceof Error ? error.message : "Unable to read installed skills.")
+      setInstalledError(error instanceof Error ? error.message : t.settings.unableReadInstalledSkills)
     } finally {
-      setInstalledLoading(false)
+      if (!options?.quiet) {
+        setInstalledLoading(false)
+      }
+    }
+  }
+
+  async function loadSkillOperations() {
+    if (connectionStatus !== "connected") {
+      setSkillOperations({})
+      return
+    }
+
+    try {
+      const snapshot = await socket.command<SkillOperationsSnapshot>({ type: "skills.listOperations" })
+      setSkillOperations((current) => mergeSkillOperations(current, snapshot.operations))
+    } catch {
+      // Operation polling is supportive UI; command-level errors still surface per action.
     }
   }
 
   useEffect(() => {
     void loadInstalledSkills()
+    void loadSkillOperations()
   }, [connectionStatus, socket])
+
+  useEffect(() => {
+    if (connectionStatus !== "connected" || !hasActiveSkillOperations) return
+
+    const interval = window.setInterval(() => {
+      void loadSkillOperations()
+      void loadInstalledSkills({ quiet: true })
+    }, 1500)
+    return () => window.clearInterval(interval)
+  }, [connectionStatus, hasActiveSkillOperations, socket])
 
   useEffect(() => {
     const normalizedQuery = query.trim()
@@ -581,7 +757,7 @@ export function SkillsSection({
     if (connectionStatus !== "connected") {
       setResults([])
       setSearchLoading(false)
-      setSearchError("Backend connection required.")
+      setSearchError(t.settings.backendConnectionRequired)
       return
     }
 
@@ -602,7 +778,7 @@ export function SkillsSection({
         .catch((error) => {
           if (cancelled) return
           setResults([])
-          setSearchError(error instanceof Error ? error.message : "Unable to search skills.")
+          setSearchError(error instanceof Error ? error.message : t.settings.unableSearchSkills)
         })
         .finally(() => {
           if (cancelled) return
@@ -618,12 +794,25 @@ export function SkillsSection({
 
   async function installSkill(skill: SkillSearchResult) {
     if (connectionStatus !== "connected") {
-      setOperationError("Backend connection required.")
+      setOperationError(t.settings.backendConnectionRequired)
       return
     }
 
+    const localOperationId = `local-install-${skill.source}-${skill.skillId}-${Date.now()}`
+    const localOperation: SkillOperationSummary = {
+      id: localOperationId,
+      kind: "install",
+      source: skill.source,
+      skillId: skill.skillId,
+      status: "queued",
+      enqueuedAt: new Date().toISOString(),
+    }
+
     try {
-      setInstallingSkillId(skill.id)
+      setSkillOperations((current) => ({
+        ...current,
+        [localOperationId]: localOperation,
+      }))
       setOperationError(null)
       setInstallMessages((current) => {
         const next = { ...current }
@@ -638,24 +827,48 @@ export function SkillsSection({
       setInstalledSkillIds((current) => new Set(current).add(skill.skillId))
       setInstallMessages((current) => ({
         ...current,
-        [skill.id]: "Installed globally",
+        [skill.id]: t.settings.installedGlobally,
       }))
-      void loadInstalledSkills()
+      await Promise.all([
+        loadInstalledSkills({ quiet: true }),
+        loadSkillOperations(),
+      ])
     } catch (error) {
-      setOperationError(error instanceof Error ? error.message : "Install failed.")
-    } finally {
-      setInstallingSkillId(null)
+      const message = error instanceof Error ? error.message : t.settings.installFailed
+      setOperationError(message)
+      setSkillOperations((current) => ({
+        ...current,
+        [localOperationId]: {
+          ...localOperation,
+          status: "failed",
+          error: message,
+          finishedAt: new Date().toISOString(),
+        },
+      }))
+      void loadSkillOperations()
     }
   }
 
   async function uninstallSkill(skill: InstalledSkillSummary) {
     if (connectionStatus !== "connected") {
-      setOperationError("Backend connection required.")
+      setOperationError(t.settings.backendConnectionRequired)
       return
     }
 
+    const localOperationId = `local-uninstall-${skill.name}-${Date.now()}`
+    const localOperation: SkillOperationSummary = {
+      id: localOperationId,
+      kind: "uninstall",
+      skillId: skill.name,
+      status: "queued",
+      enqueuedAt: new Date().toISOString(),
+    }
+
     try {
-      setUninstallingSkillId(skill.name)
+      setSkillOperations((current) => ({
+        ...current,
+        [localOperationId]: localOperation,
+      }))
       setOperationError(null)
       await socket.command<SkillUninstallResult>({
         type: "skills.uninstall",
@@ -676,11 +889,23 @@ export function SkillsSection({
         }
         return next
       })
-      void loadInstalledSkills()
+      await Promise.all([
+        loadInstalledSkills({ quiet: true }),
+        loadSkillOperations(),
+      ])
     } catch (error) {
-      setOperationError(error instanceof Error ? error.message : "Uninstall failed.")
-    } finally {
-      setUninstallingSkillId(null)
+      const message = error instanceof Error ? error.message : t.settings.uninstallFailed
+      setOperationError(message)
+      setSkillOperations((current) => ({
+        ...current,
+        [localOperationId]: {
+          ...localOperation,
+          status: "failed",
+          error: message,
+          finishedAt: new Date().toISOString(),
+        },
+      }))
+      void loadSkillOperations()
     }
   }
 
@@ -689,7 +914,7 @@ export function SkillsSection({
       {operationError ? <SkillErrorBlock message={operationError} /> : null}
       <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between gap-3">
-          <div className="text-sm font-medium text-foreground">Installed</div>
+          <div className="text-sm font-medium text-foreground">{t.settings.installed}</div>
           {installedLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" /> : null}
         </div>
         {installedError ? <div className="text-xs text-destructive">{installedError}</div> : null}
@@ -699,20 +924,20 @@ export function SkillsSection({
               <InstalledSkillCard
                 key={`${skill.source}/${skill.name}`}
                 skill={skill}
-                uninstalling={uninstallingSkillId === skill.name}
+                operation={uninstallOperations.get(uninstallOperationKey(skill.name))}
                 onUninstall={() => { void uninstallSkill(skill) }}
               />
             ))}
           </div>
         ) : !installedLoading ? (
           <div className="rounded-lg border border-border bg-card/30 p-3 text-sm text-muted-foreground">
-            No global skills installed.
+            {t.settings.noGlobalSkillsInstalled}
           </div>
         ) : null}
       </section>
 
       <section className="flex flex-col gap-3">
-        <div className="text-sm font-medium text-foreground">Discover</div>
+        <div className="text-sm font-medium text-foreground">{t.settings.discover}</div>
         <div className="flex h-10 items-center gap-2 rounded-lg border border-border bg-card/30 px-3">
           <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
           <input
@@ -720,13 +945,13 @@ export function SkillsSection({
             role="searchbox"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search skills"
+            placeholder={t.settings.searchSkills}
             className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
           />
           {query ? (
             <button
               type="button"
-              aria-label="Clear skills search"
+              aria-label={t.settings.clearSkillsSearch}
               onClick={() => setQuery("")}
               className="touch-manipulation inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
@@ -741,7 +966,7 @@ export function SkillsSection({
             <SkillResultCard
               key={skill.id}
               skill={skill}
-              installing={installingSkillId === skill.id}
+              operation={installOperations.get(installOperationKey(skill.source, skill.skillId))}
               installed={installedSkillIds.has(skill.skillId)}
               message={installMessages[skill.id]}
               onInstall={() => { void installSkill(skill) }}
@@ -750,10 +975,635 @@ export function SkillsSection({
         </div>
         {!searchLoading && !searchError && query.trim().length >= 2 && results.length === 0 ? (
           <div className="rounded-lg border border-border bg-card/30 p-3 text-sm text-muted-foreground">
-            No skills found.
+            {t.settings.noSkillsFound}
           </div>
         ) : null}
       </section>
+    </div>
+  )
+}
+
+const MCP_PROVIDER_OPTIONS: Array<{ id: McpProviderId; label: string }> = [
+  { id: "codex", label: "Codex" },
+  { id: "claude", label: "Claude Code" },
+  { id: "gemini", label: "Gemini" },
+]
+
+type McpFormState = {
+  name: string
+  transport: McpTransport
+  command: string
+  argsText: string
+  url: string
+  envText: string
+  headersText: string
+  providers: McpProviderId[]
+}
+
+function emptyMcpForm(): McpFormState {
+  return {
+    name: "",
+    transport: "stdio",
+    command: "",
+    argsText: "",
+    url: "",
+    envText: "",
+    headersText: "",
+    providers: MCP_PROVIDER_OPTIONS.map((option) => option.id),
+  }
+}
+
+function mcpServerToForm(server: McpServerConfig): McpFormState {
+  return {
+    name: server.name,
+    transport: server.transport,
+    command: server.command ?? "",
+    argsText: (server.args ?? []).join("\n"),
+    url: server.url ?? "",
+    envText: mapToJSONString(server.env),
+    headersText: mapToJSONString(server.headers),
+    providers: server.providers.length > 0 ? server.providers : MCP_PROVIDER_OPTIONS.map((option) => option.id),
+  }
+}
+
+function mapToJSONString(value: Record<string, string> | undefined) {
+  return value && Object.keys(value).length > 0 ? JSON.stringify(value, null, 2) : ""
+}
+
+function parseStringMapText(value: string, fieldName: string): Record<string, string> | undefined {
+  const trimmed = value.trim()
+  if (!trimmed) return undefined
+  const parsed = JSON.parse(trimmed) as unknown
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(`${fieldName} must be a JSON object.`)
+  }
+  const out: Record<string, string> = {}
+  for (const [key, rawValue] of Object.entries(parsed)) {
+    if (typeof rawValue !== "string") {
+      throw new Error(`${fieldName} values must be strings.`)
+    }
+    if (key.trim() && rawValue.trim()) {
+      out[key.trim()] = rawValue.trim()
+    }
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
+function mcpFormToServer(form: McpFormState, dictionary: ReturnType<typeof getDictionary>): McpServerConfig {
+  const providers = form.providers.filter((provider) => MCP_PROVIDER_OPTIONS.some((option) => option.id === provider))
+  return {
+    name: form.name.trim(),
+    transport: form.transport,
+    providers,
+    command: form.transport === "stdio" ? form.command.trim() : undefined,
+    args: form.transport === "stdio"
+      ? form.argsText.split(/\r?\n/).map((arg) => arg.trim()).filter(Boolean)
+      : undefined,
+    url: form.transport === "http" ? form.url.trim() : undefined,
+    env: form.transport === "stdio" ? parseStringMapText(form.envText, dictionary.settings.environment) : undefined,
+    headers: form.transport === "http" ? parseStringMapText(form.headersText, dictionary.settings.headers) : undefined,
+  }
+}
+
+function maskMcpDisplayValue(value: string | undefined) {
+  if (!value) return ""
+  try {
+    const url = new URL(value)
+    for (const key of Array.from(url.searchParams.keys())) {
+      const normalizedKey = key.toLowerCase()
+      if (normalizedKey.includes("key") || normalizedKey.includes("token") || normalizedKey.includes("secret")) {
+        url.searchParams.set(key, "****")
+      }
+    }
+    return url.toString()
+  } catch {
+    return value.replace(/((?:api[_-]?key|token|secret)=)[^&\s]+/gi, "$1****")
+  }
+}
+
+function mcpServerDisplayCommand(server: McpServerConfig) {
+  if (server.transport === "http") {
+    return maskMcpDisplayValue(server.url)
+  }
+  return [server.command, ...(server.args ?? [])].filter(Boolean).join(" ")
+}
+
+function openContextMenuFromButton(event: ReactMouseEvent<HTMLButtonElement>) {
+  event.preventDefault()
+  event.stopPropagation()
+  const rect = event.currentTarget.getBoundingClientRect()
+  event.currentTarget.dispatchEvent(new MouseEvent("contextmenu", {
+    bubbles: true,
+    cancelable: true,
+    clientX: rect.left + rect.width / 2,
+    clientY: rect.bottom,
+    view: window,
+  }))
+}
+
+function McpServerActionsMenu({
+  server,
+  direction,
+  removing,
+  onEdit,
+  onRemove,
+}: {
+  server: McpServerConfig
+  direction: "ltr" | "rtl"
+  removing: boolean
+  onEdit: (server: McpServerConfig) => void
+  onRemove: (name: string) => void
+}) {
+  const { t } = useI18n()
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label={t.settings.mcpServerActions(server.name)}
+          onClick={openContextMenuFromButton}
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          {removing ? <Loader2 className="h-4 w-4 animate-spin" /> : <MoreHorizontal className="h-4 w-4" />}
+        </button>
+      </ContextMenuTrigger>
+      <ContextMenuContent dir={direction}>
+        <ContextMenuItem onSelect={() => onEdit(server)}>
+          <SquarePen className="h-3.5 w-3.5" />
+          <span>{t.settings.edit}</span>
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem
+          onSelect={() => onRemove(server.name)}
+          className="text-destructive hover:bg-destructive/10 focus:bg-destructive/10 dark:text-red-400 dark:hover:bg-red-500/20 dark:focus:bg-red-500/20"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+          <span>{t.settings.removeMcpServer}</span>
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
+  )
+}
+
+function McpProviderToggle({
+  provider,
+  checked,
+  disabled,
+  busy,
+  onToggle,
+}: {
+  provider: { id: McpProviderId; label: string }
+  checked: boolean
+  disabled?: boolean
+  busy?: boolean
+  onToggle: () => void
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      disabled={disabled || busy}
+      onClick={onToggle}
+      className={cn(
+        "inline-flex h-8 min-w-[118px] items-center justify-between gap-3 rounded-full border px-2.5 text-xs transition-colors",
+        checked
+          ? "border-primary/30 bg-primary/10 text-foreground"
+          : "border-border/70 bg-background text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+        (disabled || busy) ? "cursor-not-allowed opacity-60" : "cursor-pointer"
+      )}
+      dir="ltr"
+    >
+      <span className="truncate">{provider.label}</span>
+      <span
+        className={cn(
+          "relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors",
+          checked ? "bg-primary/80" : "bg-muted-foreground/25"
+        )}
+      >
+        <span
+          className={cn(
+            "absolute h-3 w-3 rounded-full bg-background shadow-sm transition-transform",
+            checked ? "translate-x-3.5" : "translate-x-0.5"
+          )}
+        />
+      </span>
+    </button>
+  )
+}
+
+export function McpSection({
+  state,
+}: {
+  state: Pick<AbolqasemState, "connectionStatus" | "socket">
+}) {
+  const { t, direction } = useI18n()
+  const socket = state.socket
+  const connectionStatus = state.connectionStatus
+  const [snapshot, setSnapshot] = useState<McpSettingsSnapshot | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [removingName, setRemovingName] = useState<string | null>(null)
+  const [confirmRemoveName, setConfirmRemoveName] = useState<string | null>(null)
+  const [editingName, setEditingName] = useState<string | null>(null)
+  const [updatingProviderKey, setUpdatingProviderKey] = useState<string | null>(null)
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [form, setForm] = useState<McpFormState>(() => emptyMcpForm())
+
+  async function loadMcpServers() {
+    if (connectionStatus !== "connected") {
+      setSnapshot(null)
+      setLoading(false)
+      setError(null)
+      return
+    }
+    try {
+      setLoading(true)
+      setError(null)
+      setSnapshot(await socket.command<McpSettingsSnapshot>({ type: "mcp.list" }))
+    } catch (loadError) {
+      setSnapshot(null)
+      setError(loadError instanceof Error ? loadError.message : t.settings.unableReadMcpServers)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void loadMcpServers()
+  }, [connectionStatus, socket])
+
+  async function saveServer() {
+    if (connectionStatus !== "connected") {
+      setError(t.settings.backendConnectionRequired)
+      return
+    }
+    try {
+      setSaving(true)
+      setError(null)
+      const result = await socket.command<McpSaveResult>({
+        type: "mcp.save",
+        server: mcpFormToServer(form, t),
+      })
+      setSnapshot({ configPaths: result.configPaths, servers: result.servers })
+      closeMcpDialog()
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : t.settings.unableSaveMcpServer)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function removeServer(name: string) {
+    if (connectionStatus !== "connected") {
+      setError(t.settings.backendConnectionRequired)
+      return
+    }
+    try {
+      setRemovingName(name)
+      setError(null)
+      setSnapshot(await socket.command<McpSettingsSnapshot>({ type: "mcp.remove", name }))
+      setConfirmRemoveName(null)
+      if (editingName === name) {
+        setEditingName(null)
+        setForm(emptyMcpForm())
+      }
+    } catch (removeError) {
+      setError(removeError instanceof Error ? removeError.message : t.settings.unableRemoveMcpServer)
+    } finally {
+      setRemovingName(null)
+    }
+  }
+
+  async function updateServerProviders(server: McpServerConfig, providers: McpProviderId[]) {
+    if (connectionStatus !== "connected") {
+      setError(t.settings.backendConnectionRequired)
+      return
+    }
+    if (providers.length === 0) return
+    try {
+      setUpdatingProviderKey(server.name)
+      setError(null)
+      const result = await socket.command<McpSaveResult>({
+        type: "mcp.save",
+        server: { ...server, providers },
+      })
+      setSnapshot({ configPaths: result.configPaths, servers: result.servers })
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : t.settings.unableSaveMcpServer)
+    } finally {
+      setUpdatingProviderKey(null)
+    }
+  }
+
+  function toggleServerProvider(server: McpServerConfig, provider: McpProviderId) {
+    const hasProvider = server.providers.includes(provider)
+    const nextProviders = hasProvider
+      ? server.providers.filter((candidate) => candidate !== provider)
+      : [...server.providers, provider]
+    void updateServerProviders(server, nextProviders)
+  }
+
+  function openAddDialog() {
+    setError(null)
+    setEditingName(null)
+    setForm(emptyMcpForm())
+    setDialogOpen(true)
+  }
+
+  function openEditDialog(server: McpServerConfig) {
+    setError(null)
+    setEditingName(server.name)
+    setForm(mcpServerToForm(server))
+    setDialogOpen(true)
+  }
+
+  function closeMcpDialog() {
+    setDialogOpen(false)
+    setEditingName(null)
+    setForm(emptyMcpForm())
+  }
+
+  function toggleProvider(provider: McpProviderId) {
+    setForm((current) => {
+      const hasProvider = current.providers.includes(provider)
+      return {
+        ...current,
+        providers: hasProvider
+          ? current.providers.filter((candidate) => candidate !== provider)
+          : [...current.providers, provider],
+      }
+    })
+  }
+
+  const servers = snapshot?.servers ?? []
+  const configPaths = snapshot?.configPaths
+
+  return (
+    <div className="flex flex-col">
+      {error ? <SkillErrorBlock message={error} /> : null}
+
+      <section className="border-b border-border">
+        <SettingsRow
+          title={t.settings.configuredMcpServers}
+          description={t.settings.mcpServersDescription}
+          bordered={false}
+        >
+          <div className="flex items-center gap-2">
+            {loading ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> : null}
+            <Button type="button" variant="outline" size="sm" onClick={openAddDialog}>
+              <Plus className="h-4 w-4" />
+              {t.settings.addMcpServer}
+            </Button>
+          </div>
+        </SettingsRow>
+
+        {servers.length > 0 ? (
+          <div className="border-t border-border">
+            {servers.map((server, index) => (
+              <div
+                key={server.name}
+                className={cn(
+                  "grid gap-3 py-4 text-left md:grid-cols-[minmax(0,1fr)_auto_auto] md:items-center md:gap-4",
+                  index > 0 ? "border-t border-border" : undefined
+                )}
+                dir="ltr"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                    <span className="truncate font-mono text-sm font-semibold text-foreground" dir="ltr">
+                      {server.name}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {server.transport === "http" ? t.settings.http : t.settings.stdio}
+                    </span>
+                  </div>
+                  <div className="mt-1 max-w-3xl truncate font-mono text-xs text-muted-foreground" dir="ltr">
+                    {mcpServerDisplayCommand(server)}
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center justify-start gap-2 md:justify-end">
+                  {MCP_PROVIDER_OPTIONS.map((provider) => {
+                    const checked = server.providers.includes(provider.id)
+                    const lastCheckedProvider = checked && server.providers.length === 1
+                    return (
+                      <McpProviderToggle
+                        key={provider.id}
+                        provider={provider}
+                        checked={checked}
+                        disabled={lastCheckedProvider || Boolean(updatingProviderKey)}
+                        busy={updatingProviderKey === server.name}
+                        onToggle={() => toggleServerProvider(server, provider.id)}
+                      />
+                    )
+                  })}
+                </div>
+                <McpServerActionsMenu
+                  server={server}
+                  direction={direction}
+                  removing={removingName === server.name}
+                  onEdit={openEditDialog}
+                  onRemove={setConfirmRemoveName}
+                />
+              </div>
+            ))}
+          </div>
+        ) : !loading ? (
+          <div className="border-t border-border py-4 text-sm text-muted-foreground">
+            {t.settings.noMcpServersConfigured}
+          </div>
+        ) : null}
+      </section>
+
+      {configPaths ? (
+        <section className="mt-7 border-y border-border">
+          <SettingsRow
+            title={t.settings.mcpConfigFiles}
+            description={t.settings.mcpConfigFilesDescription}
+            bordered={false}
+            alignStart
+          >
+            <div
+              className="grid w-full min-w-0 overflow-hidden rounded-lg border border-border/60 text-left text-xs md:w-[560px]"
+              dir="ltr"
+            >
+              {MCP_PROVIDER_OPTIONS.map((provider) => (
+                <div key={provider.id} className="grid min-w-0 grid-cols-[112px_minmax(0,1fr)] items-center border-t border-border/60 first:border-t-0">
+                  <span className="border-r border-border/60 px-3 py-2 font-medium text-muted-foreground">{provider.label}</span>
+                  <span className="truncate px-3 py-2 font-mono text-foreground/80" dir="ltr">
+                    {configPaths[provider.id]}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </SettingsRow>
+        </section>
+      ) : null}
+
+      <Dialog
+        open={dialogOpen}
+        onOpenChange={(open) => {
+          if (open) {
+            setDialogOpen(true)
+          } else {
+            closeMcpDialog()
+          }
+        }}
+      >
+        <DialogContent size="lg" className="max-w-[640px]" dir={direction}>
+          <DialogHeader>
+            <DialogTitle>{editingName ? t.settings.editMcpServer(editingName) : t.settings.addMcpServer}</DialogTitle>
+            <DialogDescription>{t.settings.mcpServersDescription}</DialogDescription>
+          </DialogHeader>
+          <DialogBody className="space-y-4">
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="grid gap-1.5 text-sm">
+                <span className="text-xs font-medium text-muted-foreground">{t.settings.serverName}</span>
+                <Input
+                  value={form.name}
+                  disabled={Boolean(editingName)}
+                  onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+                  placeholder="browsermcp"
+                  dir="ltr"
+                  className="font-mono"
+                />
+              </label>
+
+              <label className="grid gap-1.5 text-sm">
+                <span className="text-xs font-medium text-muted-foreground">{t.settings.transport}</span>
+                <Select value={form.transport} onValueChange={(value) => setForm((current) => ({ ...current, transport: value as McpTransport }))}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="stdio">{t.settings.stdio}</SelectItem>
+                      <SelectItem value="http">{t.settings.http}</SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </label>
+            </div>
+
+            {form.transport === "stdio" ? (
+              <>
+                <label className="grid gap-1.5 text-sm">
+                  <span className="text-xs font-medium text-muted-foreground">{t.settings.command}</span>
+                  <Input
+                    value={form.command}
+                    onChange={(event) => setForm((current) => ({ ...current, command: event.target.value }))}
+                    placeholder="npx"
+                    dir="ltr"
+                    className="font-mono"
+                  />
+                </label>
+                <label className="grid gap-1.5 text-sm">
+                  <span className="text-xs font-medium text-muted-foreground">{t.settings.arguments}</span>
+                  <textarea
+                    value={form.argsText}
+                    onChange={(event) => setForm((current) => ({ ...current, argsText: event.target.value }))}
+                    placeholder="browsermcp"
+                    className="min-h-20 rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm text-foreground outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-ring"
+                    dir="ltr"
+                  />
+                </label>
+                <label className="grid gap-1.5 text-sm">
+                  <span className="text-xs font-medium text-muted-foreground">{t.settings.environment}</span>
+                  <textarea
+                    value={form.envText}
+                    onChange={(event) => setForm((current) => ({ ...current, envText: event.target.value }))}
+                    placeholder={t.settings.environmentPlaceholder}
+                    className="min-h-20 rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm text-foreground outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-ring"
+                    dir="ltr"
+                  />
+                </label>
+              </>
+            ) : (
+              <>
+                <label className="grid gap-1.5 text-sm">
+                  <span className="text-xs font-medium text-muted-foreground">{t.settings.url}</span>
+                  <Input
+                    value={form.url}
+                    onChange={(event) => setForm((current) => ({ ...current, url: event.target.value }))}
+                    placeholder="https://example.com/mcp"
+                    dir="ltr"
+                    className="font-mono"
+                  />
+                </label>
+                <label className="grid gap-1.5 text-sm">
+                  <span className="text-xs font-medium text-muted-foreground">{t.settings.headers}</span>
+                  <textarea
+                    value={form.headersText}
+                    onChange={(event) => setForm((current) => ({ ...current, headersText: event.target.value }))}
+                    placeholder={t.settings.headersPlaceholder}
+                    className="min-h-20 rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm text-foreground outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-ring"
+                    dir="ltr"
+                  />
+                </label>
+              </>
+            )}
+
+            <div className="grid gap-2">
+              <div className="text-xs font-medium text-muted-foreground">{t.settings.providers}</div>
+              <div className="flex flex-wrap gap-2" dir="ltr">
+                {MCP_PROVIDER_OPTIONS.map((provider) => {
+                  const selected = form.providers.includes(provider.id)
+                  const lastSelectedProvider = selected && form.providers.length === 1
+                  return (
+                    <McpProviderToggle
+                      key={provider.id}
+                      provider={provider}
+                      checked={selected}
+                      disabled={lastSelectedProvider}
+                      onToggle={() => toggleProvider(provider.id)}
+                    />
+                  )
+                })}
+              </div>
+            </div>
+          </DialogBody>
+          <DialogFooter>
+            <Button type="button" variant="ghost" size="sm" onClick={closeMcpDialog}>
+              {t.settings.cancel}
+            </Button>
+            <Button type="button" size="sm" onClick={() => void saveServer()} disabled={saving}>
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {editingName ? t.settings.saveMcpServer : t.settings.addMcpServer}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(confirmRemoveName)} onOpenChange={(open) => !open && setConfirmRemoveName(null)}>
+        <DialogContent size="sm" dir={direction}>
+          <DialogBody className="space-y-2">
+            <DialogTitle>{t.settings.confirmRemoveMcpServer(confirmRemoveName ?? "")}</DialogTitle>
+            <DialogDescription>
+              {t.settings.confirmRemoveMcpServerDescription}
+            </DialogDescription>
+          </DialogBody>
+          <DialogFooter>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setConfirmRemoveName(null)}>
+              {t.settings.cancel}
+            </Button>
+            <Button
+              type="button"
+              variant="none"
+              size="sm"
+              className="bg-red-600 text-white hover:bg-red-700 dark:bg-red-500 dark:text-white dark:hover:bg-red-600"
+              disabled={!confirmRemoveName || removingName === confirmRemoveName}
+              onClick={() => {
+                if (!confirmRemoveName) return
+                void removeServer(confirmRemoveName)
+              }}
+            >
+              {removingName === confirmRemoveName ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {t.settings.removeMcpServer}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -792,7 +1642,7 @@ function SettingsRow({
 export function SettingsPage() {
   const navigate = useNavigate()
   const { sectionId } = useParams<{ sectionId: string }>()
-  const state = useOutletContext<KannaState>()
+  const state = useOutletContext<AbolqasemState>()
   const { theme, setTheme } = useTheme()
   const [changelogStatus, setChangelogStatus] = useState<ChangelogStatus>("idle")
   const [signingOut, setSigningOut] = useState(false)
@@ -802,8 +1652,10 @@ export function SettingsPage() {
   const selectedPage = resolveSettingsSectionId(sectionId) ?? "general"
   const isConnecting = state.connectionStatus === "connecting" || !state.localProjectsReady
   const appSettings = state.appSettings
+  const settingsAvailableProviders = appSettings?.availableProviders?.length ? appSettings.availableProviders : PROVIDERS
   const locale = normalizeLocale(appSettings?.locale)
   const dictionary = getDictionary(locale)
+  const direction = getLocaleDirection(locale)
   const machineName = state.localProjects?.machine.displayName ?? dictionary.settings.unavailable
   const projectCount = state.localProjects?.projects.length ?? 0
   const appVersion = SDK_CLIENT_APP.split("/")[1] ?? "unknown"
@@ -833,7 +1685,9 @@ export function SettingsPage() {
     const sections = {
       general: { label: dictionary.settings.general, subtitle: dictionary.settings.generalSubtitle },
       skills: { label: dictionary.settings.skills, subtitle: dictionary.settings.skillsSubtitle },
+      mcp: { label: dictionary.settings.mcpServers, subtitle: dictionary.settings.mcpServersSubtitle },
       providers: { label: dictionary.settings.providers, subtitle: dictionary.settings.providersSubtitle },
+      proxy: { label: dictionary.settings.proxy, subtitle: dictionary.settings.proxySubtitle },
       keybindings: { label: dictionary.settings.keybindings, subtitle: dictionary.settings.keybindingsSubtitle },
       changelog: { label: dictionary.settings.changelog, subtitle: dictionary.settings.changelogSubtitle },
     } satisfies Record<SidebarPageId, { label: string; subtitle: string }>
@@ -849,13 +1703,32 @@ export function SettingsPage() {
     { value: "unfocused" as ChatSoundPreference, label: dictionary.settings.options.unfocused },
     { value: "always" as ChatSoundPreference, label: dictionary.settings.options.always },
   ], [dictionary])
+  const localizedChatSoundOptions = useMemo(() => CHAT_SOUND_OPTIONS.map((option) => ({
+    ...option,
+    label: dictionary.settings.chatSoundLabels[option.value],
+  })), [dictionary])
   const localizedAnalyticsOptions = useMemo(() => [
     { value: "disabled" as const, label: dictionary.settings.options.off },
     { value: "enabled" as const, label: dictionary.settings.options.on },
   ], [dictionary])
+  const localizedProviderProxyOptions = useMemo(() => [
+    { value: "none" as ProviderProxyMode, label: dictionary.settings.providerProxyNone },
+    { value: "custom" as ProviderProxyMode, label: dictionary.settings.providerProxyCustom },
+  ], [dictionary])
+  const localizedHookEnabledOptions = useMemo(() => [
+    { value: "disabled" as const, label: dictionary.settings.options.off },
+    { value: "enabled" as const, label: dictionary.settings.options.on },
+  ], [dictionary])
+  const localizedHookFollowOptions = useMemo(() => [
+    { value: "auto" as const, label: dictionary.settings.options.auto },
+    { value: "notice" as const, label: dictionary.settings.options.notice },
+    { value: "off" as const, label: dictionary.settings.options.off },
+  ], [dictionary])
   const [scrollbackDraft, setScrollbackDraft] = useState(String(scrollbackLines))
   const [minColumnWidthDraft, setMinColumnWidthDraft] = useState(String(minColumnWidth))
   const [editorCommandDraft, setEditorCommandDraft] = useState(editorCommandTemplate)
+  const [providerProxyHttpDraft, setProviderProxyHttpDraft] = useState("")
+  const [providerProxyNoProxyDraft, setProviderProxyNoProxyDraft] = useState("")
   const [keybindingDrafts, setKeybindingDrafts] = useState<Record<string, string>>({})
   const [keybindingsError, setKeybindingsError] = useState<string | null>(null)
   const [appSettingsError, setAppSettingsError] = useState<string | null>(null)
@@ -888,6 +1761,15 @@ export function SettingsPage() {
             : updateSnapshot?.status === "error"
               ? dictionary.settings.updateCheckFailed
               : dictionary.settings.updateNotChecked
+  const localizedConnectionStatus = state.connectionStatus === "connected"
+    ? dictionary.sidebar.connected
+    : state.connectionStatus === "connecting"
+      ? dictionary.sidebar.connecting
+      : dictionary.sidebar.disconnected
+  const footerLabelClassName = cn(
+    "mb-1 text-[11px] text-muted-foreground/80",
+    direction === "rtl" ? "tracking-normal" : "uppercase tracking-wide"
+  )
 
   useEffect(() => {
     setScrollbackDraft(String(scrollbackLines))
@@ -900,6 +1782,11 @@ export function SettingsPage() {
   useEffect(() => {
     setEditorCommandDraft(editorCommandTemplate)
   }, [editorCommandTemplate])
+
+  useEffect(() => {
+    setProviderProxyHttpDraft(appSettings?.providerProxy.httpProxy ?? "")
+    setProviderProxyNoProxyDraft(appSettings?.providerProxy.noProxy ?? "")
+  }, [appSettings?.providerProxy.httpProxy, appSettings?.providerProxy.noProxy])
 
   useEffect(() => {
     setKeybindingDrafts(Object.fromEntries(
@@ -928,7 +1815,7 @@ export function SettingsPage() {
   useEffect(() => {
     if (!sectionId) return
     if (resolveSettingsSectionId(sectionId)) return
-    navigate("/settings/general", { replace: true })
+    navigate(settingsRoute("general"), { replace: true })
   }, [navigate, sectionId])
 
   useEffect(() => {
@@ -1090,6 +1977,39 @@ export function SettingsPage() {
     }
   }
 
+  async function handleManagementPreferenceChange(patch: {
+    hookUpdates?: boolean
+    hookFollowMode?: "auto" | "notice" | "off"
+    filesystemDiscovery?: boolean
+  }) {
+    try {
+      setAppSettingsError(null)
+      await state.socket.command({
+        type: "app.writeManagementSettings",
+        patch,
+      })
+      await state.handleReadAppSettings()
+    } catch (error) {
+      setAppSettingsError(error instanceof Error ? error.message : "Unable to save management settings.")
+    }
+  }
+
+  async function handleReloadSessions() {
+    try {
+      await state.socket.command({ type: "app.reloadSessions" })
+    } catch (error) {
+      setAppSettingsError(error instanceof Error ? error.message : "Unable to reload sessions.")
+    }
+  }
+
+  async function handleRestartServer() {
+    try {
+      await state.socket.command({ type: "app.restart" })
+    } catch (error) {
+      setAppSettingsError(error instanceof Error ? error.message : "Unable to restart server.")
+    }
+  }
+
   function handleDefaultProviderChange(nextValue: "last_used" | AgentProvider) {
     setDefaultProvider(nextValue)
     void handleWriteAppSettings({ defaultProvider: nextValue }).catch((error) => {
@@ -1118,6 +2038,30 @@ export function SettingsPage() {
     setProviderDefaultPlanMode(provider, planMode)
     void handleWriteAppSettings({ providerDefaults: { [provider]: { planMode } } }).catch((error) => {
       setAppSettingsError(error instanceof Error ? error.message : "Unable to save provider settings.")
+    })
+  }
+
+  function handleProviderProxyModeChange(mode: ProviderProxyMode) {
+    void handleWriteAppSettings({
+      providerProxy: {
+        mode,
+        httpProxy: providerProxyHttpDraft,
+        noProxy: providerProxyNoProxyDraft,
+      },
+    }).catch((error) => {
+      setAppSettingsError(error instanceof Error ? error.message : "Unable to save proxy settings.")
+    })
+  }
+
+  function commitProviderProxySettings() {
+    void handleWriteAppSettings({
+      providerProxy: {
+        mode: appSettings?.providerProxy.mode ?? "none",
+        httpProxy: providerProxyHttpDraft,
+        noProxy: providerProxyNoProxyDraft,
+      },
+    }).catch((error) => {
+      setAppSettingsError(error instanceof Error ? error.message : "Unable to save proxy settings.")
     })
   }
 
@@ -1200,11 +2144,12 @@ export function SettingsPage() {
   }
 
   const customEditorPreview = editorCommandDraft
-    .replaceAll("{path}", "/Users/jake/Projects/kanna/src/client/app/App.tsx")
+    .replaceAll("{path}", "/Users/jake/Projects/abolqasem/src/client/app/App.tsx")
     .replaceAll("{line}", "12")
     .replaceAll("{column}", "1")
   const analyticsDisclosureEvents = ANALYTICS_STATIC_EVENT_NAMES
   const analyticsSettingValue = appSettings?.analyticsEnabled === false ? "disabled" : "enabled"
+  const providerProxy = appSettings?.providerProxy ?? { mode: "none" as ProviderProxyMode, httpProxy: "", noProxy: "" }
   const selectedSection = localizedSidebarItems.find((item) => item.id === selectedPage) ?? localizedSidebarItems[0]
   const selectedSectionSubtitle =
     selectedPage === "keybindings"
@@ -1272,7 +2217,7 @@ export function SettingsPage() {
               <button
                 key={item.label}
                 type="button"
-                onClick={() => navigate(`/settings/${item.id}`)}
+                onClick={() => navigate(settingsRoute(item.id))}
                 className={`cursor-pointer rounded-lg px-3 py-2 text-sm ${
                   item.id === selectedPage
                     ? "bg-muted font-medium text-foreground"
@@ -1303,11 +2248,11 @@ export function SettingsPage() {
           </div>
         </aside>
 
-        <div className="min-w-0 flex-1 overflow-y-auto">
-          <div className="border-b border-border py-2 md:hidden">
-            <div className="overflow-x-auto pr-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="min-w-0 flex-1 overflow-y-auto [direction:ltr]">
+          <div className="border-b border-border py-2 md:hidden" dir={direction}>
+            <div className="overflow-x-auto pe-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               <div className="flex min-w-max items-center gap-2">
-                <div className=" sticky left-0 bg-gradient-to-r from-background via-background/80 to-transparent px-2  py-1">
+                <div className={cn("sticky start-0 px-2 py-1", direction === "rtl" ? "bg-gradient-to-l" : "bg-gradient-to-r", "from-background via-background/80 to-transparent")}>
                 <button
                   type="button"
                   onClick={state.openSidebar}
@@ -1322,7 +2267,7 @@ export function SettingsPage() {
                   <button
                     key={item.label}
                     type="button"
-                    onClick={() => navigate(`/settings/${item.id}`)}
+                    onClick={() => navigate(settingsRoute(item.id))}
                     className={cn(
                       "flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm transition-colors",
                       item.id === selectedPage
@@ -1355,7 +2300,7 @@ export function SettingsPage() {
             </div>
           </div>
 
-          <div className="w-full px-4 pb-32 pt-8 md:px-6 md:pt-16">
+          <div className="w-full px-4 pb-32 pt-8 md:px-6 md:pt-16" dir={direction}>
             {isConnecting ? (
               <div className="flex min-h-[240px] items-center justify-center rounded-2xl border border-border bg-card/40 px-4 py-6 text-sm text-muted-foreground">
                 <div className="flex items-center gap-3">
@@ -1373,7 +2318,7 @@ export function SettingsPage() {
                     {selectedPage === "general" ? (
                       <SettingsHeaderButton
                         variant="outline"
-                        onClick={() => navigate("/settings/changelog")}
+                        onClick={() => navigate(settingsRoute("changelog"))}
                       >
                         {dictionary.settings.checkForUpdates}
                       </SettingsHeaderButton>
@@ -1385,7 +2330,7 @@ export function SettingsPage() {
                         }}
                         icon={<Code className="h-4 w-4" />}
                       >
-                        Open in {state.editorLabel}
+                        {dictionary.settings.openInEditor(state.editorLabel)}
                       </SettingsHeaderButton>
                     ) : null}
                   </div>
@@ -1408,12 +2353,12 @@ export function SettingsPage() {
                           <>
                             <span>{updateStatusLabel}.</span>
                             {updateSnapshot?.lastCheckedAt ? (
-                              <span> Last checked {new Intl.DateTimeFormat(undefined, {
+                              <span> {dictionary.settings.lastCheckedAt(new Intl.DateTimeFormat(locale === "fa" ? "fa-IR" : undefined, {
                                 month: "short",
                                 day: "numeric",
                                 hour: "numeric",
                                 minute: "2-digit",
-                              }).format(updateSnapshot.lastCheckedAt)}.</span>
+                              }).format(updateSnapshot.lastCheckedAt))}</span>
                             ) : null}
                             {updateSnapshot?.error ? (
                               <span> {updateSnapshot.error}</span>
@@ -1422,7 +2367,7 @@ export function SettingsPage() {
                         )}
                         bordered={false}
                       >
-                        <div className="text-right text-sm text-foreground">
+                        <div className="text-end text-sm text-foreground">
                           <div>{dictionary.settings.current}: {updateSnapshot?.currentVersion ?? appVersion}</div>
                           <div className="text-xs text-muted-foreground">
                             {dictionary.settings.latest}: {updateSnapshot?.latestVersion ?? dictionary.common.unknown}
@@ -1501,7 +2446,7 @@ export function SettingsPage() {
                           </SelectTrigger>
                           <SelectContent>
                             <SelectGroup>
-                              {CHAT_SOUND_OPTIONS.map((option) => (
+                              {localizedChatSoundOptions.map((option) => (
                                 <SelectItem key={option.value} value={option.value}>
                                   {option.label}
                                 </SelectItem>
@@ -1509,6 +2454,62 @@ export function SettingsPage() {
                             </SelectGroup>
                           </SelectContent>
                         </Select>
+                      </SettingsRow>
+
+                      <SettingsRow
+                        title={dictionary.settings.hookNotifications}
+                        description={dictionary.settings.hookNotificationsDescription}
+                      >
+                        <SegmentedControl
+                          value={appSettings?.management?.hookNotifications.enabled ? "enabled" : "disabled"}
+                          onValueChange={(value) => {
+                            void handleManagementPreferenceChange({ hookUpdates: value === "enabled" })
+                          }}
+                          options={localizedHookEnabledOptions}
+                          size="sm"
+                        />
+                      </SettingsRow>
+
+                      <SettingsRow
+                        title={dictionary.settings.hookFollowMode}
+                        description={dictionary.settings.hookFollowModeDescription}
+                      >
+                        <SegmentedControl
+                          value={appSettings?.management?.hookNotifications.followMode ?? "auto"}
+                          onValueChange={(value) => {
+                            void handleManagementPreferenceChange({ hookFollowMode: value as "auto" | "notice" | "off" })
+                          }}
+                          options={localizedHookFollowOptions}
+                          size="sm"
+                        />
+                      </SettingsRow>
+
+                      <SettingsRow
+                        title={dictionary.settings.filesystemDiscovery}
+                        description={dictionary.settings.filesystemDiscoveryDescription}
+                      >
+                        <SegmentedControl
+                          value={appSettings?.management?.hookNotifications.filesystemDiscovery ? "enabled" : "disabled"}
+                          onValueChange={(value) => {
+                            void handleManagementPreferenceChange({ filesystemDiscovery: value === "enabled" })
+                          }}
+                          options={localizedHookEnabledOptions}
+                          size="sm"
+                        />
+                      </SettingsRow>
+
+                      <SettingsRow
+                        title={dictionary.settings.reloadSessions}
+                        description={dictionary.settings.filesystemDiscoveryDescription}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Button type="button" variant="outline" size="sm" onClick={() => void handleReloadSessions()}>
+                            {dictionary.settings.reloadSessions}
+                          </Button>
+                          <Button type="button" variant="outline" size="sm" onClick={() => void handleRestartServer()}>
+                            {dictionary.settings.restartServer}
+                          </Button>
+                        </div>
                       </SettingsRow>
 
                       <SettingsRow
@@ -1540,7 +2541,7 @@ export function SettingsPage() {
 
                       {editorPreset === "custom" ? (
                         <div className="border-t border-border">
-                          <div className="flex justify-between gap-8 py-5 pl-6">
+                          <div className="flex justify-between gap-8 py-5 ps-6">
                             <div className="min-w-0 max-w-xl">
                               <div className="text-sm font-medium text-foreground">{dictionary.settings.commandTemplate}</div>
                               <div className="mt-1 text-[13px] text-muted-foreground">
@@ -1578,9 +2579,9 @@ export function SettingsPage() {
                             onChange={(event) => setScrollbackDraft(event.target.value)}
                             onBlur={commitScrollback}
                             onKeyDown={(event) => handleNumberInputKeyDown(event, commitScrollback)}
-                            className="hide-number-steppers w-full text-left font-mono md:w-28 md:text-right"
+                            className="hide-number-steppers w-full text-start font-mono md:w-28 md:text-end"
                           />
-                          <div className="text-left text-xs text-muted-foreground md:text-right">
+                          <div className="text-start text-xs text-muted-foreground md:text-end">
                             {MIN_TERMINAL_SCROLLBACK}-{MAX_TERMINAL_SCROLLBACK} lines
                             {scrollbackLines === DEFAULT_TERMINAL_SCROLLBACK ? ` (${dictionary.settings.defaultSuffix})` : ""}
                           </div>
@@ -1601,9 +2602,9 @@ export function SettingsPage() {
                             onChange={(event) => setMinColumnWidthDraft(event.target.value)}
                             onBlur={commitMinColumnWidth}
                             onKeyDown={(event) => handleNumberInputKeyDown(event, commitMinColumnWidth)}
-                            className="hide-number-steppers w-full text-left font-mono md:w-28 md:text-right"
+                            className="hide-number-steppers w-full text-start font-mono md:w-28 md:text-end"
                           />
-                          <div className="text-left text-xs text-muted-foreground md:text-right">
+                          <div className="text-start text-xs text-muted-foreground md:text-end">
                             {MIN_TERMINAL_MIN_COLUMN_WIDTH}-{MAX_TERMINAL_MIN_COLUMN_WIDTH} px
                             {minColumnWidth === DEFAULT_TERMINAL_MIN_COLUMN_WIDTH ? ` (${dictionary.settings.defaultSuffix})` : ""}
                           </div>
@@ -1618,7 +2619,7 @@ export function SettingsPage() {
                               {dictionary.settings.analyticsDescription}
                             </span>
                             <span className="mt-1 block">
-                              {dictionary.settings.storedIn} {appSettings?.filePathDisplay ?? "~/.kanna/data/settings.json"}.
+                              {dictionary.settings.storedIn} {appSettings?.filePathDisplay ?? "~/.abolqasem/data/settings.json"}.
                               {" "}
                               <button
                                 type="button"
@@ -1681,7 +2682,7 @@ export function SettingsPage() {
                     >
                       <div className="max-w-[420px]">
                         <ChatPreferenceControls
-                          availableProviders={PROVIDERS}
+                          availableProviders={settingsAvailableProviders}
                           selectedProvider="claude"
                           showProviderPicker={false}
                           providerLocked
@@ -1712,7 +2713,7 @@ export function SettingsPage() {
                     >
                       <div className="max-w-[420px]">
                         <ChatPreferenceControls
-                          availableProviders={PROVIDERS}
+                          availableProviders={settingsAvailableProviders}
                           selectedProvider="codex"
                           showProviderPicker={false}
                           providerLocked
@@ -1730,6 +2731,31 @@ export function SettingsPage() {
                           }}
                           planMode={providerDefaults.codex.planMode}
                           onPlanModeChange={(planMode) => handleProviderDefaultPlanModeChange("codex", planMode)}
+                          includePlanMode
+                          className="justify-start flex-wrap"
+                        />
+                      </div>
+                    </SettingsRow>
+
+                    <SettingsRow
+                      title={dictionary.settings.geminiDefaults}
+                      description={dictionary.settings.geminiDefaultsDescription}
+                      alignStart
+                    >
+                      <div className="max-w-[420px]">
+                        <ChatPreferenceControls
+                          availableProviders={settingsAvailableProviders}
+                          selectedProvider="gemini"
+                          showProviderPicker={false}
+                          providerLocked
+                          model={providerDefaults.gemini.model}
+                          modelOptions={providerDefaults.gemini.modelOptions}
+                          onModelChange={(_, model) => {
+                            handleProviderDefaultModelChange("gemini", model)
+                          }}
+                          onModelOptionChange={() => undefined}
+                          planMode={providerDefaults.gemini.planMode}
+                          onPlanModeChange={(planMode) => handleProviderDefaultPlanModeChange("gemini", planMode)}
                           includePlanMode
                           className="justify-start flex-wrap"
                         />
@@ -1791,6 +2817,58 @@ export function SettingsPage() {
                           placeholder="Model id"
                         />
                       </div>
+                    </SettingsRow>
+                  </div>
+                ) : selectedPage === "proxy" ? (
+                  <div className="border-b border-border">
+                    {appSettingsError ? (
+                      <div className="mb-4 rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                        {appSettingsError}
+                      </div>
+                    ) : null}
+                    <SettingsRow
+                      title={dictionary.settings.providerProxy}
+                      description={dictionary.settings.providerProxyDescription}
+                      bordered={false}
+                    >
+                      <SegmentedControl
+                        value={providerProxy.mode}
+                        onValueChange={(value) => handleProviderProxyModeChange(value as ProviderProxyMode)}
+                        options={localizedProviderProxyOptions}
+                        size="sm"
+                      />
+                    </SettingsRow>
+
+                    <SettingsRow
+                      title={dictionary.settings.providerProxyHttp}
+                      description={dictionary.settings.providerProxyHttpDescription}
+                    >
+                      <Input
+                        type="text"
+                        value={providerProxyHttpDraft}
+                        onChange={(event) => setProviderProxyHttpDraft(event.target.value)}
+                        onBlur={commitProviderProxySettings}
+                        onKeyDown={(event) => handleTextInputKeyDown(event, commitProviderProxySettings)}
+                        disabled={providerProxy.mode !== "custom"}
+                        placeholder="http://127.0.0.1:7890"
+                        className="w-full min-w-[240px] font-mono md:w-[320px]"
+                      />
+                    </SettingsRow>
+
+                    <SettingsRow
+                      title={dictionary.settings.providerProxyNoProxy}
+                      description={dictionary.settings.providerProxyNoProxyDescription}
+                    >
+                      <Input
+                        type="text"
+                        value={providerProxyNoProxyDraft}
+                        onChange={(event) => setProviderProxyNoProxyDraft(event.target.value)}
+                        onBlur={commitProviderProxySettings}
+                        onKeyDown={(event) => handleTextInputKeyDown(event, commitProviderProxySettings)}
+                        disabled={providerProxy.mode !== "custom"}
+                        placeholder="localhost,127.0.0.1,::1"
+                        className="w-full min-w-[240px] font-mono md:w-[320px]"
+                      />
                     </SettingsRow>
                   </div>
                 ) : selectedPage === "keybindings" ? (
@@ -1860,6 +2938,8 @@ export function SettingsPage() {
                   </div>
                 ) : selectedPage === "skills" ? (
                   <SkillsSection state={state} />
+                ) : selectedPage === "mcp" ? (
+                  <McpSection state={state} />
                 ) : (
                   <ChangelogSection
                     status={changelogStatus}
@@ -1895,19 +2975,19 @@ export function SettingsPage() {
           <div className="px-6 py-[14.25px]">
             <div className="grid gap-3 text-xs text-muted-foreground grid-cols-2 lg:grid-cols-4">
               <div>
-                <div className="mb-1 uppercase tracking-wide text-[11px] text-muted-foreground/80">{dictionary.settings.machine}</div>
+                <div className={footerLabelClassName}>{dictionary.settings.machine}</div>
                 <div className="text-foreground/80">{machineName}</div>
               </div>
               <div className="hidden md:block">
-                <div className="mb-1 uppercase tracking-wide text-[11px] text-muted-foreground/80">{dictionary.settings.connection}</div>
-                <div className="text-foreground/80">{state.connectionStatus}</div>
+                <div className={footerLabelClassName}>{dictionary.settings.connection}</div>
+                <div className="text-foreground/80">{localizedConnectionStatus}</div>
               </div>
               <div className="hidden md:block">
-                <div className="mb-1 uppercase tracking-wide text-[11px] text-muted-foreground/80">{dictionary.settings.projectsIndexed}</div>
+                <div className={footerLabelClassName}>{dictionary.settings.projectsIndexed}</div>
                 <div className="text-foreground/80">{projectCount}</div>
               </div>
               <div>
-                <div className="mb-1 uppercase tracking-wide text-[11px] text-muted-foreground/80">{dictionary.settings.appVersion}</div>
+                <div className={footerLabelClassName}>{dictionary.settings.appVersion}</div>
                 <div className="text-foreground/80">{appVersion}</div>
               </div>
             </div>

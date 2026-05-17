@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { renderToStaticMarkup } from "react-dom/server"
+import { I18nProvider } from "../../../i18n/context"
 import { ChatRow } from "./ChatRow"
 
 const baseChat = {
@@ -27,6 +28,7 @@ describe("ChatRow", () => {
         onShareChat={() => undefined}
         onOpenInFinder={() => undefined}
         onForkChat={() => undefined}
+        onConvertChat={() => undefined}
         onArchiveChat={() => undefined}
         onDeleteChat={() => undefined}
       />
@@ -46,6 +48,7 @@ describe("ChatRow", () => {
         onShareChat={() => undefined}
         onOpenInFinder={() => undefined}
         onForkChat={() => undefined}
+        onConvertChat={() => undefined}
         onArchiveChat={() => undefined}
         onDeleteChat={() => undefined}
       />
@@ -65,6 +68,7 @@ describe("ChatRow", () => {
         onShareChat={() => undefined}
         onOpenInFinder={() => undefined}
         onForkChat={() => undefined}
+        onConvertChat={() => undefined}
         onArchiveChat={() => undefined}
         onDeleteChat={() => undefined}
       />
@@ -87,6 +91,7 @@ describe("ChatRow", () => {
         onShareChat={() => undefined}
         onOpenInFinder={() => undefined}
         onForkChat={() => undefined}
+        onConvertChat={() => undefined}
         onArchiveChat={() => undefined}
         onDeleteChat={() => undefined}
       />
@@ -108,6 +113,7 @@ describe("ChatRow", () => {
         onShareChat={() => undefined}
         onOpenInFinder={() => undefined}
         onForkChat={() => undefined}
+        onConvertChat={() => undefined}
         onArchiveChat={() => undefined}
         onDeleteChat={() => undefined}
       />
@@ -115,5 +121,50 @@ describe("ChatRow", () => {
 
     expect(html).toContain("Fork chat")
     expect(html).toContain("Archive chat")
+  })
+
+  test("localizes default chat titles in Persian without changing compact age labels", () => {
+    const html = renderToStaticMarkup(
+      <I18nProvider locale="fa">
+        <ChatRow
+          chat={{ ...baseChat, title: "New Chat" }}
+          activeChatId={null}
+          nowMs={60_000}
+          onSelectChat={() => undefined}
+          onRenameChat={() => undefined}
+          onShareChat={() => undefined}
+          onOpenInFinder={() => undefined}
+          onForkChat={() => undefined}
+          onConvertChat={() => undefined}
+          onArchiveChat={() => undefined}
+          onDeleteChat={() => undefined}
+        />
+      </I18nProvider>
+    )
+
+    expect(html).toContain("چت جدید")
+    expect(html).toContain(">1m<")
+    expect(html).not.toContain("New Chat")
+  })
+
+  test("renders the provider icon label beside the chat title", () => {
+    const html = renderToStaticMarkup(
+      <ChatRow
+        chat={{ ...baseChat, provider: "gemini" }}
+        activeChatId={null}
+        nowMs={60_000}
+        onSelectChat={() => undefined}
+        onRenameChat={() => undefined}
+        onShareChat={() => undefined}
+        onOpenInFinder={() => undefined}
+        onForkChat={() => undefined}
+        onConvertChat={() => undefined}
+        onArchiveChat={() => undefined}
+        onDeleteChat={() => undefined}
+      />
+    )
+
+    expect(html).toContain("aria-label=\"Gemini\"")
+    expect(html).toContain("Test chat")
   })
 })

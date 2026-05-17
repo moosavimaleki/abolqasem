@@ -1,0 +1,95 @@
+package server
+
+import (
+	"encoding/json"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"ai-agent-manager/internal/state"
+	"ai-agent-manager/internal/workspace/gitservice"
+	"ai-agent-manager/internal/workspace/legacyimport"
+)
+
+func TestWorkspaceListBranchesResolvesLegacyChatProject(t *testing.T) {
+	withWorkspaceComposerStore(t)
+
+	projectDir := t.TempDir()
+	meta := state.SessionMeta{
+		Key:            "codex:legacy-git",
+		Agent:          "codex",
+		SessionID:      "legacy-git",
+		TranscriptPath: filepath.Join(projectDir, "rollout.jsonl"),
+		Cwd:            projectDir,
+		ProjectName:    "Legacy Git",
+		UpdatedAt:      time.Unix(1700000000, 0),
+	}
+	withLegacyState(t, &state.AppState{Sessions: map[string]state.SessionMeta{meta.Key: meta}})
+	chatID := legacyimport.ImportSession(meta, nil, legacyimport.ImportOptions{}).Chat.ID
+
+	raw, err := json.Marshal(map[string]any{"chatId": chatID})
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+
+	result, err := workspaceListBranches(raw)
+	if err != nil {
+		t.Fatalf("workspaceListBranches returned error: %v", err)
+	}
+	if result.Recent == nil || result.Local == nil || result.Remote == nil || result.PullRequests == nil {
+		t.Fatalf("expected initialized branch lists, got %#v", result)
+	}
+}
+
+func TestWorkspaceProjectGitSnapshotResolvesLegacyProject(t *testing.T) {
+	withWorkspaceComposerStore(t)
+
+	projectDir := t.TempDir()
+	meta := state.SessionMeta{
+		Key:            "codex:legacy-git-snapshot",
+		Agent:          "codex",
+		SessionID:      "legacy-git-snapshot",
+		TranscriptPath: filepath.Join(projectDir, "rollout.jsonl"),
+		Cwd:            projectDir,
+		ProjectName:    "Legacy Git Snapshot",
+		UpdatedAt:      time.Unix(1700000000, 0),
+	}
+	withLegacyState(t, &state.AppState{Sessions: map[string]state.SessionMeta{meta.Key: meta}})
+	projectID := legacyimport.ImportSession(meta, nil, legacyimport.ImportOptions{}).Project.ID
+
+	snapshot, ok := workspaceProjectGitSnapshot(projectID).(gitservice.Snapshot)
+	if !ok {
+		t.Fatalf("expected git snapshot, got %#v", snapshot)
+	}
+	if snapshot.Status == gitservice.StatusUnknown {
+		t.Fatalf("expected legacy project path to be resolved before git detect, got %#v", snapshot)
+	}
+}
+
+func TestWorkspaceProjectGitSubscriptionSnapshotIsLightweight(t *testing.T) {
+	withWorkspaceComposerStore(t)
+
+	projectDir := t.TempDir()
+	meta := state.SessionMeta{
+		Key:            "codex:legacy-git-light",
+		Agent:          "codex",
+		SessionID:      "legacy-git-light",
+		TranscriptPath: filepath.Join(projectDir, "rollout.jsonl"),
+		Cwd:            projectDir,
+		ProjectName:    "Legacy Git Light",
+		UpdatedAt:      time.Unix(1700000000, 0),
+	}
+	withLegacyState(t, &state.AppState{Sessions: map[string]state.SessionMeta{meta.Key: meta}})
+	projectID := legacyimport.ImportSession(meta, nil, legacyimport.ImportOptions{}).Project.ID
+
+	snapshot, ok := workspaceProjectGitSubscriptionSnapshot(projectID).(gitservice.Snapshot)
+	if !ok {
+		t.Fatalf("expected git snapshot, got %#v", snapshot)
+	}
+	if snapshot.Status != gitservice.StatusUnknown {
+		t.Fatalf("subscription snapshot should not run git detect, got %#v", snapshot)
+	}
+	if snapshot.Files == nil || snapshot.BranchHistory.Entries == nil {
+		t.Fatalf("expected initialized empty fields, got %#v", snapshot)
+	}
+}

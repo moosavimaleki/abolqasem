@@ -3,6 +3,7 @@ import type {
   AppSettingsPatch,
   AgentProvider,
   ChatAttachment,
+  CheckpointRestoreMode,
   ChatDiffSnapshot,
   ChatHistoryPage,
   ChatSnapshot,
@@ -10,6 +11,7 @@ import type {
   KeybindingsSnapshot,
   LlmProviderSnapshot,
   LocalProjectsSnapshot,
+  McpServerConfig,
   ModelOptions,
   SidebarData,
   StandaloneTranscriptAttachmentMode,
@@ -106,6 +108,10 @@ export type ClientCommand =
   | { type: "skills.install"; source: string; skillId: string }
   | { type: "skills.uninstall"; skillId: string }
   | { type: "skills.listInstalled" }
+  | { type: "skills.listOperations" }
+  | { type: "mcp.list" }
+  | { type: "mcp.save"; server: McpServerConfig }
+  | { type: "mcp.remove"; name: string }
   | {
       type: "settings.writeLlmProvider"
       provider: LlmProviderSnapshot["provider"]
@@ -130,6 +136,8 @@ export type ClientCommand =
     }
   | { type: "chat.create"; projectId: string }
   | { type: "chat.fork"; chatId: string }
+  | { type: "chat.convertPreview"; chatId: string; targetProvider: AgentProvider; targetProjectId?: string }
+  | { type: "chat.convert"; chatId: string; targetProvider: AgentProvider; targetProjectId?: string }
   | { type: "chat.rename"; chatId: string; title: string }
   | { type: "chat.archive"; chatId: string }
   | { type: "chat.unarchive"; chatId: string }
@@ -217,6 +225,8 @@ export type ClientCommand =
   | { type: "chat.commitDiffs"; chatId: string; paths: string[]; summary: string; description?: string; mode: DiffCommitMode }
   | { type: "chat.discardDiffFile"; chatId: string; path: string }
   | { type: "chat.ignoreDiffFile"; chatId: string; path: string }
+  | { type: "chat.listCheckpoints"; chatId: string }
+  | { type: "chat.restoreCheckpoint"; chatId: string; checkpointId: string; mode: CheckpointRestoreMode }
   | { type: "chat.cancel"; chatId: string }
   | { type: "chat.stopDraining"; chatId: string }
   | {
@@ -225,7 +235,9 @@ export type ClientCommand =
       theme: "light" | "dark"
       attachmentMode: StandaloneTranscriptAttachmentMode
     }
+  | { type: "chat.readTranscriptIndex"; chatId: string }
   | { type: "chat.loadHistory"; chatId: string; beforeCursor: string; limit: number }
+  | { type: "chat.loadHistoryAround"; chatId: string; targetCursor: string; limit: number }
   | { type: "chat.respondTool"; chatId: string; toolUseId: string; result: unknown }
   | {
       type: "message.enqueue"

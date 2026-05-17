@@ -1,13 +1,27 @@
-import { type MouseEvent as ReactMouseEvent } from "react"
-import { Check, Flower, GitBranch, Globe, Loader2, Menu, MoreHorizontal, PanelLeft, PanelRight, SquarePen, Terminal, UserRoundPlus } from "lucide-react"
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react"
+import { Check, Copy, Files, GitBranch, Globe, Loader2, Menu, MoreHorizontal, PanelLeft, PanelRight, Search as SearchIcon, Settings2, SquarePen, Terminal, UserRoundPlus } from "lucide-react"
 import type { EditorOpenSettings, EditorPreset, OpenExternalAction } from "../../../shared/protocol"
 import { Button } from "../ui/button"
 import { CardHeader } from "../ui/card"
+import { Input } from "../ui/input"
+import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover"
 import { HotkeyTooltip, HotkeyTooltipContent, HotkeyTooltipTrigger } from "../ui/tooltip"
 import { cn } from "../../lib/utils"
+import { AbolqasemLogo } from "../AbolqasemLogo"
 import { OpenExternalSelect } from "../open-external-menu"
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "../ui/context-menu"
 import { useI18n } from "../../i18n/context"
+import { ReaderAppearancePopover } from "../appearance/ReaderAppearance"
+
+export interface ChatSearchMatch {
+  message_id?: string
+  entry_id?: string
+  role: string
+  kind?: string
+  index: number
+  snippet: string
+  created_at?: string | null
+}
 
 function openContextMenuFromButton(event: ReactMouseEvent<HTMLButtonElement>) {
   event.preventDefault()
@@ -20,6 +34,11 @@ function openContextMenuFromButton(event: ReactMouseEvent<HTMLButtonElement>) {
     clientY: rect.bottom,
     view: window,
   }))
+}
+
+function shortSessionToken(value: string) {
+  if (value.length <= 18) return value
+  return `${value.slice(0, 8)}…${value.slice(-8)}`
 }
 
 function NavbarOverflowMenu({
@@ -92,6 +111,146 @@ function NavbarOverflowMenu({
   )
 }
 
+function ChatSessionSearchPopover({
+  chatId,
+  align,
+  labels,
+  onSelect,
+}: {
+  chatId: string
+  align: "start" | "end"
+  labels: {
+    title: string
+    placeholder: string
+    hint: string
+    loading: string
+    empty: string
+    failed: string
+  }
+  onSelect: (match: ChatSearchMatch) => void | Promise<void>
+}) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState("")
+  const [matches, setMatches] = useState<ChatSearchMatch[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const trimmedQuery = query.trim()
+
+  useEffect(() => {
+    if (!open) return
+    const timeout = window.setTimeout(() => {
+      inputRef.current?.focus()
+    }, 0)
+    return () => window.clearTimeout(timeout)
+  }, [open])
+
+  useEffect(() => {
+    if (!open || !trimmedQuery) {
+      setMatches([])
+      setLoading(false)
+      setError(null)
+      return
+    }
+
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => {
+      setLoading(true)
+      setError(null)
+      const params = new URLSearchParams({
+        chat_id: chatId,
+        q: trimmedQuery,
+        limit: "40",
+      })
+      fetch(`/api/search?${params.toString()}`, {
+        signal: controller.signal,
+        headers: { Accept: "application/json" },
+        cache: "no-store",
+      })
+        .then(async (response) => {
+          if (!response.ok) throw new Error(await response.text() || `Search failed with ${response.status}`)
+          return response.json() as Promise<{ matches?: ChatSearchMatch[] }>
+        })
+        .then((payload) => {
+          setMatches(payload.matches ?? [])
+        })
+        .catch((err: unknown) => {
+          if (controller.signal.aborted) return
+          setMatches([])
+          setError(err instanceof Error ? err.message : String(err))
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setLoading(false)
+        })
+    }, 250)
+
+    return () => {
+      window.clearTimeout(timeout)
+      controller.abort()
+    }
+  }, [chatId, open, trimmedQuery])
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="none"
+          title={labels.title}
+          aria-label={labels.title}
+          className="border border-border/0 px-1.5 h-9 hover:!border-border/0 hover:!bg-transparent"
+        >
+          <SearchIcon strokeWidth={2.1} className="h-4" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align={align} sideOffset={8} className="w-[min(calc(100vw-2rem),430px)] p-2">
+        <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/35 px-2 py-1.5">
+          <SearchIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <Input
+            ref={inputRef}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={labels.placeholder}
+            className="h-8 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
+          />
+        </div>
+        <div className="mt-2 max-h-[360px] overflow-y-auto">
+          {!trimmedQuery ? (
+            <div className="px-2 py-4 text-xs leading-6 text-muted-foreground">{labels.hint}</div>
+          ) : loading && matches.length === 0 ? (
+            <div className="flex items-center gap-2 px-2 py-4 text-xs text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              {labels.loading}
+            </div>
+          ) : error ? (
+            <div className="px-2 py-4 text-xs text-destructive">{labels.failed}: {error}</div>
+          ) : matches.length > 0 ? (
+            <div className="space-y-1">
+              {matches.map((match) => (
+                <button
+                  key={`${match.index}-${match.message_id ?? match.entry_id ?? match.snippet}`}
+                  type="button"
+                  onClick={() => {
+                    setOpen(false)
+                    void onSelect(match)
+                  }}
+                  className="block w-full rounded-xl px-2 py-2 text-start hover:bg-muted"
+                >
+                  <div className="text-xs font-medium text-foreground">{match.role || match.kind || "message"} · #{match.index}</div>
+                  <div className="mt-1 line-clamp-3 text-xs leading-5 text-muted-foreground">{match.snippet}</div>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="px-2 py-4 text-xs text-muted-foreground">{labels.empty}</div>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 interface Props {
   sidebarCollapsed: boolean
   onOpenSidebar: () => void
@@ -100,10 +259,13 @@ interface Props {
   localPath?: string
   embeddedTerminalVisible?: boolean
   onToggleEmbeddedTerminal?: () => void
-  rightPanel?: "hidden" | "git" | "browser"
+  rightPanel?: "hidden" | "git" | "browser" | "files"
   onToggleGitPanel?: () => void
   onToggleBrowserPanel?: () => void
+  onToggleFilesPanel?: () => void
   onOpenExternal?: (action: OpenExternalAction, editor?: EditorOpenSettings) => void
+  activeChatId?: string | null
+  onChatSearchResultSelect?: (match: ChatSearchMatch) => void | Promise<void>
   onExportTranscript?: () => void
   canExportTranscript?: boolean
   isExportingTranscript?: boolean
@@ -118,6 +280,8 @@ interface Props {
   branchName?: string
   hasGitRepo?: boolean
   gitStatus?: "unknown" | "ready" | "no_repo"
+  sessionToken?: string | null
+  pendingForkSessionToken?: string | null
 }
 
 export function ChatNavbar({
@@ -131,7 +295,10 @@ export function ChatNavbar({
   rightPanel = "hidden",
   onToggleGitPanel,
   onToggleBrowserPanel,
+  onToggleFilesPanel,
   onOpenExternal,
+  activeChatId,
+  onChatSearchResultSelect,
   onExportTranscript,
   canExportTranscript = false,
   isExportingTranscript = false,
@@ -146,23 +313,65 @@ export function ChatNavbar({
   branchName,
   hasGitRepo = true,
   gitStatus = "unknown",
+  sessionToken,
+  pendingForkSessionToken,
 }: Props) {
-  const { t } = useI18n()
+  const { t, locale, direction } = useI18n()
+  const isPersian = locale === "fa" || direction === "rtl"
+  const appearanceLabel = isPersian ? "تنظیمات نمایش" : "Appearance settings"
   const branchLabel = !hasGitRepo
     ? t.chat.setupGit
     : gitStatus === "unknown"
       ? null
       : (branchName ?? t.chat.detachedHead)
+  const visibleSessionToken = sessionToken || pendingForkSessionToken || null
+  const sessionTokenLabel = sessionToken
+    ? (isPersian ? "Session" : "Session")
+    : pendingForkSessionToken
+      ? (isPersian ? "Fork Session" : "Fork Session")
+      : null
   const isMac = platform === "darwin"
   const rightPanelVisible = rightPanel !== "hidden"
-  const handleCloseRightPanel = rightPanel === "browser" ? onToggleBrowserPanel : rightPanel === "git" ? onToggleGitPanel : undefined
-  const showBrowserPanelButton = rightPanel === "hidden" || rightPanel === "git"
-  const showGitPanelButton = rightPanel === "hidden" || rightPanel === "browser"
+  const handleCloseRightPanel = rightPanel === "browser"
+    ? onToggleBrowserPanel
+    : rightPanel === "git"
+      ? onToggleGitPanel
+      : rightPanel === "files"
+        ? onToggleFilesPanel
+        : undefined
+  const showBrowserPanelButton = rightPanel !== "browser"
+  const showFilesPanelButton = rightPanel !== "files"
+  const showGitPanelButton = rightPanel !== "git"
+  const canSearchCurrentChat = Boolean(activeChatId && onChatSearchResultSelect)
+  const chatSearchLabels = isPersian ? {
+    title: "جست‌وجو در همین نشست",
+    placeholder: "جست‌وجو در transcript همین نشست",
+    hint: "کل پیام‌های این نشست از بک‌اند جست‌وجو می‌شود؛ حتی پیام‌هایی که هنوز در صفحه لود نشده‌اند.",
+    loading: "در حال جست‌وجو در همین نشست…",
+    empty: "نتیجه‌ای در این نشست پیدا نشد.",
+    failed: "جست‌وجو ناموفق بود",
+  } : {
+    title: "Search this chat",
+    placeholder: "Search this chat transcript",
+    hint: "Search runs on the backend across the full transcript, including messages not loaded in the viewport yet.",
+    loading: "Searching this chat…",
+    empty: "No results in this chat.",
+    failed: "Search failed",
+  }
+  const hasHeaderActions = Boolean(
+    onOpenExternal
+    || canSearchCurrentChat
+    || onToggleEmbeddedTerminal
+    || onToggleGitPanel
+    || onToggleBrowserPanel
+    || onToggleFilesPanel
+    || onExportTranscript
+  )
 
   return (
     <CardHeader
       className={cn(
-        "absolute top-0 left-0 right-0 z-10 md:pt-[9px]  pl-1 pr-2 border-border/0 flex items-center justify-center",
+        "absolute top-0 left-0 right-0 z-10 px-2 md:pt-[9px] border-border/0 flex items-center justify-center",
         "bg-gradient-to-b from-background lg:from-background/0"
       )}
     >
@@ -180,7 +389,7 @@ export function ChatNavbar({
           {sidebarCollapsed && (
             <>
               <div className="hidden md:flex items-center justify-center w-[36px] h-[36px]">
-                <Flower className="h-4 w-4 sm:h-5 sm:w-5 text-logo ml-1 hidden md:block" />
+                <AbolqasemLogo className="h-4 w-4 sm:h-5 sm:w-5 text-logo mx-1 hidden md:block" />
               </div>
               <Button
                 variant="ghost"
@@ -189,7 +398,7 @@ export function ChatNavbar({
                 onClick={onExpandSidebar}
                 title={t.sidebar.expandSidebar}
               >
-                <PanelLeft className="size-4" />
+                {isPersian ? <PanelRight className="size-4" /> : <PanelLeft className="size-4" />}
               </Button>
             </>
           )}
@@ -204,12 +413,31 @@ export function ChatNavbar({
           </Button>
         </div>
 
-        <div className="flex-1 min-w-0" />
+        <div className="flex-1 min-w-0 flex items-center justify-center px-2">
+          {visibleSessionToken ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="none"
+              onClick={async () => {
+                if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) return
+                await navigator.clipboard.writeText(visibleSessionToken)
+              }}
+              className="hidden md:inline-flex max-w-[320px] items-center gap-2 rounded-full border border-border/70 px-3 py-1 text-xs text-muted-foreground hover:bg-muted/40"
+              title={visibleSessionToken}
+              aria-label={visibleSessionToken}
+            >
+              <span className="shrink-0">{sessionTokenLabel}</span>
+              <span dir="ltr" className="truncate text-foreground">{shortSessionToken(visibleSessionToken)}</span>
+              <Copy className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            </Button>
+          ) : null}
+        </div>
 
-        {localPath && (onOpenExternal || onToggleEmbeddedTerminal || onToggleGitPanel || onToggleBrowserPanel || onExportTranscript) ? (
+        {(localPath || canSearchCurrentChat) && hasHeaderActions ? (
           <div className="flex items-center gap-2 flex-shrink-0">
-            {onOpenExternal ? (
-              <div className="hidden md:block border border-border/70 rounded-[9px] backdrop-blur-lg">
+            {localPath && onOpenExternal ? (
+              <div className="hidden md:flex h-[30px] items-center overflow-hidden border border-border/70 rounded-[9px] backdrop-blur-lg">
                 <OpenExternalSelect
                   isMac={isMac}
                   editorPreset={editorPreset}
@@ -220,8 +448,33 @@ export function ChatNavbar({
                 />
               </div>
             ) : null}
-            {(onToggleEmbeddedTerminal || onToggleGitPanel || onToggleBrowserPanel || onExportTranscript) ? (
+            {(canSearchCurrentChat || onToggleEmbeddedTerminal || onToggleGitPanel || onToggleBrowserPanel || onToggleFilesPanel || onExportTranscript) ? (
               <div className="flex items-center  rounded-[9px] h-[30px]">
+                {canSearchCurrentChat && activeChatId && onChatSearchResultSelect ? (
+                  <ChatSessionSearchPopover
+                    chatId={activeChatId}
+                    align={isPersian ? "start" : "end"}
+                    labels={chatSearchLabels}
+                    onSelect={onChatSearchResultSelect}
+                  />
+                ) : null}
+                <ReaderAppearancePopover
+                  title={appearanceLabel}
+                  align={isPersian ? "start" : "end"}
+                  sideOffset={8}
+                  trigger={(
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="none"
+                      title={appearanceLabel}
+                      aria-label={appearanceLabel}
+                      className="hidden border border-border/0 px-1.5 h-9 hover:!border-border/0 hover:!bg-transparent md:flex"
+                    >
+                      <Settings2 strokeWidth={2.1} className="h-4" />
+                    </Button>
+                  )}
+                />
                 <NavbarOverflowMenu
                   showOnDesktop={rightPanelVisible}
                   onToggleEmbeddedTerminal={onToggleEmbeddedTerminal}
@@ -283,6 +536,18 @@ export function ChatNavbar({
                     )}
                   >
                     <Globe strokeWidth={2.25} className="h-4" />
+                  </Button>
+                ) : null}
+                {onToggleFilesPanel && showFilesPanelButton ? (
+                  <Button
+                    variant="ghost"
+                    size="none"
+                    onClick={onToggleFilesPanel}
+                    title={t.filesPanel.title}
+                    aria-label={t.filesPanel.title}
+                    className="border border-border/0 hover:!border-border/0 px-1.5 h-9 hover:!bg-transparent"
+                  >
+                    <Files strokeWidth={2.25} className="h-4" />
                   </Button>
                 ) : null}
                 {onToggleGitPanel && showGitPanelButton ? (

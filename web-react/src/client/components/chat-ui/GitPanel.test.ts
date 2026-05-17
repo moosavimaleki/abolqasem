@@ -1,8 +1,9 @@
 import { describe, expect, mock, test } from "bun:test"
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
-import { GitPanel, canIgnoreDiffFile, canIgnoreDiffFolder, getPrimaryCommitActionPrefix, shouldLoadDiffPatchNow } from "./GitPanel"
+import { GitPanel, canIgnoreDiffFile, canIgnoreDiffFolder, getCommitSummaryInputPaddingClassName, getPrimaryCommitActionPrefix, getUserTextDirection, shouldLoadDiffPatchNow } from "./GitPanel"
 import { TooltipProvider } from "../ui/tooltip"
+import { fa } from "../../i18n/fa"
 
 describe("GitPanel", () => {
   test("loads missing patches for expanded rows", () => {
@@ -77,7 +78,7 @@ describe("GitPanel", () => {
               sha: "abc123",
               summary: "Initial commit",
               description: "Set up the project",
-              authorName: "Kanna",
+              authorName: "Abolqasem",
               authoredAt: new Date(Date.now() - 60_000).toISOString(),
               tags: ["v1.0.0"],
               githubUrl: "https://github.com/acme/repo/commit/abc123",
@@ -197,6 +198,86 @@ describe("GitPanel", () => {
       commitModeInFlight: "commit_and_push",
       primaryCommitMode: "commit_and_push",
     })).toBe("Pushing...")
+  })
+
+  test("detects user-authored commit text direction from the first strong character", () => {
+    expect(getUserTextDirection("fix: keep git panel stable")).toBe("ltr")
+    expect(getUserTextDirection("رفع باگ نمایش تاریخچه")).toBe("rtl")
+    expect(getUserTextDirection("123 رفع باگ")).toBe("rtl")
+    expect(getUserTextDirection("")).toBe("ltr")
+  })
+
+  test("pads Persian commit summaries away from the generate button", () => {
+    expect(getCommitSummaryInputPaddingClassName("ltr")).toBe("ps-3 pe-10")
+    expect(getCommitSummaryInputPaddingClassName("rtl")).toBe("ps-10 pe-3")
+  })
+
+  test("keeps Persian commit placeholders technical and localizes commit actions", () => {
+    expect(fa.git.commitMessage).toBe("Commit message")
+    expect(fa.git.description).toBe("Description")
+    expect(fa.git.generateCommitMessage).toBe("تولید پیام کامیت خودکار")
+    expect(fa.git.generateAndPushTo).toBe("تولید پیام و پوش در")
+    expect(fa.git.commitAndPushTo).toBe("کامیت و پوش در")
+    expect(fa.git.commitOnly).toBe("فقط کامیت")
+    expect(getPrimaryCommitActionPrefix({
+      hasSummary: true,
+      isGenerating: false,
+      isCommitting: false,
+      isGeneratedCommitInFlight: false,
+      commitModeInFlight: null,
+      primaryCommitMode: "commit_and_push",
+    }, fa.git)).toBe("کامیت و پوش در")
+  })
+
+  test("right-aligns Persian commit history summaries and descriptions", () => {
+    const markup = renderToStaticMarkup(createElement(
+      TooltipProvider,
+      null,
+      createElement(GitPanel, {
+        projectId: "project-1",
+        diffs: {
+          status: "ready",
+          branchName: "main",
+          defaultBranchName: "main",
+          files: [],
+          branchHistory: {
+            entries: [{
+              sha: "def456",
+              summary: "رفع باگ نمایش تاریخچه",
+              description: "توضیح فارسی برای commit",
+              authorName: "Abolqasem",
+              authoredAt: new Date(Date.now() - 60_000).toISOString(),
+              tags: [],
+            }],
+          },
+        },
+        editorLabel: "Cursor",
+        diffRenderMode: "unified",
+        wrapLines: false,
+        onOpenFile: () => {},
+        onOpenInFinder: () => {},
+        onDiscardFile: () => {},
+        onIgnoreFile: () => {},
+        onIgnoreFolder: () => {},
+        onCopyFilePath: () => {},
+        onCopyRelativePath: () => {},
+        onLoadPatch: async () => "",
+        onListBranches: async () => ({ recent: [], local: [], remote: [], pullRequests: [], pullRequestsStatus: "unavailable" }),
+        onCheckoutBranch: async () => {},
+        onCreateBranch: async () => {},
+        onGenerateCommitMessage: async () => ({ subject: "", body: "" }),
+        onCommit: async () => null,
+        onSyncWithRemote: async () => null,
+        onDiffRenderModeChange: () => {},
+        onWrapLinesChange: () => {},
+        onClose: () => {},
+      })
+    ))
+
+    expect(markup).toContain('dir="rtl"')
+    expect(markup).toContain("text-right")
+    expect(markup).toContain("رفع باگ نمایش تاریخچه")
+    expect(markup).toContain("توضیح فارسی برای commit")
   })
 
   test("renders the branch switcher affordance", () => {

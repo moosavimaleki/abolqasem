@@ -28,8 +28,12 @@ type ImportedSession struct {
 
 func ImportSession(meta state.SessionMeta, messages []parser.Message, opts ImportOptions) ImportedSession {
 	meta = fillMetaFromMessages(meta, messages)
-	projectID := legacyProjectID(meta)
-	chatID := LegacyChatID(meta)
+	titleMeta := meta
+	if isGeneratedLegacySessionTitle(titleMeta.SessionName, titleMeta) {
+		titleMeta.SessionName = ""
+	}
+	projectID := ImportedProjectID(meta)
+	chatID := ImportedChatID(meta)
 	createdAt := firstTimestamp(meta, messages)
 	updatedAt := lastTimestamp(meta, messages)
 	if updatedAt == 0 {
@@ -51,7 +55,7 @@ func ImportSession(meta state.SessionMeta, messages []parser.Message, opts Impor
 	chat := readmodels.ChatRecord{
 		ID:            chatID,
 		ProjectID:     projectID,
-		Title:         state.ResolveSessionName(meta),
+		Title:         state.ResolveSessionName(titleMeta),
 		CreatedAt:     createdAt,
 		UpdatedAt:     updatedAt,
 		Unread:        false,
@@ -59,10 +63,7 @@ func ImportSession(meta state.SessionMeta, messages []parser.Message, opts Impor
 		PlanMode:      false,
 		SessionToken:  nil,
 		HasMessages:   len(messages) > 0,
-		LastMessageAt: lastUserMessageTimestamp(messages),
-	}
-	if chat.LastMessageAt == 0 {
-		chat.LastMessageAt = updatedAt
+		LastMessageAt: updatedAt,
 	}
 
 	entries := mapMessages(meta, messages)
@@ -87,11 +88,23 @@ func ImportSession(meta state.SessionMeta, messages []parser.Message, opts Impor
 		},
 		LegacySessionKey: meta.Key,
 		TranscriptPath:   meta.TranscriptPath,
-		ReadOnly:         true,
+		ReadOnly:         false,
 	}
 }
 
+func ImportedChatID(meta state.SessionMeta) string {
+	return "chat-" + shortHash(chatIDSource(meta))
+}
+
 func LegacyChatID(meta state.SessionMeta) string {
+	return ImportedChatID(meta)
+}
+
+func LegacyChatAliasID(meta state.SessionMeta) string {
+	return "legacy-chat-" + shortHash(chatIDSource(meta))
+}
+
+func chatIDSource(meta state.SessionMeta) string {
 	source := strings.TrimSpace(meta.Agent) + "\n" + strings.TrimSpace(meta.TranscriptPath)
 	if strings.TrimSpace(meta.TranscriptPath) == "" {
 		source = strings.TrimSpace(meta.Key)
@@ -99,10 +112,18 @@ func LegacyChatID(meta state.SessionMeta) string {
 	if strings.TrimSpace(source) == "" {
 		source = strings.TrimSpace(meta.SessionID)
 	}
-	return "legacy-chat-" + shortHash(source)
+	return source
 }
 
-func legacyProjectID(meta state.SessionMeta) string {
+func ImportedProjectID(meta state.SessionMeta) string {
+	return "project-" + shortHash(projectIDSource(meta))
+}
+
+func LegacyProjectAliasID(meta state.SessionMeta) string {
+	return "legacy-project-" + shortHash(projectIDSource(meta))
+}
+
+func projectIDSource(meta state.SessionMeta) string {
 	source := strings.TrimSpace(meta.Cwd)
 	if source == "" {
 		source = strings.TrimSpace(meta.ProjectName)
@@ -110,7 +131,7 @@ func legacyProjectID(meta state.SessionMeta) string {
 	if source == "" {
 		source = filepath.Dir(strings.TrimSpace(meta.TranscriptPath))
 	}
-	return "legacy-project-" + shortHash(source)
+	return source
 }
 
 func fillMetaFromMessages(meta state.SessionMeta, messages []parser.Message) state.SessionMeta {
@@ -118,17 +139,71 @@ func fillMetaFromMessages(meta state.SessionMeta, messages []parser.Message) sta
 		return meta
 	}
 	meta.MessageCountEstimate = len(messages)
+	firstAnyPreview := ""
+	firstUserPreview := ""
+	lastPreview := ""
 	for _, message := range messages {
 		text := strings.TrimSpace(message.Text)
 		if text == "" {
 			continue
 		}
-		if meta.FirstPreview == "" {
-			meta.FirstPreview = text
+		isBootstrap := state.IsAgentBootstrapPrompt(text)
+		if firstAnyPreview == "" && !isBootstrap {
+			firstAnyPreview = text
 		}
-		meta.LastPreview = text
+		if firstUserPreview == "" && strings.EqualFold(strings.TrimSpace(message.Role), "user") && !isBootstrap {
+			firstUserPreview = text
+		}
+		lastPreview = text
+	}
+	if meta.FirstPreview == "" {
+		meta.FirstPreview = firstNonEmpty(firstUserPreview, firstAnyPreview)
+	}
+	if meta.LastPreview == "" {
+		meta.LastPreview = lastPreview
 	}
 	return meta
+}
+
+func isGeneratedLegacySessionTitle(title string, meta state.SessionMeta) bool {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return false
+	}
+	if strings.EqualFold(title, strings.TrimSpace(meta.SessionID)) {
+		return true
+	}
+	transcriptBase := strings.TrimSuffix(filepath.Base(strings.TrimSpace(meta.TranscriptPath)), filepath.Ext(strings.TrimSpace(meta.TranscriptPath)))
+	if transcriptBase != "" && strings.EqualFold(title, transcriptBase) {
+		return true
+	}
+	return looksLikeGeneratedSessionID(title)
+}
+
+func looksLikeGeneratedSessionID(value string) bool {
+	value = strings.TrimSpace(strings.ToLower(value))
+	if value == "" {
+		return false
+	}
+	if strings.HasPrefix(value, "rollout-") {
+		return true
+	}
+	dashCount := strings.Count(value, "-")
+	if dashCount < 3 {
+		return false
+	}
+	hexLike := 0
+	for _, r := range value {
+		if r == '-' {
+			continue
+		}
+		if (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') {
+			hexLike++
+			continue
+		}
+		return false
+	}
+	return hexLike >= 16
 }
 
 func projectTitle(meta state.SessionMeta) string {
@@ -155,7 +230,7 @@ func mapMessages(meta state.SessionMeta, messages []parser.Message) []readmodels
 func mapMessage(meta state.SessionMeta, message parser.Message) readmodels.TranscriptEntry {
 	createdAt := messageCreatedAt(message)
 	fields := map[string]any{
-		"_id":       legacyMessageID(meta, message),
+		"_id":       importedMessageID(meta, message),
 		"createdAt": float64(createdAt),
 		"messageId": message.ID,
 	}
@@ -181,15 +256,15 @@ func mapMessage(meta state.SessionMeta, message parser.Message) readmodels.Trans
 	}
 }
 
-func legacyMessageID(meta state.SessionMeta, message parser.Message) string {
+func importedMessageID(meta state.SessionMeta, message parser.Message) string {
 	source := strings.Join([]string{
-		LegacyChatID(meta),
+		ImportedChatID(meta),
 		message.ID,
 		fmt.Sprintf("%d", message.Index),
 		message.Role,
 		message.Kind,
 	}, "\n")
-	return "legacy-message-" + shortHash(source)
+	return "message-" + shortHash(source)
 }
 
 func firstTimestamp(meta state.SessionMeta, messages []parser.Message) int64 {

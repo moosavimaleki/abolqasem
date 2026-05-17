@@ -1,5 +1,5 @@
 import { PatchDiff } from "@pierre/diffs/react"
-import { AlertTriangle, ArrowUp, Ban, Building2, Check, ChevronDown, ChevronUp, Code, Columns2, Copy, Download, Ellipsis, FileText, FolderOpen, GitBranch, GitBranchPlus, Github, GitMerge, GitPullRequest, Globe, LoaderCircle, Lock, Minus, PencilLine, PenLine, RefreshCw, Rows3, Search, Sparkles, Trash2, Upload, UserRound, WrapText } from "lucide-react"
+import { AlertTriangle, ArrowUp, Ban, Building2, Check, ChevronDown, ChevronUp, Code, Columns2, Copy, Download, Ellipsis, FileText, FolderOpen, GitBranch, GitBranchPlus, Github, GitMerge, GitPullRequest, Globe, LoaderCircle, Lock, Minus, PencilLine, PenLine, Plus, RefreshCw, Rows3, Search, Sparkles, Trash2, Upload, UserRound, WrapText } from "lucide-react"
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode, type RefObject } from "react"
 import type {
   ChatAttachment,
@@ -31,11 +31,73 @@ import { Textarea } from "../ui/textarea"
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip"
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "../ui/dialog"
 import { useI18n } from "../../i18n/context"
+import type { TranslationDictionary } from "../../i18n"
 
 type DiffRenderMode = "unified" | "split"
 type DiffFile = ChatDiffSnapshot["files"][number]
 type SidebarViewMode = "changes" | "history"
 const EMPTY_CHECKED_PATHS: Record<string, boolean> = {}
+type GitTranslations = TranslationDictionary["git"]
+type PrimaryCommitActionLabels = Pick<
+  GitTranslations,
+  | "commitAndPushTo"
+  | "commitTo"
+  | "committing"
+  | "committingAndPushing"
+  | "generateAndCommitTo"
+  | "generateAndPushTo"
+  | "generating"
+  | "pushing"
+>
+type GitTimeLabels = Pick<
+  GitTranslations,
+  | "justNow"
+  | "lastFetched"
+  | "noLocalFetchRecorded"
+  | "relativeDaysAgo"
+  | "relativeHoursAgo"
+  | "relativeMinutesAgo"
+  | "relativeMonthsAgo"
+  | "relativeWeeksAgo"
+  | "relativeYearsAgo"
+>
+const DEFAULT_PRIMARY_COMMIT_ACTION_LABELS: PrimaryCommitActionLabels = {
+  commitAndPushTo: "Commit & push to",
+  commitTo: "Commit to",
+  committing: "Committing...",
+  committingAndPushing: "Committing & Pushing...",
+  generateAndCommitTo: "Generate & commit to",
+  generateAndPushTo: "Generate & push to",
+  generating: "Generating...",
+  pushing: "Pushing...",
+}
+const DEFAULT_GIT_TIME_LABELS: GitTimeLabels = {
+  justNow: "just now",
+  lastFetched: (time: string) => `Last fetched ${time}`,
+  noLocalFetchRecorded: "No local fetch recorded",
+  relativeDaysAgo: (count: number) => `${count}d ago`,
+  relativeHoursAgo: (count: number) => `${count}hr ago`,
+  relativeMinutesAgo: (count: number) => `${count}m ago`,
+  relativeMonthsAgo: (count: number) => `${count}mo ago`,
+  relativeWeeksAgo: (count: number) => `${count}wk ago`,
+  relativeYearsAgo: (count: number) => `${count}yr ago`,
+}
+
+type UserTextDirection = "ltr" | "rtl"
+const STRONG_RTL_CHARACTER_PATTERN = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/
+const STRONG_LTR_CHARACTER_PATTERN = /[A-Za-z\u00C0-\u024F]/
+
+export function getUserTextDirection(text: string): UserTextDirection {
+  for (const character of text) {
+    if (STRONG_RTL_CHARACTER_PATTERN.test(character)) return "rtl"
+    if (STRONG_LTR_CHARACTER_PATTERN.test(character)) return "ltr"
+  }
+  return "ltr"
+}
+
+export function getCommitSummaryInputPaddingClassName(direction: UserTextDirection) {
+  return direction === "rtl" ? "ps-10 pe-3" : "ps-3 pe-10"
+}
 
 export function shouldLoadDiffPatchNow(args: {
   isCollapsed: boolean
@@ -124,21 +186,21 @@ export function getPrimaryCommitActionPrefix(args: {
   isGeneratedCommitInFlight: boolean
   commitModeInFlight: DiffCommitMode | null
   primaryCommitMode: DiffCommitMode
-}) {
+}, labels: PrimaryCommitActionLabels = DEFAULT_PRIMARY_COMMIT_ACTION_LABELS) {
   if (args.hasSummary) {
     if (args.isCommitting) {
       if (args.isGeneratedCommitInFlight) {
-        return args.commitModeInFlight === "commit_only" ? "Committing..." : "Pushing..."
+        return args.commitModeInFlight === "commit_only" ? labels.committing : labels.pushing
       }
-      return args.commitModeInFlight === "commit_only" ? "Committing..." : "Committing & Pushing..."
+      return args.commitModeInFlight === "commit_only" ? labels.committing : labels.committingAndPushing
     }
-    return args.primaryCommitMode === "commit_only" ? "Commit to" : "Commit & push to"
+    return args.primaryCommitMode === "commit_only" ? labels.commitTo : labels.commitAndPushTo
   }
 
   if (args.isGenerating) {
-    return "Generating..."
+    return labels.generating
   }
-  return args.primaryCommitMode === "commit_only" ? "Generate & commit to" : "Generate & push to"
+  return args.primaryCommitMode === "commit_only" ? labels.generateAndCommitTo : labels.generateAndPushTo
 }
 
 function IconButton(props: {
@@ -181,10 +243,11 @@ function StageCheckbox({
   className?: string
   onClick: () => void
 }) {
+  const { t } = useI18n()
   return (
     <button
       type="button"
-      aria-label={label ?? (checked ? "Exclude file from commit" : "Include file in commit")}
+      aria-label={label ?? (checked ? t.git.excludeFileFromCommit : t.git.includeFileInCommit)}
       aria-checked={mixed ? "mixed" : checked}
       aria-pressed={mixed ? "mixed" : checked}
       onClick={(event) => {
@@ -208,7 +271,7 @@ function StageCheckbox({
   )
 }
 
-function formatRelativeTime(isoTimestamp: string) {
+function formatRelativeTime(isoTimestamp: string, labels: GitTimeLabels = DEFAULT_GIT_TIME_LABELS) {
   const timestamp = Date.parse(isoTimestamp)
   if (!Number.isFinite(timestamp)) {
     return ""
@@ -223,36 +286,41 @@ function formatRelativeTime(isoTimestamp: string) {
   const year = 365 * day
 
   if (diffMs < minute) {
-    return "just now"
+    return labels.justNow
   }
   if (diffMs < hour) {
-    return `${Math.round(diffMs / minute)}m ago`
+    return labels.relativeMinutesAgo(Math.round(diffMs / minute))
   }
   if (diffMs < day) {
-    return `${Math.round(diffMs / hour)}hr ago`
+    return labels.relativeHoursAgo(Math.round(diffMs / hour))
   }
   if (diffMs < week) {
-    return `${Math.round(diffMs / day)}d ago`
+    return labels.relativeDaysAgo(Math.round(diffMs / day))
   }
   if (diffMs < month) {
-    return `${Math.round(diffMs / week)}wk ago`
+    return labels.relativeWeeksAgo(Math.round(diffMs / week))
   }
   if (diffMs < year) {
-    return `${Math.round(diffMs / month)}mo ago`
+    return labels.relativeMonthsAgo(Math.round(diffMs / month))
   }
-  return `${Math.round(diffMs / year)}yr ago`
+  return labels.relativeYearsAgo(Math.round(diffMs / year))
 }
 
-function formatFetchTooltip(isoTimestamp?: string) {
+function formatFetchTooltip(isoTimestamp: string | undefined, labels: GitTimeLabels) {
   if (!isoTimestamp) {
-    return "No local fetch recorded"
+    return labels.noLocalFetchRecorded
   }
-  return `Last fetched ${formatRelativeTime(isoTimestamp)}`
+  return labels.lastFetched(formatRelativeTime(isoTimestamp, labels))
 }
 
 function CommitHistoryRow({ entry, isPendingPush = false }: { entry: ChatBranchHistoryEntry; isPendingPush?: boolean }) {
-  const relativeTime = formatRelativeTime(entry.authoredAt)
+  const { t } = useI18n()
+  const relativeTime = formatRelativeTime(entry.authoredAt, t.git)
   const isClickable = Boolean(entry.githubUrl)
+  const summaryDirection = getUserTextDirection(entry.summary)
+  const descriptionDirection = getUserTextDirection(entry.description ?? "")
+  const isSummaryRtl = summaryDirection === "rtl"
+  const isDescriptionRtl = descriptionDirection === "rtl"
   return (
     <button
       type="button"
@@ -262,18 +330,26 @@ function CommitHistoryRow({ entry, isPendingPush = false }: { entry: ChatBranchH
         window.open(entry.githubUrl, "_blank", "noopener,noreferrer")
       }}
       className={cn(
-        "flex w-full items-start gap-3 rounded-lg border border-border bg-background pl-3 pr-2 py-2 text-left transition-colors",
+        "flex w-full items-start gap-3 rounded-lg border border-border bg-background py-2 pe-2 ps-3 text-start transition-colors",
         isClickable ? "hover:bg-accent" : "cursor-default opacity-60"
       )}
     >
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium text-foreground">{entry.summary}</div>
+        <div
+          dir={summaryDirection}
+          className={cn("truncate text-sm font-medium text-foreground", isSummaryRtl ? "text-right" : "text-left")}
+        >
+          {entry.summary}
+        </div>
         {entry.description ? (
-          <div className="mt-1 line-clamp-2 whitespace-pre-wrap text-xs text-muted-foreground">
+          <div
+            dir={descriptionDirection}
+            className={cn("mt-1 line-clamp-2 whitespace-pre-wrap text-xs text-muted-foreground", isDescriptionRtl ? "text-right" : "text-left")}
+          >
             {entry.description}
           </div>
         ) : null}
-        <div className="mt-1 flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+        <div className={cn("mt-1 flex min-w-0 items-center gap-1 text-xs text-muted-foreground", isSummaryRtl ? "justify-end" : "justify-start")}>
           {entry.authorName ? <span className="truncate">{entry.authorName}</span> : null}
           {entry.authorName && relativeTime ? <span aria-hidden="true">•</span> : null}
           {relativeTime ? <span>{relativeTime}</span> : null}
@@ -628,18 +704,95 @@ function BranchSearchInput({
   disabled?: boolean
   trailingAction?: ReactNode
 }) {
+  const { direction } = useI18n()
+  const isRtl = direction === "rtl"
+
   return (
-    <div className="relative">
-      <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+    <div className="relative" dir={direction}>
+      <Search className={cn(
+        "pointer-events-none absolute top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground",
+        isRtl ? "right-2" : "left-2"
+      )} />
       <Input
+        dir="auto"
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
-        className={cn("h-9 pl-7 text-sm", trailingAction ? "pr-14" : undefined)}
+        className={cn(
+          "h-9 text-sm",
+          isRtl ? "pr-7 text-right" : "pl-7 text-left",
+          trailingAction ? (isRtl ? "pl-16" : "pr-16") : undefined
+        )}
         disabled={disabled}
       />
-      {trailingAction ? <div className="absolute right-1 top-1/2 -translate-y-1/2">{trailingAction}</div> : null}
+      {trailingAction ? (
+        <div className={cn(
+          "absolute top-1/2 -translate-y-1/2",
+          isRtl ? "left-1" : "right-1"
+        )}>
+          {trailingAction}
+        </div>
+      ) : null}
     </div>
+  )
+}
+
+function BranchNameCode({
+  name,
+  tone = "surface",
+  className,
+}: {
+  name: string
+  tone?: "surface" | "primary"
+  className?: string
+}) {
+  return (
+    <code
+      dir="ltr"
+      className={cn(
+        "inline-flex min-w-0 max-w-full items-center truncate rounded-[4px] px-1 py-0 align-[0.03em] font-mono text-[0.86em] font-medium leading-[1.35] [unicode-bidi:isolate]",
+        tone === "primary"
+          ? "bg-black/[0.08] text-inherit dark:bg-white/[0.14]"
+          : "bg-foreground/[0.06] text-foreground/85 dark:bg-white/[0.06] dark:text-slate-200/90",
+        className
+      )}
+    >
+      {name}
+    </code>
+  )
+}
+
+function BranchReferenceInline({
+  name,
+  direction,
+  tone = "surface",
+  className,
+  codeClassName,
+}: {
+  name: string
+  direction: UserTextDirection
+  tone?: "surface" | "primary"
+  className?: string
+  codeClassName?: string
+}) {
+  const { t } = useI18n()
+
+  if (direction === "rtl") {
+    return (
+      <span
+        dir="rtl"
+        className={cn("inline-flex min-w-0 max-w-full items-baseline gap-1 align-baseline", className)}
+      >
+        <span className="shrink-0">{t.git.branchReferencePrefix}</span>
+        <BranchNameCode name={name} tone={tone} className={codeClassName} />
+      </span>
+    )
+  }
+
+  return (
+    <span dir="ltr" className={cn("inline-block min-w-0 max-w-full truncate [unicode-bidi:isolate]", className)}>
+      {name}
+    </span>
   )
 }
 
@@ -660,6 +813,8 @@ function BranchListSection({
   stickyTitle?: boolean
   onSelect: (entry: ChatBranchListEntry) => void
 }) {
+  const { t, direction } = useI18n()
+  const isRtl = direction === "rtl"
   if (entries.length === 0 && !emptyLabel) {
     return null
   }
@@ -667,7 +822,9 @@ function BranchListSection({
   return (
     <div className="space-y-1">
       <div className={cn(
-        "px-1 py-1 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground",
+        "px-1 py-1 text-[11px] font-medium uppercase text-muted-foreground",
+        isRtl ? "text-right" : "text-left",
+        direction === "rtl" ? "tracking-normal" : "tracking-[0.08em]",
         stickyTitle && "sticky top-0 z-10 bg-background"
       )}>
         {title}
@@ -677,6 +834,10 @@ function BranchListSection({
       ) : (
         entries.map((entry) => {
           const isSelected = selectedName === entry.name
+          const branchIcon = entry.kind === "pull_request"
+            ? <GitPullRequest className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            : <GitBranch className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          const secondaryLabel = entry.kind === "pull_request" ? (entry.description ?? entry.headLabel ?? entry.name) : (entry.headLabel ?? undefined)
           return (
             <button
               key={entry.id}
@@ -684,30 +845,66 @@ function BranchListSection({
               disabled={disabled}
               onClick={() => onSelect(entry)}
               className={cn(
-                "flex w-full items-start gap-2 rounded-lg px-2 py-2 text-left transition-colors disabled:opacity-60",
+                "block w-full rounded-lg px-2 py-2 transition-colors disabled:opacity-60",
+                isRtl ? "text-right" : "text-left",
                 isSelected
                   ? "bg-accent text-foreground"
                   : "hover:bg-accent"
               )}
             >
-              {entry.kind === "pull_request"
-                ? <GitPullRequest className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                : <GitBranch className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
-              <div className="min-w-0 flex-1">
-                <div className="flex w-full items-center gap-3">
-                  <div className="min-w-0 flex-1 overflow-hidden whitespace-nowrap text-sm text-foreground">{entry.displayName}</div>
+              {isRtl ? (
+                <div dir="ltr" className="flex w-full items-start gap-3">
                   {entry.updatedAt ? (
-                    <div className="ml-auto shrink-0 text-right text-[11px] text-muted-foreground">
-                      {formatRelativeTime(entry.updatedAt)}
+                    <div className="shrink-0 text-left text-[11px] text-muted-foreground">
+                      {formatRelativeTime(entry.updatedAt, t.git)}
+                    </div>
+                  ) : null}
+                  <div dir="rtl" className="ml-auto flex min-w-0 items-start gap-2">
+                    {branchIcon}
+                    <div className="min-w-0">
+                      <div className="min-w-0 overflow-hidden whitespace-nowrap text-right text-sm text-foreground">
+                        {entry.kind === "pull_request" ? (
+                          <span dir="auto" className="inline-block max-w-full truncate text-right">
+                            {entry.displayName}
+                          </span>
+                        ) : (
+                          <BranchReferenceInline
+                            name={entry.displayName}
+                            direction="rtl"
+                            codeClassName="max-w-[140px]"
+                          />
+                        )}
+                      </div>
+                      {secondaryLabel ? (
+                        <div dir="ltr" className="truncate text-right text-xs text-muted-foreground [unicode-bidi:isolate]">
+                          {secondaryLabel}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div dir="ltr" className="flex w-full items-start gap-3">
+                  <div className="flex min-w-0 items-start gap-2">
+                    {branchIcon}
+                    <div className="min-w-0">
+                      <div dir="ltr" className="min-w-0 overflow-hidden whitespace-nowrap text-left text-sm text-foreground [unicode-bidi:isolate]">
+                        {entry.displayName}
+                      </div>
+                      {secondaryLabel ? (
+                        <div dir="ltr" className="truncate text-left text-xs text-muted-foreground [unicode-bidi:isolate]">
+                          {secondaryLabel}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                  {entry.updatedAt ? (
+                    <div className="ms-auto shrink-0 text-end text-[11px] text-muted-foreground">
+                      {formatRelativeTime(entry.updatedAt, t.git)}
                     </div>
                   ) : null}
                 </div>
-                {(entry.kind === "pull_request" && entry.description) || entry.headLabel ? (
-                  <div className="truncate text-xs text-muted-foreground">
-                    {entry.kind === "pull_request" ? (entry.description ?? entry.headLabel ?? entry.name) : (entry.headLabel ?? undefined)}
-                  </div>
-                ) : null}
-              </div>
+              )}
             </button>
           )
         })
@@ -731,6 +928,7 @@ function MergeBranchModal({
   onPreviewMergeBranch: (branch: ChatBranchListEntry) => Promise<ChatMergePreviewResult>
   onMergeBranch: (branch: ChatBranchListEntry) => Promise<ChatMergeBranchResult | null>
 }) {
+  const { t, direction } = useI18n()
   const [query, setQuery] = useState("")
   const [selectedName, setSelectedName] = useState<string | null>(null)
   const [preview, setPreview] = useState<ChatMergePreviewResult | null>(null)
@@ -832,35 +1030,48 @@ function MergeBranchModal({
       <DialogContent size="sm" className="max-w-[min(92vw,475px)]">
         <DialogBody className="flex min-h-0 flex-col gap-3 px-4 pb-4 pt-4">
           <div className="space-y-1">
-            <DialogTitle>Merge into {currentBranchName ?? "current branch"}</DialogTitle>
+            <DialogTitle>
+              {direction === "rtl" ? (
+                <span dir="rtl" className="inline-flex min-w-0 max-w-full items-baseline gap-1">
+                  <span>{t.git.mergeBranchIntoPrefix}</span>
+                  <BranchReferenceInline
+                    name={currentBranchName ?? t.git.thisBranch}
+                    direction="rtl"
+                    codeClassName="max-w-[180px]"
+                  />
+                </span>
+              ) : (
+                t.git.mergeInto(currentBranchName ?? t.git.thisBranch)
+              )}
+            </DialogTitle>
             <DialogDescription>
-              Choose a branch to continue.
+              {t.git.selectBranchToContinue}
             </DialogDescription>
           </div>
           <BranchSearchInput
             value={query}
             onChange={setQuery}
-            placeholder="Search branches"
+            placeholder={t.git.searchBranches}
           />
-          <div className="max-h-[375px] space-y-3 overflow-y-auto pr-1">
+          <div className="max-h-[375px] space-y-3 overflow-y-auto pe-1">
             <BranchListSection
-              title="Default Branch"
+              title={t.git.defaultBranch}
               entries={visibleDefaultBranch ? [visibleDefaultBranch] : []}
-              emptyLabel="No default branch available."
+              emptyLabel={t.git.noDefaultBranch}
               selectedName={selectedName}
               onSelect={(entry) => setSelectedName(entry.name)}
             />
             <BranchListSection
-              title="Recent Branches"
+              title={t.git.recentBranches}
               entries={visibleRecent}
-              emptyLabel="No recent branches."
+              emptyLabel={t.git.noRecentBranches}
               selectedName={selectedName}
               onSelect={(entry) => setSelectedName(entry.name)}
             />
             <BranchListSection
-              title="Other Branches"
+              title={t.git.otherBranches}
               entries={visibleOther}
-              emptyLabel="No other branches match this search."
+              emptyLabel={t.git.noOtherBranches}
               selectedName={selectedName}
               onSelect={(entry) => setSelectedName(entry.name)}
             />
@@ -868,12 +1079,12 @@ function MergeBranchModal({
           <div className="px-2">
             {!selectedEntry ? (
               <div className="text-sm text-muted-foreground">
-                Select a branch to preview the merge.
+                {t.git.selectBranchForMerge}
               </div>
             ) : isPreviewLoading ? (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <LoaderCircle className="size-3.5 animate-spin" />
-                <span>Checking merge preview…</span>
+                <span>{t.git.checkingMergePreview}</span>
               </div>
             ) : previewError ? (
               <div className="text-sm text-destructive">
@@ -899,7 +1110,7 @@ function MergeBranchModal({
               </div>
             ) : (
               <div className="text-sm text-muted-foreground">
-                Preview unavailable.
+                {t.git.previewUnavailable}
               </div>
             )}
           </div>
@@ -907,16 +1118,16 @@ function MergeBranchModal({
         <DialogFooter>
           <div className="flex min-w-0 w-full items-center justify-end gap-2">
             <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
-              Cancel
+              {t.common.cancel}
             </Button>
             <Button className="max-w-full min-w-0" size="sm" disabled={mergeDisabled} onClick={() => void handleMerge()}>
               {isMerging ? (
                 <>
-                  <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                  Merging…
+                  <LoaderCircle className="me-1.5 h-3.5 w-3.5 animate-spin" />
+                  {t.git.merging}
                 </>
               ) : (
-                <span className="block max-w-full truncate">Merge</span>
+                <span className="block max-w-full truncate">{t.git.merge}</span>
               )}
             </Button>
           </div>
@@ -941,6 +1152,7 @@ function BranchSwitcher({
   onCheckoutBranch: (branch: ChatBranchListEntry) => Promise<void>
   onCreateBranch: () => Promise<void>
 }) {
+  const { t, direction } = useI18n()
   const [open, setOpen] = useState(false)
   const [mergeModalOpen, setMergeModalOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
@@ -1019,19 +1231,24 @@ function BranchSwitcher({
         <button
           type="button"
           className="flex min-w-0 max-w-full items-center gap-1 rounded-md px-1.5 py-1 text-sm transition-colors hover:bg-accent hover:text-foreground"
-          aria-label="Open branch switcher"
+          aria-label={t.git.openBranchSwitcher}
         >
           <GitBranch className="h-3.5 w-3.5 shrink-0" />
-          <span className="truncate">{currentBranchName ?? "Detached HEAD"}</span>
+          <span dir="ltr" className="truncate [unicode-bidi:isolate]">{currentBranchName ?? t.chat.detachedHead}</span>
           <ChevronDown className="h-3.5 w-3.5 shrink-0" />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-[320px] p-2">
-        <div className="space-y-2">
+      <PopoverContent
+        align={direction === "rtl" ? "end" : "start"}
+        sideOffset={6}
+        className="w-[320px] p-2"
+        dir="ltr"
+      >
+        <div className="space-y-2" dir={direction}>
           <BranchSearchInput
             value={query}
             onChange={setQuery}
-            placeholder={entryView === "pull_requests" ? "Search pull requests" : "Search branches"}
+            placeholder={entryView === "pull_requests" ? t.git.searchPullRequests : t.git.searchBranches}
             disabled={isLoading || isMutating}
             trailingAction={(
               <Button
@@ -1039,9 +1256,10 @@ function BranchSwitcher({
                 size="sm"
                 onClick={() => void handleCreate()}
                 disabled={isLoading || isMutating}
-                className="h-7 px-2 text-xs hover:!bg-transparent hover:!border-border/0"
+                className="h-7 gap-1 px-2 text-xs hover:!bg-transparent hover:!border-border/0"
               >
-                + New
+                <Plus className="size-3" />
+                <span>{t.git.newBranch}</span>
               </Button>
             )}
           />
@@ -1052,28 +1270,28 @@ function BranchSwitcher({
             className="w-full"
             optionClassName="flex-1 justify-center"
             options={[
-              { value: "branches", label: "Branches" },
-              { value: "pull_requests", label: `Open PRs ${totalPullRequestCount}` },
+              { value: "branches", label: t.git.branches },
+              { value: "pull_requests", label: t.git.openPullRequests(totalPullRequestCount) },
             ]}
           />
-          <div className="max-h-[420px] overflow-y-auto pr-1.5 -mr-[8px]">
+          <div className="max-h-[420px] overflow-y-auto pe-1.5 -me-[8px]">
             {isLoading ? (
               <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
                 <LoaderCircle className="h-4 w-4 animate-spin" />
-                <span>Loading branches…</span>
+                <span dir={direction}>{t.git.loadingBranches}</span>
               </div>
             ) : error ? (
               <div className="rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground">{error}</div>
             ) : entryView === "pull_requests" ? (
               <BranchListSection
-                title="Open PRs"
+                title={t.git.openPullRequestsTitle}
                 entries={pullRequests}
                 emptyLabel={
                   branchList?.pullRequestsStatus === "error"
-                    ? branchList.pullRequestsError ?? "Could not load pull requests."
+                    ? branchList.pullRequestsError ?? t.git.couldNotLoadPullRequests
                     : branchList?.pullRequestsStatus === "unavailable"
-                      ? "Pull requests unavailable for this repository."
-                      : "No open pull requests."
+                      ? t.git.pullRequestsUnavailable
+                      : t.git.noOpenPullRequests
                 }
                 disabled={isMutating}
                 stickyTitle
@@ -1084,9 +1302,9 @@ function BranchSwitcher({
             ) : (
               <div className="space-y-3">
                 <BranchListSection
-                  title="Recent"
+                  title={t.git.recentBranches}
                   entries={recent}
-                  emptyLabel="No recent branches."
+                  emptyLabel={t.git.noRecentBranches}
                   disabled={isMutating}
                   stickyTitle
                   onSelect={(entry) => {
@@ -1094,9 +1312,9 @@ function BranchSwitcher({
                   }}
                 />
                 <BranchListSection
-                  title="Local"
+                  title={t.git.localBranches}
                   entries={local}
-                  emptyLabel="No local branches."
+                  emptyLabel={t.git.noLocalBranches}
                   disabled={isMutating}
                   stickyTitle
                   onSelect={(entry) => {
@@ -1104,9 +1322,9 @@ function BranchSwitcher({
                   }}
                 />
                 <BranchListSection
-                  title="Remote"
+                  title={t.git.remoteBranches}
                   entries={remote}
-                  emptyLabel="No remote branches."
+                  emptyLabel={t.git.noRemoteBranches}
                   disabled={isMutating}
                   stickyTitle
                   onSelect={(entry) => {
@@ -1124,10 +1342,24 @@ function BranchSwitcher({
               onClick={openMergeModal}
               className="h-9 w-full justify-center rounded-lg px-3 text-sm"
             >
-              <span className="block max-w-full truncate">
-                <GitMerge className="mr-1.5 inline h-3.5 w-3.5 shrink-0" />
-                Merge branch into {currentName}...
-              </span>
+              {direction === "rtl" ? (
+                <span dir="rtl" className="flex min-w-0 max-w-full items-center justify-center gap-1 overflow-hidden">
+                  <GitMerge className="h-3.5 w-3.5 shrink-0" />
+                  <span className="shrink-0">{t.git.mergeBranchIntoPrefix}</span>
+                  <BranchReferenceInline
+                    name={currentName}
+                    direction="rtl"
+                    tone="primary"
+                    codeClassName="max-w-[118px]"
+                  />
+                  <span className="shrink-0">...</span>
+                </span>
+              ) : (
+                <span dir="ltr" className="block max-w-full truncate">
+                  <GitMerge className="me-1.5 inline h-3.5 w-3.5 shrink-0" />
+                  {t.git.mergeBranchInto(currentName)}
+                </span>
+              )}
             </Button>
           ) : null}
         </div>
@@ -1177,6 +1409,7 @@ function DiffFileCard({
   isPatchLoading: boolean
   onLoadPatch: (path: string) => Promise<string>
 }) {
+  const { t } = useI18n()
   const canIgnore = canIgnoreDiffFile(file)
   const canIgnoreFolder = canIgnoreDiffFolder(file)
   const [selectedAttachmentId, setSelectedAttachmentId] = useState<string | null>(null)
@@ -1269,7 +1502,7 @@ function DiffFileCard({
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
-        <div ref={cardRef} key={file.path} className="relative rounded-lg border border-border bg-background">
+        <div ref={cardRef} key={file.path} dir="ltr" className="relative rounded-lg border border-border bg-background">
           {!isCollapsed ? <div ref={sentinelRef} className="pointer-events-none absolute inset-x-0 top-0 h-px" aria-hidden="true" /> : null}
           <div
             role="button"
@@ -1281,7 +1514,7 @@ function DiffFileCard({
               handleToggleRequest()
             }}
             className={cn(
-              "group/header sticky top-0 z-20 flex cursor-pointer items-center justify-between gap-3 bg-background pl-[7px] pr-2.5 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
+              "group/header sticky top-0 z-20 flex cursor-pointer items-center justify-between gap-3 bg-background py-1.5 pe-2.5 ps-[7px] text-[13px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
               !isCollapsed && !isStuck && "rounded-t-[calc(theme(borderRadius.lg)-1px)]",
               isCollapsed && "rounded-[calc(theme(borderRadius.lg)-1px)]",
               !isCollapsed && "border-b border-border/50"
@@ -1290,15 +1523,16 @@ function DiffFileCard({
             <div className="flex min-w-0 items-center">
               <StageCheckbox
                 checked={isChecked}
+                label={isChecked ? t.git.excludeFileFromCommit : t.git.includeFileInCommit}
                 onClick={onToggleChecked}
               />
-              <div className="min-w-0 truncate select-none ml-2 mr-1">{file.path}</div>
+              <div className="min-w-0 truncate select-none ms-2 me-1" dir="ltr">{file.path}</div>
             </div>
             <div className="flex shrink-0 items-center gap-2 select-none">
               <span className="whitespace-nowrap text-xs font-mono">
                 {file.additions > 0 ? <span className="text-emerald-600 dark:text-emerald-400">+{file.additions}</span> : null}
                 {file.deletions > 0 ? (
-                  <span className={file.additions > 0 ? "ml-2 text-red-600 dark:text-red-400" : "text-red-600 dark:text-red-400"}>
+                  <span className={file.additions > 0 ? "ms-2 text-red-600 dark:text-red-400" : "text-red-600 dark:text-red-400"}>
                     -{file.deletions}
                   </span>
                 ) : null}
@@ -1321,7 +1555,7 @@ function DiffFileCard({
             </div>
           </div>
           {!isCollapsed ? (
-            <div className="kanna-diff-patch overflow-hidden rounded-b-[calc(theme(borderRadius.lg)-1px)] pb-[1px]">
+            <div className="abolqasem-diff-patch overflow-hidden rounded-b-[calc(theme(borderRadius.lg)-1px)] pb-[1px]" dir="ltr">
               {previewAttachment ? (
                 <div className="flex justify-center p-3">
                   {previewAttachment.kind === "image" ? (
@@ -1339,8 +1573,8 @@ function DiffFileCard({
               ) : (
                 isPatchLoading ? (
                   <div className="flex items-center justify-center px-3 py-8 text-sm text-muted-foreground">
-                    <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
-                    Loading diff...
+                    <LoaderCircle className="me-2 h-4 w-4 animate-spin" />
+                    {t.git.loadingDiff}
                   </div>
                 ) : patchError ? (
                   <div className="px-3 py-4 text-sm text-destructive">{patchError}</div>
@@ -1357,7 +1591,7 @@ function DiffFileCard({
                     }}
                   />
                 ) : (
-                  <div className="px-3 py-4 text-sm text-muted-foreground">Diff unavailable.</div>
+                  <div className="px-3 py-4 text-sm text-muted-foreground">{t.git.diffUnavailable}</div>
                 )
               )}
             </div>
@@ -1376,7 +1610,7 @@ function DiffFileCard({
           }}
         >
           <Code className="h-3.5 w-3.5" />
-          <span className="text-xs font-medium">Open in {editorLabel}</span>
+          <span className="text-xs font-medium">{t.git.openInEditor(editorLabel)}</span>
         </ContextMenuItem>
         <ContextMenuItem
           onSelect={(event) => {
@@ -1385,7 +1619,7 @@ function DiffFileCard({
           }}
         >
           <FolderOpen className="h-3.5 w-3.5" />
-          <span className="text-xs font-medium">Open in Finder</span>
+          <span className="text-xs font-medium">{t.git.openInFinder}</span>
         </ContextMenuItem>
         <ContextMenuItem
           onSelect={(event) => {
@@ -1395,7 +1629,7 @@ function DiffFileCard({
           className="text-destructive dark:text-red-400 hover:bg-destructive/10 focus:bg-destructive/10 dark:hover:bg-red-500/20 dark:focus:bg-red-500/20"
         >
           <Trash2 className="h-3.5 w-3.5" />
-          <span className="text-xs font-medium">Discard Changes</span>
+          <span className="text-xs font-medium">{t.git.discardChanges}</span>
         </ContextMenuItem>
         <ContextMenuItem
           disabled={!canIgnore}
@@ -1406,7 +1640,7 @@ function DiffFileCard({
           }}
         >
           <Ban className="h-3.5 w-3.5" />
-          <span className="text-xs font-medium">Ignore File</span>
+          <span className="text-xs font-medium">{t.git.ignoreFile}</span>
         </ContextMenuItem>
         <ContextMenuItem
           disabled={!canIgnoreFolder}
@@ -1417,7 +1651,7 @@ function DiffFileCard({
           }}
         >
           <Ban className="h-3.5 w-3.5" />
-          <span className="text-xs font-medium">Ignore folder...</span>
+          <span className="text-xs font-medium">{t.git.ignoreFolder}</span>
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem
@@ -1427,7 +1661,7 @@ function DiffFileCard({
           }}
         >
           <Copy className="h-3.5 w-3.5" />
-          <span className="text-xs font-medium">Copy File Path</span>
+          <span className="text-xs font-medium">{t.git.copyFilePath}</span>
         </ContextMenuItem>
         <ContextMenuItem
           onSelect={(event) => {
@@ -1436,7 +1670,7 @@ function DiffFileCard({
           }}
         >
           <Copy className="h-3.5 w-3.5" />
-          <span className="text-xs font-medium">Copy Relative Path</span>
+          <span className="text-xs font-medium">{t.git.copyRelativePath}</span>
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
@@ -1473,7 +1707,7 @@ function GitPanelImpl({
   onWrapLinesChange,
   onClose,
 }: GitPanelProps) {
-  const { t } = useI18n()
+  const { t, direction } = useI18n()
   const fileActions: DiffFileActions = useMemo(() => ({
     onOpenFile,
     onOpenInFinder,
@@ -1496,7 +1730,10 @@ function GitPanelImpl({
   const patchDigestsByPathRef = useRef<Record<string, string>>({})
   const filePaths = useMemo(() => diffs.files.map((file) => file.path), [diffs.files])
   const filePathsKey = useMemo(() => filePaths.join("\u0000"), [filePaths])
-  const viewMode = useRightSidebarStore((store) => (projectId ? (store.projectUi[projectId]?.viewMode ?? (hasChanges ? "changes" : "history")) : (hasChanges ? "changes" : "history")))
+  const viewMode = useRightSidebarStore((store) => {
+    const persisted = projectId ? store.projectUi[projectId]?.viewMode : undefined
+    return persisted === "changes" || persisted === "history" ? persisted : (hasChanges ? "changes" : "history")
+  })
   const collapsedPaths = useRightSidebarStore((store) => (projectId ? (store.projectUi[projectId]?.collapsedPaths ?? EMPTY_CHECKED_PATHS) : EMPTY_CHECKED_PATHS))
   const summary = useRightSidebarStore((store) => (projectId ? (store.projectUi[projectId]?.summary ?? "") : ""))
   const description = useRightSidebarStore((store) => (projectId ? (store.projectUi[projectId]?.description ?? "") : ""))
@@ -1571,6 +1808,8 @@ function GitPanelImpl({
   const compareUrl = diffs.originRepoSlug && encodedBranchName
     ? `https://github.com/${diffs.originRepoSlug}/compare/${encodedBranchName}?expand=1`
     : null
+  const summaryDirection = getUserTextDirection(summary)
+  const descriptionDirection = getUserTextDirection(description)
   const canOpenPullRequest = Boolean(
     isPublishedBranch
     && compareUrl
@@ -1585,7 +1824,7 @@ function GitPanelImpl({
     && hasSummary
     && !isBusy
   const primaryCommitMode: DiffCommitMode = hasRemoteOrigin ? "commit_and_push" : "commit_only"
-  const resolvedBranchName = diffs.branchName ?? "current branch"
+  const resolvedBranchName = diffs.branchName ?? t.git.thisBranch
   const primaryCommitActionPrefix = getPrimaryCommitActionPrefix({
     hasSummary,
     isGenerating,
@@ -1593,7 +1832,8 @@ function GitPanelImpl({
     isGeneratedCommitInFlight,
     commitModeInFlight,
     primaryCommitMode,
-  })
+  }, t.git)
+  const primaryCommitActionDirection = getUserTextDirection(primaryCommitActionPrefix)
 
   async function handleCommit(mode: DiffCommitMode) {
     if (!canCommit) return
@@ -1727,9 +1967,10 @@ function GitPanelImpl({
   }, [diffs.files, loadingPatchPaths, onLoadPatch, patchesByPath])
 
   return (
-    <div className="h-full min-h-0 border-l border-border bg-background md:min-w-[370px]">
-      <div className="flex h-full min-h-0 flex-col">
-        <div className="flex shrink-0 items-center gap-2 border-b border-border pl-2.5 pr-2 h-[49px]">
+    <div dir={direction} className="h-full min-h-0 [border-inline-start:1px_solid_hsl(var(--border))] bg-background md:min-w-[370px]">
+      {/* Git paths, branches, and diff controls stay LTR; localized copy opts into its own direction. */}
+      <div dir="ltr" className="flex h-full min-h-0 flex-col">
+        <div className="flex h-[49px] shrink-0 items-center gap-2 border-b border-border pe-2 ps-2.5">
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <BranchSwitcher
               currentBranchName={diffs.branchName}
@@ -1775,10 +2016,10 @@ function GitPanelImpl({
                         className="h-7 gap-1.5 px-2 text-xs hover:!bg-transparent hover:!border-border/0"
                       >
                         {isSyncing ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                        <span>Fetch</span>
+                        <span>{t.git.fetch}</span>
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent>{formatFetchTooltip(diffs.lastFetchedAt)}</TooltipContent>
+                    <TooltipContent>{formatFetchTooltip(diffs.lastFetchedAt, t.git)}</TooltipContent>
                   </Tooltip>
                 ) : (
                   <Button
@@ -1829,7 +2070,7 @@ function GitPanelImpl({
           ) : null}
         </div>
         <div className="relative min-h-0 flex-1">
-          <div className="sticky top-0 z-30 pl-[14px] pr-[12px] pt-[6px] bg-gradient-to-b from-background to-transparent">
+          <div className="sticky top-0 z-30 bg-gradient-to-b from-background to-transparent pt-[6px] pe-[12px] ps-[14px]">
             <div className="relative h-[40px]  flex min-w-0 items-center justify-center gap-[13px]">
               <div className="flex min-w-0 flex-1 items-center justify-between gap-[13px] relative">
                 {viewMode === "changes" ? (
@@ -1849,7 +2090,7 @@ function GitPanelImpl({
                         setAllCheckedPaths(projectId, filePaths, someSelected ? true : !allSelected)
                       }}
                     />
-                    <span>{t.git.files(selectedCount)}</span>
+                    <span dir={direction}>{t.git.files(selectedCount)}</span>
                   </div>
                 ) : <div />}
                 <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2">
@@ -1897,11 +2138,12 @@ function GitPanelImpl({
               </div>
             </div>
           </div>
-          <div ref={scrollContainerRef} className="h-full overflow-y-auto [scrollbar-gutter:stable]">
+          <div ref={scrollContainerRef} className="h-full overflow-y-auto [direction:ltr] [scrollbar-gutter:stable]">
+            <div className="min-h-full" dir="ltr">
             {diffs.status === "no_repo" ? (
               <div className="flex h-full items-center justify-center px-6 py-3 text-center">
                 <div className="flex max-w-[280px] flex-col items-center gap-3">
-                  <p className="text-sm text-muted-foreground">{t.git.initializeHere}</p>
+                  <p dir={direction} className="text-sm text-muted-foreground">{t.git.initializeHere}</p>
                   <Button size="sm" onClick={() => void onInitializeGit()}>
                     {t.git.initGit}
                   </Button>
@@ -1910,7 +2152,7 @@ function GitPanelImpl({
             ) : viewMode === "history" ? (
               branchHistory.length === 0 ? (
                 <div className="flex h-full items-center justify-center px-6 py-3 text-center">
-                  <p className="text-sm text-muted-foreground">{t.git.noRecentCommits(diffs.branchName ?? t.git.thisBranch)}</p>
+                  <p dir={direction} className="text-sm text-muted-foreground">{t.git.noRecentCommits(diffs.branchName ?? t.git.thisBranch)}</p>
                 </div>
               ) : (
                 <div className="space-y-1.5 p-1.5">
@@ -1919,7 +2161,7 @@ function GitPanelImpl({
               )
             ) : diffs.files.length === 0 ? (
               <div className="flex h-full items-center justify-center px-6 py-3 text-center">
-                <p className="text-sm text-muted-foreground">{t.git.noFileChanges}</p>
+                <p dir={direction} className="text-sm text-muted-foreground">{t.git.noFileChanges}</p>
               </div>
             ) : (
               <div className="space-y-1.5 p-1.5 pb-10">
@@ -1962,6 +2204,7 @@ function GitPanelImpl({
                     <div className="space-y-0 rounded-xl  backdrop-blur-md mx-auto max-w-[700px]">
                       <div className="relative">
                         <Input
+                          dir={summaryDirection}
                           value={summary}
                           onChange={(event) => {
                             if (!projectId) return
@@ -1972,7 +2215,11 @@ function GitPanelImpl({
                           }}
                           onKeyDown={handleCommitKeyDown}
                           placeholder={t.git.commitMessage}
-                          className="rounded-t-xl rounded-b-none px-3 pr-10"
+                          className={cn(
+                            "rounded-t-xl rounded-b-none",
+                            getCommitSummaryInputPaddingClassName(summaryDirection),
+                            summaryDirection === "rtl" ? "text-right" : "text-left"
+                          )}
                           disabled={isBusy || diffs.status !== "ready"}
                         />
                         <Tooltip delayDuration={0}>
@@ -1980,7 +2227,7 @@ function GitPanelImpl({
                             <button
                               type="button"
                               aria-label={t.git.generateCommitMessage}
-                              className="absolute right-1.5 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+                              className="absolute end-1.5 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
                               disabled={!canGenerate}
                               onClick={() => void handleGenerate()}
                             >
@@ -1995,6 +2242,7 @@ function GitPanelImpl({
                         </Tooltip>
                       </div>
                       <Textarea
+                        dir={descriptionDirection}
                         value={description}
                         onChange={(event) => {
                           if (!projectId) return
@@ -2006,7 +2254,7 @@ function GitPanelImpl({
                         onKeyDown={handleCommitKeyDown}
                         placeholder={t.git.description}
                         rows={5}
-                        className="-mt-px rounded-t-none rounded-b-xl px-3 outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 focus-visible:border-border mb-2"
+                        className={cn("-mt-px rounded-t-none rounded-b-xl px-3 outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 focus-visible:border-border mb-2", descriptionDirection === "rtl" ? "text-right" : "text-left")}
                         disabled={isBusy || diffs.status !== "ready"}
                       />
                       <div className="w-full flex flex-row">
@@ -2024,7 +2272,7 @@ function GitPanelImpl({
                               void handleGenerateAndCommit(primaryCommitMode)
                             }}
                           >
-                            <span className="flex min-w-0 items-center gap-1.5">
+                            <span dir={primaryCommitActionDirection} className="flex min-w-0 items-center gap-1.5">
                               {hasSummary ? (
                                 isCommitting ? (
                                   <LoaderCircle strokeWidth={2.5} className="size-3 shrink-0 animate-spin" />
@@ -2040,16 +2288,32 @@ function GitPanelImpl({
                               ) : (
                                 <PenLine strokeWidth={2.5} className="size-3 shrink-0" />
                               )}
-                              <span className="min-w-0 truncate text-left">
+                              <span className="min-w-0 text-start">
                                 {isGenerating || isCommitting
-                                  ? primaryCommitActionPrefix
-                                  : <>{primaryCommitActionPrefix} <GitBranch strokeWidth={2.5} className="mr-[4.5px] ml-0.5 inline size-3 " />{resolvedBranchName}</>}
+                                  ? <span dir={primaryCommitActionDirection}>{primaryCommitActionPrefix}</span>
+                                  : primaryCommitActionDirection === "rtl" ? (
+                                    <span dir="rtl" className="flex min-w-0 max-w-full items-center gap-1 overflow-hidden">
+                                      <span className="shrink-0">{primaryCommitActionPrefix}</span>
+                                      <BranchReferenceInline
+                                        name={resolvedBranchName}
+                                        direction="rtl"
+                                        tone="primary"
+                                        codeClassName="max-w-[112px]"
+                                      />
+                                    </span>
+                                  ) : (
+                                    <span dir="ltr" className="block min-w-0 max-w-full truncate">
+                                      <span>{primaryCommitActionPrefix}</span>
+                                      <GitBranch strokeWidth={2.5} className="me-[4.5px] ms-1 inline size-3" />
+                                      <span dir="ltr" className="[unicode-bidi:isolate]">{resolvedBranchName}</span>
+                                    </span>
+                                  )}
                               </span>
                             </span>
                           </Button>
                         </ContextMenuTrigger>
                         {diffs.hasUpstream ? (
-                          <ContextMenuContent>
+                          <ContextMenuContent dir={direction}>
                             <ContextMenuItem
                               disabled={!hasSummary || !canCommit}
                               onSelect={(event) => {
@@ -2057,7 +2321,7 @@ function GitPanelImpl({
                                 void handleCommit("commit_only")
                               }}
                             >
-                              Commit Only
+                              {t.git.commitOnly}
                             </ContextMenuItem>
                           </ContextMenuContent>
                         ) : null}
@@ -2069,6 +2333,7 @@ function GitPanelImpl({
                 ) : null}
               </div>
             )}
+            </div>
           </div>
           
           

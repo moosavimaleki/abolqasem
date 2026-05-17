@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import {
   getTerminalPanelDefaultSizes,
+  getOrderedRightSidebarLayout,
+  getRightSidebarPanelDefaultSizes,
   getRightSidebarSizePercent,
   getRightSidebarSizePx,
   getIgnoreFolderEntryFromDiffPath,
@@ -83,5 +85,27 @@ describe("right sidebar pixel sizing", () => {
 
   test("converts the panel percentage back to pixels", () => {
     expect(getRightSidebarSizePx(35, 1_200)).toBe(420)
+  })
+
+  test("collapses the hidden desktop sidebar instead of reserving layout space", () => {
+    expect(getRightSidebarPanelDefaultSizes(false, 28)).toEqual({
+      workspace: 100,
+      rightSidebar: 0,
+    })
+  })
+
+  test("preserves the visible desktop sidebar size", () => {
+    expect(getRightSidebarPanelDefaultSizes(true, 28)).toEqual({
+      workspace: 72,
+      rightSidebar: 28,
+    })
+  })
+
+  test("orders right-sidebar layout to match the panel DOM order in RTL", () => {
+    expect(Object.keys(getOrderedRightSidebarLayout(72, 28, "rtl"))).toEqual(["rightSidebar", "workspace"])
+  })
+
+  test("keeps right-sidebar layout order LTR by default", () => {
+    expect(Object.keys(getOrderedRightSidebarLayout(72, 28, "ltr"))).toEqual(["workspace", "rightSidebar"])
   })
 })

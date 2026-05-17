@@ -39,9 +39,10 @@ const (
 	TypeChatPlanModeSet  = "chat_plan_mode_set"
 	TypeChatReadStateSet = "chat_read_state_set"
 
-	TypeMessageAppended       = "message_appended"
-	TypeQueuedMessageEnqueued = "queued_message_enqueued"
-	TypeQueuedMessageRemoved  = "queued_message_removed"
+	TypeMessageAppended          = "message_appended"
+	TypeChatRestoredToCheckpoint = "chat_restored_to_checkpoint"
+	TypeQueuedMessageEnqueued    = "queued_message_enqueued"
+	TypeQueuedMessageRemoved     = "queued_message_removed"
 
 	TypeTurnStarted                = "turn_started"
 	TypeTurnFinished               = "turn_finished"

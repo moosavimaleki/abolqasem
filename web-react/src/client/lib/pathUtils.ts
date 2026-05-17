@@ -45,7 +45,7 @@ function parseAbsoluteFileTarget(target: string): ParsedFileTarget | null {
   const hashMatch = /^(?<path>\/.+?)#L(?<line>\d+)(?:C(?<column>\d+))?$/.exec(target)
   if (hashMatch?.groups?.path) {
     return {
-      path: hashMatch.groups.path,
+      path: decodeURIComponent(hashMatch.groups.path),
       line: toPositiveInteger(hashMatch.groups.line),
       column: toPositiveInteger(hashMatch.groups.column),
     }
@@ -54,14 +54,14 @@ function parseAbsoluteFileTarget(target: string): ParsedFileTarget | null {
   const suffixMatch = /^(?<path>\/.+?):(?<line>\d+)(?::(?<column>\d+))?$/.exec(target)
   if (suffixMatch?.groups?.path) {
     return {
-      path: suffixMatch.groups.path,
+      path: decodeURIComponent(suffixMatch.groups.path),
       line: toPositiveInteger(suffixMatch.groups.line),
       column: toPositiveInteger(suffixMatch.groups.column),
     }
   }
 
   if (target.startsWith("/")) {
-    return { path: target }
+    return { path: decodeURIComponent(target) }
   }
 
   return null

@@ -39,7 +39,7 @@ describe("findMatchingActionBinding", () => {
         openAddProject: ["cmd+alt+o"],
       },
       warning: null,
-      filePathDisplay: "~/.kanna/keybindings.json",
+      filePathDisplay: "~/.abolqasem/keybindings.json",
     }
     const event = { key: "˜", code: "KeyN", metaKey: true, ctrlKey: false, altKey: true, shiftKey: false } as KeyboardEvent
 

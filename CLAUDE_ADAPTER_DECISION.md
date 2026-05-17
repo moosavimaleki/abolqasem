@@ -1,6 +1,6 @@
 # Claude Adapter Decision
 
-Kanna uses `@anthropic-ai/claude-agent-sdk` directly from its TypeScript backend.
+Abolqasem uses `@anthropic-ai/claude-agent-sdk` directly from its TypeScript backend.
 
 For the Go port, the default implementation should use the local `claude` CLI in non-interactive stream mode:
 
@@ -17,11 +17,11 @@ Reasons:
 
 Current scope:
 
-- Build command arguments matching Kanna session options.
+- Build command arguments matching Abolqasem session options.
 - Parse stream-json assistant/result events into transcript entries.
 - Keep session management and tool approval parity for Task 8.2.
 
 Not chosen:
 
 - Permanent JS bridge: rejected as default because it violates the Go-backend port goal.
-- Remote Claude API adapter: deferred because Kanna behavior is Claude Code session/tool behavior, not plain Messages API behavior.
+- Remote Claude API adapter: deferred because Abolqasem behavior is Claude Code session/tool behavior, not plain Messages API behavior.

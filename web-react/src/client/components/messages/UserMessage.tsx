@@ -1,19 +1,50 @@
-import { useMemo, useState } from "react"
-import type { ChatAttachment } from "../../../shared/types"
+import { useMemo, useState, type ComponentType } from "react"
+import type { ChatAttachment, ChatCheckpointSummary, CheckpointRestoreMode, CheckpointRestoreResult } from "../../../shared/types"
 import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-import { CornerUpLeft } from "lucide-react"
-import { createMarkdownComponents } from "./shared"
+import { Code2, CornerUpLeft, FileText, Layers2, Loader2, RotateCcw } from "lucide-react"
+import { createMarkdownComponents, MessageCopyButton } from "./shared"
 import { classifyAttachmentPreview } from "./attachmentPreview"
 import { AttachmentFileCard, AttachmentImageCard } from "./AttachmentCard"
 import { AttachmentPreviewModal } from "./AttachmentPreviewModal"
 import { useTranscriptRenderOptions } from "./render-context"
 import { useI18n } from "../../i18n/context"
+import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover"
 
 interface Props {
   content: string
   attachments?: ChatAttachment[]
   steered?: boolean
+  checkpoint?: ChatCheckpointSummary | null
+  onRestoreCheckpoint?: (
+    checkpointId: string,
+    mode: CheckpointRestoreMode,
+    promptContent: string
+  ) => Promise<CheckpointRestoreResult | null>
+}
+
+interface RestoreOptionProps {
+  icon: ComponentType<{ className?: string }>
+  label: string
+  disabled?: boolean
+  loading?: boolean
+  onClick: () => void
+}
+
+function RestoreOption({ icon: Icon, label, disabled, loading, onClick }: RestoreOptionProps) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      disabled={disabled || loading}
+      className="flex h-9 min-w-[4.25rem] items-center justify-center gap-1.5 rounded-md px-2 text-xs font-semibold text-foreground outline-none transition-colors hover:bg-muted focus-visible:bg-muted disabled:pointer-events-none disabled:opacity-40"
+      onClick={onClick}
+    >
+      {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" /> : <Icon className="h-3.5 w-3.5 text-muted-foreground" />}
+      <span className="whitespace-nowrap">{label}</span>
+    </button>
+  )
 }
 
 function parseSystemMessage(content: string) {
@@ -28,13 +59,17 @@ function parseSystemMessage(content: string) {
   }
 }
 
-export function UserMessage({ content, attachments = [], steered = false }: Props) {
-  const { t } = useI18n()
+export function UserMessage({ content, attachments = [], steered = false, checkpoint, onRestoreCheckpoint }: Props) {
+  const { t, direction } = useI18n()
   const [selectedAttachmentId, setSelectedAttachmentId] = useState<string | null>(null)
+  const [restoreOpen, setRestoreOpen] = useState(false)
+  const [pendingRestoreMode, setPendingRestoreMode] = useState<CheckpointRestoreMode | null>(null)
   const renderOptions = useTranscriptRenderOptions()
   const parsedContent = useMemo(() => parseSystemMessage(content), [content])
   const shouldShowImagePlaceholders = renderOptions.attachmentMode === "metadata"
   const canInteractWithAttachments = !renderOptions.readonly || renderOptions.attachmentMode === "bundle"
+  const canShowRestoreControl = Boolean(checkpoint && onRestoreCheckpoint)
+  const codeSnapshotReady = checkpoint?.codeStatus === "ready" && checkpoint.codeKind !== "none"
   const imageAttachments = useMemo(
     () => attachments.filter((attachment) => attachment.kind === "image" && (attachment.contentUrl || shouldShowImagePlaceholders)),
     [attachments, shouldShowImagePlaceholders],
@@ -60,6 +95,63 @@ export function UserMessage({ content, attachments = [], steered = false }: Prop
 
     setSelectedAttachmentId(attachment.id)
   }
+
+  async function handleRestore(mode: CheckpointRestoreMode) {
+    if (!checkpoint || !onRestoreCheckpoint || pendingRestoreMode) return
+    setPendingRestoreMode(mode)
+    try {
+      await onRestoreCheckpoint(checkpoint.id, mode, content)
+      setRestoreOpen(false)
+    } finally {
+      setPendingRestoreMode(null)
+    }
+  }
+
+  const restoreControl = canShowRestoreControl ? (
+    <Popover open={restoreOpen} onOpenChange={setRestoreOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={t.messages.restoreCheckpoint}
+          title={t.messages.restoreCheckpoint}
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-primary/30 bg-primary/10 text-primary shadow-sm backdrop-blur transition-colors hover:border-primary/45 hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        >
+          <RotateCcw className="h-3.5 w-3.5" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        dir={direction}
+        side="left"
+        align="center"
+        sideOffset={8}
+        className="w-auto p-1.5"
+      >
+        <div className="grid grid-cols-3 gap-1">
+          <RestoreOption
+            icon={Code2}
+            label={t.messages.restoreCodeOnly}
+            disabled={pendingRestoreMode !== null || !codeSnapshotReady}
+            loading={pendingRestoreMode === "code"}
+            onClick={() => void handleRestore("code")}
+          />
+          <RestoreOption
+            icon={FileText}
+            label={t.messages.restoreChatOnly}
+            disabled={pendingRestoreMode !== null}
+            loading={pendingRestoreMode === "chat"}
+            onClick={() => void handleRestore("chat")}
+          />
+          <RestoreOption
+            icon={Layers2}
+            label={t.messages.restoreCodeAndChat}
+            disabled={pendingRestoreMode !== null || !codeSnapshotReady}
+            loading={pendingRestoreMode === "code_and_chat"}
+            onClick={() => void handleRestore("code_and_chat")}
+          />
+        </div>
+      </PopoverContent>
+    </Popover>
+  ) : null
 
   return (
     <>
@@ -87,7 +179,14 @@ export function UserMessage({ content, attachments = [], steered = false }: Prop
           </div>
         ) : null}
         {(parsedContent.body || (!parsedContent.body && attachments.length === 0 && content && !parsedContent.systemMessage)) ? (
-          <div className="flex max-w-[85%] items-center gap-2 sm:max-w-[80%]">
+          <div className="group/message relative flex max-w-[85%] items-center gap-2 sm:max-w-[80%]" dir="ltr">
+            <MessageCopyButton
+              text={parsedContent.body}
+              label={t.common.copyMessage}
+              copiedLabel={t.common.copied}
+              className="absolute -left-8 top-1/2 z-10 -translate-y-1/2"
+            />
+            {restoreControl}
             {steered ? (
               <span
                 aria-label={t.messages.sentMidTurn}
@@ -99,7 +198,7 @@ export function UserMessage({ content, attachments = [], steered = false }: Prop
               </span>
             ) : null}
             <div className="min-w-0 flex-1 rounded-[20px] border border-border bg-muted px-3.5 py-1.5 text-primary prose prose-sm prose-invert [&_p]:whitespace-pre-line">
-              <Markdown remarkPlugins={[remarkGfm]} components={createMarkdownComponents()}>{parsedContent.body}</Markdown>
+              <Markdown remarkPlugins={[remarkGfm]} components={createMarkdownComponents({ source: parsedContent.body })}>{parsedContent.body}</Markdown>
             </div>
           </div>
         ) : null}

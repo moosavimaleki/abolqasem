@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"ai-agent-manager/internal/state"
+	"ai-agent-manager/internal/workspace/legacyimport"
 	"ai-agent-manager/internal/workspace/readmodels"
 )
 
@@ -41,7 +43,7 @@ func createStandaloneMessages(attachmentAbsolutePath string) []readmodels.Transc
 					"kind":         "image",
 					"displayName":  "mock.png",
 					"absolutePath": attachmentAbsolutePath,
-					"relativePath": "./.kanna/uploads/mock.png",
+					"relativePath": "./.abolqasem/uploads/mock.png",
 					"contentUrl":   "/api/projects/project-1/uploads/mock.png/content",
 					"mimeType":     "image/png",
 					"size":         float64(4),
@@ -61,7 +63,7 @@ func createStandaloneMessages(attachmentAbsolutePath string) []readmodels.Transc
 func TestWriteStandaloneTranscriptExportMetadataMode(t *testing.T) {
 	viewerDistDir := createStandaloneViewerDist(t)
 	projectDir := t.TempDir()
-	uploadsDir := filepath.Join(projectDir, ".kanna", "uploads")
+	uploadsDir := filepath.Join(projectDir, ".abolqasem", "uploads")
 	if err := os.MkdirAll(uploadsDir, 0o755); err != nil {
 		t.Fatalf("os.MkdirAll returned error: %v", err)
 	}
@@ -129,10 +131,70 @@ func TestWriteStandaloneTranscriptExportMetadataMode(t *testing.T) {
 	}
 }
 
+func TestWorkspaceExportStandaloneSupportsLegacyChat(t *testing.T) {
+	viewerDistDir := createStandaloneViewerDist(t)
+	projectDir := t.TempDir()
+	transcriptPath := filepath.Join(t.TempDir(), "transcript.jsonl")
+	if err := os.WriteFile(transcriptPath, []byte(strings.Join([]string{
+		`{"type":"event_msg","payload":{"type":"user_message","message":"legacy question"}}`,
+		`{"type":"event_msg","payload":{"type":"agent_message","message":"legacy answer"}}`,
+	}, "\n")), 0o644); err != nil {
+		t.Fatalf("os.WriteFile returned error: %v", err)
+	}
+	meta := state.SessionMeta{
+		Key:            "codex:legacy-export",
+		Agent:          "codex",
+		SessionID:      "legacy-export",
+		TranscriptPath: transcriptPath,
+		Cwd:            projectDir,
+		ProjectName:    "Legacy Project",
+		UpdatedAt:      time.Now(),
+	}
+	previousLegacyState := workspaceLoadLegacyState
+	workspaceLoadLegacyState = func() (*state.AppState, error) {
+		return &state.AppState{Sessions: map[string]state.SessionMeta{meta.Key: meta}}, nil
+	}
+	t.Cleanup(func() {
+		workspaceLoadLegacyState = previousLegacyState
+	})
+
+	raw, err := json.Marshal(map[string]any{
+		"chatId":         legacyimport.LegacyChatID(meta),
+		"theme":          "dark",
+		"attachmentMode": "metadata",
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+	result, err := workspaceExportStandaloneWithDeps(raw, standaloneExportDeps{
+		UploadFile:         func(string, []byte, string, string) error { return nil },
+		SharePublicBaseURL: "https://share.example.com",
+		ShareSlugSuffix:    "legacy123",
+		ShareUploadBaseURL: "https://upload.example.com/api/share",
+		ViewerDistDir:      viewerDistDir,
+		Now:                time.Date(2026, 5, 17, 12, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("workspaceExportStandaloneWithDeps returned error: %v", err)
+	}
+	success, ok := result.(standaloneExportSuccess)
+	if !ok || !success.OK {
+		t.Fatalf("expected success, got %#v", result)
+	}
+	bundle := readStandaloneBundle(t, success.TranscriptJSONPath)
+	if bundle["chatId"] != legacyimport.LegacyChatID(meta) || bundle["localPath"] != standaloneShareWorkspacePath {
+		t.Fatalf("unexpected bundle metadata: %#v", bundle)
+	}
+	messages, ok := bundle["messages"].([]any)
+	if !ok || len(messages) != 2 {
+		t.Fatalf("expected legacy transcript messages, got %#v", bundle["messages"])
+	}
+}
+
 func TestWriteStandaloneTranscriptExportBundleMode(t *testing.T) {
 	viewerDistDir := createStandaloneViewerDist(t)
 	projectDir := t.TempDir()
-	uploadsDir := filepath.Join(projectDir, ".kanna", "uploads")
+	uploadsDir := filepath.Join(projectDir, ".abolqasem", "uploads")
 	if err := os.MkdirAll(uploadsDir, 0o755); err != nil {
 		t.Fatalf("os.MkdirAll returned error: %v", err)
 	}
@@ -191,7 +253,7 @@ func TestWriteStandaloneTranscriptExportBundleMode(t *testing.T) {
 func TestWriteStandaloneTranscriptExportReturnsFailurePayloadWhenShareUploadFails(t *testing.T) {
 	viewerDistDir := createStandaloneViewerDist(t)
 	projectDir := t.TempDir()
-	uploadsDir := filepath.Join(projectDir, ".kanna", "uploads")
+	uploadsDir := filepath.Join(projectDir, ".abolqasem", "uploads")
 	if err := os.MkdirAll(uploadsDir, 0o755); err != nil {
 		t.Fatalf("os.MkdirAll returned error: %v", err)
 	}

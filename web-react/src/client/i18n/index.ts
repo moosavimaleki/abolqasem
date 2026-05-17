@@ -3,6 +3,7 @@ import { en, type TranslationDictionary } from "./en"
 import { fa } from "./fa"
 
 export const DEFAULT_LOCALE: AppLocale = "en"
+export const LOCALE_STORAGE_KEY = "abolqasem:locale"
 
 export const LOCALE_OPTIONS: Array<{ value: AppLocale; labelKey: "english" | "persian" }> = [
   { value: "en", labelKey: "english" },

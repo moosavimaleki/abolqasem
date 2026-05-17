@@ -34,3 +34,6 @@ go.work.sum
 # IDEs
 .idea/
 .vscode/
+
+# Local exports
+.abolqasem/

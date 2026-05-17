@@ -1,31 +1,43 @@
 import { describe, expect, test } from "bun:test"
 import {
+  CLI_COMMAND,
   getDataDir,
   getDataDirDisplay,
   getDataRootName,
   getKeybindingsFilePath,
   getKeybindingsFilePathDisplay,
+  getCliInvocation,
+  LOCAL_UI_URL,
   getRuntimeProfile,
 } from "./branding"
+
+describe("cli branding", () => {
+  test("uses the ai-agent-manager command shown by the installed binary", () => {
+    expect(CLI_COMMAND).toBe("ai-agent-manager")
+    expect(getCliInvocation("open")).toBe("ai-agent-manager open")
+    expect(getCliInvocation("service start")).toBe("ai-agent-manager service start")
+    expect(LOCAL_UI_URL).toBe("http://127.0.0.1:9090/")
+  })
+})
 
 describe("runtime profile helpers", () => {
   test("defaults to the prod profile when unset", () => {
     expect(getRuntimeProfile({})).toBe("prod")
-    expect(getDataRootName({})).toBe(".kanna")
-    expect(getDataDir("/tmp/home", {})).toBe("/tmp/home/.kanna/data")
-    expect(getDataDirDisplay({})).toBe("~/.kanna/data")
-    expect(getKeybindingsFilePath("/tmp/home", {})).toBe("/tmp/home/.kanna/keybindings.json")
-    expect(getKeybindingsFilePathDisplay({})).toBe("~/.kanna/keybindings.json")
+    expect(getDataRootName({})).toBe(".abolqasem")
+    expect(getDataDir("/tmp/home", {})).toBe("/tmp/home/.abolqasem/data")
+    expect(getDataDirDisplay({})).toBe("~/.abolqasem/data")
+    expect(getKeybindingsFilePath("/tmp/home", {})).toBe("/tmp/home/.abolqasem/keybindings.json")
+    expect(getKeybindingsFilePathDisplay({})).toBe("~/.abolqasem/keybindings.json")
   })
 
   test("switches to dev paths for the dev profile", () => {
-    const env = { KANNA_RUNTIME_PROFILE: "dev" }
+    const env = { ABOLQASEM_RUNTIME_PROFILE: "dev" }
 
     expect(getRuntimeProfile(env)).toBe("dev")
-    expect(getDataRootName(env)).toBe(".kanna-dev")
-    expect(getDataDir("/tmp/home", env)).toBe("/tmp/home/.kanna-dev/data")
-    expect(getDataDirDisplay(env)).toBe("~/.kanna-dev/data")
-    expect(getKeybindingsFilePath("/tmp/home", env)).toBe("/tmp/home/.kanna-dev/keybindings.json")
-    expect(getKeybindingsFilePathDisplay(env)).toBe("~/.kanna-dev/keybindings.json")
+    expect(getDataRootName(env)).toBe(".abolqasem-dev")
+    expect(getDataDir("/tmp/home", env)).toBe("/tmp/home/.abolqasem-dev/data")
+    expect(getDataDirDisplay(env)).toBe("~/.abolqasem-dev/data")
+    expect(getKeybindingsFilePath("/tmp/home", env)).toBe("/tmp/home/.abolqasem-dev/keybindings.json")
+    expect(getKeybindingsFilePathDisplay(env)).toBe("~/.abolqasem-dev/keybindings.json")
   })
 })

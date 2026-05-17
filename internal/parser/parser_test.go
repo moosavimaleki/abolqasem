@@ -114,6 +114,21 @@ func TestGetSessionSummaryIncludesFirstPreview(t *testing.T) {
 	}
 }
 
+func TestGetSessionSummaryPrefersFirstUserPreview(t *testing.T) {
+	path := writeTranscript(t, strings.Join([]string{
+		`{"type":"event_msg","payload":{"type":"agent_message","message":"assistant preface"}}`,
+		`{"type":"event_msg","payload":{"type":"user_message","message":"first user prompt"}}`,
+	}, "\n"))
+
+	summary, err := GetSessionSummary("codex", "session-1", path)
+	if err != nil {
+		t.Fatalf("GetSessionSummary returned error: %v", err)
+	}
+	if summary.FirstPreview != "first user prompt" {
+		t.Fatalf("expected first user preview, got %q", summary.FirstPreview)
+	}
+}
+
 func TestSearchMessagesStreamsMatches(t *testing.T) {
 	path := writeTranscript(t, strings.Join([]string{
 		`{"type":"event_msg","payload":{"type":"user_message","message":"first prompt text"}}`,

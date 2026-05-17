@@ -2,12 +2,19 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import { type LegendListRef } from "@legendapp/list/react"
 import type { GroupImperativeHandle } from "react-resizable-panels"
 import { useOutletContext } from "react-router-dom"
+import { ExternalLink, Loader2, MessageSquarePlus, X } from "lucide-react"
 import type { ChatInputHandle } from "../../components/chat-ui/ChatInput"
-import { ChatNavbar } from "../../components/chat-ui/ChatNavbar"
+import { ChatNavbar, type ChatSearchMatch } from "../../components/chat-ui/ChatNavbar"
 import { BrowserPanel } from "../../components/chat-ui/BrowserPanel"
+import type { MessageIndexItem } from "../../components/chat-ui/ConversationMinimap"
 import { GitPanel } from "../../components/chat-ui/GitPanel"
+import { ProjectFilesPanel, type ProjectFileEntry } from "../../components/chat-ui/ProjectFilesPanel"
+import { readProjectFilePreview } from "../../components/chat-ui/projectFilesData"
+import { FilePreviewPanel, fileRouteHref, type FilePreviewResponse } from "../../components/file-preview/FilePreviewPanel"
 import { useAppDialog } from "../../components/ui/app-dialog"
+import { Button } from "../../components/ui/button"
 import { Card, CardContent } from "../../components/ui/card"
+import { getAppearanceThemeClassName, useReaderAppearanceSettings } from "../../components/appearance/ReaderAppearance"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "../../components/ui/resizable"
 import { actionMatchesEvent, getResolvedKeybindings } from "../../lib/keybindings"
 import { deriveLatestContextWindowSnapshot } from "../../lib/contextWindow"
@@ -22,27 +29,71 @@ import { DEFAULT_PROJECT_TERMINAL_LAYOUT, useTerminalLayoutStore } from "../../s
 import { useTerminalPreferencesStore } from "../../stores/terminalPreferencesStore"
 import { shouldCloseTerminalPane } from "../terminalLayoutResize"
 import { TERMINAL_TOGGLE_ANIMATION_DURATION_MS } from "../terminalToggleAnimation"
+import { CHAT_SELECTION_ZONE_ATTRIBUTE } from "../chatFocusPolicy"
 import { useRightSidebarToggleAnimation } from "../useRightSidebarToggleAnimation"
 import { useStickyChatFocus } from "../useStickyChatFocus"
 import { useTerminalToggleAnimation } from "../useTerminalToggleAnimation"
-import type { KannaState } from "../useKannaState"
-import { getNextMeasuredInputHeight, getTranscriptPaddingBottom } from "../useKannaState"
+import type { AbolqasemState } from "../useAbolqasemState"
+import { getNextMeasuredInputHeight, getTranscriptPaddingBottom } from "../useAbolqasemState"
+import type { ChatTranscriptIndexSnapshot, TranscriptIndexItem } from "../../../shared/types"
 import { ChatInputDock } from "./ChatInputDock"
 import { ChatTranscriptViewport } from "./ChatTranscriptViewport"
 import { TerminalWorkspaceShell } from "./TerminalWorkspaceShell"
+import {
+  getOrderedRightSidebarLayout,
+  getRightSidebarPanelDefaultSizes,
+  type RightSidebarLayoutDirection,
+} from "./rightSidebarLayout"
+import {
+  findLoadedTranscriptMessageById,
+  findPreviousUserPromptMessage,
+  findTranscriptRowTarget,
+  type TranscriptRowTarget,
+} from "./transcriptNavigation"
 import { useChatPageSidebarActions, EMPTY_DIFF_SNAPSHOT } from "./useChatPageSidebarActions"
 import {
   EMPTY_STATE_TYPING_INTERVAL_MS,
   hasFileDragTypes,
+  isAbsoluteLocalPath,
+  resolveDiffFilePath,
   sameContextWindowSnapshot,
 } from "./utils"
 import { useI18n } from "../../i18n/context"
 
+export { getOrderedRightSidebarLayout, getRightSidebarPanelDefaultSizes } from "./rightSidebarLayout"
 export {
   getIgnoreFolderEntryFromDiffPath,
   hasFileDragTypes,
   shouldAutoFollowTranscriptResize,
 } from "./utils"
+
+const PROJECT_FILE_PREVIEW_NAVBAR_OFFSET_PX = 52
+const MIN_CONVERSATION_INDEX_SKELETON_MS = 360
+
+function useMinimumVisible(visible: boolean, minimumVisibleMs: number) {
+  const [isVisible, setIsVisible] = useState(visible)
+  const visibleSinceRef = useRef(visible ? performance.now() : 0)
+
+  useEffect(() => {
+    if (visible) {
+      visibleSinceRef.current = performance.now()
+      setIsVisible(true)
+      return
+    }
+
+    if (!isVisible) return
+
+    const elapsedMs = Math.max(0, performance.now() - visibleSinceRef.current)
+    const delayMs = Math.max(0, minimumVisibleMs - elapsedMs)
+    const timeoutId = window.setTimeout(() => {
+      setIsVisible(false)
+    }, delayMs)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [isVisible, minimumVisibleMs, visible])
+
+  return isVisible
+}
 
 function useEmptyStateTyping(showEmptyState: boolean, activeChatId: string | null, emptyStateText: string) {
   const [typedEmptyStateText, setTypedEmptyStateText] = useState("")
@@ -174,6 +225,349 @@ function useTranscriptPaddingBottom() {
   }
 }
 
+function waitForNextFrame() {
+  return new Promise<void>((resolve) => {
+    window.requestAnimationFrame(() => resolve())
+  })
+}
+
+interface ProjectFilePreviewTarget {
+  path: string
+  name: string
+}
+
+interface ProjectPreviewSelectionMenu {
+  x: number
+  y: number
+  text: string
+  promptText: string
+  reference: string
+}
+
+function normalizeReferencePath(path: string) {
+  return path.replace(/\\/g, "/").replace(/\/+/g, "/").replace(/^\.\//, "")
+}
+
+function projectRelativeReferencePath(path: string, projectRoot: string | null | undefined) {
+  const normalizedPath = normalizeReferencePath(path)
+  const normalizedRoot = projectRoot ? normalizeReferencePath(projectRoot).replace(/\/+$/, "") : ""
+
+  if (normalizedRoot && normalizedPath === normalizedRoot) {
+    return normalizedPath.split("/").filter(Boolean).pop() ?? normalizedPath
+  }
+  if (normalizedRoot && normalizedPath.startsWith(`${normalizedRoot}/`)) {
+    return normalizedPath.slice(normalizedRoot.length + 1)
+  }
+  return normalizedPath
+}
+
+function lineReferenceSuffix(startLine: number | null, endLine: number | null) {
+  if (!startLine || !endLine) return ""
+  return startLine === endLine ? `:${startLine}` : `:${startLine}-${endLine}`
+}
+
+function selectionRangeRect(selection: Selection, fallbackClientX?: number, fallbackClientY?: number) {
+  if (selection.rangeCount === 0) {
+    return fallbackClientX !== undefined && fallbackClientY !== undefined
+      ? new DOMRect(fallbackClientX, fallbackClientY, 0, 0)
+      : null
+  }
+
+  const range = selection.getRangeAt(0)
+  const rect = range.getBoundingClientRect()
+  if (rect.width > 0 || rect.height > 0) return rect
+
+  const firstClientRect = range.getClientRects()[0]
+  if (firstClientRect) return firstClientRect
+
+  return fallbackClientX !== undefined && fallbackClientY !== undefined
+    ? new DOMRect(fallbackClientX, fallbackClientY, 0, 0)
+    : null
+}
+
+function clampSelectionMenuPosition(rect: DOMRect) {
+  const menuWidth = 268
+  const menuHeight = 64
+  const viewportPadding = 12
+  const centeredX = rect.left + (rect.width / 2) - (menuWidth / 2)
+  const aboveY = rect.top - menuHeight - 10
+  const belowY = rect.bottom + 10
+  const x = Math.max(viewportPadding, Math.min(centeredX, window.innerWidth - menuWidth - viewportPadding))
+  const y = aboveY >= viewportPadding
+    ? aboveY
+    : Math.max(viewportPadding, Math.min(belowY, window.innerHeight - menuHeight - viewportPadding))
+
+  return { x, y }
+}
+
+function codeLineNumberFromElement(element: HTMLElement, preview: FilePreviewResponse) {
+  const relativeLine = Number(element.dataset.line)
+  if (!Number.isFinite(relativeLine) || relativeLine <= 0) return null
+  return preview.start_line + relativeLine - 1
+}
+
+function codeLineNumberFromNode(root: HTMLElement, node: Node | null, preview: FilePreviewResponse) {
+  const element = node instanceof Element ? node : node?.parentElement
+  const lineElement = element?.closest<HTMLElement>("[data-line]")
+  if (!lineElement || !root.contains(lineElement)) return null
+  return codeLineNumberFromElement(lineElement, preview)
+}
+
+function rectsOverlapVertically(first: DOMRect, second: DOMRect) {
+  // A small tolerance keeps half-selected bottom lines from being dropped by sub-pixel rounding.
+  const tolerance = 1
+  return first.bottom >= second.top - tolerance && first.top <= second.bottom + tolerance
+}
+
+function lineRectOverlapsSelection(lineRect: DOMRect, selectionRects: DOMRect[]) {
+  return selectionRects.some((selectionRect) => (
+    (selectionRect.width > 0 || selectionRect.height > 0)
+    && rectsOverlapVertically(lineRect, selectionRect)
+  ))
+}
+
+function codeLineRangeFromSelection(root: HTMLElement, selection: Selection, preview: FilePreviewResponse) {
+  if (preview.language === "markdown" || selection.rangeCount === 0) return null
+
+  const range = selection.getRangeAt(0)
+  const selectedLines = new Set<number>()
+  const selectionRects = Array.from(range.getClientRects())
+
+  const anchorLine = codeLineNumberFromNode(root, selection.anchorNode, preview)
+  if (anchorLine) selectedLines.add(anchorLine)
+  const focusLine = codeLineNumberFromNode(root, selection.focusNode, preview)
+  if (focusLine) selectedLines.add(focusLine)
+
+  for (const lineElement of Array.from(root.querySelectorAll<HTMLElement>("[data-line]"))) {
+    let intersects = false
+    try {
+      intersects = range.intersectsNode(lineElement)
+    } catch {
+      intersects = false
+    }
+
+    if (!intersects && !lineRectOverlapsSelection(lineElement.getBoundingClientRect(), selectionRects)) {
+      continue
+    }
+
+    const lineNumber = codeLineNumberFromElement(lineElement, preview)
+    if (lineNumber) {
+      selectedLines.add(lineNumber)
+    }
+  }
+
+  if (selectedLines.size === 0) return null
+  const lineNumbers = [...selectedLines]
+  return {
+    startLine: Math.min(...lineNumbers),
+    endLine: Math.max(...lineNumbers),
+  }
+}
+
+function normalizeSelectionText(text: string) {
+  return text.replace(/\r\n?/g, "\n").replace(/\u00a0/g, " ").trim()
+}
+
+function sourceLineRangeFromSelectionText(preview: FilePreviewResponse, selectedText: string) {
+  const source = preview.lines.map((line) => line.text).join("\n")
+  const normalizedSource = normalizeSelectionText(source)
+  const normalizedSelectedText = normalizeSelectionText(selectedText)
+  if (!normalizedSource || !normalizedSelectedText) return null
+
+  const exactIndex = normalizedSource.indexOf(normalizedSelectedText)
+  if (exactIndex >= 0) {
+    const startLine = preview.start_line + normalizedSource.slice(0, exactIndex).split("\n").length - 1
+    const selectedLineCount = normalizedSelectedText.split("\n").length
+    return { startLine, endLine: startLine + selectedLineCount - 1 }
+  }
+
+  const selectedLines = normalizedSelectedText.split("\n").map((line) => line.trim()).filter(Boolean)
+  const firstSelectedLine = selectedLines[0]
+  if (!firstSelectedLine) return null
+
+  const sourceLines = source.split(/\r\n?|\n/)
+  const relativeIndex = sourceLines.findIndex((line) => {
+    const normalizedLine = line.trim()
+    if (!normalizedLine) return false
+    return normalizedLine.includes(firstSelectedLine) || firstSelectedLine.includes(normalizedLine)
+  })
+  if (relativeIndex < 0) return null
+
+  const startLine = preview.start_line + relativeIndex
+  return { startLine, endLine: startLine + Math.max(selectedLines.length - 1, 0) }
+}
+
+function projectPreviewSelectionMenuFromSelection(args: {
+  root: HTMLElement
+  preview: FilePreviewResponse | null
+  path: string
+  projectRoot?: string | null
+  fallbackClientX?: number
+  fallbackClientY?: number
+}) {
+  const selection = window.getSelection()
+  if (!selection || selection.isCollapsed || !args.preview) return null
+
+  const selectedText = selection.toString()
+  if (!selectedText || !selectedText.trim()) return null
+
+  const anchorNode = selection.anchorNode
+  const focusNode = selection.focusNode
+  if (
+    (anchorNode && !args.root.contains(anchorNode))
+    || (focusNode && !args.root.contains(focusNode))
+  ) {
+    return null
+  }
+
+  const rect = selectionRangeRect(selection, args.fallbackClientX, args.fallbackClientY)
+  if (!rect) return null
+
+  const codeLineRange = codeLineRangeFromSelection(args.root, selection, args.preview)
+  const fallbackLineRange = codeLineRange ?? sourceLineRangeFromSelectionText(args.preview, selectedText)
+  const referencePath = projectRelativeReferencePath(args.path || args.preview.path, args.projectRoot)
+  const reference = `${referencePath}${lineReferenceSuffix(fallbackLineRange?.startLine ?? null, fallbackLineRange?.endLine ?? null)}`
+  const promptText = `${selectedText}\n\n${reference}`
+
+  return {
+    ...clampSelectionMenuPosition(rect),
+    text: selectedText,
+    promptText,
+    reference,
+  }
+}
+
+function ProjectPreviewSelectionOverlay({
+  rootRef,
+  preview,
+  path,
+  projectRoot,
+  label,
+  onAppend,
+}: {
+  rootRef: RefObject<HTMLDivElement | null>
+  preview: FilePreviewResponse | null
+  path: string
+  projectRoot?: string | null
+  label: string
+  onAppend: (text: string) => void
+}) {
+  const [selectionMenu, setSelectionMenu] = useState<ProjectPreviewSelectionMenu | null>(null)
+  const selectionTimeoutRef = useRef<number | null>(null)
+
+  const clearSelectionTimer = useCallback(() => {
+    if (selectionTimeoutRef.current !== null) {
+      window.clearTimeout(selectionTimeoutRef.current)
+      selectionTimeoutRef.current = null
+    }
+  }, [])
+
+  const openSelectionMenu = useCallback((fallbackClientX?: number, fallbackClientY?: number) => {
+    const root = rootRef.current
+    if (!root) return false
+
+    const menu = projectPreviewSelectionMenuFromSelection({
+      root,
+      preview,
+      path,
+      projectRoot,
+      fallbackClientX,
+      fallbackClientY,
+    })
+    setSelectionMenu(menu)
+    return Boolean(menu)
+  }, [path, preview, projectRoot, rootRef])
+
+  useEffect(() => {
+    const root = rootRef.current
+    if (!root) return
+
+    const handleMouseUp = (event: MouseEvent) => {
+      clearSelectionTimer()
+      const clientX = event.clientX
+      const clientY = event.clientY
+      selectionTimeoutRef.current = window.setTimeout(() => {
+        selectionTimeoutRef.current = null
+        openSelectionMenu(clientX, clientY)
+      }, 120)
+    }
+
+    const handleContextMenu = (event: MouseEvent) => {
+      clearSelectionTimer()
+      if (openSelectionMenu(event.clientX, event.clientY)) {
+        event.preventDefault()
+      }
+    }
+
+    root.addEventListener("mouseup", handleMouseUp)
+    root.addEventListener("contextmenu", handleContextMenu)
+    return () => {
+      clearSelectionTimer()
+      root.removeEventListener("mouseup", handleMouseUp)
+      root.removeEventListener("contextmenu", handleContextMenu)
+    }
+  }, [clearSelectionTimer, openSelectionMenu, rootRef])
+
+  useEffect(() => {
+    clearSelectionTimer()
+    setSelectionMenu(null)
+  }, [clearSelectionTimer, path, preview])
+
+  const handleAppend = useCallback(() => {
+    if (!selectionMenu) return
+    onAppend(selectionMenu.promptText)
+    setSelectionMenu(null)
+  }, [onAppend, selectionMenu])
+
+  if (!selectionMenu) return null
+
+  return (
+    <div
+      className="fixed z-[70] w-[268px] rounded-2xl border border-border bg-popover p-1 text-popover-foreground shadow-2xl"
+      style={{ left: selectionMenu.x, top: selectionMenu.y }}
+      onMouseDown={(event) => event.preventDefault()}
+    >
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-auto min-h-10 w-full justify-start gap-2 rounded-xl px-3 py-2 text-start text-xs"
+        onClick={handleAppend}
+      >
+        <MessageSquarePlus className="h-3.5 w-3.5 shrink-0" />
+        <span className="min-w-0">
+          <span className="block font-medium">{label}</span>
+          <span className="block truncate font-mono text-[10px] text-muted-foreground" dir="ltr">
+            {selectionMenu.reference}
+          </span>
+        </span>
+      </Button>
+    </div>
+  )
+}
+
+function findTranscriptRowElement(rowId: string) {
+  const rows = document.querySelectorAll<HTMLElement>("[data-transcript-row-id]")
+  for (const row of rows) {
+    if (row.dataset.transcriptRowId === rowId) {
+      return row
+    }
+  }
+  return null
+}
+
+function getTranscriptTargetElement(messageId: string, rowId: string) {
+  return document.getElementById(`msg-${messageId}`) ?? findTranscriptRowElement(rowId)
+}
+
+function highlightTranscriptElement(element: HTMLElement) {
+  if (!element) return false
+  element.scrollIntoView({ behavior: "smooth", block: "center" })
+  element.classList.add("ring-2", "ring-logo/60", "rounded-2xl")
+  window.setTimeout(() => element.classList.remove("ring-2", "ring-logo/60", "rounded-2xl"), 1800)
+  return true
+}
+
 const MOBILE_RIGHT_SIDEBAR_BREAKPOINT_PX = 768
 const RIGHT_SIDEBAR_MIN_WORKSPACE_SIZE_PERCENT = 20
 const RIGHT_SIDEBAR_MAX_SIZE_PERCENT = 100 - RIGHT_SIDEBAR_MIN_WORKSPACE_SIZE_PERCENT
@@ -261,8 +655,8 @@ interface ChatWorkspaceProps {
   fixedTerminalHeight: number
   terminalFocusRequestVersion: number
   addTerminal: ReturnType<typeof useTerminalLayoutStore.getState>["addTerminal"]
-  socket: KannaState["socket"]
-  connectionStatus: KannaState["connectionStatus"]
+  socket: AbolqasemState["socket"]
+  connectionStatus: AbolqasemState["connectionStatus"]
   scrollback: number
   minColumnWidth: number
   splitTerminalShortcut?: string[]
@@ -292,6 +686,7 @@ export function getTerminalPanelDefaultSizes(showTerminalPane: boolean, mainSize
 interface DesktopSidebarPaneProps {
   showRightSidebar: boolean
   sizePercent: number
+  direction: RightSidebarLayoutDirection
   sidebarPanelRef: RefObject<HTMLDivElement | null>
   sidebarVisualRef: RefObject<HTMLDivElement | null>
   content: ReactNode
@@ -300,6 +695,7 @@ interface DesktopSidebarPaneProps {
 const DesktopSidebarPane = memo(function DesktopSidebarPane({
   showRightSidebar,
   sizePercent,
+  direction,
   sidebarPanelRef,
   sidebarVisualRef,
   content,
@@ -307,13 +703,18 @@ const DesktopSidebarPane = memo(function DesktopSidebarPane({
   return (
     <ResizablePanel
       id="rightSidebar"
-      defaultSize={`${sizePercent}%`}
+      defaultSize={sizePercent}
+      minSize={0}
+      maxSize={showRightSidebar ? undefined : 0}
+      collapsible
+      collapsedSize={0}
       className="min-h-0 min-w-0"
       elementRef={sidebarPanelRef}
       groupResizeBehavior="preserve-pixel-size"
     >
       <div
         ref={sidebarVisualRef}
+        dir={direction}
         className="h-full min-h-0 overflow-hidden"
         data-right-sidebar-open={showRightSidebar ? "true" : "false"}
         data-right-sidebar-animated="false"
@@ -331,6 +732,7 @@ const DesktopSidebarPane = memo(function DesktopSidebarPane({
 interface MobileSidebarPaneProps {
   projectId: string | null
   showRightSidebar: boolean
+  isRtl: boolean
   sidebarVisualRef: RefObject<HTMLDivElement | null>
   onClose: () => void
   content: ReactNode
@@ -339,6 +741,7 @@ interface MobileSidebarPaneProps {
 const MobileSidebarPane = memo(function MobileSidebarPane({
   projectId,
   showRightSidebar,
+  isRtl,
   sidebarVisualRef,
   onClose,
   content,
@@ -365,9 +768,10 @@ const MobileSidebarPane = memo(function MobileSidebarPane({
       <div
         ref={sidebarVisualRef}
         className={cn(
-          "absolute inset-y-0 right-0 flex w-[min(92vw,30rem)] max-w-full min-h-0 flex-col overflow-hidden border-l border-border bg-background shadow-2xl transition-transform duration-300 ease-out",
+          "absolute inset-y-0 flex w-[min(92vw,30rem)] max-w-full min-h-0 flex-col overflow-hidden bg-background shadow-2xl transition-transform duration-300 ease-out",
+          isRtl ? "left-0 border-r border-border" : "right-0 border-l border-border",
           "pt-[max(env(safe-area-inset-top),0px)] pb-[max(env(safe-area-inset-bottom),0px)]",
-          showRightSidebar ? "translate-x-0" : "translate-x-full",
+          showRightSidebar ? "translate-x-0" : isRtl ? "-translate-x-full" : "translate-x-full",
         )}
         data-right-sidebar-open={showRightSidebar ? "true" : "false"}
         data-right-sidebar-animated="false"
@@ -467,19 +871,39 @@ function ChatWorkspace({
 }
 
 export function ChatPage() {
-  const { t } = useI18n()
-  const state = useOutletContext<KannaState>()
+  const { t, direction } = useI18n()
+  const isRtl = direction === "rtl"
+  const [appearanceSettings] = useReaderAppearanceSettings()
+  const state = useOutletContext<AbolqasemState>()
   const dialog = useAppDialog()
   const layoutRootRef = useRef<HTMLDivElement>(null)
   const transcriptListRef = useRef<LegendListRef | null>(null)
   const isAtEndRef = useRef(true)
   const showScrollTimeoutRef = useRef<number | null>(null)
+  const transcriptIndexRequestIdRef = useRef(0)
+  const transcriptNavigationGenerationRef = useRef(0)
+  const transcriptNavigationRequestIdRef = useRef(0)
   const chatCardRef = useRef<HTMLDivElement>(null)
   const chatInputElementRef = useRef<HTMLTextAreaElement>(null)
   const chatInputRef = useRef<ChatInputHandle | null>(null)
+  const messagesRef = useRef(state.messages)
+  const latestToolIdsRef = useRef(state.latestToolIds)
+  const hasOlderHistoryRef = useRef(state.hasOlderHistory)
+  const loadOlderHistoryRef = useRef(state.loadOlderHistory)
+  const lastUserPromptJumpIdRef = useRef<string | null>(null)
+  const lastShiftKeydownRef = useRef(0)
   const { inputRef, syncInputHeight, transcriptPaddingBottom } = useTranscriptPaddingBottom()
   const [showScrollToBottom, setShowScrollToBottom] = useState(false)
+  const [conversationIndex, setConversationIndex] = useState<TranscriptIndexItem[]>([])
+  const [conversationIndexLoading, setConversationIndexLoading] = useState(false)
+  const [conversationIndexChatId, setConversationIndexChatId] = useState<string | null>(null)
   const [pendingTerminalCommands, setPendingTerminalCommands] = useState<Record<string, string>>({})
+  const [filesPanelFocusToken, setFilesPanelFocusToken] = useState(0)
+  const [projectFilePreviewTarget, setProjectFilePreviewTarget] = useState<ProjectFilePreviewTarget | null>(null)
+  const [projectFilePreview, setProjectFilePreview] = useState<FilePreviewResponse | null>(null)
+  const [projectFilePreviewLoading, setProjectFilePreviewLoading] = useState(false)
+  const [projectFilePreviewError, setProjectFilePreviewError] = useState<string | null>(null)
+  const projectPreviewRootRef = useRef<HTMLDivElement | null>(null)
   const showEmptyState = state.messages.length === 0 && state.runtime?.title === "New Chat"
   const projectId = state.activeProjectId
   const projectTerminalLayout = useTerminalLayoutStore((store) => (projectId ? store.projects[projectId] : undefined))
@@ -500,6 +924,13 @@ export function ChatPage() {
   const minColumnWidth = useTerminalPreferencesStore((store) => store.minColumnWidth)
   const editorPreset = useTerminalPreferencesStore((store) => store.editorPreset)
   const editorCommandTemplate = useTerminalPreferencesStore((store) => store.editorCommandTemplate)
+  const conversationIndexPending = Boolean(state.activeChatId) && (
+    conversationIndexLoading || conversationIndexChatId !== state.activeChatId
+  )
+  const conversationIndexSkeletonVisible = useMinimumVisible(
+    conversationIndexPending,
+    MIN_CONVERSATION_INDEX_SKELETON_MS,
+  )
   const resolvedKeybindings = useMemo(() => getResolvedKeybindings(state.keybindings), [state.keybindings])
   const baseContextWindowSnapshotRef = useRef<ReturnType<typeof deriveLatestContextWindowSnapshot>>(null)
   const contextWindowSnapshot = useMemo(() => {
@@ -511,6 +942,21 @@ export function ChatPage() {
     baseContextWindowSnapshotRef.current = derivedSnapshot
     return derivedSnapshot
   }, [state.chatSnapshot?.messages])
+  useLayoutEffect(() => {
+    messagesRef.current = state.messages
+  }, [state.messages])
+
+  useLayoutEffect(() => {
+    latestToolIdsRef.current = state.latestToolIds
+  }, [state.latestToolIds])
+
+  useLayoutEffect(() => {
+    hasOlderHistoryRef.current = state.hasOlderHistory
+  }, [state.hasOlderHistory])
+
+  useLayoutEffect(() => {
+    loadOlderHistoryRef.current = state.loadOlderHistory
+  }, [state.loadOlderHistory])
 
   const hasTerminals = terminalLayout.terminals.length > 0
   const showTerminalPane = Boolean(projectId && terminalLayout.isVisible && hasTerminals)
@@ -555,6 +1001,7 @@ export function ChatPage() {
     shouldRenderRightSidebarLayout: shouldRenderDesktopRightSidebarLayout,
     showRightSidebar,
     rightSidebarSizePercent: effectiveRightSidebarSize,
+    direction,
   })
 
   const {
@@ -615,6 +1062,54 @@ export function ChatPage() {
     hasSelectedProject: state.hasSelectedProject,
     onFilesDropped: enqueueDroppedFiles,
   })
+
+  useEffect(() => {
+    setProjectFilePreviewTarget(null)
+    setProjectFilePreview(null)
+    setProjectFilePreviewError(null)
+  }, [projectId])
+
+  useEffect(() => {
+    if (!projectId || !projectFilePreviewTarget) {
+      setProjectFilePreview(null)
+      setProjectFilePreviewError(null)
+      setProjectFilePreviewLoading(false)
+      return
+    }
+
+    const controller = new AbortController()
+    setProjectFilePreviewLoading(true)
+    setProjectFilePreviewError(null)
+
+    readProjectFilePreview(projectId, projectFilePreviewTarget.path, { signal: controller.signal })
+      .then(setProjectFilePreview)
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return
+        setProjectFilePreview(null)
+        setProjectFilePreviewError(error instanceof Error ? error.message : String(error))
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setProjectFilePreviewLoading(false)
+      })
+
+    return () => controller.abort()
+  }, [projectFilePreviewTarget, projectId])
+
+  const handleSelectProjectFile = useCallback((entry: ProjectFileEntry) => {
+    if (entry.type !== "file") return
+    setProjectFilePreviewTarget({ path: entry.path, name: entry.name })
+  }, [])
+
+  const handleCloseProjectFilePreview = useCallback(() => {
+    setProjectFilePreviewTarget(null)
+    setProjectFilePreview(null)
+    setProjectFilePreviewError(null)
+  }, [])
+
+  const appendTextToComposer = useCallback((text: string) => {
+    if (!text.trim()) return
+    chatInputRef.current?.appendText(text)
+  }, [])
 
   const handleToggleEmbeddedTerminal = useCallback(() => {
     if (!projectId) return
@@ -686,6 +1181,19 @@ export function ChatPage() {
     toggleRightPanel(projectId, "browser")
   }, [projectId, toggleRightPanel])
 
+  const handleToggleFilesPanel = useCallback(() => {
+    if (!projectId) return
+    toggleRightPanel(projectId, "files")
+  }, [projectId, toggleRightPanel])
+
+  const handleOpenFilesSearch = useCallback(() => {
+    if (!projectId) return
+    if (activeRightPanel !== "files") {
+      toggleRightPanel(projectId, "files")
+    }
+    setFilesPanelFocusToken((current) => current + 1)
+  }, [activeRightPanel, projectId, toggleRightPanel])
+
   const handleRunQuickAction = useCallback((command: string) => {
     if (!projectId) return
     const terminalId = addTerminal(projectId)
@@ -753,10 +1261,195 @@ export function ChatPage() {
     await transcriptListRef.current?.scrollToEnd?.({ animated })
   }, [clearShowScrollTimeout])
 
+  const waitForTranscriptUpdate = useCallback(async (
+    previousMessages: AbolqasemState["messages"],
+    isReady: () => boolean,
+  ) => {
+    for (let frame = 0; frame < 30; frame += 1) {
+      await waitForNextFrame()
+      if (isReady() || messagesRef.current !== previousMessages || messagesRef.current.length !== previousMessages.length) {
+        return true
+      }
+    }
+    return false
+  }, [])
+
+  const loadOlderHistoryUntil = useCallback(async (
+    resolveTarget: () => TranscriptRowTarget | null,
+    options?: {
+      generation?: number
+      requestId?: number
+      maxAttempts?: number
+    },
+  ) => {
+    const generation = options?.generation ?? transcriptNavigationGenerationRef.current
+    const requestId = options?.requestId ?? transcriptNavigationRequestIdRef.current
+    const maxAttempts = options?.maxAttempts ?? 30
+    let target = resolveTarget()
+    let attempts = 0
+
+    while (!target && hasOlderHistoryRef.current && attempts < maxAttempts) {
+      if (
+        generation !== transcriptNavigationGenerationRef.current
+        || requestId !== transcriptNavigationRequestIdRef.current
+      ) {
+        return null
+      }
+      const previousMessages = messagesRef.current
+      await loadOlderHistoryRef.current()
+      if (
+        generation !== transcriptNavigationGenerationRef.current
+        || requestId !== transcriptNavigationRequestIdRef.current
+      ) {
+        return null
+      }
+      const changed = await waitForTranscriptUpdate(previousMessages, () => Boolean(resolveTarget()))
+      target = resolveTarget()
+      attempts += 1
+
+      if (!target && !changed && messagesRef.current === previousMessages) {
+        break
+      }
+    }
+
+    return target
+  }, [waitForTranscriptUpdate])
+
+  const resolveTranscriptTargetByIds = useCallback((ids: Array<string | null | undefined>) => {
+    for (const rawId of ids) {
+      const id = rawId?.trim()
+      if (!id) {
+        continue
+      }
+      const loadedMessage = findLoadedTranscriptMessageById(messagesRef.current, id)
+      if (!loadedMessage) {
+        continue
+      }
+      const target = findTranscriptRowTarget(messagesRef.current, latestToolIdsRef.current, loadedMessage)
+      if (target) {
+        return target
+      }
+    }
+    return null
+  }, [])
+
+  const loadTranscriptTargetByIds = useCallback(async (
+    ids: Array<string | null | undefined>,
+    maxAttempts?: number,
+  ) => {
+    const requestId = ++transcriptNavigationRequestIdRef.current
+    const generation = transcriptNavigationGenerationRef.current
+    const loadedTarget = resolveTranscriptTargetByIds(ids)
+    if (loadedTarget) {
+      return loadedTarget
+    }
+
+    const targetCursor = ids.map((id) => id?.trim()).find(Boolean)
+    if (targetCursor) {
+      const previousMessages = messagesRef.current
+      const loadedAroundTarget = await state.loadHistoryAround(targetCursor, 120)
+      if (
+        generation !== transcriptNavigationGenerationRef.current
+        || requestId !== transcriptNavigationRequestIdRef.current
+      ) {
+        return null
+      }
+      if (loadedAroundTarget) {
+        await waitForTranscriptUpdate(previousMessages, () => Boolean(resolveTranscriptTargetByIds(ids)))
+        const directTarget = resolveTranscriptTargetByIds(ids)
+        if (directTarget) {
+          return directTarget
+        }
+      }
+    }
+
+    return loadOlderHistoryUntil(
+      () => resolveTranscriptTargetByIds(ids),
+      { generation, requestId, maxAttempts },
+    )
+  }, [loadOlderHistoryUntil, resolveTranscriptTargetByIds, state.loadHistoryAround, waitForTranscriptUpdate])
+
+  const scrollToResolvedTranscriptTarget = useCallback(async (target: TranscriptRowTarget) => {
+    const highlightTarget = () => {
+      const element = getTranscriptTargetElement(target.message.id, target.row.id)
+      return element ? highlightTranscriptElement(element) : false
+    }
+
+    if (highlightTarget()) {
+      return true
+    }
+
+    try {
+      await transcriptListRef.current?.scrollToIndex?.({
+        index: target.rowIndex,
+        viewPosition: 0.5,
+        animated: true,
+      })
+    } catch {
+      // LegendList can reject if the row is no longer in the current virtualized data.
+    }
+
+    for (let frame = 0; frame < 12; frame += 1) {
+      await waitForNextFrame()
+      if (highlightTarget()) {
+        return true
+      }
+    }
+
+    return false
+  }, [])
+
+  const handleMinimapScrollToMessage = useCallback(async (item: MessageIndexItem) => {
+    const target = resolveTranscriptTargetByIds([item.id])
+    if (!target || !await scrollToResolvedTranscriptTarget(target)) {
+      throw new Error("Unable to scroll to the transcript message.")
+    }
+  }, [resolveTranscriptTargetByIds, scrollToResolvedTranscriptTarget])
+
+  const handleMinimapLoadMessage = useCallback(async (item: MessageIndexItem) => {
+    const target = await loadTranscriptTargetByIds([item.id], 40)
+    if (!target) {
+      throw new Error("Transcript message could not be loaded.")
+    }
+  }, [loadTranscriptTargetByIds])
+
+  const handleChatSearchResultSelect = useCallback(async (match: ChatSearchMatch) => {
+    const target = await loadTranscriptTargetByIds([match.entry_id, match.message_id], 40)
+    if (target && await scrollToResolvedTranscriptTarget(target)) {
+      return
+    }
+
+    await dialog.alert({
+      title: "نتیجه قابل نمایش نیست",
+      description: "نتیجه در transcript پیدا شد، اما در پیام‌های قابل نمایش این نشست پیدا نشد.",
+      closeLabel: t.common.ok,
+    })
+  }, [dialog, loadTranscriptTargetByIds, scrollToResolvedTranscriptTarget, t])
+
+  const handleJumpToPreviousUserPrompt = useCallback(async () => {
+    const getTarget = () => {
+      const message = findPreviousUserPromptMessage(messagesRef.current, lastUserPromptJumpIdRef.current)
+      if (!message) return null
+      return findTranscriptRowTarget(messagesRef.current, latestToolIdsRef.current, message)
+    }
+
+    let target = getTarget()
+    if (!target) {
+      target = await loadOlderHistoryUntil(getTarget)
+    }
+    if (!target) {
+      return
+    }
+
+    lastUserPromptJumpIdRef.current = target.message.id
+    await scrollToResolvedTranscriptTarget(target)
+  }, [loadOlderHistoryUntil, scrollToResolvedTranscriptTarget])
+
   const handleChatSubmit = useCallback(async (
     content: string,
     options?: Parameters<typeof state.handleSend>[1],
   ) => {
+    lastUserPromptJumpIdRef.current = null
     await scrollToTranscriptEnd(false)
     await state.handleSend(content, options)
   }, [scrollToTranscriptEnd, state])
@@ -767,13 +1460,64 @@ export function ChatPage() {
 
   useEffect(() => {
     isAtEndRef.current = true
+    lastUserPromptJumpIdRef.current = null
+    transcriptNavigationGenerationRef.current += 1
+    transcriptNavigationRequestIdRef.current += 1
     clearShowScrollTimeout()
     setShowScrollToBottom(false)
   }, [clearShowScrollTimeout, state.activeChatId])
 
   useEffect(() => {
+    if (!state.activeChatId) {
+      transcriptIndexRequestIdRef.current += 1
+      setConversationIndex([])
+      setConversationIndexChatId(null)
+      setConversationIndexLoading(false)
+      return
+    }
+
+    const activeChatId = state.activeChatId
+    const requestId = ++transcriptIndexRequestIdRef.current
+    setConversationIndex([])
+    setConversationIndexChatId(activeChatId)
+    setConversationIndexLoading(true)
+
+    void state.socket.command<ChatTranscriptIndexSnapshot>({
+      type: "chat.readTranscriptIndex",
+      chatId: activeChatId,
+    })
+      .then((snapshot) => {
+        if (transcriptIndexRequestIdRef.current !== requestId || state.activeChatId !== activeChatId) {
+          return
+        }
+        setConversationIndex(snapshot.items ?? [])
+        setConversationIndexChatId(activeChatId)
+        setConversationIndexLoading(false)
+      })
+      .catch(() => {
+        if (transcriptIndexRequestIdRef.current !== requestId || state.activeChatId !== activeChatId) {
+          return
+        }
+        setConversationIndex([])
+        setConversationIndexChatId(activeChatId)
+        setConversationIndexLoading(false)
+      })
+  }, [state.activeChatId, state.socket])
+
+  useEffect(() => {
     function handleGlobalKeydown(event: KeyboardEvent) {
       if (!projectId) return
+      if (event.key === "Shift" && !event.repeat) {
+        const now = window.performance.now()
+        if (now - lastShiftKeydownRef.current <= 450) {
+          event.preventDefault()
+          lastShiftKeydownRef.current = 0
+          handleOpenFilesSearch()
+          return
+        }
+        lastShiftKeydownRef.current = now
+      }
+
       if (actionMatchesEvent(resolvedKeybindings, "toggleEmbeddedTerminal", event)) {
         event.preventDefault()
         handleToggleEmbeddedTerminal()
@@ -806,7 +1550,7 @@ export function ChatPage() {
 
     window.addEventListener("keydown", handleGlobalKeydown)
     return () => window.removeEventListener("keydown", handleGlobalKeydown)
-  }, [addTerminal, handleToggleEmbeddedTerminal, handleToggleGitPanel, projectId, resolvedKeybindings, state.handleOpenExternal])
+  }, [addTerminal, handleOpenFilesSearch, handleToggleEmbeddedTerminal, handleToggleGitPanel, projectId, resolvedKeybindings, state.handleOpenExternal])
 
   useEffect(() => {
     const frameId = window.requestAnimationFrame(() => {
@@ -894,11 +1638,13 @@ export function ChatPage() {
       return
     }
 
-    rightSidebarPanelGroupRef.current?.setLayout({
-      workspace: 100 - clampedRightSidebarSize,
-      rightSidebar: clampedRightSidebarSize,
-    })
+    rightSidebarPanelGroupRef.current?.setLayout(getOrderedRightSidebarLayout(
+      100 - clampedRightSidebarSize,
+      clampedRightSidebarSize,
+      direction,
+    ))
   }, [
+    direction,
     globalRightSidebarSize,
     isRightSidebarAnimating,
     layoutWidth,
@@ -907,10 +1653,129 @@ export function ChatPage() {
     isMobileRightSidebarOverlay,
   ])
 
+  const projectFilePreviewPathLabel = projectFilePreview?.path ?? projectFilePreviewTarget?.path ?? ""
+  const projectFilePreviewProjectPath = state.runtime?.localPath ?? state.navbarLocalPath ?? null
+  const projectFilePreviewResolvedPath = projectFilePreviewTarget
+    ? resolveDiffFilePath(projectFilePreviewProjectPath, projectFilePreviewTarget.path)
+    : ""
+  const canOpenProjectFilePreviewRoute = Boolean(
+    projectFilePreviewTarget
+    && (projectFilePreviewProjectPath || isAbsoluteLocalPath(projectFilePreviewTarget.path))
+  )
+  const projectFilePreviewRouteHref = canOpenProjectFilePreviewRoute
+    ? fileRouteHref(projectFilePreviewResolvedPath, projectFilePreview?.line)
+    : ""
+  const projectFilePreviewContent = projectFilePreviewTarget ? (
+    <div
+      className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-background"
+      style={{ paddingBottom: transcriptPaddingBottom, paddingTop: PROJECT_FILE_PREVIEW_NAVBAR_OFFSET_PX }}
+    >
+      <div className="min-h-0 flex-1 overflow-hidden px-3 pb-3 md:px-5">
+        <div className="mx-auto flex h-full min-h-0 w-full max-w-6xl flex-col overflow-hidden rounded-3xl border border-border/70 bg-card/45 shadow-xl shadow-background/20 backdrop-blur">
+          <div className="grid h-[52px] shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-border/60 bg-card/55 px-3 md:px-4">
+            <div className="min-w-0 text-start">
+              <div className="truncate text-sm font-semibold leading-5 text-foreground" dir="auto">{projectFilePreviewTarget.name}</div>
+              <div className="truncate font-mono text-[11px] leading-4 text-muted-foreground" dir="ltr">
+                {projectFilePreviewPathLabel}
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-0.5 rounded-xl border border-border/70 bg-background/55 p-0.5 shadow-sm" dir="ltr">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                disabled={!projectFilePreviewRouteHref}
+                className="h-7 w-7 rounded-xl text-muted-foreground hover:bg-muted/70 hover:text-foreground disabled:opacity-40"
+                aria-label={t.browserPanel.openInNewTab}
+                title={t.browserPanel.openInNewTab}
+                onClick={() => {
+                  if (!projectFilePreviewRouteHref) return
+                  window.open(projectFilePreviewRouteHref, "_blank", "noopener,noreferrer")
+                }}
+              >
+                <ExternalLink className="h-4 w-4" />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 rounded-xl text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+                aria-label={t.filesPanel.closePreview}
+                title={t.filesPanel.closePreview}
+                onClick={handleCloseProjectFilePreview}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+          <div className="min-h-0 flex-1 overflow-hidden bg-background/35">
+          {projectFilePreview ? (
+            <div
+              ref={projectPreviewRootRef}
+              className="relative h-full min-h-0 select-text"
+              {...{ [CHAT_SELECTION_ZONE_ATTRIBUTE]: "" }}
+            >
+              <FilePreviewPanel
+                preview={projectFilePreview}
+                title={projectFilePreviewTarget.name}
+                hideHeader
+                surface="bare"
+                className="h-full"
+                codeFrameClassName="h-full !rounded-none !border-0 !bg-transparent !shadow-none"
+              />
+              {projectFilePreviewLoading ? (
+                <div className="pointer-events-none absolute left-1/2 top-3 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full border border-border bg-background/90 px-3 py-1.5 text-xs text-muted-foreground shadow-lg backdrop-blur">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  {t.filesPanel.loadingPreview}
+                </div>
+              ) : null}
+            </div>
+          ) : projectFilePreviewLoading ? (
+            <div className="flex h-full items-center justify-center">
+              <div className="flex w-full max-w-xl flex-col items-center gap-3 rounded-3xl bg-muted/30 px-6 py-8 text-center">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                <div className="text-sm font-medium text-foreground">{t.filesPanel.loadingPreview}</div>
+                <div className="max-w-full truncate font-mono text-xs text-muted-foreground" dir="ltr">
+                  {projectFilePreviewTarget.path}
+                </div>
+              </div>
+            </div>
+          ) : projectFilePreviewError ? (
+            <div className="flex h-full items-center justify-center">
+              <div className="w-full max-w-2xl rounded-3xl bg-muted/30 px-6 py-6">
+                <div className="text-sm font-semibold text-foreground">{t.filesPanel.previewUnavailable}</div>
+                <div className="mt-1 truncate font-mono text-xs text-muted-foreground" dir="ltr">
+                  {projectFilePreviewTarget.path}
+                </div>
+                <div className="mt-4 whitespace-pre-wrap rounded-2xl bg-background/55 px-4 py-3 text-xs leading-6 text-muted-foreground" dir="auto">
+                  {projectFilePreviewError}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+              {t.filesPanel.selectFile}
+            </div>
+          )}
+          </div>
+        </div>
+      </div>
+
+      <ProjectPreviewSelectionOverlay
+        rootRef={projectPreviewRootRef}
+        preview={projectFilePreview}
+        path={projectFilePreviewTarget?.path ?? projectFilePreview?.path ?? ""}
+        projectRoot={projectFilePreviewProjectPath}
+        label={t.filesPanel.addSelectionToPrompt}
+        onAppend={appendTextToComposer}
+      />
+    </div>
+  ) : null
+
   const chatCard = (
     <Card
       ref={chatCardRef}
-      className="bg-background h-full flex flex-col overflow-hidden border-0 rounded-none relative"
+      className={cn("bg-background h-full flex flex-col overflow-hidden border-0 rounded-none relative", getAppearanceThemeClassName(appearanceSettings))}
       onDragEnter={handleTranscriptDragEnter}
       onDragOver={handleTranscriptDragOver}
       onDragLeave={handleTranscriptDragLeave}
@@ -928,7 +1793,10 @@ export function ChatPage() {
           rightPanel={activeRightPanel}
           onToggleGitPanel={projectId ? handleToggleGitPanel : undefined}
           onToggleBrowserPanel={projectId ? handleToggleBrowserPanel : undefined}
+          onToggleFilesPanel={projectId ? handleToggleFilesPanel : undefined}
           onOpenExternal={handleOpenExternal}
+          activeChatId={state.activeChatId}
+          onChatSearchResultSelect={state.activeChatId ? handleChatSearchResultSelect : undefined}
           onExportTranscript={state.activeChatId ? () => void state.handleShareChat(state.activeChatId) : undefined}
           canExportTranscript={Boolean(state.activeChatId) && !state.isExportingStandalone}
           isExportingTranscript={state.isExportingStandalone}
@@ -943,40 +1811,50 @@ export function ChatPage() {
           branchName={state.chatDiffSnapshot?.branchName}
           hasGitRepo={state.chatDiffSnapshot?.status !== "no_repo"}
           gitStatus={state.chatDiffSnapshot?.status}
+          sessionToken={state.runtime?.sessionToken}
+          pendingForkSessionToken={state.runtime?.pendingForkSessionToken}
         />
-        <ChatTranscriptViewport
-          activeChatId={state.activeChatId}
-          listRef={transcriptListRef}
-          messages={state.messages}
-          queuedMessages={state.queuedMessages}
-          transcriptPaddingBottom={transcriptPaddingBottom}
-          localPath={state.runtime?.localPath}
-          latestToolIds={state.latestToolIds}
-          isHistoryLoading={state.isHistoryLoading}
-          hasOlderHistory={state.hasOlderHistory}
-          isProcessing={state.isProcessing}
-          runtimeStatus={state.runtimeStatus}
-          isDraining={state.isDraining}
-          commandError={state.commandError}
-          loadOlderHistory={state.loadOlderHistory}
-          onStopDraining={state.handleStopDraining}
-          onSteerQueuedMessage={state.handleSteerQueuedMessage}
-          onRemoveQueuedMessage={state.handleRemoveQueuedMessage}
-          onOpenLocalLink={state.handleOpenLocalLink}
-          editorPreset={editorPreset}
-          editorCommandTemplate={editorCommandTemplate}
-          platform={state.localProjects?.machine.platform}
-          onAskUserQuestionSubmit={state.handleAskUserQuestion}
-          onExitPlanModeConfirm={state.handleExitPlanMode}
-          showScrollButton={showScrollToBottom && state.messages.length > 0}
-          onIsAtEndChange={onIsAtEndChange}
-          scrollToBottom={() => scrollToTranscriptEnd(true)}
-          typedEmptyStateText={typedEmptyStateText}
-          isEmptyStateTypingComplete={isEmptyStateTypingComplete}
-          isPageFileDragActive={isPageFileDragActive}
-          showEmptyState={showEmptyState}
-          emptyStateText={t.chat.emptyState}
-        />
+        {projectFilePreviewContent ?? (
+          <ChatTranscriptViewport
+            activeChatId={state.activeChatId}
+            listRef={transcriptListRef}
+            messages={state.messages}
+            conversationIndex={conversationIndex}
+            conversationIndexLoading={conversationIndexSkeletonVisible}
+            queuedMessages={state.queuedMessages}
+            transcriptPaddingBottom={transcriptPaddingBottom}
+            localPath={state.runtime?.localPath}
+            latestToolIds={state.latestToolIds}
+            isHistoryLoading={state.isHistoryLoading}
+            hasOlderHistory={state.hasOlderHistory}
+            isProcessing={state.isProcessing}
+            runtimeStatus={state.runtimeStatus}
+            isDraining={state.isDraining}
+            commandError={state.commandError}
+            loadOlderHistory={state.loadOlderHistory}
+            onStopDraining={state.handleStopDraining}
+            onSteerQueuedMessage={state.handleSteerQueuedMessage}
+            onRemoveQueuedMessage={state.handleRemoveQueuedMessage}
+            onOpenLocalLink={state.handleOpenLocalLink}
+            editorPreset={editorPreset}
+            editorCommandTemplate={editorCommandTemplate}
+            platform={state.localProjects?.machine.platform}
+            onAskUserQuestionSubmit={state.handleAskUserQuestion}
+            onExitPlanModeConfirm={state.handleExitPlanMode}
+            checkpoints={state.chatDiffSnapshot?.checkpoints ?? []}
+            onRestoreCheckpoint={state.handleRestoreCheckpoint}
+            showScrollButton={showScrollToBottom && state.messages.length > 0}
+            onIsAtEndChange={onIsAtEndChange}
+            scrollToBottom={() => scrollToTranscriptEnd(true)}
+            typedEmptyStateText={typedEmptyStateText}
+            isEmptyStateTypingComplete={isEmptyStateTypingComplete}
+            isPageFileDragActive={isPageFileDragActive}
+            showEmptyState={showEmptyState}
+            emptyStateText={t.chat.emptyState}
+            onMinimapScrollToMessage={handleMinimapScrollToMessage}
+            onMinimapLoadMessage={handleMinimapLoadMessage}
+          />
+        )}
       </CardContent>
 
       <ChatInputDock
@@ -986,6 +1864,7 @@ export function ChatPage() {
         chatInputElementRef={chatInputElementRef}
         activeChatId={state.activeChatId}
         previousPrompt={state.previousPrompt}
+        onJumpToPreviousUserPrompt={state.activeChatId ? handleJumpToPreviousUserPrompt : undefined}
         hasSelectedProject={state.hasSelectedProject}
         runtimeStatus={state.runtimeStatus}
         canCancel={state.canCancel}
@@ -1095,15 +1974,64 @@ export function ChatPage() {
   ])
   const rightPanelContent = activeRightPanel === "browser" && projectId
     ? <BrowserPanel projectId={projectId} socket={state.socket} onClose={handleCloseRightSidebar} onRunQuickAction={handleRunQuickAction} />
-    : gitPanelContentProps
-      ? <ChatSidebarContent {...gitPanelContentProps} />
-      : null
+    : activeRightPanel === "files" && projectId
+      ? (
+        <ProjectFilesPanel
+          projectId={projectId}
+          localPath={state.runtime?.localPath ?? state.navbarLocalPath}
+          initialPath={projectFilePreviewTarget?.path}
+          previewMode="none"
+          showCloseButton={false}
+          focusSearchToken={filesPanelFocusToken || undefined}
+          onClose={handleCloseRightSidebar}
+          onSelectFile={handleSelectProjectFile}
+          onOpenFile={handleOpenDiffFile}
+          onOpenInFinder={handleOpenDiffInFinder}
+          onCopyFilePath={handleCopyDiffFilePath}
+          onCopyRelativePath={handleCopyDiffRelativePath}
+        />
+      )
+      : gitPanelContentProps
+        ? <ChatSidebarContent {...gitPanelContentProps} />
+        : null
+  const rightSidebarPanelDefaultSizes = getRightSidebarPanelDefaultSizes(showRightSidebar, effectiveRightSidebarSize)
+  const workspacePanel = (
+    <ResizablePanel
+      id="workspace"
+      defaultSize={rightSidebarPanelDefaultSizes.workspace}
+      minSize="20%"
+      dir={direction}
+      className="min-h-0 min-w-0"
+      groupResizeBehavior="preserve-relative-size"
+    >
+      {workspace}
+    </ResizablePanel>
+  )
+  const rightSidebarPanel = (
+    <DesktopSidebarPane
+      showRightSidebar={showRightSidebar}
+      sizePercent={rightSidebarPanelDefaultSizes.rightSidebar}
+      direction={direction}
+      sidebarPanelRef={sidebarPanelRef}
+      sidebarVisualRef={sidebarVisualRef}
+      content={rightPanelContent}
+    />
+  )
+  const rightSidebarHandle = (
+    <ResizableHandle
+      withHandle={false}
+      orientation="horizontal"
+      disabled={!showRightSidebar}
+      className={cn(!showRightSidebar && "pointer-events-none opacity-0")}
+    />
+  )
 
   return (
     <div ref={layoutRootRef} className="flex-1 flex flex-col min-w-0 relative">
       {shouldRenderDesktopRightSidebarLayout && projectId ? (
         <ResizablePanelGroup
-          key={`${projectId}-right-sidebar`}
+          key={`${projectId}-right-sidebar-${direction}`}
+          dir="ltr"
           groupRef={rightSidebarPanelGroupRef}
           orientation="horizontal"
           className="flex-1 min-h-0"
@@ -1120,10 +2048,11 @@ export function ChatPage() {
               return
             }
 
-            rightSidebarPanelGroupRef.current?.setLayout({
-              workspace: 100 - clampedRightSidebarSize,
-              rightSidebar: clampedRightSidebarSize,
-            })
+            rightSidebarPanelGroupRef.current?.setLayout(getOrderedRightSidebarLayout(
+              100 - clampedRightSidebarSize,
+              clampedRightSidebarSize,
+              direction,
+            ))
           }}
           onLayoutChanged={(layout) => {
             if (!showRightSidebar || isRightSidebarAnimating.current) {
@@ -1133,28 +2062,9 @@ export function ChatPage() {
             setRightSidebarSize(getRightSidebarSizePx(layout.rightSidebar, layoutWidth))
           }}
         >
-          <ResizablePanel
-            id="workspace"
-            defaultSize={`${100 - effectiveRightSidebarSize}%`}
-            minSize="20%"
-            className="min-h-0 min-w-0"
-            groupResizeBehavior="preserve-relative-size"
-          >
-            {workspace}
-          </ResizablePanel>
-          <ResizableHandle
-            withHandle={false}
-            orientation="horizontal"
-            disabled={!showRightSidebar}
-            className={cn(!showRightSidebar && "pointer-events-none opacity-0")}
-          />
-          <DesktopSidebarPane
-            showRightSidebar={showRightSidebar}
-            sizePercent={effectiveRightSidebarSize}
-            sidebarPanelRef={sidebarPanelRef}
-            sidebarVisualRef={sidebarVisualRef}
-            content={rightPanelContent}
-          />
+          {isRtl ? rightSidebarPanel : workspacePanel}
+          {rightSidebarHandle}
+          {isRtl ? workspacePanel : rightSidebarPanel}
         </ResizablePanelGroup>
       ) : (
         workspace
@@ -1163,6 +2073,7 @@ export function ChatPage() {
         <MobileSidebarPane
           projectId={projectId}
           showRightSidebar={showRightSidebar}
+          isRtl={isRtl}
           sidebarVisualRef={sidebarVisualRef}
           onClose={handleCloseRightSidebar}
           content={rightPanelContent}

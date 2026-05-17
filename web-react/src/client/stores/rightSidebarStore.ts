@@ -2,7 +2,7 @@ import { create } from "zustand"
 import { persist } from "zustand/middleware"
 
 export interface ProjectRightSidebarVisibilityState {
-  rightPanel: "hidden" | "git" | "browser"
+  rightPanel: "hidden" | "git" | "browser" | "files"
 }
 
 export interface ProjectRightSidebarUiState {
@@ -83,6 +83,14 @@ function clampZoom(zoom: number) {
   return Math.min(2, Math.max(0.5, Math.round(zoom * 10) / 10))
 }
 
+function normalizeRightPanel(value: unknown): ProjectRightSidebarVisibilityState["rightPanel"] {
+  return value === "git" || value === "browser" || value === "files" || value === "hidden" ? value : "hidden"
+}
+
+function normalizeViewMode(value: unknown): ProjectRightSidebarUiState["viewMode"] {
+  return value === "changes" || value === "history" ? value : "history"
+}
+
 function getProjectVisibilityState(
   projects: Record<string, ProjectRightSidebarVisibilityState>,
   projectId: string
@@ -105,14 +113,14 @@ export function migrateRightSidebarStore(persistedState: unknown) {
   const state = persistedState as {
     size?: number
     projects?: Record<string, Partial<{ isVisible: boolean, rightPanel: ProjectRightSidebarVisibilityState["rightPanel"], size: number }>>
-    projectUi?: Record<string, ProjectRightSidebarUiState>
+    projectUi?: Record<string, Partial<ProjectRightSidebarUiState>>
     projectBrowser?: Record<string, Partial<ProjectBrowserPanelState>>
   }
   const projects = Object.fromEntries(
     Object.entries(state.projects ?? {}).map(([projectId, layout]) => [
       projectId,
       {
-        rightPanel: layout.rightPanel ?? (layout.isVisible ? "git" : "hidden"),
+        rightPanel: layout.rightPanel ? normalizeRightPanel(layout.rightPanel) : (layout.isVisible ? "git" : "hidden"),
       },
     ])
   )
@@ -134,7 +142,19 @@ export function migrateRightSidebarStore(persistedState: unknown) {
     })
   )
 
-  return { size: DEFAULT_RIGHT_SIDEBAR_SIZE, projects, projectUi: state.projectUi ?? {}, projectBrowser }
+  const projectUi = Object.fromEntries(
+    Object.entries(state.projectUi ?? {}).map(([projectId, uiState]) => [
+      projectId,
+      {
+        viewMode: normalizeViewMode(uiState.viewMode),
+        collapsedPaths: uiState.collapsedPaths ?? {},
+        summary: uiState.summary ?? "",
+        description: uiState.description ?? "",
+      },
+    ])
+  )
+
+  return { size: DEFAULT_RIGHT_SIDEBAR_SIZE, projects, projectUi, projectBrowser }
 }
 
 export const useRightSidebarStore = create<RightSidebarState>()(
@@ -279,13 +299,14 @@ export const useRightSidebarStore = create<RightSidebarState>()(
       }),
       setViewMode: (projectId, viewMode) => set((state) => {
         const current = state.projectUi[projectId] ?? createDefaultProjectUiState()
-        if (current.viewMode === viewMode) return state
+        const nextViewMode = normalizeViewMode(viewMode)
+        if (current.viewMode === nextViewMode) return state
         return {
           projectUi: {
             ...state.projectUi,
             [projectId]: {
               ...current,
-              viewMode,
+              viewMode: nextViewMode,
             },
           },
         }
@@ -328,7 +349,7 @@ export const useRightSidebarStore = create<RightSidebarState>()(
     }),
     {
       name: "right-sidebar-layouts",
-      version: 7,
+      version: 8,
       migrate: migrateRightSidebarStore,
     }
   )

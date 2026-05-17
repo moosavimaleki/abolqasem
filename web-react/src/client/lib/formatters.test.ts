@@ -67,4 +67,5 @@ describe("formatSidebarAgeLabel", () => {
     expect(formatSidebarAgeLabel(now - 7 * 24 * 60 * 60_000, now)).toBe("1w")
     expect(formatSidebarAgeLabel(now - 14 * 24 * 60 * 60_000, now)).toBe("2w")
   })
+
 })

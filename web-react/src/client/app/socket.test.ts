@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import { KannaSocket } from "./socket"
+import { AbolqasemSocket } from "./socket"
 
 type EventHandler = (event?: unknown) => void
 
@@ -113,7 +113,7 @@ class FakeWebSocket {
   }
 }
 
-describe("KannaSocket", () => {
+describe("AbolqasemSocket", () => {
   const originalWindow = globalThis.window
   const originalDocument = globalThis.document
   const originalWebSocket = globalThis.WebSocket
@@ -146,7 +146,7 @@ describe("KannaSocket", () => {
   })
 
   test("does not ping when the connection is already fresh", async () => {
-    const socket = new KannaSocket("ws://localhost/ws")
+    const socket = new AbolqasemSocket("ws://localhost/ws")
     socket.start()
     const ws = FakeWebSocket.instances[0]!
     ws.open()
@@ -158,7 +158,7 @@ describe("KannaSocket", () => {
   })
 
   test("pings a stale open connection and resolves when acked", async () => {
-    const socket = new KannaSocket("ws://localhost/ws")
+    const socket = new AbolqasemSocket("ws://localhost/ws")
     socket.start()
     const ws = FakeWebSocket.instances[0]!
     ws.open()
@@ -179,7 +179,7 @@ describe("KannaSocket", () => {
   })
 
   test("reconnects immediately when a stale ping times out", async () => {
-    const socket = new KannaSocket("ws://localhost/ws")
+    const socket = new AbolqasemSocket("ws://localhost/ws")
     socket.start()
     const firstWs = FakeWebSocket.instances[0]!
     firstWs.open()
@@ -196,7 +196,7 @@ describe("KannaSocket", () => {
   })
 
   test("runs health checks on focus, visibility restore, and online", async () => {
-    const socket = new KannaSocket("ws://localhost/ws")
+    const socket = new AbolqasemSocket("ws://localhost/ws")
     socket.start()
     const ws = FakeWebSocket.instances[0]!
     ws.open()
@@ -230,7 +230,7 @@ describe("KannaSocket", () => {
   })
 
   test("keeps queued commands and flushes them once the socket opens", async () => {
-    const socket = new KannaSocket("ws://localhost/ws")
+    const socket = new AbolqasemSocket("ws://localhost/ws")
     socket.start()
     const ws = FakeWebSocket.instances[0]!
     const pingPromise = socket.command({ type: "system.ping" })
@@ -246,8 +246,27 @@ describe("KannaSocket", () => {
     socket.dispose()
   })
 
+  test("does not replay queued subscribe envelopes after sending active subscriptions on open", () => {
+    const socket = new AbolqasemSocket("ws://localhost/ws")
+    socket.start()
+    const ws = FakeWebSocket.instances[0]!
+    socket.subscribe({ type: "sidebar" }, () => {})
+    socket.subscribe({ type: "chat", chatId: "chat-1" }, () => {})
+
+    expect(ws.sent).toHaveLength(0)
+
+    ws.open()
+
+    expect(ws.sent.map((message) => message.type)).toEqual(["subscribe", "subscribe"])
+    expect(ws.sent.map((message) => message.topic)).toEqual([
+      { type: "sidebar" },
+      { type: "chat", chatId: "chat-1" },
+    ])
+    socket.dispose()
+  })
+
   test("sends heartbeat checks while visible", async () => {
-    const socket = new KannaSocket("ws://localhost/ws")
+    const socket = new AbolqasemSocket("ws://localhost/ws")
     socket.start()
     const ws = FakeWebSocket.instances[0]!
     ws.open()

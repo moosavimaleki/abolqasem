@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"time"
@@ -117,22 +118,34 @@ func startServerInBackground(port int) error {
 	if err != nil {
 		return err
 	}
-	devNull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+
+	stdoutPath, stderrPath := backgroundServerLogPaths()
+	if err := os.MkdirAll(filepath.Dir(stdoutPath), 0o755); err != nil {
+		return err
+	}
+	stdout, err := os.OpenFile(stdoutPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return err
 	}
+	defer stdout.Close()
+	stderr, err := os.OpenFile(stderrPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return err
+	}
+	defer stderr.Close()
+
 	cmd := exec.Command(exe, "__server", "--port", strconv.Itoa(port))
-	cmd.Stdout = devNull
-	cmd.Stderr = devNull
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 	if runtime.GOOS != "windows" {
 		cmd.SysProcAttr = detachedProcessAttributes()
 	}
-	err = cmd.Start()
-	closeErr := devNull.Close()
-	if err != nil {
-		return err
-	}
-	return closeErr
+	return cmd.Start()
+}
+
+func backgroundServerLogPaths() (string, string) {
+	dir := state.GetStateDir()
+	return filepath.Join(dir, "server.log"), filepath.Join(dir, "server.err.log")
 }
 
 func discoverRunningServer() (string, bool) {

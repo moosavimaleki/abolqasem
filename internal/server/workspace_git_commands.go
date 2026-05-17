@@ -10,14 +10,36 @@ import (
 )
 
 func workspaceProjectGitSnapshot(projectID string) any {
-	project, err := workspaceProjectRequired(projectID)
+	project, err := workspaceRuntimeProjectRequired(projectID)
 	if err != nil {
-		return gitservice.Snapshot{Status: gitservice.StatusUnknown, Files: []gitservice.DiffFile{}}
+		return workspaceProjectGitSnapshotWithCheckpoints("", gitservice.Snapshot{Status: gitservice.StatusUnknown})
 	}
 	snapshot, err := gitservice.Detect(context.Background(), project.LocalPath)
 	if err != nil {
-		return gitservice.Snapshot{Status: gitservice.StatusUnknown, Files: []gitservice.DiffFile{}}
+		snapshot = gitservice.Snapshot{Status: gitservice.StatusUnknown}
 	}
+	return workspaceProjectGitSnapshotWithCheckpoints(project.ID, snapshot)
+}
+
+func workspaceProjectGitSubscriptionSnapshot(projectID string) any {
+	project, err := workspaceRuntimeProjectRequired(projectID)
+	if err != nil {
+		return workspaceProjectGitSnapshotWithCheckpoints("", gitservice.Snapshot{Status: gitservice.StatusUnknown})
+	}
+	return workspaceProjectGitSnapshotWithCheckpoints(project.ID, gitservice.Snapshot{Status: gitservice.StatusUnknown})
+}
+
+func workspaceProjectGitSnapshotWithCheckpoints(projectID string, snapshot gitservice.Snapshot) gitservice.Snapshot {
+	if snapshot.Status == "" {
+		snapshot.Status = gitservice.StatusUnknown
+	}
+	if snapshot.Files == nil {
+		snapshot.Files = []gitservice.DiffFile{}
+	}
+	if snapshot.BranchHistory.Entries == nil {
+		snapshot.BranchHistory = gitservice.BranchHistorySnapshot{Entries: []gitservice.BranchHistoryEntry{}}
+	}
+	snapshot.Checkpoints = workspaceListCheckpointsForProject(projectID)
 	return snapshot
 }
 
@@ -29,7 +51,7 @@ func workspaceReadDiffPatch(raw json.RawMessage) (map[string]any, error) {
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return nil, err
 	}
-	project, err := workspaceProjectRequired(payload.ProjectID)
+	project, err := workspaceRuntimeProjectRequired(payload.ProjectID)
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +77,10 @@ func workspaceRefreshDiffs(raw json.RawMessage) (gitservice.Snapshot, string, er
 		return gitservice.Snapshot{}, "", err
 	}
 	snapshot, err := gitservice.Detect(context.Background(), project.LocalPath)
-	return snapshot, project.ID, err
+	if err != nil {
+		return gitservice.Snapshot{}, project.ID, err
+	}
+	return workspaceProjectGitSnapshotWithCheckpoints(project.ID, snapshot), project.ID, nil
 }
 
 func workspaceGetGitHubPublishInfo(raw json.RawMessage) (gitservice.GitHubPublishInfo, error) {
@@ -75,7 +100,7 @@ func workspaceCheckGitHubRepoAvailability(raw json.RawMessage) (gitservice.GitHu
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return gitservice.GitHubRepoAvailabilityResult{}, err
 	}
-	if _, _, err := workspaceChatProjectRequired(payload.ChatID); err != nil {
+	if _, _, err := workspaceGitChatProjectRequired(payload.ChatID); err != nil {
 		return gitservice.GitHubRepoAvailabilityResult{}, err
 	}
 	return gitservice.CheckGitHubRepoAvailability(context.Background(), payload.Owner, payload.Name)
@@ -92,7 +117,7 @@ func workspacePublishToGitHub(raw json.RawMessage) (gitservice.BranchActionResul
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return gitservice.BranchActionResult{}, "", err
 	}
-	_, project, err := workspaceChatProjectRequired(payload.ChatID)
+	_, project, err := workspaceGitChatProjectRequired(payload.ChatID)
 	if err != nil {
 		return gitservice.BranchActionResult{}, "", err
 	}
@@ -116,7 +141,7 @@ func workspacePreviewMergeBranch(raw json.RawMessage) (gitservice.MergePreviewRe
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return gitservice.MergePreviewResult{}, err
 	}
-	_, project, err := workspaceChatProjectRequired(payload.ChatID)
+	_, project, err := workspaceGitChatProjectRequired(payload.ChatID)
 	if err != nil {
 		return gitservice.MergePreviewResult{}, err
 	}
@@ -131,7 +156,7 @@ func workspaceMergeBranch(raw json.RawMessage) (gitservice.BranchActionResult, s
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return gitservice.BranchActionResult{}, "", err
 	}
-	_, project, err := workspaceChatProjectRequired(payload.ChatID)
+	_, project, err := workspaceGitChatProjectRequired(payload.ChatID)
 	if err != nil {
 		return gitservice.BranchActionResult{}, "", err
 	}
@@ -147,7 +172,7 @@ func workspaceCheckoutBranch(raw json.RawMessage) (gitservice.BranchActionResult
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return gitservice.BranchActionResult{}, "", err
 	}
-	_, project, err := workspaceChatProjectRequired(payload.ChatID)
+	_, project, err := workspaceGitChatProjectRequired(payload.ChatID)
 	if err != nil {
 		return gitservice.BranchActionResult{}, "", err
 	}
@@ -164,7 +189,7 @@ func workspaceCreateBranch(raw json.RawMessage) (gitservice.BranchActionResult, 
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return gitservice.BranchActionResult{}, "", err
 	}
-	_, project, err := workspaceChatProjectRequired(payload.ChatID)
+	_, project, err := workspaceGitChatProjectRequired(payload.ChatID)
 	if err != nil {
 		return gitservice.BranchActionResult{}, "", err
 	}
@@ -185,7 +210,7 @@ func workspaceSyncBranch(raw json.RawMessage) (gitservice.SyncResult, string, er
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return gitservice.SyncResult{}, "", err
 	}
-	_, project, err := workspaceChatProjectRequired(payload.ChatID)
+	_, project, err := workspaceGitChatProjectRequired(payload.ChatID)
 	if err != nil {
 		return gitservice.SyncResult{}, "", err
 	}
@@ -201,7 +226,7 @@ func workspaceGenerateCommitMessage(raw json.RawMessage) (map[string]any, error)
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return nil, err
 	}
-	_, project, err := workspaceChatProjectRequired(payload.ChatID)
+	_, project, err := workspaceGitChatProjectRequired(payload.ChatID)
 	if err != nil {
 		return nil, err
 	}
@@ -220,7 +245,7 @@ func workspaceCommitDiffs(raw json.RawMessage) (gitservice.CommitResult, string,
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return gitservice.CommitResult{}, "", err
 	}
-	_, project, err := workspaceChatProjectRequired(payload.ChatID)
+	_, project, err := workspaceGitChatProjectRequired(payload.ChatID)
 	if err != nil {
 		return gitservice.CommitResult{}, "", err
 	}
@@ -241,7 +266,7 @@ func workspaceDiscardDiffFile(raw json.RawMessage) (gitservice.BranchActionResul
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return gitservice.BranchActionResult{}, "", err
 	}
-	_, project, err := workspaceChatProjectRequired(payload.ChatID)
+	_, project, err := workspaceGitChatProjectRequired(payload.ChatID)
 	if err != nil {
 		return gitservice.BranchActionResult{}, "", err
 	}
@@ -257,7 +282,7 @@ func workspaceIgnoreDiffFile(raw json.RawMessage) (gitservice.BranchActionResult
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return gitservice.BranchActionResult{}, "", err
 	}
-	_, project, err := workspaceChatProjectRequired(payload.ChatID)
+	_, project, err := workspaceGitChatProjectRequired(payload.ChatID)
 	if err != nil {
 		return gitservice.BranchActionResult{}, "", err
 	}
@@ -285,6 +310,13 @@ func workspaceChatProjectFromRaw(raw json.RawMessage) (string, readmodels.Projec
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return "", readmodels.ProjectRecord{}, err
 	}
-	_, project, err := workspaceChatProjectRequired(payload.ChatID)
+	_, project, err := workspaceGitChatProjectRequired(payload.ChatID)
 	return payload.ChatID, project, err
+}
+
+func workspaceGitChatProjectRequired(chatID string) (readmodels.ChatRecord, readmodels.ProjectRecord, error) {
+	if chat, project, ok := workspaceLegacyChatProjectByID(chatID); ok && strings.TrimSpace(project.LocalPath) != "" {
+		return chat, project, nil
+	}
+	return workspaceChatProjectRequired(chatID)
 }

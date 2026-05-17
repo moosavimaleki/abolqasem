@@ -26,6 +26,10 @@ export function mergeAppSettingsPatch(
       ...settings.editor,
       ...patch.editor,
     },
+    providerProxy: {
+      ...settings.providerProxy,
+      ...patch.providerProxy,
+    },
     providerDefaults: {
       claude: {
         ...settings.providerDefaults.claude,
@@ -41,6 +45,14 @@ export function mergeAppSettingsPatch(
         modelOptions: {
           ...settings.providerDefaults.codex.modelOptions,
           ...patch.providerDefaults?.codex?.modelOptions,
+        },
+      },
+      gemini: {
+        ...settings.providerDefaults.gemini,
+        ...patch.providerDefaults?.gemini,
+        modelOptions: {
+          ...settings.providerDefaults.gemini.modelOptions,
+          ...patch.providerDefaults?.gemini?.modelOptions,
         },
       },
     },

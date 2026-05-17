@@ -1,16 +1,19 @@
 export const STORE_VERSION = 2 as const
 export const PROTOCOL_VERSION = 1 as const
 
-export type AgentProvider = "claude" | "codex"
+export type AgentProvider = "claude" | "codex" | "gemini"
 export type LlmProviderKind = "openai" | "openrouter" | "custom"
 export type AppThemePreference = "light" | "dark" | "system"
 export type AppLocale = "en" | "fa"
 export type ChatSoundPreference = "never" | "unfocused" | "always"
 export type ChatSoundId = "blow" | "bottle" | "frog" | "funk" | "glass" | "ping" | "pop" | "purr" | "tink"
 export type DefaultProviderPreference = "last_used" | AgentProvider
+export type ProviderProxyMode = "none" | "custom"
 export type EditorPreset = "cursor" | "vscode" | "xcode" | "windsurf" | "custom"
 export const DEFAULT_OPENAI_SDK_MODEL = "gpt-5.4-mini"
 export const DEFAULT_OPENROUTER_SDK_MODEL = "moonshotai/kimi-k2.5:nitro"
+export const DEFAULT_CODEX_MODEL = "gpt-5.5"
+export const DEFAULT_GEMINI_MODEL = "gemini-3-pro-preview"
 
 export type AttachmentKind = "image" | "file"
 export type StandaloneTranscriptAttachmentMode = "metadata" | "bundle"
@@ -47,6 +50,29 @@ export interface SkillUninstallResult {
   cwd: string
   stdout: string
   stderr: string
+}
+
+export type SkillOperationKind = "install" | "uninstall"
+export type SkillOperationStatus = "queued" | "running" | "succeeded" | "failed"
+
+export interface SkillOperationSummary {
+  id: string
+  kind: SkillOperationKind
+  source?: string
+  skillId: string
+  status: SkillOperationStatus
+  error?: string
+  command?: string[]
+  cwd?: string
+  stdout?: string
+  stderr?: string
+  enqueuedAt: string
+  startedAt?: string
+  finishedAt?: string
+}
+
+export interface SkillOperationsSnapshot {
+  operations: SkillOperationSummary[]
 }
 
 export interface InstalledSkillSummary {
@@ -116,6 +142,23 @@ export type StandaloneTranscriptExportCommandResult =
   | StandaloneTranscriptExportResult
   | StandaloneTranscriptExportFailureResult
 
+export interface ChatConversionPreview {
+  sourceTitle: string
+  sourceProvider: string
+  targetProvider: AgentProvider
+  targetProjectId?: string
+  targetProjectTitle?: string
+  userMessages: number
+  assistantMessages: number
+  toolCalls: number
+  toolResults: number
+  compactBoundaries: number
+  compactSummaries: number
+  skippedEntries: number
+  importedMessageCount: number
+  pendingFork: boolean
+}
+
 export interface QueuedChatMessage {
   id: string
   content: string
@@ -182,9 +225,12 @@ export interface CodexModelOptions {
   fastMode: boolean
 }
 
+export type GeminiModelOptions = Record<string, never>
+
 export interface ProviderModelOptionsByProvider {
   claude: ClaudeModelOptions
   codex: CodexModelOptions
+  gemini: GeminiModelOptions
 }
 
 export interface ProviderPreference<TModelOptions> {
@@ -196,6 +242,7 @@ export interface ProviderPreference<TModelOptions> {
 export type ChatProviderPreferences = {
   claude: ProviderPreference<ClaudeModelOptions>
   codex: ProviderPreference<CodexModelOptions>
+  gemini: ProviderPreference<GeminiModelOptions>
 }
 
 export type ModelOptions = Partial<{
@@ -211,6 +258,8 @@ export const DEFAULT_CODEX_MODEL_OPTIONS = {
   reasoningEffort: "high",
   fastMode: false,
 } as const satisfies CodexModelOptions
+
+export const DEFAULT_GEMINI_MODEL_OPTIONS = {} as const satisfies GeminiModelOptions
 
 export function isClaudeReasoningEffort(value: unknown): value is ClaudeReasoningEffort {
   return CLAUDE_REASONING_OPTIONS.some((option) => option.id === value)
@@ -274,13 +323,26 @@ export const PROVIDERS: ProviderCatalogEntry[] = [
   {
     id: "codex",
     label: "Codex",
-    defaultModel: "gpt-5.5",
+    defaultModel: DEFAULT_CODEX_MODEL,
     supportsPlanMode: true,
     models: [
       { id: "gpt-5.5", label: "GPT-5.5", supportsEffort: false },
       { id: "gpt-5.4", label: "GPT-5.4", supportsEffort: false },
       { id: "gpt-5.3-codex", label: "GPT-5.3 Codex", supportsEffort: false, aliases: ["gpt-5-codex"] },
       { id: "gpt-5.3-codex-spark", label: "GPT-5.3 Codex Spark", supportsEffort: false },
+    ],
+    efforts: [],
+  },
+  {
+    id: "gemini",
+    label: "Gemini",
+    defaultModel: DEFAULT_GEMINI_MODEL,
+    supportsPlanMode: true,
+    models: [
+      { id: "gemini-3-pro-preview", label: "Gemini 3 Pro", supportsEffort: false },
+      { id: "gemini-3-flash-preview", label: "Gemini 3 Flash", supportsEffort: false },
+      { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro", supportsEffort: false },
+      { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash", supportsEffort: false },
     ],
     efforts: [],
   },
@@ -307,7 +369,9 @@ export function normalizeProviderModelId(
   modelId?: string,
   fallbackModelId?: string
 ): string {
+  const customModelId = modelId?.trim()
   return getProviderModelMatch(provider, modelId)?.id
+    ?? (customModelId || undefined)
     ?? fallbackModelId
     ?? getProviderCatalog(provider).defaultModel
 }
@@ -316,8 +380,12 @@ export function normalizeClaudeModelId(modelId?: string, fallbackModelId = "clau
   return normalizeProviderModelId("claude", modelId, fallbackModelId)
 }
 
-export function normalizeCodexModelId(modelId?: string, fallbackModelId = "gpt-5.5"): string {
+export function normalizeCodexModelId(modelId?: string, fallbackModelId = DEFAULT_CODEX_MODEL): string {
   return normalizeProviderModelId("codex", modelId, fallbackModelId)
+}
+
+export function normalizeGeminiModelId(modelId?: string, fallbackModelId = DEFAULT_GEMINI_MODEL): string {
+  return normalizeProviderModelId("gemini", modelId, fallbackModelId)
 }
 
 export function getProviderModelOption(provider: AgentProvider, modelId: string): ProviderModelOption | undefined {
@@ -359,7 +427,7 @@ export function resolveClaudeContextWindowTokens(contextWindow: ClaudeContextWin
   }
 }
 
-export type KannaStatus =
+export type AbolqasemStatus =
   | "idle"
   | "starting"
   | "running"
@@ -379,7 +447,7 @@ export interface SidebarChatRow {
   _creationTime: number
   chatId: string
   title: string
-  status: KannaStatus
+  status: AbolqasemStatus
   unread: boolean
   localPath: string
   provider: AgentProvider | null
@@ -387,7 +455,6 @@ export interface SidebarChatRow {
   hasAutomation: boolean
   canFork?: boolean
   readOnly?: boolean
-  canResume?: boolean
   legacySessionKey?: string
 }
 
@@ -440,8 +507,14 @@ export interface AppSettingsSnapshot {
     preset: EditorPreset
     commandTemplate: string
   }
+  providerProxy: {
+    mode: ProviderProxyMode
+    httpProxy: string
+    noProxy: string
+  }
   defaultProvider: DefaultProviderPreference
   providerDefaults: ChatProviderPreferences
+  availableProviders: ProviderCatalogEntry[]
   management?: AppManagementSnapshot
   warning: string | null
   filePathDisplay: string
@@ -486,10 +559,12 @@ export interface AppSettingsPatch {
   chatSoundId?: ChatSoundId
   terminal?: Partial<AppSettingsSnapshot["terminal"]>
   editor?: Partial<AppSettingsSnapshot["editor"]>
+  providerProxy?: Partial<AppSettingsSnapshot["providerProxy"]>
   defaultProvider?: DefaultProviderPreference
   providerDefaults?: {
     claude?: Partial<ProviderPreference<ClaudeModelOptions>>
     codex?: Partial<ProviderPreference<CodexModelOptions>>
+    gemini?: Partial<ProviderPreference<GeminiModelOptions>>
   }
 }
 
@@ -580,6 +655,29 @@ export interface McpServerInfo {
   name: string
   status: string
   error?: string
+}
+
+export type McpTransport = "stdio" | "http"
+export type McpProviderId = AgentProvider
+
+export interface McpServerConfig {
+  name: string
+  transport: McpTransport
+  providers: McpProviderId[]
+  command?: string
+  args?: string[]
+  url?: string
+  env?: Record<string, string>
+  headers?: Record<string, string>
+}
+
+export interface McpSettingsSnapshot {
+  configPaths: Record<McpProviderId, string>
+  servers: McpServerConfig[]
+}
+
+export interface McpSaveResult extends McpSettingsSnapshot {
+  server: McpServerConfig
 }
 
 export interface AccountInfo {
@@ -761,6 +859,26 @@ export interface ContextWindowUsageSnapshot {
   compactsAutomatically: boolean
 }
 
+export interface RateLimitWindowSnapshot {
+  usedPercent: number
+  windowDurationMins?: number | null
+  resetsAt?: number | null
+}
+
+export interface RateLimitSnapshot {
+  limitId?: string | null
+  limitName?: string | null
+  primary?: RateLimitWindowSnapshot | null
+  secondary?: RateLimitWindowSnapshot | null
+  credits?: {
+    hasCredits?: boolean
+    unlimited?: boolean
+    balance?: string | null
+  } | null
+  planType?: string | null
+  rateLimitReachedType?: string | null
+}
+
 export interface ChatDiffFile {
   path: string
   changeType: "added" | "deleted" | "modified" | "renamed"
@@ -846,6 +964,36 @@ export interface ChatDiffSnapshot extends BranchMetadata, UpstreamStatus {
   status: "unknown" | "ready" | "no_repo"
   files: ChatDiffFile[]
   branchHistory?: ChatBranchHistorySnapshot
+  checkpoints?: ChatCheckpointSummary[]
+}
+
+export type CheckpointRestoreMode = "code" | "chat" | "code_and_chat"
+
+export interface ChatCheckpointSummary {
+  id: string
+  chatId: string
+  projectId: string
+  title: string
+  createdAt: number
+  trigger: "before_user_prompt" | "before_restore" | string
+  promptPreview?: string
+  restoreOf?: string
+  codeKind: "git" | "filesystem" | "none" | string
+  codeStatus: "unknown" | "ready" | "no_repo" | string
+  codeWarning?: string
+  branchName?: string
+  commit?: string
+  fileCount?: number
+  chatMessageCount: number
+}
+
+export interface CheckpointRestoreResult {
+  ok: boolean
+  mode: CheckpointRestoreMode
+  checkpoint: ChatCheckpointSummary
+  safetyCheckpoint: ChatCheckpointSummary
+  codeResult?: BranchActionSuccess | BranchActionFailure
+  chatRestored?: boolean
 }
 
 export interface BranchActionSuccess {
@@ -920,6 +1068,11 @@ export interface ContextWindowUpdatedEntry extends TranscriptEntryBase {
   usage: ContextWindowUsageSnapshot
 }
 
+export interface RateLimitUpdatedEntry extends TranscriptEntryBase {
+  kind: "rate_limit_updated"
+  rateLimits: RateLimitSnapshot
+}
+
 export interface CompactBoundaryEntry extends TranscriptEntryBase {
   kind: "compact_boundary"
 }
@@ -947,6 +1100,7 @@ export type TranscriptEntry =
   | ResultEntry
   | StatusEntry
   | ContextWindowUpdatedEntry
+  | RateLimitUpdatedEntry
   | CompactBoundaryEntry
   | CompactSummaryEntry
   | ContextClearedEntry
@@ -1065,6 +1219,7 @@ export type HydratedTranscriptMessage =
   | ({ kind: "result"; success: boolean; cancelled?: boolean; result: string; durationMs: number; costUsd?: number; id: string; messageId?: string; timestamp: string; hidden?: boolean })
   | ({ kind: "status"; status: string; id: string; messageId?: string; timestamp: string; hidden?: boolean })
   | ({ kind: "context_window_updated"; usage: ContextWindowUsageSnapshot; id: string; messageId?: string; timestamp: string; hidden?: boolean })
+  | ({ kind: "rate_limit_updated"; rateLimits: RateLimitSnapshot; id: string; messageId?: string; timestamp: string; hidden?: boolean })
   | ({ kind: "compact_boundary"; id: string; messageId?: string; timestamp: string; hidden?: boolean })
   | ({ kind: "compact_summary"; summary: string; id: string; messageId?: string; timestamp: string; hidden?: boolean })
   | ({ kind: "context_cleared"; id: string; messageId?: string; timestamp: string; hidden?: boolean })
@@ -1077,14 +1232,32 @@ export interface ChatRuntime {
   projectId: string
   localPath: string
   title: string
-  status: KannaStatus
+  status: AbolqasemStatus
   isDraining: boolean
   provider: AgentProvider | null
   planMode: boolean
   sessionToken: string | null
+  pendingForkSessionToken?: string | null
   readOnly?: boolean
-  canResume?: boolean
   legacySessionKey?: string
+}
+
+export type TranscriptIndexRole = "user" | "assistant" | "system" | "tool"
+
+export interface TranscriptIndexItem {
+  id: string
+  sequence: number
+  role: TranscriptIndexRole
+  estimatedHeight?: number
+  hasError?: boolean
+  hasCode?: boolean
+  isPinned?: boolean
+  preview?: string
+}
+
+export interface ChatTranscriptIndexSnapshot {
+  chatId: string
+  items: TranscriptIndexItem[]
 }
 
 export interface ChatHistorySnapshot {
@@ -1105,9 +1278,10 @@ export interface ChatHistoryPage {
   messages: TranscriptEntry[]
   hasOlder: boolean
   olderCursor: string | null
+  targetFound?: boolean
 }
 
-export interface KannaSnapshot {
+export interface AbolqasemSnapshot {
   sidebar: SidebarData
   chat?: ChatSnapshot | null
 }

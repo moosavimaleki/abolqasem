@@ -63,7 +63,7 @@ func TestDecodeClientEnvelopeSubscribe(t *testing.T) {
 	}
 }
 
-func TestServerEnvelopeMatchesKannaShape(t *testing.T) {
+func TestServerEnvelopeMatchesAbolqasemShape(t *testing.T) {
 	envelope := SnapshotEnvelope("sub-1", SnapshotSidebar, map[string]any{
 		"projectGroups": []any{},
 	})

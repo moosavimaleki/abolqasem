@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -138,7 +140,7 @@ func TestSkillCommandValidationAndBuilders(t *testing.T) {
 	}
 }
 
-func TestInstallAndUninstallSkillReturnKannaShape(t *testing.T) {
+func TestInstallAndUninstallSkillReturnAbolqasemShape(t *testing.T) {
 	previous := runSkillCLICommand
 	runSkillCLICommand = func(command []string) (skillCommandOutput, error) {
 		return skillCommandOutput{CWD: "/home/test", Stdout: "ok", Stderr: ""}, nil
@@ -159,5 +161,57 @@ func TestInstallAndUninstallSkillReturnKannaShape(t *testing.T) {
 	}
 	if uninstalled.SkillID != "my-skill" || uninstalled.CWD != "/home/test" {
 		t.Fatalf("unexpected uninstall result: %#v", uninstalled)
+	}
+}
+
+func TestWorkspaceInstallSkillTracksAndDeduplicatesActiveOperation(t *testing.T) {
+	previousCommand := runSkillCLICommand
+	previousOperations := skillOperations
+	skillOperations = newSkillOperationTracker()
+	t.Cleanup(func() {
+		runSkillCLICommand = previousCommand
+		skillOperations = previousOperations
+	})
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var startedOnce sync.Once
+	var calls atomic.Int32
+	runSkillCLICommand = func(command []string) (skillCommandOutput, error) {
+		calls.Add(1)
+		startedOnce.Do(func() { close(started) })
+		<-release
+		return skillCommandOutput{CWD: "/home/test", Stdout: "ok"}, nil
+	}
+
+	firstOperation, err := skillOperations.startInstall("owner/repo", "repo")
+	if err != nil {
+		t.Fatalf("startInstall returned error: %v", err)
+	}
+	<-started
+
+	secondOperation, err := skillOperations.startInstall("owner/repo", "repo")
+	if err != nil {
+		t.Fatalf("second startInstall returned error: %v", err)
+	}
+	if firstOperation != secondOperation {
+		t.Fatalf("expected duplicate active install to reuse the active operation")
+	}
+
+	snapshot := workspaceListSkillOperations()
+	if len(snapshot.Operations) != 1 {
+		t.Fatalf("expected one active operation, got %#v", snapshot.Operations)
+	}
+	if snapshot.Operations[0].Status != skillOperationRunning {
+		t.Fatalf("expected running operation, got %#v", snapshot.Operations[0])
+	}
+
+	close(release)
+	summary := skillOperations.wait(firstOperation)
+	if summary.Status != skillOperationSucceeded {
+		t.Fatalf("expected succeeded operation, got %#v", summary)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("expected one CLI call for duplicate active install, got %d", calls.Load())
 	}
 }

@@ -1,6 +1,6 @@
 package analytics
 
-const Endpoint = "https://kanna.sh/api/t"
+const Endpoint = "https://abolqasem.sh/api/t"
 
 const (
 	EventAppLaunch         = "app_launch"

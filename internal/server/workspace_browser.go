@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -39,6 +40,10 @@ type workspaceListeningPort struct {
 
 var workspaceListListeningPorts = defaultWorkspaceListListeningPorts
 var workspaceKillProcess = killProcess
+var workspaceReadParentProcessMap = readParentProcessMap
+var workspaceTerminalRootPIDsByCWD = func(cwd string) []int {
+	return workspaceTerminals.rootPIDsByCWD(cwd)
+}
 
 func listWorkspaceLocalHTTPServers(raw json.RawMessage) ([]localHTTPServerInfo, error) {
 	var payload struct {
@@ -56,19 +61,49 @@ func listWorkspaceLocalHTTPServers(raw json.RawMessage) ([]localHTTPServerInfo, 
 	if err != nil {
 		return []localHTTPServerInfo{}, nil
 	}
+	terminalRootPIDs := map[int]bool{}
+	if projectPath != "" {
+		for _, pid := range workspaceTerminalRootPIDsByCWD(projectPath) {
+			if pid > 0 {
+				terminalRootPIDs[pid] = true
+			}
+		}
+	}
+	parentByPID := map[int]int{}
+	if len(terminalRootPIDs) > 0 {
+		parentByPID, _ = workspaceReadParentProcessMap(ctx)
+	}
 
 	seen := map[int]bool{}
-	servers := make([]localHTTPServerInfo, 0, len(ports))
+	dedupedPorts := make([]workspaceListeningPort, 0, len(ports))
 	for _, port := range ports {
-		if port.Port <= 0 || seen[port.Port] {
+		if port.Port <= 0 || seen[port.Port] || port.PID == os.Getpid() {
 			continue
 		}
 		seen[port.Port] = true
-		server := probeLocalHTTPServer(ctx, port)
-		if server.Status == 0 {
-			continue
-		}
-		server.SameProject = sameOrChildPath(projectPath, port.OwnerPath)
+		dedupedPorts = append(dedupedPorts, port)
+	}
+
+	serverCh := make(chan localHTTPServerInfo, len(dedupedPorts))
+	var wg sync.WaitGroup
+	for _, port := range dedupedPorts {
+		port := port
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			server := probeLocalHTTPServer(ctx, port)
+			if server.Status == 0 || isLikelyInternalLocalHTTPServer(server) {
+				return
+			}
+			server.SameProject = sameOrChildPath(projectPath, port.OwnerPath) || isDescendantPID(port.PID, terminalRootPIDs, parentByPID)
+			serverCh <- server
+		}()
+	}
+	wg.Wait()
+	close(serverCh)
+
+	servers := make([]localHTTPServerInfo, 0, len(dedupedPorts))
+	for server := range serverCh {
 		servers = append(servers, server)
 	}
 	sort.SliceStable(servers, func(i, j int) bool {
@@ -113,7 +148,7 @@ func killWorkspaceLocalHTTPServer(raw json.RawMessage) error {
 }
 
 func probeLocalHTTPServer(ctx context.Context, port workspaceListeningPort) localHTTPServerInfo {
-	address := "http://127.0.0.1:" + strconv.Itoa(port.Port)
+	address := "http://localhost:" + strconv.Itoa(port.Port)
 	requestCtx, cancel := context.WithTimeout(ctx, localHTTPProbeTimeout)
 	defer cancel()
 	request, err := http.NewRequestWithContext(requestCtx, http.MethodGet, address, nil)
@@ -141,6 +176,19 @@ func probeLocalHTTPServer(ctx context.Context, port workspaceListeningPort) loca
 	}
 }
 
+func isLikelyInternalLocalHTTPServer(server localHTTPServerInfo) bool {
+	if server.Status < http.StatusOK || server.Status >= http.StatusBadRequest {
+		return true
+	}
+	if regexp.MustCompile(`^(localhost:\d+|502 Bad Gateway|Welcome to nginx!)$`).MatchString(server.Title) {
+		return true
+	}
+	if regexp.MustCompile(`(?i)^(nginx|cloudflar|workerd|agent-bro|Google|Cursor|ControlCe|figma_age|Superhuma|Spotify|redis|postgres|mysqld|xray)`).MatchString(server.ProcessName) {
+		return true
+	}
+	return false
+}
+
 func defaultWorkspaceListListeningPorts(ctx context.Context) ([]workspaceListeningPort, error) {
 	if runtime.GOOS == "windows" {
 		return listWindowsListeningPorts(ctx)
@@ -156,26 +204,44 @@ func listLsofListeningPorts(ctx context.Context) ([]workspaceListeningPort, erro
 	if err != nil {
 		return nil, err
 	}
-	lines := strings.Split(string(output), "\n")
 	ports := make([]workspaceListeningPort, 0)
-	for _, line := range lines[1:] {
-		fields := strings.Fields(line)
-		if len(fields) < 9 {
-			continue
-		}
-		pid, _ := strconv.Atoi(fields[1])
-		port := parsePortFromAddress(fields[len(fields)-1])
-		if port <= 0 {
-			continue
-		}
+	for _, entry := range parseLsofListeningEntries(string(output)) {
 		ports = append(ports, workspaceListeningPort{
-			Port:        port,
-			PID:         pid,
-			ProcessName: fields[0],
-			OwnerPath:   processCWD(pid),
+			Port:        entry.Port,
+			PID:         entry.PID,
+			ProcessName: entry.ProcessName,
+			OwnerPath:   processCWD(entry.PID),
 		})
 	}
 	return ports, nil
+}
+
+type lsofListeningEntry struct {
+	Port        int
+	PID         int
+	ProcessName string
+}
+
+func parseLsofListeningEntries(output string) []lsofListeningEntry {
+	lineRE := regexp.MustCompile(`^(\S+)\s+(\d+).*TCP\s+(?:.+?):(\d+)\s+\(LISTEN\)`)
+	entries := make([]lsofListeningEntry, 0)
+	for _, line := range strings.Split(output, "\n") {
+		match := lineRE.FindStringSubmatch(line)
+		if len(match) != 4 {
+			continue
+		}
+		pid, _ := strconv.Atoi(match[2])
+		port, _ := strconv.Atoi(match[3])
+		if port <= 0 {
+			continue
+		}
+		entries = append(entries, lsofListeningEntry{
+			Port:        port,
+			PID:         pid,
+			ProcessName: match[1],
+		})
+	}
+	return entries
 }
 
 func listSSListeningPorts(ctx context.Context) ([]workspaceListeningPort, error) {
@@ -235,14 +301,10 @@ func listWindowsListeningPorts(ctx context.Context) ([]workspaceListeningPort, e
 }
 
 func workspaceProjectLocalPath(projectID string) string {
-	if strings.TrimSpace(projectID) == "" {
-		return ""
-	}
-	state, err := workspaceStore().LoadState()
+	project, err := workspaceRuntimeProjectRequired(projectID)
 	if err != nil {
 		return ""
 	}
-	project := state.ProjectsByID[projectID]
 	return project.LocalPath
 }
 
@@ -255,6 +317,49 @@ func processCWD(pid int) string {
 		return ""
 	}
 	return cwd
+}
+
+func readParentProcessMap(ctx context.Context) (map[int]int, error) {
+	if runtime.GOOS == "windows" {
+		return map[int]int{}, nil
+	}
+	output, err := exec.CommandContext(ctx, "ps", "-axo", "pid=", "-o", "ppid=").Output()
+	if err != nil {
+		return nil, err
+	}
+	parentByPID := make(map[int]int)
+	for _, line := range strings.Split(string(output), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 2 {
+			continue
+		}
+		pid, pidErr := strconv.Atoi(fields[0])
+		ppid, ppidErr := strconv.Atoi(fields[1])
+		if pidErr != nil || ppidErr != nil || pid <= 0 {
+			continue
+		}
+		parentByPID[pid] = ppid
+	}
+	return parentByPID, nil
+}
+
+func isDescendantPID(pid int, rootPIDs map[int]bool, parentByPID map[int]int) bool {
+	if pid <= 0 || len(rootPIDs) == 0 {
+		return false
+	}
+	seen := map[int]bool{}
+	for pid > 0 && !seen[pid] {
+		if rootPIDs[pid] {
+			return true
+		}
+		seen[pid] = true
+		parent, ok := parentByPID[pid]
+		if !ok {
+			return false
+		}
+		pid = parent
+	}
+	return false
 }
 
 func parsePortFromAddress(address string) int {

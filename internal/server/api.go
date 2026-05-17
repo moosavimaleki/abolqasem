@@ -1,8 +1,6 @@
 package server
 
 import (
-	"ai-agent-manager/internal/parser"
-	"ai-agent-manager/internal/state"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -11,6 +9,13 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"ai-agent-manager/internal/parser"
+	"ai-agent-manager/internal/state"
+	"ai-agent-manager/internal/workspace/events"
+	"ai-agent-manager/internal/workspace/legacyimport"
+	"ai-agent-manager/internal/workspace/readmodels"
+	"ai-agent-manager/internal/workspace/transcript"
 )
 
 const (
@@ -18,11 +23,11 @@ const (
 	searchMaxLimit        = 100
 	searchPerSessionLimit = 3
 	searchMaxSnippetRunes = 220
-	searchResultLookahead = 1
 )
 
 type sessionSearchResult struct {
 	Key                  string               `json:"key"`
+	ChatID               string               `json:"chat_id,omitempty"`
 	Agent                string               `json:"agent"`
 	SessionID            string               `json:"session_id"`
 	SessionName          string               `json:"session_name"`
@@ -38,6 +43,16 @@ type sessionSearchResult struct {
 	InvalidReason        string               `json:"invalid_reason,omitempty"`
 	SearchMatches        []parser.SearchMatch `json:"search_matches"`
 	SearchMatchCount     int                  `json:"search_match_count"`
+}
+
+type chatSearchMatch struct {
+	MessageID string     `json:"message_id,omitempty"`
+	EntryID   string     `json:"entry_id,omitempty"`
+	Role      string     `json:"role"`
+	Kind      string     `json:"kind,omitempty"`
+	Index     int        `json:"index"`
+	Snippet   string     `json:"snippet"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
 }
 
 func handleAPIState(w http.ResponseWriter, r *http.Request) {
@@ -64,8 +79,14 @@ func handleAPIState(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleAPISearch(w http.ResponseWriter, r *http.Request) {
+	chatID := strings.TrimSpace(r.URL.Query().Get("chat_id"))
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	limit := clampInt(parsePositiveInt(r.URL.Query().Get("limit"), searchDefaultLimit), 1, searchMaxLimit)
+	if chatID != "" {
+		handleAPIChatSearch(w, r, chatID, query, limit)
+		return
+	}
+
 	offset := parsePositiveInt(r.URL.Query().Get("offset"), 0)
 	if query == "" {
 		writeJSON(w, map[string]any{
@@ -83,6 +104,20 @@ func handleAPISearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if items, nextOffset, total, scannedSessions, err := searchSessionsWithIndex(r.Context(), appState, query, offset, limit); err == nil {
+		writeJSON(w, map[string]any{
+			"items":            items,
+			"next_offset":      nextOffset,
+			"total":            total,
+			"query":            query,
+			"scanned_sessions": scannedSessions,
+			"search_backend":   "bluge",
+		})
+		return
+	} else if r.Context().Err() != nil {
+		return
+	}
+
 	sessions := make([]state.SessionMeta, 0, len(appState.Sessions))
 	for _, meta := range appState.Sessions {
 		sessions = append(sessions, meta)
@@ -90,14 +125,16 @@ func handleAPISearch(w http.ResponseWriter, r *http.Request) {
 	sort.Slice(sessions, func(i, j int) bool {
 		return sessions[i].UpdatedAt.After(sessions[j].UpdatedAt)
 	})
+	storedWorkspaceChats := workspaceStoredChatSet()
 
-	items := []sessionSearchResult{}
-	matchedSessions := 0
+	candidates := []sessionSearchResult{}
 	scannedSessions := 0
-	stopAfter := offset + limit + searchResultLookahead
 	for _, meta := range sessions {
 		scannedSessions++
 		if meta.MetadataOnly || strings.TrimSpace(meta.TranscriptPath) == "" {
+			continue
+		}
+		if _, ok := storedWorkspaceChats[legacyimport.ImportedChatID(meta)]; ok {
 			continue
 		}
 
@@ -116,32 +153,411 @@ func handleAPISearch(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		if matchedSessions >= offset && len(items) < limit {
-			enriched := enrichSessionMeta(meta)
-			items = append(items, newSessionSearchResult(enriched, result.Matches))
-		}
-		matchedSessions++
-		if matchedSessions >= stopAfter {
-			break
-		}
+		enriched := enrichSessionMeta(meta)
+		candidates = append(candidates, newSessionSearchResult(enriched, result.Matches))
 	}
 
+	workspaceItems, workspaceScanned := searchWorkspaceSessions(query, searchPerSessionLimit)
+	candidates = append(candidates, workspaceItems...)
+	scannedSessions += workspaceScanned
+
+	sort.SliceStable(candidates, func(i, j int) bool {
+		return candidates[i].UpdatedAt.After(candidates[j].UpdatedAt)
+	})
+
+	total := len(candidates)
+	items := []sessionSearchResult{}
 	nextOffset := 0
-	if matchedSessions > offset+len(items) {
-		nextOffset = offset + len(items)
+	if offset < len(candidates) {
+		end := offset + limit
+		if end > len(candidates) {
+			end = len(candidates)
+		}
+		items = candidates[offset:end]
+		if end < len(candidates) {
+			nextOffset = end
+		}
 	}
 	writeJSON(w, map[string]any{
 		"items":            items,
 		"next_offset":      nextOffset,
-		"total":            matchedSessions,
+		"total":            total,
 		"query":            query,
 		"scanned_sessions": scannedSessions,
 	})
 }
 
+func handleAPIChatSearch(w http.ResponseWriter, r *http.Request, chatID string, query string, limit int) {
+	if query == "" {
+		writeJSON(w, map[string]any{
+			"chat_id": chatID,
+			"matches": []chatSearchMatch{},
+			"query":   query,
+			"total":   0,
+		})
+		return
+	}
+
+	var (
+		matches []chatSearchMatch
+		err     error
+	)
+	if meta, ok := workspaceLegacySessionByChatID(chatID); ok && !workspaceStoredChatExists(chatID) {
+		matches, err = searchLegacyChatTranscript(meta, query, limit)
+	} else {
+		matches, err = searchWorkspaceChatTranscript(chatID, query, limit)
+	}
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "not found") || errors.Is(err, parser.ErrTranscriptUnavailable) {
+			http.Error(w, "chat not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, map[string]any{
+		"chat_id": chatID,
+		"matches": matches,
+		"query":   query,
+		"total":   len(matches),
+	})
+}
+
+func searchLegacyChatTranscript(meta state.SessionMeta, query string, limit int) ([]chatSearchMatch, error) {
+	result, err := parser.SearchMessages(meta.Agent, meta.SessionID, meta.TranscriptPath, parser.SearchOptions{
+		Query:        query,
+		Limit:        limit,
+		SnippetRunes: searchMaxSnippetRunes,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	matches := make([]chatSearchMatch, 0, len(result.Matches))
+	for _, match := range result.Matches {
+		matches = append(matches, chatSearchMatch{
+			MessageID: match.MessageID,
+			Role:      match.Role,
+			Index:     match.Index,
+			Snippet:   match.Snippet,
+			CreatedAt: match.CreatedAt,
+		})
+	}
+	return matches, nil
+}
+
+func searchWorkspaceChatTranscript(chatID string, query string, limit int) ([]chatSearchMatch, error) {
+	if _, _, err := workspaceChatProjectRequired(chatID); err != nil {
+		return nil, err
+	}
+	entries, err := workspaceChatMessages(chatID)
+	if err != nil {
+		return nil, err
+	}
+	return searchWorkspaceEntries(entries, query, limit), nil
+}
+
+func searchWorkspaceEntries(entries []readmodels.TranscriptEntry, query string, limit int) []chatSearchMatch {
+	queryLower := strings.ToLower(query)
+	matches := make([]chatSearchMatch, 0, min(limit, len(entries)))
+	toolCallIDByToolID := map[string]string{}
+	for index, entry := range entries {
+		if transcript.Kind(entry) == transcript.KindToolCall {
+			if toolID := workspaceEntryToolID(entry); toolID != "" {
+				toolCallIDByToolID[toolID] = workspaceEntryString(entry, "_id")
+			}
+		}
+
+		kind, role, text := workspaceEntrySearchText(entry)
+		if strings.TrimSpace(text) == "" || !strings.Contains(strings.ToLower(text), queryLower) {
+			continue
+		}
+
+		entryID := workspaceEntryString(entry, "_id")
+		messageID := firstNonEmptyString(
+			workspaceSearchDisplayMessageID(entry, toolCallIDByToolID),
+			workspaceEntryString(entry, "messageId"),
+			workspaceEntryString(entry, "id"),
+			entryID,
+		)
+		matches = append(matches, chatSearchMatch{
+			MessageID: messageID,
+			EntryID:   entryID,
+			Role:      role,
+			Kind:      kind,
+			Index:     index + 1,
+			Snippet:   serverSearchSnippet(text, queryLower, searchMaxSnippetRunes),
+			CreatedAt: workspaceEntryCreatedAt(entry),
+		})
+		if len(matches) >= limit {
+			break
+		}
+	}
+	return matches
+}
+
+func workspaceSearchDisplayMessageID(entry readmodels.TranscriptEntry, toolCallIDByToolID map[string]string) string {
+	if transcript.Kind(entry) != transcript.KindToolResult {
+		return ""
+	}
+	toolID := workspaceEntryToolID(entry)
+	if toolID == "" {
+		return ""
+	}
+	return toolCallIDByToolID[toolID]
+}
+
+func workspaceStoredChatSet() map[string]struct{} {
+	state, err := workspaceStore().LoadState()
+	if err != nil {
+		return map[string]struct{}{}
+	}
+	chats := make(map[string]struct{}, len(state.ChatsByID))
+	for chatID, chat := range state.ChatsByID {
+		if chat.DeletedAt != 0 {
+			continue
+		}
+		chats[chatID] = struct{}{}
+	}
+	return chats
+}
+
+func searchWorkspaceSessions(query string, perChatLimit int) ([]sessionSearchResult, int) {
+	store := workspaceStore()
+	storeState, err := store.LoadState()
+	if err != nil {
+		return nil, 0
+	}
+	messageEvents, err := store.Replay(events.StreamMessages)
+	if err != nil {
+		return nil, 0
+	}
+	entriesByChatID := map[string][]readmodels.TranscriptEntry{}
+	for _, event := range messageEvents {
+		if event.Type != events.TypeMessageAppended {
+			continue
+		}
+		var data struct {
+			ChatID string                     `json:"chatId"`
+			Entry  readmodels.TranscriptEntry `json:"entry"`
+		}
+		if event.DecodeData(&data) != nil || strings.TrimSpace(data.ChatID) == "" {
+			continue
+		}
+		entriesByChatID[data.ChatID] = append(entriesByChatID[data.ChatID], data.Entry)
+	}
+
+	items := []sessionSearchResult{}
+	scanned := 0
+	for _, chat := range storeState.ChatsByID {
+		if chat.DeletedAt != 0 {
+			continue
+		}
+		project, ok := storeState.ProjectsByID[chat.ProjectID]
+		if !ok || project.DeletedAt != 0 {
+			continue
+		}
+		scanned++
+		matches := searchWorkspaceEntries(entriesByChatID[chat.ID], query, perChatLimit)
+		if len(matches) == 0 {
+			continue
+		}
+		items = append(items, newWorkspaceSearchResult(chat, project, matches))
+	}
+	return items, scanned
+}
+
+func newWorkspaceSearchResult(chat readmodels.ChatRecord, project readmodels.ProjectRecord, matches []chatSearchMatch) sessionSearchResult {
+	agent := ""
+	if chat.Provider != nil {
+		agent = *chat.Provider
+	}
+	parserMatches := make([]parser.SearchMatch, 0, len(matches))
+	for _, match := range matches {
+		parserMatches = append(parserMatches, parser.SearchMatch{
+			MessageID: match.MessageID,
+			Role:      match.Role,
+			Index:     match.Index,
+			Snippet:   match.Snippet,
+			CreatedAt: match.CreatedAt,
+		})
+	}
+	updatedAtMillis := max(chat.UpdatedAt, chat.LastMessageAt, chat.CreatedAt)
+	updatedAt := time.UnixMilli(updatedAtMillis)
+	return sessionSearchResult{
+		Key:                  "workspace:" + chat.ID,
+		ChatID:               chat.ID,
+		Agent:                agent,
+		SessionID:            chat.ID,
+		SessionName:          chat.Title,
+		Cwd:                  project.LocalPath,
+		ProjectName:          project.Title,
+		UpdatedAt:            updatedAt,
+		LastPreview:          matches[0].Snippet,
+		MessageCountEstimate: 0,
+		MetadataOnly:         false,
+		SearchMatches:        parserMatches,
+		SearchMatchCount:     len(parserMatches),
+	}
+}
+
+func workspaceEntrySearchText(entry readmodels.TranscriptEntry) (kind string, role string, text string) {
+	kind = workspaceEntryString(entry, "kind")
+	switch kind {
+	case transcript.KindUserPrompt:
+		return kind, "user", workspaceEntryString(entry, "content")
+	case transcript.KindAssistantText:
+		return kind, "assistant", workspaceEntryString(entry, "text")
+	case transcript.KindStatus:
+		return kind, "status", workspaceEntryString(entry, "status")
+	case transcript.KindResult:
+		return kind, "result", workspaceEntryString(entry, "result")
+	case transcript.KindCompactSummary:
+		return kind, "assistant", workspaceEntryString(entry, "summary")
+	case transcript.KindUnknown:
+		return kind, "unknown", workspaceEntryString(entry, "json")
+	case transcript.KindToolCall:
+		return kind, "tool", workspaceAnySearchText(entry["tool"], entry["input"])
+	case transcript.KindToolResult:
+		return kind, "tool", workspaceAnySearchText(entry["content"], entry["output"])
+	default:
+		return kind, kind, workspaceAnySearchText(entry["content"], entry["text"], entry["summary"], entry["json"])
+	}
+}
+
+func workspaceEntryString(entry readmodels.TranscriptEntry, key string) string {
+	if value, ok := entry[key]; ok {
+		if text, ok := value.(string); ok {
+			return text
+		}
+	}
+	return ""
+}
+
+func workspaceEntryToolID(entry readmodels.TranscriptEntry) string {
+	if toolID := workspaceEntryString(entry, "toolId"); toolID != "" {
+		return toolID
+	}
+	tool, ok := entry["tool"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	if toolID, ok := tool["toolId"].(string); ok {
+		return toolID
+	}
+	return ""
+}
+
+func workspaceAnySearchText(values ...any) string {
+	parts := make([]string, 0, len(values))
+	for _, value := range values {
+		switch typed := value.(type) {
+		case nil:
+			continue
+		case string:
+			if strings.TrimSpace(typed) != "" {
+				parts = append(parts, typed)
+			}
+		default:
+			encoded, err := json.Marshal(typed)
+			if err == nil && len(encoded) > 0 {
+				parts = append(parts, string(encoded))
+			}
+		}
+	}
+	return strings.Join(parts, "\n")
+}
+
+func workspaceEntryCreatedAt(entry readmodels.TranscriptEntry) *time.Time {
+	value, ok := entry["createdAt"]
+	if !ok {
+		return nil
+	}
+
+	var millis int64
+	switch typed := value.(type) {
+	case int64:
+		millis = typed
+	case int:
+		millis = int64(typed)
+	case int32:
+		millis = int64(typed)
+	case float64:
+		millis = int64(typed)
+	case json.Number:
+		parsed, err := typed.Int64()
+		if err != nil {
+			return nil
+		}
+		millis = parsed
+	default:
+		return nil
+	}
+	if millis <= 0 {
+		return nil
+	}
+	createdAt := time.UnixMilli(millis)
+	return &createdAt
+}
+
+func serverSearchSnippet(text, queryLower string, maxRunes int) string {
+	textRunes := []rune(strings.TrimSpace(text))
+	if len(textRunes) <= maxRunes {
+		return string(textRunes)
+	}
+
+	index := indexRunes([]rune(strings.ToLower(string(textRunes))), []rune(queryLower))
+	if index < 0 {
+		index = 0
+	}
+	start := index - (maxRunes / 3)
+	if start < 0 {
+		start = 0
+	}
+	end := start + maxRunes
+	if end > len(textRunes) {
+		end = len(textRunes)
+		start = end - maxRunes
+		if start < 0 {
+			start = 0
+		}
+	}
+
+	prefix := ""
+	if start > 0 {
+		prefix = "..."
+	}
+	suffix := ""
+	if end < len(textRunes) {
+		suffix = "..."
+	}
+	return prefix + string(textRunes[start:end]) + suffix
+}
+
+func indexRunes(haystack, needle []rune) int {
+	if len(needle) == 0 || len(needle) > len(haystack) {
+		return -1
+	}
+	for i := 0; i <= len(haystack)-len(needle); i++ {
+		matched := true
+		for j := range needle {
+			if haystack[i+j] != needle[j] {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return i
+		}
+	}
+	return -1
+}
+
 func newSessionSearchResult(meta state.SessionMeta, matches []parser.SearchMatch) sessionSearchResult {
 	return sessionSearchResult{
 		Key:                  meta.Key,
+		ChatID:               legacyimport.ImportedChatID(meta),
 		Agent:                meta.Agent,
 		SessionID:            meta.SessionID,
 		SessionName:          state.ResolveSessionName(meta),
@@ -234,6 +650,13 @@ func handleAPIHook(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to save state", http.StatusInternalServerError)
 		return
 	}
+	if isPromptSubmitHookEvent(event) {
+		if record, err := workspaceRecordHookPromptCheckpoint(meta, event); err == nil && record.ProjectID != "" {
+			workspaceConnections.broadcastProjectGit(record.ProjectID)
+		}
+	} else {
+		_ = workspaceSyncMaterializedLegacyChat(meta)
+	}
 
 	eventKey := meta.Key + ":" + meta.UpdatedAt.Format(time.RFC3339Nano)
 	EventBroker.Broadcast(SSEEvent{
@@ -245,6 +668,7 @@ func handleAPIHook(w http.ResponseWriter, r *http.Request) {
 		ProjectName: meta.ProjectName,
 		UpdatedAt:   meta.UpdatedAt.Format(time.RFC3339),
 	})
+	workspaceConnections.broadcast("")
 
 	writeJSON(w, map[string]any{
 		"status":      "ok",

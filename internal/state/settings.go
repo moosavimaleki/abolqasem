@@ -6,12 +6,17 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"ai-agent-manager/internal/providers/catalog"
 )
 
 const (
 	HookFollowAuto   = "auto"
 	HookFollowNotice = "notice"
 	HookFollowOff    = "off"
+
+	ProviderProxyModeNone   = "none"
+	ProviderProxyModeCustom = "custom"
 )
 
 type AppSettings struct {
@@ -27,6 +32,7 @@ type AppSettings struct {
 	ChatSoundID                     string                        `json:"chat_sound_id"`
 	Terminal                        TerminalSettings              `json:"terminal"`
 	Editor                          EditorSettings                `json:"editor"`
+	ProviderProxy                   ProviderProxySettings         `json:"provider_proxy"`
 	DefaultProvider                 string                        `json:"default_provider"`
 	ProviderDefaults                map[string]ProviderPreference `json:"provider_defaults"`
 	DefaultAgent                    string                        `json:"default_agent"`
@@ -41,6 +47,12 @@ type TerminalSettings struct {
 type EditorSettings struct {
 	Preset          string `json:"preset"`
 	CommandTemplate string `json:"command_template"`
+}
+
+type ProviderProxySettings struct {
+	Mode      string `json:"mode"`
+	HTTPProxy string `json:"http_proxy"`
+	NoProxy   string `json:"no_proxy"`
 }
 
 type ProviderPreference struct {
@@ -58,6 +70,7 @@ type AppSettingsPatch struct {
 	ChatSoundID             string                             `json:"chatSoundId"`
 	Terminal                *TerminalSettingsPatch             `json:"terminal"`
 	Editor                  *EditorSettingsPatch               `json:"editor"`
+	ProviderProxy           *ProviderProxySettingsPatch        `json:"providerProxy"`
 	DefaultProvider         string                             `json:"defaultProvider"`
 	ProviderDefaults        map[string]ProviderPreferencePatch `json:"providerDefaults"`
 }
@@ -70,6 +83,12 @@ type TerminalSettingsPatch struct {
 type EditorSettingsPatch struct {
 	Preset          *string `json:"preset"`
 	CommandTemplate *string `json:"commandTemplate"`
+}
+
+type ProviderProxySettingsPatch struct {
+	Mode      *string `json:"mode"`
+	HTTPProxy *string `json:"httpProxy"`
+	NoProxy   *string `json:"noProxy"`
 }
 
 type ProviderPreferencePatch struct {
@@ -98,6 +117,7 @@ func DefaultAppSettings() AppSettings {
 			Preset:          "custom",
 			CommandTemplate: "",
 		},
+		ProviderProxy:   defaultProviderProxySettings(),
 		DefaultProvider: "last_used",
 		ProviderDefaults: map[string]ProviderPreference{
 			"claude": {
@@ -109,12 +129,17 @@ func DefaultAppSettings() AppSettings {
 				PlanMode: false,
 			},
 			"codex": {
-				Model: "gpt-5.5",
+				Model: catalog.CodexRuntimeDefaultModel(),
 				ModelOptions: map[string]any{
-					"reasoningEffort": "medium",
+					"reasoningEffort": catalog.DefaultCodexReasoningEffort,
 					"fastMode":        false,
 				},
 				PlanMode: false,
+			},
+			"gemini": {
+				Model:        catalog.DefaultGeminiModel,
+				ModelOptions: map[string]any{},
+				PlanMode:     false,
 			},
 		},
 		DefaultAgent: "codex",
@@ -188,6 +213,7 @@ func NormalizeSettings(settings AppSettings) AppSettings {
 	settings.ChatSoundID = normalizeChoice(settings.ChatSoundID, defaults.ChatSoundID, "pop", "ding", "chime", "none")
 	settings.Terminal = normalizeTerminalSettings(settings.Terminal, defaults.Terminal)
 	settings.Editor = normalizeEditorSettings(settings.Editor, defaults.Editor)
+	settings.ProviderProxy = normalizeProviderProxySettings(settings.ProviderProxy)
 	settings.DefaultProvider = normalizeDefaultProvider(settings.DefaultProvider, defaults.DefaultProvider)
 	settings.ProviderDefaults = normalizeProviderDefaults(settings.ProviderDefaults, defaults.ProviderDefaults)
 	settings.AgentModels = normalizeAgentModels(settings.AgentModels)
@@ -229,6 +255,17 @@ func ApplySettingsPatch(settings AppSettings, patch AppSettingsPatch) AppSetting
 			settings.Editor.CommandTemplate = *patch.Editor.CommandTemplate
 		}
 	}
+	if patch.ProviderProxy != nil {
+		if patch.ProviderProxy.Mode != nil {
+			settings.ProviderProxy.Mode = *patch.ProviderProxy.Mode
+		}
+		if patch.ProviderProxy.HTTPProxy != nil {
+			settings.ProviderProxy.HTTPProxy = *patch.ProviderProxy.HTTPProxy
+		}
+		if patch.ProviderProxy.NoProxy != nil {
+			settings.ProviderProxy.NoProxy = *patch.ProviderProxy.NoProxy
+		}
+	}
 	if patch.DefaultProvider != "" {
 		settings.DefaultProvider = patch.DefaultProvider
 	}
@@ -257,6 +294,44 @@ func ApplySettingsPatch(settings AppSettings, patch AppSettingsPatch) AppSetting
 	return NormalizeSettings(settings)
 }
 
+func CurrentProviderProxyEnv() []string {
+	settings, err := LoadSettings()
+	if err != nil {
+		settings = DefaultAppSettings()
+	}
+	return ApplyProviderProxyEnv(os.Environ(), settings)
+}
+
+func ApplyProviderProxyEnv(env []string, settings AppSettings) []string {
+	proxy := normalizeProviderProxySettings(settings.ProviderProxy)
+	withoutProxy := make([]string, 0, len(env)+8)
+	for _, entry := range env {
+		key, _, ok := strings.Cut(entry, "=")
+		if ok && isProviderProxyEnvKey(key) {
+			continue
+		}
+		withoutProxy = append(withoutProxy, entry)
+	}
+	if proxy.Mode != ProviderProxyModeCustom || proxy.HTTPProxy == "" {
+		return withoutProxy
+	}
+	withoutProxy = append(withoutProxy,
+		"HTTP_PROXY="+proxy.HTTPProxy,
+		"HTTPS_PROXY="+proxy.HTTPProxy,
+		"ALL_PROXY="+proxy.HTTPProxy,
+		"http_proxy="+proxy.HTTPProxy,
+		"https_proxy="+proxy.HTTPProxy,
+		"all_proxy="+proxy.HTTPProxy,
+	)
+	if proxy.NoProxy != "" {
+		withoutProxy = append(withoutProxy,
+			"NO_PROXY="+proxy.NoProxy,
+			"no_proxy="+proxy.NoProxy,
+		)
+	}
+	return withoutProxy
+}
+
 func normalizeAgentModels(models map[string]string) map[string]string {
 	normalized := map[string]string{
 		"codex":  "",
@@ -268,7 +343,11 @@ func normalizeAgentModels(models map[string]string) map[string]string {
 		if agent == "" {
 			continue
 		}
-		normalized[agent] = strings.TrimSpace(model)
+		model = strings.TrimSpace(model)
+		if agent == "codex" && model != "" {
+			model = normalizeCodexCLIDefaultModel(catalog.NormalizeServerModel("codex", model))
+		}
+		normalized[agent] = model
 	}
 	return normalized
 }
@@ -318,9 +397,32 @@ func normalizeEditorSettings(settings EditorSettings, defaults EditorSettings) E
 	return settings
 }
 
+func defaultProviderProxySettings() ProviderProxySettings {
+	return ProviderProxySettings{Mode: ProviderProxyModeNone}
+}
+
+func normalizeProviderProxySettings(settings ProviderProxySettings) ProviderProxySettings {
+	settings.Mode = strings.TrimSpace(strings.ToLower(settings.Mode))
+	if settings.Mode != ProviderProxyModeCustom {
+		settings.Mode = ProviderProxyModeNone
+	}
+	settings.HTTPProxy = strings.TrimSpace(settings.HTTPProxy)
+	settings.NoProxy = strings.TrimSpace(settings.NoProxy)
+	return settings
+}
+
+func isProviderProxyEnvKey(key string) bool {
+	switch key {
+	case "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy", "no_proxy":
+		return true
+	default:
+		return false
+	}
+}
+
 func normalizeDefaultProvider(value string, fallback string) string {
 	value = strings.TrimSpace(strings.ToLower(value))
-	if value == "last_used" || value == "claude" || value == "codex" {
+	if value == "last_used" || value == "claude" || value == "codex" || value == "gemini" {
 		return value
 	}
 	return fallback
@@ -328,7 +430,7 @@ func normalizeDefaultProvider(value string, fallback string) string {
 
 func normalizeWorkspaceProvider(value string) string {
 	value = strings.TrimSpace(strings.ToLower(value))
-	if value == "claude" || value == "codex" {
+	if value == "claude" || value == "codex" || value == "gemini" {
 		return value
 	}
 	return ""
@@ -341,10 +443,22 @@ func normalizeProviderDefaults(settings map[string]ProviderPreference, defaults 
 		if strings.TrimSpace(current.Model) == "" {
 			current.Model = fallback.Model
 		}
+		if provider == "codex" {
+			current.Model = normalizeCodexCLIDefaultModel(current.Model)
+		}
+		current.Model = catalog.NormalizeServerModel(provider, current.Model)
 		current.ModelOptions = mergeMap(fallback.ModelOptions, current.ModelOptions)
 		normalized[provider] = current
 	}
 	return normalized
+}
+
+func normalizeCodexCLIDefaultModel(model string) string {
+	model = strings.TrimSpace(model)
+	if model == catalog.DefaultCodexModel && catalog.CodexRuntimeDefaultModel() != catalog.DefaultCodexModel {
+		return catalog.CodexRuntimeDefaultModel()
+	}
+	return model
 }
 
 func mergeMap(base map[string]any, patch map[string]any) map[string]any {

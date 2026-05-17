@@ -3,30 +3,30 @@ import { parseLocalFileLink, shouldOpenLocalFileLinkInEditor } from "./pathUtils
 
 describe("parseLocalFileLink", () => {
   test("parses an absolute file path with a line fragment", () => {
-    expect(parseLocalFileLink("/Users/jake/Projects/kanna/src/app.ts#L12")).toEqual({
-      path: "/Users/jake/Projects/kanna/src/app.ts",
+    expect(parseLocalFileLink("/Users/jake/Projects/abolqasem/src/app.ts#L12")).toEqual({
+      path: "/Users/jake/Projects/abolqasem/src/app.ts",
       line: 12,
       column: undefined,
     })
   })
 
   test("parses an absolute file path without a fragment", () => {
-    expect(parseLocalFileLink("/Users/jake/Projects/kanna/src/app.ts")).toEqual({
-      path: "/Users/jake/Projects/kanna/src/app.ts",
+    expect(parseLocalFileLink("/Users/jake/Projects/abolqasem/src/app.ts")).toEqual({
+      path: "/Users/jake/Projects/abolqasem/src/app.ts",
     })
   })
 
   test("parses an absolute file path with a line suffix", () => {
-    expect(parseLocalFileLink("/Users/jake/Kanna/superwall-agent/scripts/e2b-proxy.mjs:1")).toEqual({
-      path: "/Users/jake/Kanna/superwall-agent/scripts/e2b-proxy.mjs",
+    expect(parseLocalFileLink("/Users/jake/Abolqasem/superwall-agent/scripts/e2b-proxy.mjs:1")).toEqual({
+      path: "/Users/jake/Abolqasem/superwall-agent/scripts/e2b-proxy.mjs",
       line: 1,
       column: undefined,
     })
   })
 
   test("parses an absolute file path with line and column suffixes", () => {
-    expect(parseLocalFileLink("/Users/jake/Kanna/superwall-agent/scripts/e2b-proxy.mjs:1:2")).toEqual({
-      path: "/Users/jake/Kanna/superwall-agent/scripts/e2b-proxy.mjs",
+    expect(parseLocalFileLink("/Users/jake/Abolqasem/superwall-agent/scripts/e2b-proxy.mjs:1:2")).toEqual({
+      path: "/Users/jake/Abolqasem/superwall-agent/scripts/e2b-proxy.mjs",
       line: 1,
       column: 2,
     })
@@ -44,8 +44,8 @@ describe("parseLocalFileLink", () => {
     })
 
     try {
-      expect(parseLocalFileLink("http://localhost:9000/Users/jake/Kanna/superwall-agent/scripts/e2b-proxy.mjs:1")).toEqual({
-        path: "/Users/jake/Kanna/superwall-agent/scripts/e2b-proxy.mjs",
+      expect(parseLocalFileLink("http://localhost:9000/Users/jake/Abolqasem/superwall-agent/scripts/e2b-proxy.mjs:1")).toEqual({
+        path: "/Users/jake/Abolqasem/superwall-agent/scripts/e2b-proxy.mjs",
         line: 1,
         column: undefined,
       })
@@ -64,16 +64,16 @@ describe("parseLocalFileLink", () => {
 
 describe("shouldOpenLocalFileLinkInEditor", () => {
   test("opens source, markdown, and text files in the editor", () => {
-    expect(shouldOpenLocalFileLinkInEditor("/Users/jake/Projects/kanna/src/app.ts")).toBe(true)
-    expect(shouldOpenLocalFileLinkInEditor("/Users/jake/Projects/kanna/README.md")).toBe(true)
-    expect(shouldOpenLocalFileLinkInEditor("/Users/jake/Projects/kanna/notes.txt")).toBe(true)
-    expect(shouldOpenLocalFileLinkInEditor("/Users/jake/Projects/kanna/.gitignore")).toBe(true)
+    expect(shouldOpenLocalFileLinkInEditor("/Users/jake/Projects/abolqasem/src/app.ts")).toBe(true)
+    expect(shouldOpenLocalFileLinkInEditor("/Users/jake/Projects/abolqasem/README.md")).toBe(true)
+    expect(shouldOpenLocalFileLinkInEditor("/Users/jake/Projects/abolqasem/notes.txt")).toBe(true)
+    expect(shouldOpenLocalFileLinkInEditor("/Users/jake/Projects/abolqasem/.gitignore")).toBe(true)
   })
 
   test("opens media and document files in the default app", () => {
-    expect(shouldOpenLocalFileLinkInEditor("/Users/jake/Projects/kanna/shot.png")).toBe(false)
-    expect(shouldOpenLocalFileLinkInEditor("/Users/jake/Projects/kanna/movie.mp4")).toBe(false)
-    expect(shouldOpenLocalFileLinkInEditor("/Users/jake/Projects/kanna/report.docx")).toBe(false)
-    expect(shouldOpenLocalFileLinkInEditor("/Users/jake/Projects/kanna/archive.zip")).toBe(false)
+    expect(shouldOpenLocalFileLinkInEditor("/Users/jake/Projects/abolqasem/shot.png")).toBe(false)
+    expect(shouldOpenLocalFileLinkInEditor("/Users/jake/Projects/abolqasem/movie.mp4")).toBe(false)
+    expect(shouldOpenLocalFileLinkInEditor("/Users/jake/Projects/abolqasem/report.docx")).toBe(false)
+    expect(shouldOpenLocalFileLinkInEditor("/Users/jake/Projects/abolqasem/archive.zip")).toBe(false)
   })
 })
