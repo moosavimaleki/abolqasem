@@ -2,25 +2,25 @@
 
 set -eu
 
-APP="ai-agent-manager"
-REPO="${AI_AGENT_MANAGER_REPO:-moosavimaleki/ai-agent-manager}"
-VERSION="${AI_AGENT_MANAGER_VERSION:-latest}"
-RELEASE_BASE_URL="${AI_AGENT_MANAGER_RELEASE_BASE_URL:-}"
+APP="abolqasem"
+REPO="${ABOLQASEM_REPO:-${AI_AGENT_MANAGER_REPO:-jakemor/abolqasem}}"
+VERSION="${ABOLQASEM_VERSION:-${AI_AGENT_MANAGER_VERSION:-latest}}"
+RELEASE_BASE_URL="${ABOLQASEM_RELEASE_BASE_URL:-${AI_AGENT_MANAGER_RELEASE_BASE_URL:-}}"
 BIN_DIR="${BIN_DIR:-}"
-INSTALL_HOOKS="${AI_AGENT_MANAGER_INSTALL_HOOKS:-1}"
-HOOK_SCOPE="${AI_AGENT_MANAGER_HOOK_SCOPE:-user}"
-HOOK_AGENTS="${AI_AGENT_MANAGER_AGENTS:-all}"
-STARTUP="${AI_AGENT_MANAGER_STARTUP:-hook}"
+INSTALL_HOOKS="${ABOLQASEM_INSTALL_HOOKS:-${AI_AGENT_MANAGER_INSTALL_HOOKS:-1}}"
+HOOK_SCOPE="${ABOLQASEM_HOOK_SCOPE:-${AI_AGENT_MANAGER_HOOK_SCOPE:-user}}"
+HOOK_AGENTS="${ABOLQASEM_AGENTS:-${AI_AGENT_MANAGER_AGENTS:-all}}"
+STARTUP="${ABOLQASEM_STARTUP:-${AI_AGENT_MANAGER_STARTUP:-hook}}"
 
 usage() {
   cat <<'EOF'
-Install ai-agent-manager from GitHub release assets.
+Install abolqasem from GitHub release assets.
 
 Usage:
   install-release.sh [options]
 
 Options:
-  --repo OWNER/REPO   GitHub repository. Default: moosavimaleki/ai-agent-manager.
+  --repo OWNER/REPO   GitHub repository. Default: jakemor/abolqasem.
   --version TAG       Release tag. Default: latest.
   --bin-dir DIR       Install binary into DIR.
   --hooks             Install hooks after installing the binary. Default: enabled.
@@ -32,12 +32,12 @@ Options:
   -h, --help          Show this help.
 
 Environment:
-  AI_AGENT_MANAGER_REPO
-  AI_AGENT_MANAGER_VERSION
-  AI_AGENT_MANAGER_INSTALL_HOOKS=1
-  AI_AGENT_MANAGER_STARTUP=hook|service
-  AI_AGENT_MANAGER_AGENTS=all|codex|claude|gemini
-  AI_AGENT_MANAGER_HOOK_SCOPE=user|project
+  ABOLQASEM_REPO
+  ABOLQASEM_VERSION
+  ABOLQASEM_INSTALL_HOOKS=1
+  ABOLQASEM_STARTUP=hook|service
+  ABOLQASEM_AGENTS=all|codex|claude|gemini
+  ABOLQASEM_HOOK_SCOPE=user|project
   BIN_DIR
 EOF
 }
@@ -241,10 +241,10 @@ if [ "$INSTALL_HOOKS" = "1" ]; then
     *) die "unsupported startup mode: $STARTUP" ;;
   esac
   if [ "$HOOK_AGENTS" = "all" ]; then
-    AI_AGENT_MANAGER_SUPPRESS_TRUST_NOTICE=1 "$INSTALL_PATH" install --all --scope "$HOOK_SCOPE" --startup "$STARTUP"
+    ABOLQASEM_SUPPRESS_TRUST_NOTICE=1 "$INSTALL_PATH" install --all --scope "$HOOK_SCOPE" --startup "$STARTUP"
   else
     for agent in $HOOK_AGENTS; do
-      AI_AGENT_MANAGER_SUPPRESS_TRUST_NOTICE=1 "$INSTALL_PATH" install --agent "$agent" --scope "$HOOK_SCOPE" --startup "$STARTUP"
+      ABOLQASEM_SUPPRESS_TRUST_NOTICE=1 "$INSTALL_PATH" install --agent "$agent" --scope "$HOOK_SCOPE" --startup "$STARTUP"
     done
   fi
 elif [ "$STARTUP" = "service" ]; then

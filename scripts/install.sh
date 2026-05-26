@@ -2,7 +2,7 @@
 
 set -eu
 
-APP="ai-agent-manager"
+APP="abolqasem"
 PKG="./cmd/ai-agent-manager"
 DIST="dist"
 SCOPE="user"
@@ -15,7 +15,7 @@ STARTUP="hook"
 
 usage() {
   cat <<'EOF'
-Install ai-agent-manager from source.
+Install abolqasem from source.
 
 Usage:
   scripts/install.sh [options]
@@ -285,11 +285,11 @@ esac
 
 if [ "$HOOKS" = "1" ]; then
   if [ "$AGENTS" = "codex claude gemini" ]; then
-    AI_AGENT_MANAGER_SUPPRESS_TRUST_NOTICE=1 "$INSTALL_PATH" install --all --scope "$SCOPE" --startup "$STARTUP"
+    ABOLQASEM_SUPPRESS_TRUST_NOTICE=1 "$INSTALL_PATH" install --all --scope "$SCOPE" --startup "$STARTUP"
   else
     for agent in $AGENTS; do
       log "Installing $agent hook with scope=$SCOPE startup=$STARTUP"
-      AI_AGENT_MANAGER_SUPPRESS_TRUST_NOTICE=1 "$INSTALL_PATH" install --agent "$agent" --scope "$SCOPE" --startup "$STARTUP"
+      ABOLQASEM_SUPPRESS_TRUST_NOTICE=1 "$INSTALL_PATH" install --agent "$agent" --scope "$SCOPE" --startup "$STARTUP"
     done
   fi
 

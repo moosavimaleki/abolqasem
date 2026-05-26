@@ -9,6 +9,7 @@ dist/
 /codex-rtl
 /ai-agent-manager
 /ai-session-viewer
+/abolqasem
 web-react/node_modules/
 web-react/dist/
 
@@ -37,3 +38,4 @@ go.work.sum
 
 # Local exports
 .abolqasem/
+

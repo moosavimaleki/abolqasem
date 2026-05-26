@@ -1,4 +1,4 @@
-APP=ai-agent-manager
+APP=abolqasem
 PKG=./cmd/ai-agent-manager
 DIST=dist
 
