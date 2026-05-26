@@ -279,7 +279,7 @@ func TestFileContextPrefersKnownProjectRootOverNestedLegacySession(t *testing.T)
 	withWorkspaceComposerStore(t)
 
 	root := t.TempDir()
-	target := filepath.Join(root, "scripts", "render_html.py")
+	target := filepath.Join(root, "scripts", "open_ui.py")
 	mustWriteFile(t, target, "print('ok')\n")
 	project, err := workspaceOpenProject(root, "Known Project")
 	if err != nil {
@@ -308,7 +308,7 @@ func TestFileContextPrefersKnownProjectRootOverNestedLegacySession(t *testing.T)
 	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("decode response failed: %v", err)
 	}
-	if payload.ProjectID != project.ID || payload.LocalPath != root || payload.RelativePath != "scripts/render_html.py" {
+	if payload.ProjectID != project.ID || payload.LocalPath != root || payload.RelativePath != "scripts/open_ui.py" {
 		t.Fatalf("expected known project root, got %#v", payload)
 	}
 }
@@ -318,7 +318,7 @@ func TestFileContextFallsBackToGitRootBeforeContainingFolder(t *testing.T) {
 
 	root := t.TempDir()
 	mustMkdir(t, filepath.Join(root, ".git"))
-	target := filepath.Join(root, "scripts", "render_html.py")
+	target := filepath.Join(root, "scripts", "open_ui.py")
 	mustWriteFile(t, target, "print('ok')\n")
 	withLegacyState(t, &state.AppState{Sessions: map[string]state.SessionMeta{
 		"codex:nested-git": {
@@ -343,7 +343,7 @@ func TestFileContextFallsBackToGitRootBeforeContainingFolder(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("decode response failed: %v", err)
 	}
-	if !strings.HasPrefix(payload.ProjectID, "file-project-") || payload.LocalPath != root || payload.RelativePath != "scripts/render_html.py" {
+	if !strings.HasPrefix(payload.ProjectID, "file-project-") || payload.LocalPath != root || payload.RelativePath != "scripts/open_ui.py" {
 		t.Fatalf("expected git project root fallback, got %#v", payload)
 	}
 
