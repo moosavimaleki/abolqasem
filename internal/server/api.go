@@ -651,12 +651,17 @@ func handleAPIHook(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to save state", http.StatusInternalServerError)
 		return
 	}
+	broadcastChatID := ""
 	if isPromptSubmitHookEvent(event) {
 		if record, err := workspaceRecordHookPromptCheckpoint(meta, event); err == nil && record.ProjectID != "" {
 			workspaceConnections.broadcastProjectGit(record.ProjectID)
+			broadcastChatID = record.ChatID
 		}
 	} else {
 		_ = workspaceSyncMaterializedLegacyChat(meta)
+	}
+	if broadcastChatID == "" {
+		broadcastChatID = workspaceLegacyBroadcastChatID(meta)
 	}
 
 	eventKey := meta.Key + ":" + meta.UpdatedAt.Format(time.RFC3339Nano)
@@ -665,11 +670,12 @@ func handleAPIHook(w http.ResponseWriter, r *http.Request) {
 		EventKey:    eventKey,
 		SessionKey:  meta.Key,
 		SessionID:   meta.SessionID,
+		ChatID:      broadcastChatID,
 		SessionName: state.ResolveSessionName(meta),
 		ProjectName: meta.ProjectName,
 		UpdatedAt:   meta.UpdatedAt.Format(time.RFC3339),
 	})
-	workspaceConnections.broadcast("")
+	workspaceConnections.broadcast(broadcastChatID)
 
 	writeJSON(w, map[string]any{
 		"status":      "ok",

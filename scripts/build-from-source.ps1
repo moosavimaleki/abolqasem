@@ -17,7 +17,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 $App = "abolqasem"
-$Pkg = ".\cmd\ai-agent-manager"
+$Pkg = ".\cmd\abolqasem"
 $Dist = "dist"
 
 function Get-TargetArch {

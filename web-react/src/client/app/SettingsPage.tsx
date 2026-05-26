@@ -13,6 +13,7 @@ import {
   MoreHorizontal,
   Network,
   Plus,
+  RefreshCw,
   Search,
   Server,
   Settings2,
@@ -34,6 +35,7 @@ import {
   DEFAULT_OPENROUTER_SDK_MODEL,
   PROVIDERS,
   type AppLocale,
+  type AppSettingsPatch,
   type AgentProvider,
   type InstalledSkillSummary,
   type KeybindingAction,
@@ -47,10 +49,13 @@ import {
   type SkillSearchSnapshot,
   type SkillUninstallResult,
   type McpProviderId,
+  type McpRegistrySearchResult,
+  type McpRegistrySearchSnapshot,
   type McpSaveResult,
   type McpServerConfig,
   type McpSettingsSnapshot,
   type McpTransport,
+  type ProviderModelOption,
   type UpdateSnapshot,
 } from "../../shared/types"
 import { markdownComponents } from "../components/messages/shared"
@@ -1088,6 +1093,13 @@ function mcpServerDisplayCommand(server: McpServerConfig) {
   return [server.command, ...(server.args ?? [])].filter(Boolean).join(" ")
 }
 
+function mcpRegistryDisplayCommand(result: McpRegistrySearchResult) {
+  if (result.transport === "http") {
+    return maskMcpDisplayValue(result.url)
+  }
+  return [result.command, ...(result.args ?? [])].filter(Boolean).join(" ")
+}
+
 function openContextMenuFromButton(event: ReactMouseEvent<HTMLButtonElement>) {
   event.preventDefault()
   event.stopPropagation()
@@ -1192,6 +1204,84 @@ function McpProviderToggle({
   )
 }
 
+function McpRegistryResultRow({
+  result,
+  installed,
+  installing,
+  message,
+  onInstall,
+}: {
+  result: McpRegistrySearchResult
+  installed: boolean
+  installing: boolean
+  message?: string
+  onInstall: () => void
+}) {
+  const { t } = useI18n()
+  const statusMessage = installed
+    ? t.settings.installedInConfigs
+    : message
+      ? message
+      : result.installable
+        ? result.requiresConfiguration
+          ? t.settings.requiresConfiguration
+          : null
+        : result.installReason || t.settings.notInstallable
+  const statusTone = installed
+    ? "text-emerald-500"
+    : !result.installable
+      ? "text-destructive"
+      : "text-muted-foreground"
+  const command = mcpRegistryDisplayCommand(result)
+  const sourceURL = result.sourceUrl || result.repositoryUrl || result.websiteUrl
+
+  return (
+    <div className="grid gap-3 py-4 text-left md:grid-cols-[minmax(0,1fr)_auto] md:items-center md:gap-4" dir="ltr">
+      <div className="min-w-0">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="truncate text-sm font-semibold text-foreground">{result.name}</span>
+          <span className="truncate font-mono text-xs text-muted-foreground">{result.registryName}</span>
+          {result.version ? <span className="text-xs text-muted-foreground">v{result.version}</span> : null}
+          {result.status && result.status !== "active" ? (
+            <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">{result.status}</span>
+          ) : null}
+        </div>
+        {result.description ? (
+          <div className="mt-1 line-clamp-2 max-w-3xl text-xs text-muted-foreground">{result.description}</div>
+        ) : null}
+        {command ? (
+          <div className="mt-1 max-w-3xl truncate font-mono text-xs text-muted-foreground">{command}</div>
+        ) : null}
+        {statusMessage ? <div className={cn("mt-1 truncate text-xs", statusTone)}>{statusMessage}</div> : null}
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        {sourceURL ? (
+          <a
+            href={sourceURL}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={`Open ${result.name} source`}
+            className="touch-manipulation inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <ExternalLink className="h-4 w-4" />
+          </a>
+        ) : null}
+        <Button
+          type="button"
+          size="sm"
+          variant={installed ? "secondary" : "default"}
+          disabled={installing || installed || !result.installable || !result.config}
+          onClick={onInstall}
+          className="h-7 rounded-full px-2.5 text-xs"
+        >
+          {installing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+          {installed ? t.settings.installed : installing ? t.settings.installing : t.settings.get}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 export function McpSection({
   state,
 }: {
@@ -1210,6 +1300,12 @@ export function McpSection({
   const [updatingProviderKey, setUpdatingProviderKey] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [form, setForm] = useState<McpFormState>(() => emptyMcpForm())
+  const [registryQuery, setRegistryQuery] = useState("")
+  const [registryResults, setRegistryResults] = useState<McpRegistrySearchResult[]>([])
+  const [registryLoading, setRegistryLoading] = useState(false)
+  const [registryError, setRegistryError] = useState<string | null>(null)
+  const [installingRegistryId, setInstallingRegistryId] = useState<string | null>(null)
+  const [registryMessages, setRegistryMessages] = useState<Record<string, string>>({})
 
   async function loadMcpServers() {
     if (connectionStatus !== "connected") {
@@ -1233,6 +1329,53 @@ export function McpSection({
   useEffect(() => {
     void loadMcpServers()
   }, [connectionStatus, socket])
+
+  useEffect(() => {
+    const normalizedQuery = registryQuery.trim()
+    if (normalizedQuery.length < 2) {
+      setRegistryResults([])
+      setRegistryError(null)
+      setRegistryLoading(false)
+      return
+    }
+
+    if (connectionStatus !== "connected") {
+      setRegistryResults([])
+      setRegistryLoading(false)
+      setRegistryError(t.settings.backendConnectionRequired)
+      return
+    }
+
+    let cancelled = false
+    setRegistryLoading(true)
+    setRegistryError(null)
+
+    const timeout = window.setTimeout(() => {
+      void socket.command<McpRegistrySearchSnapshot>({
+        type: "mcp.registrySearch",
+        query: normalizedQuery,
+        limit: 50,
+      })
+        .then((searchSnapshot) => {
+          if (cancelled) return
+          setRegistryResults(searchSnapshot.servers)
+        })
+        .catch((searchError) => {
+          if (cancelled) return
+          setRegistryResults([])
+          setRegistryError(searchError instanceof Error ? searchError.message : t.settings.unableSearchMcpRegistry)
+        })
+        .finally(() => {
+          if (cancelled) return
+          setRegistryLoading(false)
+        })
+    }, 250)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timeout)
+    }
+  }, [connectionStatus, registryQuery, socket])
 
   async function saveServer() {
     if (connectionStatus !== "connected") {
@@ -1297,6 +1440,39 @@ export function McpSection({
     }
   }
 
+  async function installRegistryServer(result: McpRegistrySearchResult) {
+    if (connectionStatus !== "connected") {
+      setRegistryError(t.settings.backendConnectionRequired)
+      return
+    }
+    if (!result.config) {
+      setRegistryError(result.installReason || t.settings.notInstallable)
+      return
+    }
+    try {
+      setInstallingRegistryId(result.id)
+      setRegistryError(null)
+      setRegistryMessages((current) => {
+        const next = { ...current }
+        delete next[result.id]
+        return next
+      })
+      const saveResult = await socket.command<McpSaveResult>({
+        type: "mcp.save",
+        server: result.config,
+      })
+      setSnapshot({ configPaths: saveResult.configPaths, servers: saveResult.servers })
+      setRegistryMessages((current) => ({
+        ...current,
+        [result.id]: t.settings.installedInConfigs,
+      }))
+    } catch (installError) {
+      setRegistryError(installError instanceof Error ? installError.message : t.settings.unableSaveMcpServer)
+    } finally {
+      setInstallingRegistryId(null)
+    }
+  }
+
   function toggleServerProvider(server: McpServerConfig, provider: McpProviderId) {
     const hasProvider = server.providers.includes(provider)
     const nextProviders = hasProvider
@@ -1339,6 +1515,7 @@ export function McpSection({
 
   const servers = snapshot?.servers ?? []
   const configPaths = snapshot?.configPaths
+  const configuredServerNames = useMemo(() => new Set(servers.map((server) => server.name)), [servers])
 
   return (
     <div className="flex flex-col">
@@ -1412,6 +1589,62 @@ export function McpSection({
         ) : !loading ? (
           <div className="border-t border-border py-4 text-sm text-muted-foreground">
             {t.settings.noMcpServersConfigured}
+          </div>
+        ) : null}
+      </section>
+
+      <section className="mt-7 border-y border-border">
+        <SettingsRow
+          title={t.settings.registryMcpServers}
+          description={t.settings.registryMcpServersDescription}
+          bordered={false}
+          alignStart
+        >
+          <div className="w-full min-w-0 md:w-[560px]">
+            <div className="flex h-10 items-center gap-2 rounded-lg border border-border bg-card/30 px-3">
+              <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <input
+                type="text"
+                role="searchbox"
+                value={registryQuery}
+                onChange={(event) => setRegistryQuery(event.target.value)}
+                placeholder={t.settings.searchMcpRegistry}
+                className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+                dir="ltr"
+              />
+              {registryQuery ? (
+                <button
+                  type="button"
+                  aria-label={t.settings.clearMcpRegistrySearch}
+                  onClick={() => setRegistryQuery("")}
+                  className="touch-manipulation inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              ) : null}
+              {registryLoading ? <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" /> : null}
+            </div>
+            {registryError ? <div className="mt-2 text-xs text-destructive">{registryError}</div> : null}
+          </div>
+        </SettingsRow>
+
+        {registryResults.length > 0 ? (
+          <div className="border-t border-border">
+            {registryResults.map((result, index) => (
+              <div key={result.id} className={index > 0 ? "border-t border-border" : undefined}>
+                <McpRegistryResultRow
+                  result={result}
+                  installed={Boolean(result.configName && configuredServerNames.has(result.configName))}
+                  installing={installingRegistryId === result.id}
+                  message={registryMessages[result.id]}
+                  onInstall={() => { void installRegistryServer(result) }}
+                />
+              </div>
+            ))}
+          </div>
+        ) : !registryLoading && !registryError && registryQuery.trim().length >= 2 ? (
+          <div className="border-t border-border py-4 text-sm text-muted-foreground">
+            {t.settings.noMcpRegistryServersFound}
           </div>
         ) : null}
       </section>
@@ -1653,6 +1886,7 @@ export function SettingsPage() {
   const isConnecting = state.connectionStatus === "connecting" || !state.localProjectsReady
   const appSettings = state.appSettings
   const settingsAvailableProviders = appSettings?.availableProviders?.length ? appSettings.availableProviders : PROVIDERS
+  const providerModelCatalog = appSettings?.providerModelCatalog
   const locale = normalizeLocale(appSettings?.locale)
   const dictionary = getDictionary(locale)
   const direction = getLocaleDirection(locale)
@@ -1724,6 +1958,18 @@ export function SettingsPage() {
     { value: "notice" as const, label: dictionary.settings.options.notice },
     { value: "off" as const, label: dictionary.settings.options.off },
   ], [dictionary])
+  const modelCatalogLastRefresh = useMemo(() => {
+    const timestamps = Object.values(providerModelCatalog ?? {})
+      .map((inventory) => Date.parse(inventory.lastRefreshAt ?? ""))
+      .filter((value) => Number.isFinite(value))
+    if (timestamps.length === 0) return dictionary.settings.options.never
+    return dictionary.settings.lastCheckedAt(new Intl.DateTimeFormat(locale === "fa" ? "fa-IR" : undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(Math.max(...timestamps)))
+  }, [dictionary, locale, providerModelCatalog])
+  const modelCatalogErrorCount = useMemo(() => Object.values(providerModelCatalog ?? {})
+    .filter((inventory) => Boolean(inventory.lastError)).length, [providerModelCatalog])
   const [scrollbackDraft, setScrollbackDraft] = useState(String(scrollbackLines))
   const [minColumnWidthDraft, setMinColumnWidthDraft] = useState(String(minColumnWidth))
   const [editorCommandDraft, setEditorCommandDraft] = useState(editorCommandTemplate)
@@ -1732,6 +1978,12 @@ export function SettingsPage() {
   const [keybindingDrafts, setKeybindingDrafts] = useState<Record<string, string>>({})
   const [keybindingsError, setKeybindingsError] = useState<string | null>(null)
   const [appSettingsError, setAppSettingsError] = useState<string | null>(null)
+  const [modelRefreshStatus, setModelRefreshStatus] = useState<"idle" | "loading" | "success">("idle")
+  const [customModelDrafts, setCustomModelDrafts] = useState<Record<AgentProvider, string>>({
+    claude: "",
+    codex: "",
+    gemini: "",
+  })
   const [analyticsDialogOpen, setAnalyticsDialogOpen] = useState(false)
   const [llmProviderDraft, setLlmProviderDraft] = useState({
     provider: "openai" as LlmProviderKind,
@@ -2041,6 +2293,83 @@ export function SettingsPage() {
     })
   }
 
+  function providerCatalogEntry(provider: AgentProvider) {
+    return settingsAvailableProviders.find((candidate) => candidate.id === provider)
+      ?? PROVIDERS.find((candidate) => candidate.id === provider)
+      ?? PROVIDERS[0]
+  }
+
+  function providerModelInventory(provider: AgentProvider) {
+    return providerModelCatalog?.[provider] ?? {
+      discoveredModels: [],
+      customModels: [],
+    }
+  }
+
+  async function handleRefreshProviderModels() {
+    try {
+      setModelRefreshStatus("loading")
+      setAppSettingsError(null)
+      await state.socket.command({ type: "settings.refreshProviderModels" })
+      await state.handleReadAppSettings()
+      setModelRefreshStatus("success")
+    } catch (error) {
+      setModelRefreshStatus("idle")
+      setAppSettingsError(error instanceof Error ? error.message : "Unable to refresh provider models.")
+    }
+  }
+
+  function handleCustomModelDraftChange(provider: AgentProvider, value: string) {
+    setCustomModelDrafts((drafts) => ({ ...drafts, [provider]: value }))
+  }
+
+  function buildCustomModelOption(provider: AgentProvider, modelId: string): ProviderModelOption {
+    return {
+      id: modelId,
+      label: modelId,
+      supportsEffort: provider === "claude",
+    }
+  }
+
+  function handleAddCustomModel(provider: AgentProvider) {
+    const modelId = customModelDrafts[provider].trim()
+    if (!modelId) return
+    const inventory = providerModelInventory(provider)
+    const customModels = inventory.customModels ?? []
+    const nextCustomModels = customModels.some((model) => model.id === modelId)
+      ? customModels
+      : [...customModels, buildCustomModelOption(provider, modelId)]
+    setCustomModelDrafts((drafts) => ({ ...drafts, [provider]: "" }))
+    setProviderDefaultModel(provider, modelId)
+    void handleWriteAppSettings({
+      providerModelCatalog: {
+        [provider]: { customModels: nextCustomModels },
+      } as AppSettingsPatch["providerModelCatalog"],
+      providerDefaults: {
+        [provider]: { model: modelId },
+      } as AppSettingsPatch["providerDefaults"],
+    }).catch((error) => {
+      setAppSettingsError(error instanceof Error ? error.message : "Unable to save custom model.")
+    })
+  }
+
+  function handleRemoveCustomModel(provider: AgentProvider, modelId: string) {
+    const inventory = providerModelInventory(provider)
+    const nextCustomModels = (inventory.customModels ?? []).filter((model) => model.id !== modelId)
+    void handleWriteAppSettings({
+      providerModelCatalog: {
+        [provider]: { customModels: nextCustomModels },
+      } as AppSettingsPatch["providerModelCatalog"],
+    }).catch((error) => {
+      setAppSettingsError(error instanceof Error ? error.message : "Unable to remove custom model.")
+    })
+  }
+
+  function handleCustomModelKeyDown(event: KeyboardEvent<HTMLInputElement>, provider: AgentProvider) {
+    if (event.key !== "Enter") return
+    handleAddCustomModel(provider)
+  }
+
   function handleProviderProxyModeChange(mode: ProviderProxyMode) {
     void handleWriteAppSettings({
       providerProxy: {
@@ -2141,6 +2470,53 @@ export function SettingsPage() {
         setChangelogError(error instanceof Error ? error.message : "Unable to load changelog.")
         setChangelogStatus("error")
       })
+  }
+
+  function renderCustomModelControls(provider: AgentProvider) {
+    const providerConfig = providerCatalogEntry(provider)
+    const inventory = providerModelInventory(provider)
+    const customModels = inventory.customModels ?? []
+    return (
+      <div className="mt-3 flex w-full min-w-0 flex-col gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <Input
+            type="text"
+            value={customModelDrafts[provider]}
+            onChange={(event) => handleCustomModelDraftChange(provider, event.target.value)}
+            onKeyDown={(event) => handleCustomModelKeyDown(event, provider)}
+            placeholder={dictionary.settings.customModelPlaceholder(providerConfig.label)}
+            className="h-8 min-w-0 flex-1 font-mono text-xs"
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => handleAddCustomModel(provider)}
+            disabled={!customModelDrafts[provider].trim()}
+            className="h-8 shrink-0 gap-1.5"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            {dictionary.common.add}
+          </Button>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+          <span>{dictionary.settings.discoveredModelsCount(inventory.discoveredModels?.length ?? 0)}</span>
+          {customModels.map((model) => (
+            <span key={model.id} className="inline-flex max-w-full items-center gap-1 rounded-md border border-border bg-muted/40 px-2 py-1 font-mono text-[11px] text-foreground">
+              <span className="truncate">{model.id}</span>
+              <button
+                type="button"
+                onClick={() => handleRemoveCustomModel(provider, model.id)}
+                className="shrink-0 text-muted-foreground hover:text-foreground"
+                aria-label={dictionary.settings.removeCustomModel(model.id)}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      </div>
+    )
   }
 
   const customEditorPreview = editorCommandDraft
@@ -2676,6 +3052,39 @@ export function SettingsPage() {
                     </SettingsRow>
 
                     <SettingsRow
+                      title={dictionary.settings.modelCatalog}
+                      description={(
+                        <>
+                          <span>{dictionary.settings.modelCatalogDescription}</span>
+                          <span className="mt-1 block">{modelCatalogLastRefresh}</span>
+                          {modelCatalogErrorCount > 0 ? (
+                            <span className="mt-1 block text-destructive">
+                              {dictionary.settings.modelCatalogErrors(modelCatalogErrorCount)}
+                            </span>
+                          ) : null}
+                        </>
+                      )}
+                    >
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void handleRefreshProviderModels()}
+                        disabled={modelRefreshStatus === "loading"}
+                        className="gap-1.5"
+                      >
+                        {modelRefreshStatus === "loading" ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-4 w-4" />
+                        )}
+                        {modelRefreshStatus === "loading"
+                          ? dictionary.settings.refreshingModels
+                          : dictionary.settings.refreshModels}
+                      </Button>
+                    </SettingsRow>
+
+                    <SettingsRow
                       title={dictionary.settings.claudeDefaults}
                       description={dictionary.settings.claudeDefaultsDescription}
                       alignStart
@@ -2703,6 +3112,7 @@ export function SettingsPage() {
                           includePlanMode
                           className="justify-start flex-wrap"
                         />
+                        {renderCustomModelControls("claude")}
                       </div>
                     </SettingsRow>
 
@@ -2734,6 +3144,7 @@ export function SettingsPage() {
                           includePlanMode
                           className="justify-start flex-wrap"
                         />
+                        {renderCustomModelControls("codex")}
                       </div>
                     </SettingsRow>
 
@@ -2759,6 +3170,7 @@ export function SettingsPage() {
                           includePlanMode
                           className="justify-start flex-wrap"
                         />
+                        {renderCustomModelControls("gemini")}
                       </div>
                     </SettingsRow>
 

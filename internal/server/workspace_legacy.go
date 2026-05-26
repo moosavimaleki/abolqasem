@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"ai-agent-manager/internal/parser"
-	"ai-agent-manager/internal/providers/catalog"
 	"ai-agent-manager/internal/sessioninterop"
 	"ai-agent-manager/internal/state"
 	"ai-agent-manager/internal/workspace/events"
@@ -186,7 +185,7 @@ func workspaceLegacyChatSnapshot(chatID string, recentLimit int) any {
 		QueuedMessages:     []readmodels.QueuedChatMessage{},
 		Messages:           messages,
 		History:            history,
-		AvailableProviders: catalog.ServerProviders(),
+		AvailableProviders: workspaceAvailableProviders(),
 	}
 }
 
@@ -553,6 +552,13 @@ func workspaceSyncMaterializedLegacyChat(meta state.SessionMeta) error {
 		return workspaceSyncLegacyBackedChat(linkedChatID, meta)
 	}
 	return workspaceSyncLegacyBackedChat(legacyimport.ImportedChatID(meta), meta)
+}
+
+func workspaceLegacyBroadcastChatID(meta state.SessionMeta) string {
+	if linkedChatID, err := workspaceStoredChatIDForLegacySession(meta); err == nil && linkedChatID != "" {
+		return linkedChatID
+	}
+	return legacyimport.ImportedChatID(meta)
 }
 
 func workspaceLegacySessionNeedsSync(chat readmodels.ChatRecord, meta state.SessionMeta) bool {

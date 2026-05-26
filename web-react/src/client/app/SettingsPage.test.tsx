@@ -12,6 +12,7 @@ import {
   resolveSettingsSectionId,
   setCachedChangelog,
   shouldPreviewChatSoundChange,
+  McpSection,
   SkillsSection,
 } from "./SettingsPage"
 import { SettingsHeaderButton } from "../components/ui/settings-header-button"
@@ -163,6 +164,25 @@ describe("SkillsSection", () => {
     expect(html).toContain("Installed")
     expect(html).toContain("Discover")
     expect(html).toContain("Search skills")
+  })
+})
+
+describe("McpSection", () => {
+  test("renders configured servers and registry discover controls", () => {
+    const html = renderToStaticMarkup(
+      <McpSection
+        state={{
+          connectionStatus: "connected",
+          socket: {
+            command: async () => ({ configPaths: { codex: "", claude: "", gemini: "" }, servers: [] }),
+          } as never,
+        }}
+      />
+    )
+
+    expect(html).toContain("Configured MCP Servers")
+    expect(html).toContain("Registry")
+    expect(html).toContain("Search MCP registry")
   })
 })
 

@@ -2,7 +2,6 @@ package server
 
 import (
 	"ai-agent-manager/internal/analytics"
-	"ai-agent-manager/internal/providers/catalog"
 	"ai-agent-manager/internal/state"
 	"ai-agent-manager/internal/workspace/protocol"
 	"ai-agent-manager/internal/workspace/terminal"
@@ -316,6 +315,14 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 		}
 		response := protocol.AckEnvelope(envelope.ID, result)
 		return &response
+	case protocol.CommandMCPRegistrySearch:
+		result, err := workspaceMCPRegistrySearch(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		response := protocol.AckEnvelope(envelope.ID, result)
+		return &response
 	case protocol.CommandSystemOpenExternal:
 		if err := workspaceOpenExternal(envelope.Command); err != nil {
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
@@ -329,6 +336,15 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
 		}
+		response := protocol.AckEnvelope(envelope.ID, snapshot)
+		return &response
+	case protocol.CommandSettingsRefreshProviderModels:
+		if _, err := workspaceRefreshProviderModels(true); err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		snapshot := workspaceAppSettingsSnapshot()
+		workspaceConnections.broadcastAppSettings(snapshot)
 		response := protocol.AckEnvelope(envelope.ID, snapshot)
 		return &response
 	case protocol.CommandProjectOpen:
@@ -1099,7 +1115,10 @@ func (h *workspaceTerminalHub) close(raw json.RawMessage) error {
 }
 
 func workspaceAppSettingsSnapshot() map[string]any {
-	settings, _ := state.LoadSettings()
+	settings, err := workspaceRefreshProviderModels(false)
+	if err != nil {
+		settings, _ = state.LoadSettings()
+	}
 	settings = state.NormalizeSettings(settings)
 	return map[string]any{
 		"analyticsEnabled":        settings.AnalyticsEnabled,
@@ -1121,12 +1140,13 @@ func workspaceAppSettingsSnapshot() map[string]any {
 			"httpProxy": settings.ProviderProxy.HTTPProxy,
 			"noProxy":   settings.ProviderProxy.NoProxy,
 		},
-		"defaultProvider":    settings.DefaultProvider,
-		"providerDefaults":   providerDefaultsSnapshot(settings.ProviderDefaults),
-		"availableProviders": catalog.ServerProviders(),
-		"management":         workspaceManagementSnapshot(),
-		"warning":            nil,
-		"filePathDisplay":    state.GetSettingsFilePath(),
+		"defaultProvider":      settings.DefaultProvider,
+		"providerDefaults":     providerDefaultsSnapshot(settings.ProviderDefaults),
+		"providerModelCatalog": providerModelCatalogSnapshot(settings.ProviderModelCatalog),
+		"availableProviders":   workspaceAvailableProvidersForSettings(settings),
+		"management":           workspaceManagementSnapshot(),
+		"warning":              nil,
+		"filePathDisplay":      state.GetSettingsFilePath(),
 	}
 }
 

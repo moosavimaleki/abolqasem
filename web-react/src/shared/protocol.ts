@@ -103,6 +103,7 @@ export type ClientCommand =
   | { type: "settings.readAppSettings" }
   | { type: "settings.writeAppSettings"; analyticsEnabled: boolean }
   | { type: "settings.writeAppSettingsPatch"; patch: AppSettingsPatch }
+  | { type: "settings.refreshProviderModels" }
   | { type: "settings.readLlmProvider" }
   | { type: "skills.search"; query: string; limit?: number }
   | { type: "skills.install"; source: string; skillId: string }
@@ -112,6 +113,7 @@ export type ClientCommand =
   | { type: "mcp.list" }
   | { type: "mcp.save"; server: McpServerConfig }
   | { type: "mcp.remove"; name: string }
+  | { type: "mcp.registrySearch"; query: string; limit?: number }
   | {
       type: "settings.writeLlmProvider"
       provider: LlmProviderSnapshot["provider"]

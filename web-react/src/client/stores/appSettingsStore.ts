@@ -56,6 +56,22 @@ export function mergeAppSettingsPatch(
         },
       },
     },
+    providerModelCatalog: {
+      ...settings.providerModelCatalog,
+      ...patch.providerModelCatalog,
+      claude: {
+        ...settings.providerModelCatalog.claude,
+        ...patch.providerModelCatalog?.claude,
+      },
+      codex: {
+        ...settings.providerModelCatalog.codex,
+        ...patch.providerModelCatalog?.codex,
+      },
+      gemini: {
+        ...settings.providerModelCatalog.gemini,
+        ...patch.providerModelCatalog?.gemini,
+      },
+    },
   }
 }
 

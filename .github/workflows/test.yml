@@ -31,7 +31,7 @@ jobs:
         if: runner.os == 'Windows'
       - run: go vet ./...
       - run: go test ./...
-      - run: go build -trimpath -o dist/abolqasem ./cmd/ai-agent-manager
+      - run: go build -trimpath -o dist/abolqasem ./cmd/abolqasem
 
   web:
     runs-on: ubuntu-latest
@@ -164,7 +164,7 @@ jobs:
           ASSET="abolqasem-$TARGET_OS-$TARGET_ARCH.tar.gz"
 
           mkdir -p "$WEBROOT/releases/latest/download" "$PKGROOT" "$BINDIR"
-          CGO_ENABLED=0 GOOS="$TARGET_OS" GOARCH="$TARGET_ARCH" go build -trimpath -ldflags="-s -w" -o "$PKGROOT/abolqasem" ./cmd/ai-agent-manager
+          CGO_ENABLED=0 GOOS="$TARGET_OS" GOARCH="$TARGET_ARCH" go build -trimpath -ldflags="-s -w" -o "$PKGROOT/abolqasem" ./cmd/abolqasem
           tar -C "$PKGROOT" -czf "$WEBROOT/releases/latest/download/$ASSET" abolqasem
 
           python3 -m http.server 18080 --bind 127.0.0.1 --directory "$WEBROOT" >/tmp/abolqasem-http.log 2>&1 &
@@ -225,7 +225,7 @@ jobs:
           $env:CGO_ENABLED = "0"
           $env:GOOS = "windows"
           $env:GOARCH = $TargetArch
-          go build -trimpath -ldflags="-s -w" -o $BinaryPath ./cmd/ai-agent-manager
+          go build -trimpath -ldflags="-s -w" -o $BinaryPath ./cmd/abolqasem
           Compress-Archive -Path $BinaryPath -DestinationPath $ArchivePath -Force
 
           $Python = if (Get-Command py -ErrorAction SilentlyContinue) { "py" } elseif (Get-Command python -ErrorAction SilentlyContinue) { "python" } else { throw "Python is required for the local asset server" }

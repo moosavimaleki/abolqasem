@@ -3,7 +3,7 @@
 set -eu
 
 APP="abolqasem"
-PKG="./cmd/ai-agent-manager"
+PKG="./cmd/abolqasem"
 DIST="dist"
 SCOPE="user"
 HOOKS="1"

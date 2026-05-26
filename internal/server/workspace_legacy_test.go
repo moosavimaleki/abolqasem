@@ -725,6 +725,62 @@ func TestWorkspaceMaterializeLegacyChatReusesStoredChatBySessionToken(t *testing
 	}
 }
 
+func TestWorkspaceLegacyBroadcastChatIDReusesStoredChatBySessionToken(t *testing.T) {
+	dir := t.TempDir()
+	previousDataDir := workspaceDataDir
+	previousCoordinator := workspaceCoordinator
+	previousCoordinatorDir := workspaceCoordinatorDir
+	workspaceDataDir = func() string { return filepath.Join(dir, "workspace-data") }
+	workspaceCoordinator = nil
+	workspaceCoordinatorDir = ""
+	t.Cleanup(func() {
+		workspaceDataDir = previousDataDir
+		workspaceCoordinator = previousCoordinator
+		workspaceCoordinatorDir = previousCoordinatorDir
+	})
+
+	projectDir := filepath.Join(dir, "project")
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatalf("mkdir project: %v", err)
+	}
+	transcriptPath := filepath.Join(dir, "rollout-2026-05-16T00-00-00-000Z-aaaa-bbbb-cccc-dddd-eeee.jsonl")
+	meta := state.SessionMeta{
+		Key:            "codex:aaaa-bbbb-cccc-dddd-eeee",
+		Agent:          "codex",
+		SessionID:      "aaaa-bbbb-cccc-dddd-eeee",
+		TranscriptPath: transcriptPath,
+		Cwd:            projectDir,
+		ProjectName:    "Project",
+		UpdatedAt:      time.Unix(1700000000, 0),
+	}
+	withLegacyState(t, &state.AppState{Sessions: map[string]state.SessionMeta{meta.Key: meta}})
+
+	store := workspaceStore()
+	project := legacyimport.ImportSession(meta, nil, legacyimport.ImportOptions{}).Project
+	appendWorkspaceEvent(t, store, events.StreamProjects, events.TypeProjectOpened, 100, map[string]any{
+		"projectId": project.ID,
+		"localPath": project.LocalPath,
+		"title":     project.Title,
+	})
+	appendWorkspaceEvent(t, store, events.StreamChats, events.TypeChatCreated, 100, map[string]any{
+		"chatId":    "chat-existing",
+		"projectId": project.ID,
+		"title":     "New Chat",
+	})
+	appendWorkspaceEvent(t, store, events.StreamChats, events.TypeChatProviderSet, 101, map[string]any{
+		"chatId":   "chat-existing",
+		"provider": "codex",
+	})
+	appendWorkspaceEvent(t, store, events.StreamTurns, events.TypeSessionTokenSet, 102, map[string]any{
+		"chatId":       "chat-existing",
+		"sessionToken": meta.SessionID,
+	})
+
+	if chatID := workspaceLegacyBroadcastChatID(meta); chatID != "chat-existing" {
+		t.Fatalf("expected hook broadcast to target existing chat, got %q", chatID)
+	}
+}
+
 func TestWorkspaceRecordHookPromptCheckpointReusesStoredChatBySessionToken(t *testing.T) {
 	dir := t.TempDir()
 	previousDataDir := workspaceDataDir

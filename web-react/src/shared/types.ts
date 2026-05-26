@@ -288,6 +288,15 @@ export interface ProviderCatalogEntry {
   efforts: ProviderEffortOption[]
 }
 
+export interface ProviderModelInventory {
+  discoveredModels: ProviderModelOption[]
+  customModels: ProviderModelOption[]
+  lastRefreshAt?: string
+  lastError?: string
+}
+
+export type ProviderModelCatalog = Record<AgentProvider, ProviderModelInventory>
+
 export const PROVIDERS: ProviderCatalogEntry[] = [
   {
     id: "claude",
@@ -514,6 +523,7 @@ export interface AppSettingsSnapshot {
   }
   defaultProvider: DefaultProviderPreference
   providerDefaults: ChatProviderPreferences
+  providerModelCatalog: ProviderModelCatalog
   availableProviders: ProviderCatalogEntry[]
   management?: AppManagementSnapshot
   warning: string | null
@@ -566,6 +576,9 @@ export interface AppSettingsPatch {
     codex?: Partial<ProviderPreference<CodexModelOptions>>
     gemini?: Partial<ProviderPreference<GeminiModelOptions>>
   }
+  providerModelCatalog?: Partial<Record<AgentProvider, {
+    customModels?: ProviderModelOption[]
+  }>>
 }
 
 export interface LlmProviderFile {
@@ -678,6 +691,35 @@ export interface McpSettingsSnapshot {
 
 export interface McpSaveResult extends McpSettingsSnapshot {
   server: McpServerConfig
+}
+
+export interface McpRegistrySearchResult {
+  id: string
+  registryName: string
+  name: string
+  configName?: string
+  title?: string
+  description: string
+  version: string
+  status: string
+  sourceUrl?: string
+  repositoryUrl?: string
+  websiteUrl?: string
+  transport?: McpTransport
+  command?: string
+  args?: string[]
+  url?: string
+  installable: boolean
+  installReason?: string
+  requiresConfiguration?: boolean
+  configurationNotes?: string[]
+  config?: McpServerConfig
+}
+
+export interface McpRegistrySearchSnapshot {
+  query: string
+  servers: McpRegistrySearchResult[]
+  count: number
 }
 
 export interface AccountInfo {

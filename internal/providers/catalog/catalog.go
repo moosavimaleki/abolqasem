@@ -46,6 +46,15 @@ type ProviderContextWindowOption struct {
 	Label string `json:"label"`
 }
 
+type ProviderModelInventoryByProvider map[string]ProviderModelInventory
+
+type ProviderModelInventory struct {
+	DiscoveredModels []ProviderModelOption `json:"discovered_models"`
+	CustomModels     []ProviderModelOption `json:"custom_models"`
+	LastRefreshAt    string                `json:"last_refresh_at,omitempty"`
+	LastError        string                `json:"last_error,omitempty"`
+}
+
 type ModelOptions struct {
 	Claude *ClaudeModelOptionsPatch `json:"claude,omitempty"`
 	Codex  *CodexModelOptionsPatch  `json:"codex,omitempty"`
@@ -128,10 +137,28 @@ func ServerProviders() []ProviderCatalogEntry {
 	return cloneProviders(serverProviders)
 }
 
+func ServerProvidersWithInventory(inventory ProviderModelInventoryByProvider) []ProviderCatalogEntry {
+	providers := cloneProviders(serverProviders)
+	for index := range providers {
+		providers[index] = withModelInventory(providers[index], inventory[providers[index].ID])
+	}
+	return providers
+}
+
 func Get(providerID string) (ProviderCatalogEntry, bool) {
 	for _, provider := range serverProviders {
 		if provider.ID == providerID {
 			return withRuntimeProviderDefaults(cloneProvider(provider)), true
+		}
+	}
+	return ProviderCatalogEntry{}, false
+}
+
+func GetWithInventory(providerID string, inventory ProviderModelInventoryByProvider) (ProviderCatalogEntry, bool) {
+	for _, provider := range serverProviders {
+		if provider.ID == providerID {
+			cloned := withRuntimeProviderDefaults(cloneProvider(provider))
+			return withModelInventory(cloned, inventory[provider.ID]), true
 		}
 	}
 	return ProviderCatalogEntry{}, false
@@ -142,6 +169,14 @@ func GetOrDefault(providerID string) ProviderCatalogEntry {
 		return provider
 	}
 	provider, _ := Get("codex")
+	return provider
+}
+
+func GetOrDefaultWithInventory(providerID string, inventory ProviderModelInventoryByProvider) ProviderCatalogEntry {
+	if provider, ok := GetWithInventory(providerID, inventory); ok {
+		return provider
+	}
+	provider, _ := GetWithInventory("codex", inventory)
 	return provider
 }
 
@@ -383,7 +418,25 @@ func NormalizeModel(providerID string, modelID string) string {
 }
 
 func NormalizeServerModel(providerID string, modelID string) string {
-	provider := GetOrDefault(providerID)
+	provider, ok := Get(providerID)
+	if !ok {
+		provider = GetOrDefault(providerID)
+		return provider.DefaultModel
+	}
+	return normalizeModelForProvider(provider, modelID)
+}
+
+func NormalizeServerModelWithInventory(providerID string, modelID string, inventory ProviderModelInventoryByProvider) string {
+	provider, ok := GetWithInventory(providerID, inventory)
+	if !ok {
+		provider = GetOrDefaultWithInventory(providerID, inventory)
+		return provider.DefaultModel
+	}
+	return normalizeModelForProvider(provider, modelID)
+}
+
+func normalizeModelForProvider(provider ProviderCatalogEntry, modelID string) string {
+	modelID = strings.TrimSpace(modelID)
 	for _, model := range provider.Models {
 		if model.ID == modelID || modelAliasMatches(provider.ID, model.ID, modelID) {
 			return model.ID
@@ -393,6 +446,9 @@ func NormalizeServerModel(providerID string, modelID string) string {
 				return model.ID
 			}
 		}
+	}
+	if modelID != "" {
+		return modelID
 	}
 	return provider.DefaultModel
 }
@@ -582,6 +638,96 @@ func cloneProvider(provider ProviderCatalogEntry) ProviderCatalogEntry {
 	}
 	cloned.Efforts = append([]ProviderEffortOption(nil), provider.Efforts...)
 	return cloned
+}
+
+func NormalizeProviderModelOption(providerID string, model ProviderModelOption) (ProviderModelOption, bool) {
+	model.ID = strings.TrimSpace(model.ID)
+	model.Label = strings.TrimSpace(model.Label)
+	if model.ID == "" {
+		return ProviderModelOption{}, false
+	}
+	if model.Label == "" {
+		model.Label = model.ID
+	}
+	model.Aliases = trimStrings(model.Aliases)
+	switch providerID {
+	case "claude":
+		model.SupportsEffort = true
+		if len(model.ContextWindowOptions) == 0 && claudeModelSupportsLargeContext(model.ID) {
+			model.ContextWindowOptions = []ProviderContextWindowOption{{ID: "200k", Label: "200k"}, {ID: "1m", Label: "1M"}}
+		}
+		if strings.Contains(strings.ToLower(model.ID), "opus") {
+			model.SupportsMaxReasoningEffort = true
+		}
+	case "codex":
+		if model.ID == "gpt-5.3-codex" && len(model.Aliases) == 0 {
+			model.Aliases = []string{"gpt-5-codex"}
+		}
+	}
+	return model, true
+}
+
+func withModelInventory(provider ProviderCatalogEntry, inventory ProviderModelInventory) ProviderCatalogEntry {
+	discovered := normalizeProviderModelOptions(provider.ID, inventory.DiscoveredModels)
+	custom := normalizeProviderModelOptions(provider.ID, inventory.CustomModels)
+	if len(discovered) > 0 {
+		provider.Models = discovered
+	}
+	provider.Models = mergeProviderModelOptions(provider.Models, custom)
+	if len(provider.Models) > 0 && !hasProviderModel(provider.Models, provider.DefaultModel) {
+		provider.DefaultModel = provider.Models[0].ID
+	}
+	return provider
+}
+
+func normalizeProviderModelOptions(providerID string, models []ProviderModelOption) []ProviderModelOption {
+	out := make([]ProviderModelOption, 0, len(models))
+	seen := map[string]bool{}
+	for _, model := range models {
+		normalized, ok := NormalizeProviderModelOption(providerID, model)
+		if !ok || seen[normalized.ID] {
+			continue
+		}
+		seen[normalized.ID] = true
+		out = append(out, normalized)
+	}
+	return out
+}
+
+func mergeProviderModelOptions(base []ProviderModelOption, extra []ProviderModelOption) []ProviderModelOption {
+	out := append([]ProviderModelOption(nil), base...)
+	seen := map[string]int{}
+	for index, model := range out {
+		seen[model.ID] = index
+	}
+	for _, model := range extra {
+		if existingIndex, ok := seen[model.ID]; ok {
+			out[existingIndex] = model
+			continue
+		}
+		seen[model.ID] = len(out)
+		out = append(out, model)
+	}
+	return out
+}
+
+func trimStrings(values []string) []string {
+	out := make([]string, 0, len(values))
+	seen := map[string]bool{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	return out
+}
+
+func claudeModelSupportsLargeContext(modelID string) bool {
+	modelID = strings.ToLower(modelID)
+	return strings.Contains(modelID, "opus") || strings.Contains(modelID, "sonnet")
 }
 
 func withRuntimeProviderDefaults(provider ProviderCatalogEntry) ProviderCatalogEntry {

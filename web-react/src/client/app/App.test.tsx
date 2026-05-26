@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { applyDocumentLocale, getAppAuthStateFromStatus, getDocumentBootstrapLocale, shouldPlayChatNotificationSound, shouldRedirectToChangelog, shouldRetryAuthStatusRequest, shouldShowStartupSplash } from "./App"
+import { applyDocumentLocale, getAppAuthStateFromStatus, getDocumentBootstrapLocale, shouldPlayChatNotificationSound, shouldRedirectToChangelog, shouldRetryAuthStatusRequest, shouldShowHookUpdateToast, shouldShowStartupSplash, type HookStreamEvent } from "./App"
 import { getChatNotificationSnapshot, getChatSoundBurstCount, getNotificationTitleCount } from "./chatNotifications"
 import { DEFAULT_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, clampSidebarWidth } from "./AbolqasemSidebar"
 import { isBrowserUnfocused, shouldPlayChatSound } from "../lib/chatSounds"
@@ -90,6 +90,38 @@ describe("shouldShowStartupSplash", () => {
     expect(shouldShowStartupSplash(false, false, true)).toBe(true)
     expect(shouldShowStartupSplash(false, true, true)).toBe(false)
     expect(shouldShowStartupSplash(true, false, false)).toBe(false)
+  })
+})
+
+describe("shouldShowHookUpdateToast", () => {
+  const event: HookStreamEvent = {
+    source: "hook",
+    event_key: "codex:session:1",
+    session_id: "session",
+    chat_id: "chat-updated",
+    session_name: "Updated Session",
+  }
+  const noticeSettings = {
+    management: {
+      hookNotifications: {
+        enabled: true,
+        followMode: "notice",
+      },
+    },
+  } as AppSettingsSnapshot
+
+  test("shows notice-mode hook updates for a different chat", () => {
+    expect(shouldShowHookUpdateToast(event, "chat-active", noticeSettings)).toBe(true)
+  })
+
+  test("does not toast the active chat or disabled hook modes", () => {
+    expect(shouldShowHookUpdateToast(event, "chat-updated", noticeSettings)).toBe(false)
+    expect(shouldShowHookUpdateToast(event, "chat-active", {
+      management: { hookNotifications: { enabled: true, followMode: "auto" } },
+    } as AppSettingsSnapshot)).toBe(false)
+    expect(shouldShowHookUpdateToast(event, "chat-active", {
+      management: { hookNotifications: { enabled: false, followMode: "notice" } },
+    } as AppSettingsSnapshot)).toBe(false)
   })
 })
 

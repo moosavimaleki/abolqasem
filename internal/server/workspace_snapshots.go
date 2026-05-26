@@ -58,7 +58,11 @@ func workspaceChatSnapshot(chatID string, recentLimit int) any {
 			storeState = refreshedState
 		}
 		coordinator := workspaceAgentCoordinator()
-		return readmodels.DeriveChatSnapshot(storeState, coordinator.ActiveStatuses(), coordinator.DrainingChatIDs(), chatID, transcript)
+		snapshot := readmodels.DeriveChatSnapshot(storeState, coordinator.ActiveStatuses(), coordinator.DrainingChatIDs(), chatID, transcript)
+		if snapshot != nil {
+			snapshot.AvailableProviders = workspaceAvailableProviders()
+		}
+		return snapshot
 	}
 	if snapshot := workspaceLegacyChatSnapshot(chatID, recentLimit); snapshot != nil {
 		return snapshot

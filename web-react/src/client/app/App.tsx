@@ -8,7 +8,7 @@ import { Button } from "../components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card"
 import { Input } from "../components/ui/input"
 import { TooltipProvider } from "../components/ui/tooltip"
-import { Loader2 } from "lucide-react"
+import { Bell, Loader2, X } from "lucide-react"
 import { getAppearanceThemeClassName, useDocumentAppearanceTheme, useReaderAppearanceSettings } from "../components/appearance/ReaderAppearance"
 import { APP_NAME, SDK_CLIENT_APP } from "../../shared/branding"
 import { useChatSoundPreferencesStore } from "../stores/chatSoundPreferencesStore"
@@ -41,6 +41,48 @@ type AppAuthState =
   | { status: "checking" }
   | { status: "ready" }
   | { status: "locked"; error: string | null }
+
+export interface HookStreamEvent {
+  source?: string
+  event_key?: string
+  session_key?: string
+  session_id?: string
+  chat_id?: string
+  session_name?: string
+  project_name?: string
+  updated_at?: string
+}
+
+interface HookUpdateToastState {
+  id: string
+  chatId: string
+  sessionName: string
+  projectName: string
+}
+
+export function shouldShowHookUpdateToast(
+  event: HookStreamEvent | null,
+  activeChatId: string | null,
+  appSettings: AppSettingsSnapshot | null
+) {
+  const hookNotifications = appSettings?.management?.hookNotifications
+  return Boolean(
+    event?.source === "hook"
+      && event.chat_id
+      && event.chat_id !== activeChatId
+      && hookNotifications?.enabled
+      && hookNotifications.followMode === "notice"
+  )
+}
+
+function parseHookStreamEvent(data: string): HookStreamEvent | null {
+  try {
+    const parsed = JSON.parse(data) as HookStreamEvent
+    return parsed && typeof parsed === "object" ? parsed : null
+  } catch {
+    return null
+  }
+}
 
 function SplashScreen({
   locale,
@@ -76,6 +118,57 @@ function SplashScreen({
           </div>
         </section>
       </main>
+    </div>
+  )
+}
+
+function HookUpdateToast({
+  toast,
+  locale,
+  onOpen,
+  onDismiss,
+}: {
+  toast: HookUpdateToastState
+  locale: "fa" | "en"
+  onOpen: () => void
+  onDismiss: () => void
+}) {
+  const title = locale === "fa" ? "سشن به‌روزرسانی شد" : "Session updated"
+  const openLabel = locale === "fa" ? "باز کردن" : "Open"
+  const dismissLabel = locale === "fa" ? "بستن" : "Dismiss"
+  const sessionName = toast.sessionName || (locale === "fa" ? "سشن" : "Session")
+
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      dir={getLocaleDirection(locale)}
+      className="fixed bottom-4 left-1/2 z-[900] w-[calc(100vw-2rem)] max-w-sm -translate-x-1/2 rounded-lg border border-border bg-popover p-3 text-popover-foreground shadow-lg"
+    >
+      <div className="flex items-start gap-3">
+        <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+          <Bell className="size-4" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-semibold">{title}</div>
+          <div className="mt-0.5 truncate text-sm text-muted-foreground">{sessionName}</div>
+          {toast.projectName ? (
+            <div className="mt-0.5 truncate text-xs text-muted-foreground">{toast.projectName}</div>
+          ) : null}
+          <div className="mt-3 flex items-center gap-2">
+            <Button type="button" size="sm" onClick={onOpen}>{openLabel}</Button>
+            <Button type="button" variant="ghost" size="sm" onClick={onDismiss}>{dismissLabel}</Button>
+          </div>
+        </div>
+        <button
+          type="button"
+          aria-label={dismissLabel}
+          onClick={onDismiss}
+          className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <X className="size-4" />
+        </button>
+      </div>
     </div>
   )
 }
@@ -379,6 +472,10 @@ function AbolqasemLayout() {
     STARTUP_SPLASH_MIN_VISIBLE_MS
   )
   const previousSidebarDataRef = useRef<ReturnType<typeof useAbolqasemState>["sidebarData"] | null>(null)
+  const activeChatIdRef = useRef(state.activeChatId)
+  const appSettingsRef = useRef(state.appSettings)
+  const hookEventKeysRef = useRef<Set<string>>(new Set())
+  const [hookToast, setHookToast] = useState<HookUpdateToastState | null>(null)
   const handleSidebarCreateChat = useCallback((projectId: string) => {
     void state.handleCreateChat(projectId)
   }, [state.handleCreateChat])
@@ -498,6 +595,50 @@ function AbolqasemLayout() {
   }, [bootReady, initialBootComplete])
 
   useEffect(() => {
+    activeChatIdRef.current = state.activeChatId
+    appSettingsRef.current = state.appSettings
+  }, [state.activeChatId, state.appSettings])
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.EventSource === "undefined") return
+
+    const eventSource = new window.EventSource("/api/events")
+    eventSource.onmessage = (message) => {
+      const event = parseHookStreamEvent(message.data)
+      if (!event || event.source !== "hook") return
+
+      if (!shouldShowHookUpdateToast(event, activeChatIdRef.current, appSettingsRef.current)) return
+
+      const eventKey = event.event_key || `${event.chat_id ?? ""}:${event.updated_at ?? ""}`
+      if (eventKey && hookEventKeysRef.current.has(eventKey)) return
+      if (eventKey) {
+        hookEventKeysRef.current.add(eventKey)
+        if (hookEventKeysRef.current.size > 80) {
+          hookEventKeysRef.current.clear()
+          hookEventKeysRef.current.add(eventKey)
+        }
+      }
+
+      setHookToast({
+        id: eventKey || String(Date.now()),
+        chatId: event.chat_id || "",
+        sessionName: event.session_name || event.session_id || "",
+        projectName: event.project_name || "",
+      })
+    }
+
+    return () => eventSource.close()
+  }, [])
+
+  useEffect(() => {
+    if (!hookToast) return
+    const timeout = window.setTimeout(() => {
+      setHookToast((current) => current?.id === hookToast.id ? null : current)
+    }, 8000)
+    return () => window.clearTimeout(timeout)
+  }, [hookToast])
+
+  useEffect(() => {
     const seenVersion = window.localStorage.getItem(VERSION_SEEN_STORAGE_KEY)
     const shouldRedirect = shouldRedirectToChangelog(location.pathname, currentVersion, seenVersion)
     window.localStorage.setItem(VERSION_SEEN_STORAGE_KEY, currentVersion)
@@ -564,6 +705,17 @@ function AbolqasemLayout() {
       <div className={cn("flex h-[100dvh] min-h-[100dvh] overflow-hidden bg-background text-foreground", getAppearanceThemeClassName(appearanceSettings))}>
         {sidebarElement}
         <Outlet context={state} />
+        {hookToast ? (
+          <HookUpdateToast
+            toast={hookToast}
+            locale={locale}
+            onOpen={() => {
+              navigate(chatRoute(hookToast.chatId))
+              setHookToast(null)
+            }}
+            onDismiss={() => setHookToast(null)}
+          />
+        ) : null}
         <StandaloneShareDialog
           open={Boolean(state.standaloneShareUrl)}
           shareUrl={state.standaloneShareUrl ?? ""}

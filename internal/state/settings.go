@@ -20,23 +20,24 @@ const (
 )
 
 type AppSettings struct {
-	HookUpdates                     bool                          `json:"hook_updates"`
-	HookFollowMode                  string                        `json:"hook_follow_mode"`
-	IgnoreHookNavigationWhileTyping bool                          `json:"ignore_hook_navigation_while_typing"`
-	FilesystemDiscovery             bool                          `json:"filesystem_discovery"`
-	Locale                          string                        `json:"locale"`
-	Theme                           string                        `json:"theme"`
-	AnalyticsEnabled                bool                          `json:"analytics_enabled"`
-	BrowserSettingsMigrated         bool                          `json:"browser_settings_migrated"`
-	ChatSoundPreference             string                        `json:"chat_sound_preference"`
-	ChatSoundID                     string                        `json:"chat_sound_id"`
-	Terminal                        TerminalSettings              `json:"terminal"`
-	Editor                          EditorSettings                `json:"editor"`
-	ProviderProxy                   ProviderProxySettings         `json:"provider_proxy"`
-	DefaultProvider                 string                        `json:"default_provider"`
-	ProviderDefaults                map[string]ProviderPreference `json:"provider_defaults"`
-	DefaultAgent                    string                        `json:"default_agent"`
-	AgentModels                     map[string]string             `json:"agent_models"`
+	HookUpdates                     bool                                     `json:"hook_updates"`
+	HookFollowMode                  string                                   `json:"hook_follow_mode"`
+	IgnoreHookNavigationWhileTyping bool                                     `json:"ignore_hook_navigation_while_typing"`
+	FilesystemDiscovery             bool                                     `json:"filesystem_discovery"`
+	Locale                          string                                   `json:"locale"`
+	Theme                           string                                   `json:"theme"`
+	AnalyticsEnabled                bool                                     `json:"analytics_enabled"`
+	BrowserSettingsMigrated         bool                                     `json:"browser_settings_migrated"`
+	ChatSoundPreference             string                                   `json:"chat_sound_preference"`
+	ChatSoundID                     string                                   `json:"chat_sound_id"`
+	Terminal                        TerminalSettings                         `json:"terminal"`
+	Editor                          EditorSettings                           `json:"editor"`
+	ProviderProxy                   ProviderProxySettings                    `json:"provider_proxy"`
+	DefaultProvider                 string                                   `json:"default_provider"`
+	ProviderDefaults                map[string]ProviderPreference            `json:"provider_defaults"`
+	ProviderModelCatalog            catalog.ProviderModelInventoryByProvider `json:"provider_model_catalog"`
+	DefaultAgent                    string                                   `json:"default_agent"`
+	AgentModels                     map[string]string                        `json:"agent_models"`
 }
 
 type TerminalSettings struct {
@@ -62,17 +63,18 @@ type ProviderPreference struct {
 }
 
 type AppSettingsPatch struct {
-	AnalyticsEnabled        *bool                              `json:"analyticsEnabled"`
-	BrowserSettingsMigrated *bool                              `json:"browserSettingsMigrated"`
-	Locale                  string                             `json:"locale"`
-	Theme                   string                             `json:"theme"`
-	ChatSoundPreference     string                             `json:"chatSoundPreference"`
-	ChatSoundID             string                             `json:"chatSoundId"`
-	Terminal                *TerminalSettingsPatch             `json:"terminal"`
-	Editor                  *EditorSettingsPatch               `json:"editor"`
-	ProviderProxy           *ProviderProxySettingsPatch        `json:"providerProxy"`
-	DefaultProvider         string                             `json:"defaultProvider"`
-	ProviderDefaults        map[string]ProviderPreferencePatch `json:"providerDefaults"`
+	AnalyticsEnabled        *bool                                  `json:"analyticsEnabled"`
+	BrowserSettingsMigrated *bool                                  `json:"browserSettingsMigrated"`
+	Locale                  string                                 `json:"locale"`
+	Theme                   string                                 `json:"theme"`
+	ChatSoundPreference     string                                 `json:"chatSoundPreference"`
+	ChatSoundID             string                                 `json:"chatSoundId"`
+	Terminal                *TerminalSettingsPatch                 `json:"terminal"`
+	Editor                  *EditorSettingsPatch                   `json:"editor"`
+	ProviderProxy           *ProviderProxySettingsPatch            `json:"providerProxy"`
+	DefaultProvider         string                                 `json:"defaultProvider"`
+	ProviderDefaults        map[string]ProviderPreferencePatch     `json:"providerDefaults"`
+	ProviderModelCatalog    map[string]ProviderModelInventoryPatch `json:"providerModelCatalog"`
 }
 
 type TerminalSettingsPatch struct {
@@ -95,6 +97,10 @@ type ProviderPreferencePatch struct {
 	Model        *string        `json:"model"`
 	ModelOptions map[string]any `json:"modelOptions"`
 	PlanMode     *bool          `json:"planMode"`
+}
+
+type ProviderModelInventoryPatch struct {
+	CustomModels *[]catalog.ProviderModelOption `json:"customModels"`
 }
 
 func DefaultAppSettings() AppSettings {
@@ -142,8 +148,9 @@ func DefaultAppSettings() AppSettings {
 				PlanMode:     false,
 			},
 		},
-		DefaultAgent: "codex",
-		AgentModels:  map[string]string{"codex": ""},
+		ProviderModelCatalog: catalog.ProviderModelInventoryByProvider{},
+		DefaultAgent:         "codex",
+		AgentModels:          map[string]string{"codex": ""},
 	}
 }
 
@@ -215,7 +222,8 @@ func NormalizeSettings(settings AppSettings) AppSettings {
 	settings.Editor = normalizeEditorSettings(settings.Editor, defaults.Editor)
 	settings.ProviderProxy = normalizeProviderProxySettings(settings.ProviderProxy)
 	settings.DefaultProvider = normalizeDefaultProvider(settings.DefaultProvider, defaults.DefaultProvider)
-	settings.ProviderDefaults = normalizeProviderDefaults(settings.ProviderDefaults, defaults.ProviderDefaults)
+	settings.ProviderModelCatalog = normalizeProviderModelCatalog(settings.ProviderModelCatalog)
+	settings.ProviderDefaults = normalizeProviderDefaults(settings.ProviderDefaults, defaults.ProviderDefaults, settings.ProviderModelCatalog)
 	settings.AgentModels = normalizeAgentModels(settings.AgentModels)
 	return settings
 }
@@ -289,6 +297,22 @@ func ApplySettingsPatch(settings AppSettings, patch AppSettingsPatch) AppSetting
 				current.PlanMode = *providerPatch.PlanMode
 			}
 			settings.ProviderDefaults[provider] = current
+		}
+	}
+	if len(patch.ProviderModelCatalog) > 0 {
+		if settings.ProviderModelCatalog == nil {
+			settings.ProviderModelCatalog = catalog.ProviderModelInventoryByProvider{}
+		}
+		for provider, modelPatch := range patch.ProviderModelCatalog {
+			provider = normalizeWorkspaceProvider(provider)
+			if provider == "" {
+				continue
+			}
+			current := settings.ProviderModelCatalog[provider]
+			if modelPatch.CustomModels != nil {
+				current.CustomModels = append([]catalog.ProviderModelOption(nil), (*modelPatch.CustomModels)...)
+			}
+			settings.ProviderModelCatalog[provider] = current
 		}
 	}
 	return NormalizeSettings(settings)
@@ -436,7 +460,7 @@ func normalizeWorkspaceProvider(value string) string {
 	return ""
 }
 
-func normalizeProviderDefaults(settings map[string]ProviderPreference, defaults map[string]ProviderPreference) map[string]ProviderPreference {
+func normalizeProviderDefaults(settings map[string]ProviderPreference, defaults map[string]ProviderPreference, modelCatalog catalog.ProviderModelInventoryByProvider) map[string]ProviderPreference {
 	normalized := map[string]ProviderPreference{}
 	for provider, fallback := range defaults {
 		current := settings[provider]
@@ -446,11 +470,42 @@ func normalizeProviderDefaults(settings map[string]ProviderPreference, defaults 
 		if provider == "codex" {
 			current.Model = normalizeCodexCLIDefaultModel(current.Model)
 		}
-		current.Model = catalog.NormalizeServerModel(provider, current.Model)
+		current.Model = catalog.NormalizeServerModelWithInventory(provider, current.Model, modelCatalog)
 		current.ModelOptions = mergeMap(fallback.ModelOptions, current.ModelOptions)
 		normalized[provider] = current
 	}
 	return normalized
+}
+
+func normalizeProviderModelCatalog(modelCatalog catalog.ProviderModelInventoryByProvider) catalog.ProviderModelInventoryByProvider {
+	normalized := catalog.ProviderModelInventoryByProvider{}
+	for provider, inventory := range modelCatalog {
+		provider = normalizeWorkspaceProvider(provider)
+		if provider == "" {
+			continue
+		}
+		normalized[provider] = catalog.ProviderModelInventory{
+			DiscoveredModels: normalizeProviderModelOptions(provider, inventory.DiscoveredModels),
+			CustomModels:     normalizeProviderModelOptions(provider, inventory.CustomModels),
+			LastRefreshAt:    strings.TrimSpace(inventory.LastRefreshAt),
+			LastError:        strings.TrimSpace(inventory.LastError),
+		}
+	}
+	return normalized
+}
+
+func normalizeProviderModelOptions(provider string, models []catalog.ProviderModelOption) []catalog.ProviderModelOption {
+	out := make([]catalog.ProviderModelOption, 0, len(models))
+	seen := map[string]bool{}
+	for _, model := range models {
+		normalized, ok := catalog.NormalizeProviderModelOption(provider, model)
+		if !ok || seen[normalized.ID] {
+			continue
+		}
+		seen[normalized.ID] = true
+		out = append(out, normalized)
+	}
+	return out
 }
 
 func normalizeCodexCLIDefaultModel(model string) string {

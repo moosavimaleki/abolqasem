@@ -12,6 +12,7 @@ type SSEEvent struct {
 	EventKey    string `json:"event_key"`
 	SessionKey  string `json:"session_key"`
 	SessionID   string `json:"session_id"`
+	ChatID      string `json:"chat_id,omitempty"`
 	SessionName string `json:"session_name"`
 	ProjectName string `json:"project_name"`
 	UpdatedAt   string `json:"updated_at"`

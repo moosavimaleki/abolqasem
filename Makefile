@@ -1,5 +1,5 @@
 APP=abolqasem
-PKG=./cmd/ai-agent-manager
+PKG=./cmd/abolqasem
 DIST=dist
 
 .PHONY: clean build test build-all web-build

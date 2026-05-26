@@ -10,7 +10,7 @@ before:
 
 builds:
   - id: abolqasem
-    main: ./cmd/ai-agent-manager
+    main: ./cmd/abolqasem
     binary: abolqasem
     env:
       - CGO_ENABLED=0

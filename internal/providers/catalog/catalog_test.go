@@ -95,6 +95,9 @@ func TestNormalizeModelUsesAliasesAndSafeFallback(t *testing.T) {
 	if got := NormalizeModel("unknown", "missing"); got != "gpt-5.5" {
 		t.Fatalf("expected safe static codex fallback, got %q", got)
 	}
+	if got := NormalizeModel("gemini", "gemini-custom-pro"); got != "gemini-custom-pro" {
+		t.Fatalf("expected custom gemini model passthrough, got %q", got)
+	}
 }
 
 func TestNormalizeModelUsesRuntimeFallback(t *testing.T) {
