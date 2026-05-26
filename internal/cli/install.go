@@ -5,6 +5,7 @@ import (
 	"ai-agent-manager/internal/adapters/claude"
 	"ai-agent-manager/internal/adapters/codex"
 	"ai-agent-manager/internal/adapters/gemini"
+	"ai-agent-manager/internal/appinfo"
 	"bufio"
 	"fmt"
 	"io"
@@ -37,7 +38,7 @@ func getAdapter(agent string) (adapters.AgentAdapter, error) {
 
 var installCmd = &cobra.Command{
 	Use:   "install",
-	Short: "Install AI Agent Manager startup and hooks",
+	Short: "Install " + appinfo.DisplayName + " startup and hooks",
 	Run: func(cmd *cobra.Command, args []string) {
 		scope := adapters.InstallScope(installScope)
 		if scope != adapters.ScopeUser && scope != adapters.ScopeProject {
@@ -95,7 +96,7 @@ var installCmd = &cobra.Command{
 
 var uninstallCmd = &cobra.Command{
 	Use:   "uninstall",
-	Short: "Uninstall AI Agent Manager startup and hooks",
+	Short: "Uninstall " + appinfo.DisplayName + " startup and hooks",
 	Run: func(cmd *cobra.Command, args []string) {
 		scope := adapters.InstallScope(installScope)
 		agents := selectedInstallAgents()
@@ -274,7 +275,7 @@ func printTrustNotice(agents []string) {
 	if len(agents) == 0 {
 		return
 	}
-	if os.Getenv("AI_AGENT_MANAGER_SUPPRESS_TRUST_NOTICE") == "1" {
+	if os.Getenv(appinfo.EnvPrefix+"_SUPPRESS_TRUST_NOTICE") == "1" || os.Getenv(appinfo.LegacyEnvPrefix+"_SUPPRESS_TRUST_NOTICE") == "1" {
 		return
 	}
 	fmt.Println("")

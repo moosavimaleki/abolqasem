@@ -12,10 +12,10 @@ import {
 } from "./branding"
 
 describe("cli branding", () => {
-  test("uses the ai-agent-manager command shown by the installed binary", () => {
-    expect(CLI_COMMAND).toBe("ai-agent-manager")
-    expect(getCliInvocation("open")).toBe("ai-agent-manager open")
-    expect(getCliInvocation("service start")).toBe("ai-agent-manager service start")
+  test("uses the abolqasem command shown by the installed binary", () => {
+    expect(CLI_COMMAND).toBe("abolqasem")
+    expect(getCliInvocation("open")).toBe("abolqasem open")
+    expect(getCliInvocation("service start")).toBe("abolqasem service start")
     expect(LOCAL_UI_URL).toBe("http://127.0.0.1:9090/")
   })
 })

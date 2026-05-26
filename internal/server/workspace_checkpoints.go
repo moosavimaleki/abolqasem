@@ -1,6 +1,7 @@
 package server
 
 import (
+	"ai-agent-manager/internal/appinfo"
 	"compress/gzip"
 	"context"
 	"encoding/json"
@@ -516,7 +517,10 @@ func workspacePruneCheckpointsForChat(chatID string) error {
 }
 
 func workspaceCheckpointRetentionLimit() int {
-	value := strings.TrimSpace(os.Getenv("AI_AGENT_MANAGER_CHECKPOINT_RETENTION"))
+	value := strings.TrimSpace(os.Getenv(appinfo.EnvPrefix + "_CHECKPOINT_RETENTION"))
+	if value == "" {
+		value = strings.TrimSpace(os.Getenv(appinfo.LegacyEnvPrefix + "_CHECKPOINT_RETENTION"))
+	}
 	if value == "" {
 		return 20
 	}

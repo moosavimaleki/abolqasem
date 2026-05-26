@@ -2,6 +2,7 @@ package claude
 
 import (
 	"ai-agent-manager/internal/adapters"
+	"ai-agent-manager/internal/appinfo"
 	"ai-agent-manager/internal/state"
 	"encoding/json"
 	"fmt"
@@ -9,7 +10,8 @@ import (
 	"path/filepath"
 )
 
-const hookName = "ai-agent-manager-claude-stop"
+const hookName = appinfo.Name + "-claude-stop"
+const legacyHookName = appinfo.LegacyName + "-claude-stop"
 
 type ClaudeAdapter struct{}
 
@@ -217,7 +219,7 @@ func ensureBlocks(value any) []map[string]any {
 }
 
 func isEntryMatch(entry map[string]any) bool {
-	if stringValue(entry["name"]) == hookName {
+	if stringValue(entry["name"]) == hookName || stringValue(entry["name"]) == legacyHookName {
 		return true
 	}
 	command := stringValue(entry["command"])

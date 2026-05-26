@@ -312,6 +312,9 @@ describe("GitPanel", () => {
     ))
 
     expect(markup).toContain("Open branch switcher")
+    expect(markup).toContain("Loading branches...")
+    expect(markup).toContain("Loading diff...")
+    expect(markup).not.toContain("Detached HEAD")
   })
 
   test("shows push to github for an unpublished local branch without a remote", () => {

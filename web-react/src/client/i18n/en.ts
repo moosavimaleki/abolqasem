@@ -81,7 +81,7 @@ export const en = {
   localDev: {
     addProject: "Add Project",
     checkStatus: "Check server, startup, and hook status",
-    cliTitle: () => "AI Agent Manager CLI",
+    cliTitle: () => "Abolqasem CLI",
     cliSubtitle: "On Your Machine",
     connectTitle: () => `Connect ${APP_NAME}`,
     connectedSubtitle: () => `${APP_NAME} is connected, choose a project below to get started.`,

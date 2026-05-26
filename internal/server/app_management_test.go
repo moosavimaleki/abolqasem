@@ -67,7 +67,7 @@ func TestWorkspaceInstallUpdateSchedulesDetachedCommand(t *testing.T) {
 	previousStartDetached := startDetached
 	started := make(chan []string, 1)
 	executablePath = func() (string, error) {
-		return "/tmp/ai-agent-manager", nil
+		return "/tmp/abolqasem", nil
 	}
 	startDetached = func(exe string, args ...string) error {
 		started <- append([]string{exe}, args...)
@@ -83,7 +83,7 @@ func TestWorkspaceInstallUpdateSchedulesDetachedCommand(t *testing.T) {
 		t.Fatalf("expected successful install scheduling, got %#v", result)
 	}
 	command := <-started
-	if len(command) != 2 || command[0] != "/tmp/ai-agent-manager" || command[1] != "update" {
+	if len(command) != 2 || command[0] != "/tmp/abolqasem" || command[1] != "update" {
 		t.Fatalf("unexpected scheduled command: %#v", command)
 	}
 	snapshot := workspaceUpdateSnapshot()

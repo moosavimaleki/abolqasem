@@ -1,6 +1,7 @@
 package state
 
 import (
+	"ai-agent-manager/internal/appinfo"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -19,7 +20,17 @@ func init() {
 	if err != nil {
 		panic(fmt.Sprintf("could not get home dir: %v", err))
 	}
-	stateDir = filepath.Join(home, ".cache", "ai-agent-manager")
+	cacheDir, err := os.UserCacheDir()
+	if err != nil {
+		cacheDir = filepath.Join(home, ".cache")
+	}
+	stateDir = filepath.Join(cacheDir, appinfo.Name)
+	legacyStateDir := filepath.Join(cacheDir, appinfo.LegacyName)
+	if _, err := os.Stat(stateDir); os.IsNotExist(err) {
+		if _, legacyErr := os.Stat(legacyStateDir); legacyErr == nil {
+			_ = os.Rename(legacyStateDir, stateDir)
+		}
+	}
 	os.MkdirAll(stateDir, 0755)
 }
 

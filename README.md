@@ -1,6 +1,6 @@
-# AI Agent Manager
+# Abolqasem
 
-`ai-agent-manager` یک viewer محلی و zero-token برای نمایش sessionهای Codex، Claude Code و Gemini CLI در مرورگر است. ابزار از hookهای محلی استفاده می‌کند، transcriptهای JSONL را می‌خواند، و آن‌ها را با UI سازگار با RTL/LTR، markdown امن، lazy loading و اعلان session فعال نمایش می‌دهد.
+`abolqasem` یک viewer محلی و zero-token برای نمایش sessionهای Codex، Claude Code و Gemini CLI در مرورگر است. ابزار از hookهای محلی استفاده می‌کند، transcriptهای JSONL را می‌خواند، و آن‌ها را با UI سازگار با RTL/LTR، markdown امن، lazy loading و اعلان session فعال نمایش می‌دهد.
 
 ## What It Solves
 
@@ -11,21 +11,21 @@
 نصب از releaseهای آماده GitHub، بدون نیاز به Go:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/moosavimaleki/ai-agent-manager/main/scripts/install-release.sh | sh
+curl -fsSL https://raw.githubusercontent.com/moosavimaleki/abolqasem/refs/heads/main/scripts/install-release.sh | sh
 ```
 
 Windows PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/moosavimaleki/ai-agent-manager/main/scripts/install-release.ps1 | iex
+irm https://raw.githubusercontent.com/moosavimaleki/abolqasem/refs/heads/main/scripts/install-release.ps1 | iex
 ```
 
-برای نصب از سورس:
+برای build/install از سورس:
 
 ```bash
 git clone <repo-url>
-cd ai-agent-manager
-scripts/install.sh
+cd abolqasem
+scripts/build-from-source.sh
 ```
 
 برای توسعه فرانت، سورس داخل `web-react/` است. پوشه `web/` خروجی generated برای embed شدن داخل باینری Go است و با دستور زیر دوباره ساخته می‌شود:
@@ -48,6 +48,6 @@ make build
 - Hook محلی event را از stdin می‌گیرد.
 - در حالت hook، رابط داخلی برنامه سرور را idempotent روی اولین پورت آزاد از `9090` به بعد بالا می‌آورد و base URL واقعی را ذخیره می‌کند.
 - اگر سرور تازه توسط hook بالا آمده باشد، مرورگر پیش‌فرض روی همان base URL باز می‌شود.
-- اگر سرور پایین بماند، event در `~/.cache/ai-agent-manager/pending-events.jsonl` ذخیره می‌شود.
+- اگر سرور پایین بماند، event در `~/.cache/abolqasem/pending-events.jsonl` ذخیره می‌شود.
 - در حالت service، سرویس دائمی سیستم‌عامل همین سرور داخلی را مدیریت می‌کند.
 - transcriptها parse و cache می‌شوند و پیام‌ها به صورت pagination شده به UI می‌رسند.

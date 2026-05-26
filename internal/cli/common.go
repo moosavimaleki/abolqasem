@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"ai-agent-manager/internal/appinfo"
 	"ai-agent-manager/internal/platform"
 	"ai-agent-manager/internal/state"
 	"encoding/json"
@@ -36,7 +37,7 @@ func serverHealthy() bool {
 
 func serverHealthyAt(baseURL string) bool {
 	info, ok := serverRuntimeInfoAt(baseURL)
-	return ok && info.App == "ai-agent-manager"
+	return ok && isKnownAppName(info.App)
 }
 
 func serverRuntimeInfoAt(baseURL string) (serverRuntimeInfo, bool) {
@@ -53,7 +54,11 @@ func serverRuntimeInfoAt(baseURL string) (serverRuntimeInfo, bool) {
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 		return serverRuntimeInfo{}, false
 	}
-	return payload, payload.App == "ai-agent-manager"
+	return payload, isKnownAppName(payload.App)
+}
+
+func isKnownAppName(name string) bool {
+	return name == appinfo.Name || name == appinfo.LegacyName
 }
 
 func waitForServer(timeout time.Duration) bool {

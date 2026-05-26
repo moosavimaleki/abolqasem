@@ -31,7 +31,7 @@ jobs:
         if: runner.os == 'Windows'
       - run: go vet ./...
       - run: go test ./...
-      - run: go build -trimpath -o dist/ai-agent-manager ./cmd/ai-agent-manager
+      - run: go build -trimpath -o dist/abolqasem ./cmd/ai-agent-manager
 
   web:
     runs-on: ubuntu-latest
@@ -81,18 +81,18 @@ jobs:
         with:
           go-version: stable
 
-      - name: Run source installer
-        run: BIN_DIR="$RUNNER_TEMP/bin" sh scripts/install.sh
+      - name: Run build-from-source installer
+        run: BIN_DIR="$RUNNER_TEMP/bin" sh scripts/build-from-source.sh
 
-      - name: Verify source installer
+      - name: Verify build-from-source installer
         run: |
-          test -x "$RUNNER_TEMP/bin/ai-agent-manager"
-          "$RUNNER_TEMP/bin/ai-agent-manager" --help >/dev/null
-          "$RUNNER_TEMP/bin/ai-agent-manager" status | tee "$RUNNER_TEMP/ai-agent-manager-status.txt"
-          grep -q "Server: running" "$RUNNER_TEMP/ai-agent-manager-status.txt"
-          grep -q "ai-agent-manager" "$HOME/.codex/config.toml"
-          grep -q "ai-agent-manager" "$HOME/.claude/settings.json"
-          grep -q "ai-agent-manager" "$HOME/.gemini/settings.json"
+          test -x "$RUNNER_TEMP/bin/abolqasem"
+          "$RUNNER_TEMP/bin/abolqasem" --help >/dev/null
+          "$RUNNER_TEMP/bin/abolqasem" status | tee "$RUNNER_TEMP/abolqasem-status.txt"
+          grep -q "Server: running" "$RUNNER_TEMP/abolqasem-status.txt"
+          grep -q "abolqasem" "$HOME/.codex/config.toml"
+          grep -q "abolqasem" "$HOME/.claude/settings.json"
+          grep -q "abolqasem" "$HOME/.gemini/settings.json"
 
   install-source-windows:
     runs-on: windows-latest
@@ -104,14 +104,14 @@ jobs:
         with:
           go-version: stable
 
-      - name: Run source installer
+      - name: Run build-from-source installer
         shell: pwsh
-        run: .\scripts\install.ps1 -BinDir (Join-Path $env:RUNNER_TEMP 'bin')
+        run: .\scripts\build-from-source.ps1 -BinDir (Join-Path $env:RUNNER_TEMP 'bin')
 
-      - name: Verify source installer
+      - name: Verify build-from-source installer
         shell: pwsh
         run: |
-          $Binary = Join-Path $env:RUNNER_TEMP "bin\ai-agent-manager.exe"
+          $Binary = Join-Path $env:RUNNER_TEMP "bin\abolqasem.exe"
           if (!(Test-Path $Binary)) { throw "installed binary not found: $Binary" }
           & $Binary --help | Out-Null
           $Status = (& $Binary status) -join "`n"
@@ -125,8 +125,8 @@ jobs:
             "$env:USERPROFILE\.gemini\settings.json"
           )) {
             if (!(Test-Path $Path)) { throw "hook config not found: $Path" }
-            if (-not (Select-String -Path $Path -Pattern "ai-agent-manager" -SimpleMatch -Quiet)) {
-              throw "hook config does not reference ai-agent-manager: $Path"
+            if (-not (Select-String -Path $Path -Pattern "abolqasem" -SimpleMatch -Quiet)) {
+              throw "hook config does not reference abolqasem: $Path"
             }
           }
 
@@ -161,13 +161,13 @@ jobs:
           WEBROOT="$WORKDIR/web"
           PKGROOT="$WORKDIR/pkg"
           BINDIR="$RUNNER_TEMP/release-bin"
-          ASSET="ai-agent-manager-$TARGET_OS-$TARGET_ARCH.tar.gz"
+          ASSET="abolqasem-$TARGET_OS-$TARGET_ARCH.tar.gz"
 
           mkdir -p "$WEBROOT/releases/latest/download" "$PKGROOT" "$BINDIR"
-          CGO_ENABLED=0 GOOS="$TARGET_OS" GOARCH="$TARGET_ARCH" go build -trimpath -ldflags="-s -w" -o "$PKGROOT/ai-agent-manager" ./cmd/ai-agent-manager
-          tar -C "$PKGROOT" -czf "$WEBROOT/releases/latest/download/$ASSET" ai-agent-manager
+          CGO_ENABLED=0 GOOS="$TARGET_OS" GOARCH="$TARGET_ARCH" go build -trimpath -ldflags="-s -w" -o "$PKGROOT/abolqasem" ./cmd/ai-agent-manager
+          tar -C "$PKGROOT" -czf "$WEBROOT/releases/latest/download/$ASSET" abolqasem
 
-          python3 -m http.server 18080 --bind 127.0.0.1 --directory "$WEBROOT" >/tmp/ai-agent-manager-http.log 2>&1 &
+          python3 -m http.server 18080 --bind 127.0.0.1 --directory "$WEBROOT" >/tmp/abolqasem-http.log 2>&1 &
           SERVER_PID=$!
           trap 'kill "$SERVER_PID"' EXIT
           for _ in 1 2 3 4 5 6 7 8 9 10; do
@@ -178,17 +178,17 @@ jobs:
           done
           curl -fsS "http://127.0.0.1:18080/" >/dev/null
 
-          BIN_DIR="$BINDIR" AI_AGENT_MANAGER_RELEASE_BASE_URL="http://127.0.0.1:18080/releases" sh scripts/install-release.sh
+          BIN_DIR="$BINDIR" ABOLQASEM_RELEASE_BASE_URL="http://127.0.0.1:18080/releases" sh scripts/install-release.sh
 
       - name: Verify release installer
         run: |
-          test -x "$RUNNER_TEMP/release-bin/ai-agent-manager"
-          "$RUNNER_TEMP/release-bin/ai-agent-manager" --help >/dev/null
-          "$RUNNER_TEMP/release-bin/ai-agent-manager" status | tee "$RUNNER_TEMP/ai-agent-manager-release-status.txt"
-          grep -q "Server: running" "$RUNNER_TEMP/ai-agent-manager-release-status.txt"
-          grep -q "ai-agent-manager" "$HOME/.codex/config.toml"
-          grep -q "ai-agent-manager" "$HOME/.claude/settings.json"
-          grep -q "ai-agent-manager" "$HOME/.gemini/settings.json"
+          test -x "$RUNNER_TEMP/release-bin/abolqasem"
+          "$RUNNER_TEMP/release-bin/abolqasem" --help >/dev/null
+          "$RUNNER_TEMP/release-bin/abolqasem" status | tee "$RUNNER_TEMP/abolqasem-release-status.txt"
+          grep -q "Server: running" "$RUNNER_TEMP/abolqasem-release-status.txt"
+          grep -q "abolqasem" "$HOME/.codex/config.toml"
+          grep -q "abolqasem" "$HOME/.claude/settings.json"
+          grep -q "abolqasem" "$HOME/.gemini/settings.json"
 
   install-release-windows:
     runs-on: windows-latest
@@ -214,14 +214,14 @@ jobs:
           $WebRoot = Join-Path $WorkDir "web"
           $PkgRoot = Join-Path $WorkDir "pkg"
           $BinDir = Join-Path $env:RUNNER_TEMP "release-bin"
-          $Asset = "ai-agent-manager-windows-$TargetArch.zip"
+          $Asset = "abolqasem-windows-$TargetArch.zip"
           $ArchivePath = Join-Path $WebRoot "releases\latest\download\$Asset"
 
           New-Item -ItemType Directory -Force -Path (Split-Path $ArchivePath) | Out-Null
           New-Item -ItemType Directory -Force -Path $PkgRoot | Out-Null
           New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
 
-          $BinaryPath = Join-Path $PkgRoot "ai-agent-manager.exe"
+          $BinaryPath = Join-Path $PkgRoot "abolqasem.exe"
           $env:CGO_ENABLED = "0"
           $env:GOOS = "windows"
           $env:GOARCH = $TargetArch
@@ -243,7 +243,7 @@ jobs:
             }
             Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:18080/" | Out-Null
             $env:BIN_DIR = $BinDir
-            $env:AI_AGENT_MANAGER_RELEASE_BASE_URL = "http://127.0.0.1:18080/releases"
+            $env:ABOLQASEM_RELEASE_BASE_URL = "http://127.0.0.1:18080/releases"
             .\scripts\install-release.ps1
           }
           finally {
@@ -255,7 +255,7 @@ jobs:
       - name: Verify release installer
         shell: pwsh
         run: |
-          $Binary = Join-Path $env:RUNNER_TEMP "release-bin\ai-agent-manager.exe"
+          $Binary = Join-Path $env:RUNNER_TEMP "release-bin\abolqasem.exe"
           if (!(Test-Path $Binary)) { throw "installed binary not found: $Binary" }
           & $Binary --help | Out-Null
           $Status = (& $Binary status) -join "`n"
@@ -269,7 +269,7 @@ jobs:
             "$env:USERPROFILE\.gemini\settings.json"
           )) {
             if (!(Test-Path $Path)) { throw "hook config not found: $Path" }
-            if (-not (Select-String -Path $Path -Pattern "ai-agent-manager" -SimpleMatch -Quiet)) {
-              throw "hook config does not reference ai-agent-manager: $Path"
+            if (-not (Select-String -Path $Path -Pattern "abolqasem" -SimpleMatch -Quiet)) {
+              throw "hook config does not reference abolqasem: $Path"
             }
           }

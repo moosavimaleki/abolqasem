@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"ai-agent-manager/internal/appinfo"
 	"ai-agent-manager/internal/workspace/readmodels"
 	"ai-agent-manager/internal/workspace/transcript"
 )
@@ -31,7 +32,7 @@ func exportCodexSession(args ExportArgs) (ExportResult, error) {
 			"id":          threadID,
 			"timestamp":   now.Format(time.RFC3339),
 			"cwd":         args.LocalPath,
-			"originator":  "ai-agent-manager",
+			"originator":  appinfo.Name,
 			"cli_version": "converted",
 			"source":      "abolqasem-convert",
 		},

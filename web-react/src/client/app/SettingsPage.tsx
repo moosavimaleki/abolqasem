@@ -151,7 +151,7 @@ const QUICK_RESPONSE_PROVIDER_OPTIONS: Array<{ value: LlmProviderKind; label: st
   { value: "custom", label: "Custom" },
 ]
 
-const GITHUB_RELEASES_URL = "https://api.github.com/repos/jakemor/abolqasem/releases"
+const GITHUB_RELEASES_URL = "https://api.github.com/repos/moosavimaleki/abolqasem/releases"
 const CHANGELOG_CACHE_TTL_MS = 5 * 60 * 1000
 
 type GithubRelease = {

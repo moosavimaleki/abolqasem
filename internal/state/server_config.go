@@ -1,6 +1,7 @@
 package state
 
 import (
+	"ai-agent-manager/internal/appinfo"
 	"encoding/json"
 	"net"
 	"net/url"
@@ -12,8 +13,10 @@ import (
 
 const (
 	DefaultPort    = 9090
-	BaseURLEnvName = "AI_AGENT_MANAGER_BASE_URL"
+	BaseURLEnvName = appinfo.EnvPrefix + "_BASE_URL"
 )
+
+const legacyBaseURLEnvName = appinfo.LegacyEnvPrefix + "_BASE_URL"
 
 type ServerConfig struct {
 	BaseURL string `json:"base_url"`
@@ -78,6 +81,12 @@ func isLoopbackHost(host string) bool {
 
 func LoadServerBaseURL() string {
 	if value := strings.TrimSpace(os.Getenv(BaseURLEnvName)); value != "" {
+		if normalized, ok := normalizeLoopbackBaseURL(value); ok {
+			return normalized
+		}
+		return DefaultBaseURL(DefaultPort)
+	}
+	if value := strings.TrimSpace(os.Getenv(legacyBaseURLEnvName)); value != "" {
 		if normalized, ok := normalizeLoopbackBaseURL(value); ok {
 			return normalized
 		}

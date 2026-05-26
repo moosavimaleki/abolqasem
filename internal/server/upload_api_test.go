@@ -49,7 +49,7 @@ func TestUploadServiceStoresMetadataAndServesContent(t *testing.T) {
 	if attachment.Kind != "file" || attachment.DisplayName != "hello.txt" || attachment.Size != int64(len("hello upload")) {
 		t.Fatalf("unexpected attachment: %#v", attachment)
 	}
-	if !strings.HasPrefix(attachment.AbsolutePath, filepath.Join(os.Getenv("XDG_CACHE_HOME"), "ai-agent-manager", "uploads", "project-1")) {
+	if !strings.HasPrefix(attachment.AbsolutePath, filepath.Join(os.Getenv("XDG_CACHE_HOME"), "abolqasem", "uploads", "project-1")) {
 		t.Fatalf("attachment escaped cache: %#v", attachment.AbsolutePath)
 	}
 	if _, err := os.Stat(attachment.AbsolutePath + ".json"); err != nil {

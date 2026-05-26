@@ -1,5 +1,5 @@
 export const APP_NAME = "Abolqasem"
-export const CLI_COMMAND = "ai-agent-manager"
+export const CLI_COMMAND = "abolqasem"
 export const LOCAL_UI_URL = "http://127.0.0.1:9090/"
 export const DATA_ROOT_NAME = ".abolqasem"
 export const DEV_DATA_ROOT_NAME = ".abolqasem-dev"

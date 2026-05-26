@@ -90,7 +90,8 @@
 
         let appearanceTheme = systemAppearanceTheme()
         try {
-          const rawSettings = window.localStorage.getItem("ai-agent-manager.abolqasem-reader-settings.v1")
+          const rawSettings = window.localStorage.getItem("abolqasem:reader-settings:v1")
+            || window.localStorage.getItem("ai-agent-manager.abolqasem-reader-settings.v1")
           const parsedSettings = rawSettings ? JSON.parse(rawSettings) : null
           appearanceTheme = parsedSettings?.theme
             ? normalizeAppearanceTheme(parsedSettings.theme)

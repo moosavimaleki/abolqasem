@@ -4,10 +4,10 @@ set -eu
 
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 WEB_REACT_DIR="$ROOT_DIR/web-react"
-EMBED_WEB_DIR="${AI_AGENT_MANAGER_EMBED_WEB_DIR:-$ROOT_DIR/web}"
+EMBED_WEB_DIR="${ABOLQASEM_EMBED_WEB_DIR:-${AI_AGENT_MANAGER_EMBED_WEB_DIR:-$ROOT_DIR/web}}"
 
 cd "$WEB_REACT_DIR"
-if [ "${AI_AGENT_MANAGER_SKIP_NPM_CI:-0}" != "1" ]; then
+if [ "${ABOLQASEM_SKIP_NPM_CI:-${AI_AGENT_MANAGER_SKIP_NPM_CI:-0}}" != "1" ]; then
   npm ci
 fi
 npm run build:client

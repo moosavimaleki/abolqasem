@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"ai-agent-manager/internal/appinfo"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,13 +14,13 @@ import (
 )
 
 const (
-	updateScriptUnixURL    = "https://raw.githubusercontent.com/moosavimaleki/ai-agent-manager/main/scripts/install-release.sh"
-	updateScriptWindowsURL = "https://raw.githubusercontent.com/moosavimaleki/ai-agent-manager/main/scripts/install-release.ps1"
+	updateScriptUnixURL    = "https://raw.githubusercontent.com/moosavimaleki/abolqasem/refs/heads/main/scripts/install-release.sh"
+	updateScriptWindowsURL = "https://raw.githubusercontent.com/moosavimaleki/abolqasem/refs/heads/main/scripts/install-release.ps1"
 )
 
 var updateCmd = &cobra.Command{
 	Use:   "update",
-	Short: "Update AI Agent Manager from GitHub and restart it",
+	Short: "Update " + appinfo.DisplayName + " from GitHub and restart it",
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := runUpdate(); err != nil {
 			fmt.Printf("Update failed: %v\n", err)
@@ -64,7 +65,9 @@ func downloadUpdateScript() (string, error) {
 		url = updateScriptWindowsURL
 		suffix = ".ps1"
 	}
-	if override := os.Getenv("AI_AGENT_MANAGER_UPDATE_SCRIPT_URL"); override != "" {
+	if override := os.Getenv(appinfo.EnvPrefix + "_UPDATE_SCRIPT_URL"); override != "" {
+		url = override
+	} else if override := os.Getenv(appinfo.LegacyEnvPrefix + "_UPDATE_SCRIPT_URL"); override != "" {
 		url = override
 	}
 
@@ -77,7 +80,7 @@ func downloadUpdateScript() (string, error) {
 		return "", fmt.Errorf("download %s: %s", url, resp.Status)
 	}
 
-	file, err := os.CreateTemp("", "ai-agent-manager-update-*"+suffix)
+	file, err := os.CreateTemp("", appinfo.Name+"-update-*"+suffix)
 	if err != nil {
 		return "", err
 	}

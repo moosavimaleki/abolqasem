@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"ai-agent-manager/internal/appinfo"
 	"ai-agent-manager/internal/state"
 	"bufio"
 	"bytes"
@@ -269,8 +270,8 @@ func (c *codexClient) Close() {
 func (c *codexClient) initialize() error {
 	if _, err := c.call("initialize", map[string]any{
 		"clientInfo": map[string]any{
-			"name":    "ai_agent_manager",
-			"title":   "AI Agent Manager",
+			"name":    appinfo.CodexClientName,
+			"title":   appinfo.DisplayName,
 			"version": "0.1.0",
 		},
 		"capabilities": map[string]any{
@@ -315,7 +316,7 @@ func (c *codexClient) openThread(threadID, cwd string, forceNew bool, model stri
 		"cwd":                cwd,
 		"approvalPolicy":     "never",
 		"sandbox":            "workspace-write",
-		"serviceName":        "ai_agent_manager",
+		"serviceName":        appinfo.CodexClientName,
 		"sessionStartSource": "startup",
 	}
 	if model != "" {

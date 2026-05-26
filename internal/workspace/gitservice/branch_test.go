@@ -45,6 +45,66 @@ func TestListCreateAndCheckoutBranches(t *testing.T) {
 	}
 }
 
+func TestListBranchesKeepsSlashedLocalBranchesLocal(t *testing.T) {
+	requireGit(t)
+	root := t.TempDir()
+	initRepoWithIdentity(t, root)
+	writeFile(t, filepath.Join(root, "file.txt"), "base\n")
+	runGit(t, root, "add", ".")
+	runGit(t, root, "commit", "-m", "initial")
+	runGit(t, root, "switch", "-c", "feature/local")
+
+	branches, err := ListBranches(context.Background(), root)
+	if err != nil {
+		t.Fatalf("ListBranches returned error: %v", err)
+	}
+	if !containsBranch(branches.Local, "feature/local") {
+		t.Fatalf("expected feature/local branch in local branches, got %#v", branches.Local)
+	}
+	if containsBranch(branches.Remote, "feature/local") {
+		t.Fatalf("did not expect feature/local branch in remote branches: %#v", branches.Remote)
+	}
+}
+
+func TestCheckoutRemoteTrackingBranchCreatesLocalTrackingBranch(t *testing.T) {
+	requireGit(t)
+	remote := t.TempDir()
+	runGit(t, remote, "init", "--bare")
+
+	source := t.TempDir()
+	initRepoWithIdentity(t, source)
+	writeFile(t, filepath.Join(source, "file.txt"), "base\n")
+	runGit(t, source, "add", ".")
+	runGit(t, source, "commit", "-m", "initial")
+	runGit(t, source, "checkout", "-b", "feature/remote")
+	writeFile(t, filepath.Join(source, "feature.txt"), "feature\n")
+	runGit(t, source, "add", ".")
+	runGit(t, source, "commit", "-m", "feature")
+	runGit(t, source, "remote", "add", "origin", remote)
+	runGit(t, source, "push", "-u", "origin", "feature/remote")
+
+	clone := t.TempDir()
+	runGit(t, clone, "clone", remote, ".")
+
+	checkedOut, err := CheckoutRemoteTrackingBranch(context.Background(), clone, "origin/feature/remote")
+	if err != nil {
+		t.Fatalf("CheckoutRemoteTrackingBranch returned error: %v", err)
+	}
+	if !checkedOut.OK || checkedOut.BranchName != "feature/remote" {
+		t.Fatalf("unexpected checkout result: %#v", checkedOut)
+	}
+	if head, err := gitOutput(context.Background(), clone, "rev-parse", "--abbrev-ref", "HEAD"); err != nil || head != "feature/remote" {
+		t.Fatalf("expected attached feature/remote branch, got head=%q err=%v", head, err)
+	}
+	upstream, err := gitOutput(context.Background(), clone, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+	if err != nil {
+		t.Fatalf("expected upstream after remote checkout: %v", err)
+	}
+	if upstream != "origin/feature/remote" {
+		t.Fatalf("expected origin/feature/remote upstream, got %q", upstream)
+	}
+}
+
 func TestPreviewAndMergeBranch(t *testing.T) {
 	requireGit(t)
 	root := t.TempDir()

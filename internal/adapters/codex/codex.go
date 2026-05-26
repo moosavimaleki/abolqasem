@@ -2,6 +2,7 @@ package codex
 
 import (
 	"ai-agent-manager/internal/adapters"
+	"ai-agent-manager/internal/appinfo"
 	"ai-agent-manager/internal/state"
 	"encoding/json"
 	"fmt"
@@ -194,7 +195,7 @@ func (a *CodexAdapter) NormalizeHookInput(input []byte) (state.HookEvent, error)
 func ensureCodexHook(blocks []map[string]any) ([]map[string]any, bool) {
 	command, err := adapters.ShellCommand("codex")
 	if err != nil {
-		command = "ai-agent-manager hook --agent codex"
+		command = appinfo.Name + " hook --agent codex"
 	}
 	for _, block := range blocks {
 		entries := ensureHookEntries(block["hooks"])
@@ -232,7 +233,7 @@ func ensureCodexHook(blocks []map[string]any) ([]map[string]any, bool) {
 func ensureCodexEnsureServerHook(blocks []map[string]any) ([]map[string]any, bool) {
 	command, err := adapters.EnsureServerShellCommand()
 	if err != nil {
-		command = "ai-agent-manager __ensure-server"
+		command = appinfo.Name + " __ensure-server"
 	}
 	for _, block := range blocks {
 		entries := ensureHookEntries(block["hooks"])

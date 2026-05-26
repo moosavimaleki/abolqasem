@@ -15,8 +15,9 @@ import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover"
 import { cn } from "../../lib/utils"
 import { useI18n } from "../../i18n/context"
 
-const READER_SETTINGS_KEY = "ai-agent-manager.abolqasem-reader-settings.v1"
-const READER_SETTINGS_CHANGE_EVENT = "ai-agent-manager:reader-settings-change"
+const READER_SETTINGS_KEY = "abolqasem:reader-settings:v1"
+const LEGACY_READER_SETTINGS_KEY = "ai-agent-manager.abolqasem-reader-settings.v1"
+const READER_SETTINGS_CHANGE_EVENT = "abolqasem:reader-settings-change"
 
 export type ReaderFont = "vazirmatn" | "naskh" | "kufi" | "body"
 export type ReaderWidth = "focus" | "comfortable" | "wide"
@@ -137,7 +138,7 @@ function normalizeReaderSettings(value: unknown): ReaderSettings {
 function loadReaderSettings(): ReaderSettings {
   if (typeof window === "undefined") return defaultReaderSettings
   try {
-    const raw = window.localStorage.getItem(READER_SETTINGS_KEY)
+    const raw = window.localStorage.getItem(READER_SETTINGS_KEY) ?? window.localStorage.getItem(LEGACY_READER_SETTINGS_KEY)
     return raw ? normalizeReaderSettings(JSON.parse(raw)) : defaultReaderSettings
   } catch {
     return defaultReaderSettings
@@ -177,7 +178,7 @@ export function useReaderAppearanceSettings() {
 
   useEffect(() => {
     const handleStorage = (event: StorageEvent) => {
-      if (event.key !== READER_SETTINGS_KEY) return
+      if (event.key !== READER_SETTINGS_KEY && event.key !== LEGACY_READER_SETTINGS_KEY) return
       try {
         setSettingsState(event.newValue ? normalizeReaderSettings(JSON.parse(event.newValue)) : defaultReaderSettings)
       } catch {

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"ai-agent-manager/internal/appinfo"
 	"fmt"
 	"os"
 
@@ -8,9 +9,9 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "ai-agent-manager",
-	Short: "AI Agent Manager - A local web viewer for AI coding agents",
-	Long: `AI Agent Manager is a lightweight, zero-token, local tool designed to 
+	Use:   appinfo.Name,
+	Short: appinfo.DisplayName + " - A local web viewer for AI coding agents",
+	Long: appinfo.DisplayName + ` is a lightweight, zero-token, local tool designed to
 display sessions from AI agents like Claude Code, Gemini CLI, and Codex in a browser.`,
 }
 

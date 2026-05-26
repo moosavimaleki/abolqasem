@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"ai-agent-manager/internal/appinfo"
 	"bufio"
 	"context"
 	"encoding/json"
@@ -210,8 +211,8 @@ func probeCodexRuntime(ctx context.Context) CodexRuntimeInfo {
 	var initResult codexInitializeResult
 	if err := client.Call(ctx, "initialize", codexprotocol.InitializeParams{
 		ClientInfo: codexprotocol.ClientInfo{
-			Name:    "ai-agent-manager",
-			Title:   "AI Agent Manager",
+			Name:    appinfo.Name,
+			Title:   appinfo.DisplayName,
 			Version: "dev",
 		},
 		Capabilities: codexprotocol.Capabilities{

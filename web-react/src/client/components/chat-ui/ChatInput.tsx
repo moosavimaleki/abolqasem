@@ -712,13 +712,15 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
   }
 
   function handleDragOver(event: React.DragEvent<HTMLTextAreaElement>) {
-    if (!Array.from(event.dataTransfer.types).includes("application/x-ai-agent-manager-project-path")) return
+    const projectPathDragTypes = ["application/x-abolqasem-project-path", "application/x-ai-agent-manager-project-path"]
+    if (!Array.from(event.dataTransfer.types).some((type) => projectPathDragTypes.includes(type))) return
     event.preventDefault()
     event.dataTransfer.dropEffect = "copy"
   }
 
   function handleDrop(event: React.DragEvent<HTMLTextAreaElement>) {
-    const projectPath = event.dataTransfer.getData("application/x-ai-agent-manager-project-path")
+    const projectPath = event.dataTransfer.getData("application/x-abolqasem-project-path")
+      || event.dataTransfer.getData("application/x-ai-agent-manager-project-path")
     if (!projectPath) return
 
     event.preventDefault()

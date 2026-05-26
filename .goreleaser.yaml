@@ -1,6 +1,6 @@
 version: 2
 
-project_name: ai-agent-manager
+project_name: abolqasem
 
 before:
   hooks:
@@ -9,9 +9,9 @@ before:
     - go test ./...
 
 builds:
-  - id: ai-agent-manager
+  - id: abolqasem
     main: ./cmd/ai-agent-manager
-    binary: ai-agent-manager
+    binary: abolqasem
     env:
       - CGO_ENABLED=0
     goos:

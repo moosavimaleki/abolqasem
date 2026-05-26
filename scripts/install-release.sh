@@ -3,7 +3,7 @@
 set -eu
 
 APP="abolqasem"
-REPO="${ABOLQASEM_REPO:-${AI_AGENT_MANAGER_REPO:-jakemor/abolqasem}}"
+REPO="${ABOLQASEM_REPO:-${AI_AGENT_MANAGER_REPO:-moosavimaleki/abolqasem}}"
 VERSION="${ABOLQASEM_VERSION:-${AI_AGENT_MANAGER_VERSION:-latest}}"
 RELEASE_BASE_URL="${ABOLQASEM_RELEASE_BASE_URL:-${AI_AGENT_MANAGER_RELEASE_BASE_URL:-}}"
 BIN_DIR="${BIN_DIR:-}"
@@ -20,7 +20,7 @@ Usage:
   install-release.sh [options]
 
 Options:
-  --repo OWNER/REPO   GitHub repository. Default: jakemor/abolqasem.
+  --repo OWNER/REPO   GitHub repository. Default: moosavimaleki/abolqasem.
   --version TAG       Release tag. Default: latest.
   --bin-dir DIR       Install binary into DIR.
   --hooks             Install hooks after installing the binary. Default: enabled.

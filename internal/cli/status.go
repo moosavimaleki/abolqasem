@@ -2,6 +2,7 @@ package cli
 
 import (
 	"ai-agent-manager/internal/adapters"
+	"ai-agent-manager/internal/appinfo"
 	"ai-agent-manager/internal/state"
 	"fmt"
 	"time"
@@ -19,7 +20,7 @@ var statusCmd = &cobra.Command{
 			return
 		}
 
-		fmt.Println("AI Agent Manager")
+		fmt.Println(appinfo.DisplayName)
 		if serverHealthy() {
 			fmt.Printf("Server: running (%s)\n", currentBaseURL())
 		} else {

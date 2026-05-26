@@ -3,17 +3,17 @@
 set -eu
 
 ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-APP="ai-agent-manager"
+APP="abolqasem"
 BIN_DIR="${BIN_DIR:-$HOME/.local/bin}"
 DIST_DIR="$ROOT_DIR/dist"
 OUT="$DIST_DIR/$APP"
 INSTALL_PATH="$BIN_DIR/$APP"
-STARTUP="${AI_AGENT_MANAGER_DEV_STARTUP:-hook}"
-HOOK_SCOPE="${AI_AGENT_MANAGER_DEV_HOOK_SCOPE:-user}"
-INSTALL_HOOKS="${AI_AGENT_MANAGER_DEV_INSTALL_HOOKS:-1}"
-OPEN_AFTER_INSTALL="${AI_AGENT_MANAGER_DEV_OPEN:-1}"
-DEV_PROXY="${AI_AGENT_MANAGER_DEV_PROXY:-}"
-DEV_NO_PROXY="${AI_AGENT_MANAGER_DEV_NO_PROXY:-${NO_PROXY:-${no_proxy:-}}}"
+STARTUP="${ABOLQASEM_DEV_STARTUP:-${AI_AGENT_MANAGER_DEV_STARTUP:-hook}}"
+HOOK_SCOPE="${ABOLQASEM_DEV_HOOK_SCOPE:-${AI_AGENT_MANAGER_DEV_HOOK_SCOPE:-user}}"
+INSTALL_HOOKS="${ABOLQASEM_DEV_INSTALL_HOOKS:-${AI_AGENT_MANAGER_DEV_INSTALL_HOOKS:-1}}"
+OPEN_AFTER_INSTALL="${ABOLQASEM_DEV_OPEN:-${AI_AGENT_MANAGER_DEV_OPEN:-1}}"
+DEV_PROXY="${ABOLQASEM_DEV_PROXY:-${AI_AGENT_MANAGER_DEV_PROXY:-}}"
+DEV_NO_PROXY="${ABOLQASEM_DEV_NO_PROXY:-${AI_AGENT_MANAGER_DEV_NO_PROXY:-${NO_PROXY:-${no_proxy:-}}}}"
 
 if [ "$DEV_PROXY" != "" ] && [ "$DEV_PROXY" != "0" ] && [ "$DEV_PROXY" != "off" ]; then
   if [ "$DEV_NO_PROXY" = "" ]; then
@@ -56,14 +56,14 @@ command -v go >/dev/null 2>&1 || {
 case "$STARTUP" in
   hook|service) ;;
   *)
-    printf 'Error: unsupported AI_AGENT_MANAGER_DEV_STARTUP=%s (use hook or service)\n' "$STARTUP" >&2
+    printf 'Error: unsupported ABOLQASEM_DEV_STARTUP=%s (use hook or service)\n' "$STARTUP" >&2
     exit 1
     ;;
 esac
 
-if [ "${AI_AGENT_MANAGER_DEV_SKIP_WEB_BUILD:-0}" != "1" ]; then
+if [ "${ABOLQASEM_DEV_SKIP_WEB_BUILD:-${AI_AGENT_MANAGER_DEV_SKIP_WEB_BUILD:-0}}" != "1" ]; then
   printf 'Building web assets...\n'
-  AI_AGENT_MANAGER_SKIP_NPM_CI="${AI_AGENT_MANAGER_SKIP_NPM_CI:-1}" "$ROOT_DIR/scripts/prepare-web-assets.sh"
+  ABOLQASEM_SKIP_NPM_CI="${ABOLQASEM_SKIP_NPM_CI:-${AI_AGENT_MANAGER_SKIP_NPM_CI:-1}}" "$ROOT_DIR/scripts/prepare-web-assets.sh"
 fi
 
 printf 'Building %s from local source...\n' "$APP"
@@ -84,7 +84,7 @@ printf 'Verifying installed binary...\n'
 
 if [ "$INSTALL_HOOKS" = "1" ]; then
   printf 'Installing local hooks with startup=%s scope=%s...\n' "$STARTUP" "$HOOK_SCOPE"
-  AI_AGENT_MANAGER_SUPPRESS_TRUST_NOTICE=1 "$INSTALL_PATH" install --all --scope "$HOOK_SCOPE" --startup "$STARTUP"
+  ABOLQASEM_SUPPRESS_TRUST_NOTICE=1 "$INSTALL_PATH" install --all --scope "$HOOK_SCOPE" --startup "$STARTUP"
 elif [ "$STARTUP" = "service" ]; then
   printf 'Installing local service without hooks...\n'
   "$INSTALL_PATH" install --startup service --no-hooks

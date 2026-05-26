@@ -1,9 +1,9 @@
 {
-  "name": "ai-agent-manager-web",
+  "name": "abolqasem-web",
   "type": "module",
   "version": "0.1.0",
   "private": true,
-  "description": "Abolqasem-compatible React web UI for ai-agent-manager",
+  "description": "React web UI for Abolqasem",
   "license": "MIT",
   "keywords": [
     "claude",

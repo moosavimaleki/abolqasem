@@ -35,6 +35,7 @@ import type { TranslationDictionary } from "../../i18n"
 
 type DiffRenderMode = "unified" | "split"
 type DiffFile = ChatDiffSnapshot["files"][number]
+type GitStatus = ChatDiffSnapshot["status"]
 type SidebarViewMode = "changes" | "history"
 const EMPTY_CHECKED_PATHS: Record<string, boolean> = {}
 type GitTranslations = TranslationDictionary["git"]
@@ -1138,6 +1139,7 @@ function MergeBranchModal({
 }
 
 function BranchSwitcher({
+  status,
   currentBranchName,
   onListBranches,
   onPreviewMergeBranch,
@@ -1145,6 +1147,7 @@ function BranchSwitcher({
   onCheckoutBranch,
   onCreateBranch,
 }: {
+  status: GitStatus
   currentBranchName?: string
   onListBranches: () => Promise<ChatBranchListResult>
   onPreviewMergeBranch: (branch: ChatBranchListEntry) => Promise<ChatMergePreviewResult>
@@ -1161,9 +1164,15 @@ function BranchSwitcher({
   const [entryView, setEntryView] = useState<"branches" | "pull_requests">("branches")
   const [branchList, setBranchList] = useState<ChatBranchListResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const canOpen = status === "ready"
+  const branchLabel = status === "unknown"
+    ? t.git.loadingBranches
+    : status === "no_repo"
+      ? t.git.initGit
+      : (currentBranchName?.trim() || t.chat.detachedHead)
 
   useEffect(() => {
-    if (!open) return
+    if (!open || !canOpen) return
     setIsLoading(true)
     setError(null)
     void onListBranches()
@@ -1174,7 +1183,7 @@ function BranchSwitcher({
       .finally(() => {
         setIsLoading(false)
       })
-  }, [onListBranches, open])
+  }, [canOpen, onListBranches, open])
 
   const normalizedQuery = query.trim().toLowerCase()
   const filterEntries = (entries: ChatBranchListEntry[]) => entries.filter((entry) => {
@@ -1226,15 +1235,19 @@ function BranchSwitcher({
   }
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={(nextOpen) => setOpen(canOpen ? nextOpen : false)}>
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="flex min-w-0 max-w-full items-center gap-1 rounded-md px-1.5 py-1 text-sm transition-colors hover:bg-accent hover:text-foreground"
+          disabled={!canOpen}
+          className={cn(
+            "flex min-w-0 max-w-full items-center gap-1 rounded-md px-1.5 py-1 text-sm transition-colors hover:bg-accent hover:text-foreground",
+            !canOpen && "cursor-default opacity-70 hover:bg-transparent hover:text-inherit"
+          )}
           aria-label={t.git.openBranchSwitcher}
         >
           <GitBranch className="h-3.5 w-3.5 shrink-0" />
-          <span dir="ltr" className="truncate [unicode-bidi:isolate]">{currentBranchName ?? t.chat.detachedHead}</span>
+          <span dir={status === "ready" ? "ltr" : direction} className="truncate [unicode-bidi:isolate]">{branchLabel}</span>
           <ChevronDown className="h-3.5 w-3.5 shrink-0" />
         </button>
       </PopoverTrigger>
@@ -1973,6 +1986,7 @@ function GitPanelImpl({
         <div className="flex h-[49px] shrink-0 items-center gap-2 border-b border-border pe-2 ps-2.5">
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <BranchSwitcher
+              status={diffs.status}
               currentBranchName={diffs.branchName}
               onListBranches={onListBranches}
               onPreviewMergeBranch={onPreviewMergeBranch}
@@ -2140,7 +2154,11 @@ function GitPanelImpl({
           </div>
           <div ref={scrollContainerRef} className="h-full overflow-y-auto [direction:ltr] [scrollbar-gutter:stable]">
             <div className="min-h-full" dir="ltr">
-            {diffs.status === "no_repo" ? (
+            {diffs.status === "unknown" ? (
+              <div className="flex h-full items-center justify-center px-6 py-3 text-center">
+                <p dir={direction} className="text-sm text-muted-foreground">{t.git.loadingDiff}</p>
+              </div>
+            ) : diffs.status === "no_repo" ? (
               <div className="flex h-full items-center justify-center px-6 py-3 text-center">
                 <div className="flex max-w-[280px] flex-col items-center gap-3">
                   <p dir={direction} className="text-sm text-muted-foreground">{t.git.initializeHere}</p>

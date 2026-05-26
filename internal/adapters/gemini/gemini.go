@@ -2,6 +2,7 @@ package gemini
 
 import (
 	"ai-agent-manager/internal/adapters"
+	"ai-agent-manager/internal/appinfo"
 	"ai-agent-manager/internal/state"
 	"encoding/json"
 	"fmt"
@@ -10,8 +11,10 @@ import (
 )
 
 const (
-	afterAgentHookName = "ai-agent-manager-gemini-after-agent"
-	sessionEndHookName = "ai-agent-manager-gemini-session-end"
+	afterAgentHookName       = appinfo.Name + "-gemini-after-agent"
+	sessionEndHookName       = appinfo.Name + "-gemini-session-end"
+	legacyAfterAgentHookName = appinfo.LegacyName + "-gemini-after-agent"
+	legacySessionEndHookName = appinfo.LegacyName + "-gemini-session-end"
 )
 
 type GeminiAdapter struct{}
@@ -97,7 +100,8 @@ func (a *GeminiAdapter) IsHookInstalled(scope adapters.InstallScope) (bool, erro
 	for _, name := range []string{"AfterAgent", "SessionEnd"} {
 		for _, block := range ensureBlocks(hooks[name]) {
 			for _, entry := range ensureBlocks(block["hooks"]) {
-				if stringValue(entry["name"]) == afterAgentHookName || stringValue(entry["name"]) == sessionEndHookName || adapters.IsCommandMatch(stringValue(entry["command"]), "gemini") {
+				name := stringValue(entry["name"])
+				if name == afterAgentHookName || name == sessionEndHookName || name == legacyAfterAgentHookName || name == legacySessionEndHookName || adapters.IsCommandMatch(stringValue(entry["command"]), "gemini") {
 					return true, nil
 				}
 			}
@@ -187,7 +191,7 @@ func ensureNamedHook(blocks []map[string]any, hookName, command string) ([]map[s
 		entries := ensureBlocks(block["hooks"])
 		block["hooks"] = entries
 		for _, entry := range entries {
-			if stringValue(entry["name"]) == hookName || adapters.IsCommandMatch(stringValue(entry["command"]), "gemini") {
+			if stringValue(entry["name"]) == hookName || isLegacyGeminiHookName(stringValue(entry["name"])) || adapters.IsCommandMatch(stringValue(entry["command"]), "gemini") {
 				changed := false
 				if stringValue(entry["name"]) != hookName {
 					entry["name"] = hookName
@@ -224,7 +228,7 @@ func removeNamedHook(blocks []map[string]any, hookName, agent string) ([]map[str
 		entries := ensureBlocks(block["hooks"])
 		kept := make([]map[string]any, 0, len(entries))
 		for _, entry := range entries {
-			if stringValue(entry["name"]) == hookName || adapters.IsCommandMatch(stringValue(entry["command"]), agent) {
+			if stringValue(entry["name"]) == hookName || isLegacyGeminiHookName(stringValue(entry["name"])) || adapters.IsCommandMatch(stringValue(entry["command"]), agent) {
 				changed = true
 				continue
 			}
@@ -237,6 +241,10 @@ func removeNamedHook(blocks []map[string]any, hookName, agent string) ([]map[str
 		result = append(result, block)
 	}
 	return result, changed
+}
+
+func isLegacyGeminiHookName(name string) bool {
+	return name == legacyAfterAgentHookName || name == legacySessionEndHookName
 }
 
 func stringValue(value any) string {

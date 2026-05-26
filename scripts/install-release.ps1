@@ -1,20 +1,20 @@
 param(
-    [string]$Repo = $env:AI_AGENT_MANAGER_REPO,
-    [string]$Version = $env:AI_AGENT_MANAGER_VERSION,
-    [string]$ReleaseBaseUrl = $env:AI_AGENT_MANAGER_RELEASE_BASE_URL,
+    [string]$Repo = $(if ($env:ABOLQASEM_REPO) { $env:ABOLQASEM_REPO } else { $env:AI_AGENT_MANAGER_REPO }),
+    [string]$Version = $(if ($env:ABOLQASEM_VERSION) { $env:ABOLQASEM_VERSION } else { $env:AI_AGENT_MANAGER_VERSION }),
+    [string]$ReleaseBaseUrl = $(if ($env:ABOLQASEM_RELEASE_BASE_URL) { $env:ABOLQASEM_RELEASE_BASE_URL } else { $env:AI_AGENT_MANAGER_RELEASE_BASE_URL }),
     [string]$BinDir = $env:BIN_DIR,
-    [string]$Scope = $env:AI_AGENT_MANAGER_HOOK_SCOPE,
-    [string]$Agents = $env:AI_AGENT_MANAGER_AGENTS,
+    [string]$Scope = $(if ($env:ABOLQASEM_HOOK_SCOPE) { $env:ABOLQASEM_HOOK_SCOPE } else { $env:AI_AGENT_MANAGER_HOOK_SCOPE }),
+    [string]$Agents = $(if ($env:ABOLQASEM_AGENTS) { $env:ABOLQASEM_AGENTS } else { $env:AI_AGENT_MANAGER_AGENTS }),
     [ValidateSet("hook", "service")]
-    [string]$Startup = $env:AI_AGENT_MANAGER_STARTUP,
+    [string]$Startup = $(if ($env:ABOLQASEM_STARTUP) { $env:ABOLQASEM_STARTUP } else { $env:AI_AGENT_MANAGER_STARTUP }),
     [switch]$Hooks
 )
 
 $ErrorActionPreference = "Stop"
 
-$App = "ai-agent-manager"
+$App = "abolqasem"
 if ([string]::IsNullOrWhiteSpace($Repo)) {
-    $Repo = "moosavimaleki/ai-agent-manager"
+    $Repo = "moosavimaleki/abolqasem"
 }
 if ([string]::IsNullOrWhiteSpace($Version)) {
     $Version = "latest"
@@ -28,7 +28,8 @@ if ([string]::IsNullOrWhiteSpace($Agents)) {
 if ([string]::IsNullOrWhiteSpace($Startup)) {
     $Startup = "hook"
 }
-if ($env:AI_AGENT_MANAGER_INSTALL_HOOKS -ne "0") {
+$InstallHooksEnv = if ($env:ABOLQASEM_INSTALL_HOOKS) { $env:ABOLQASEM_INSTALL_HOOKS } else { $env:AI_AGENT_MANAGER_INSTALL_HOOKS }
+if ($InstallHooksEnv -ne "0") {
     $Hooks = $true
 }
 if (-not $PSBoundParameters.ContainsKey("Hooks")) {
@@ -90,15 +91,15 @@ try {
 
     if ($Hooks) {
         if ($Agents -eq "all") {
-            $env:AI_AGENT_MANAGER_SUPPRESS_TRUST_NOTICE = "1"
+            $env:ABOLQASEM_SUPPRESS_TRUST_NOTICE = "1"
             & $InstallPath install --all --scope $Scope --startup $Startup
         } else {
             foreach ($Agent in ($Agents -split "[,\s]+" | Where-Object { $_ })) {
-                $env:AI_AGENT_MANAGER_SUPPRESS_TRUST_NOTICE = "1"
+                $env:ABOLQASEM_SUPPRESS_TRUST_NOTICE = "1"
                 & $InstallPath install --agent $Agent --scope $Scope --startup $Startup
             }
         }
-        Remove-Item Env:AI_AGENT_MANAGER_SUPPRESS_TRUST_NOTICE -ErrorAction SilentlyContinue
+        Remove-Item Env:ABOLQASEM_SUPPRESS_TRUST_NOTICE -ErrorAction SilentlyContinue
     } elseif ($Startup -eq "service") {
         & $InstallPath install --startup service --no-hooks
     }

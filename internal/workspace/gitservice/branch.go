@@ -6,6 +6,11 @@ import (
 	"strings"
 )
 
+const (
+	localBranchRefPrefix  = "refs/heads/"
+	remoteBranchRefPrefix = "refs/remotes/"
+)
+
 type BranchListEntry struct {
 	ID          string `json:"id"`
 	Kind        string `json:"kind"`
@@ -64,7 +69,7 @@ func ListBranches(ctx context.Context, localPath string) (BranchListResult, erro
 	if snapshot.Status != StatusReady {
 		return result, nil
 	}
-	output, err := gitOutput(ctx, snapshot.RepositoryRoot, "for-each-ref", "--sort=-committerdate", "--format=%(refname:short)|%(committerdate:iso8601)", "refs/heads", "refs/remotes")
+	output, err := gitOutput(ctx, snapshot.RepositoryRoot, "for-each-ref", "--sort=-committerdate", "--format=%(refname)|%(refname:short)|%(committerdate:iso8601)", "refs/heads", "refs/remotes")
 	if err != nil {
 		return result, nil
 	}
@@ -86,11 +91,44 @@ func ListBranches(ctx context.Context, localPath string) (BranchListResult, erro
 }
 
 func CheckoutBranch(ctx context.Context, localPath string, branchName string) (BranchActionResult, error) {
-	return branchCommand(ctx, localPath, []string{"checkout", strings.TrimSpace(branchName)}, true)
+	return branchCommand(ctx, localPath, []string{"switch", strings.TrimSpace(branchName)}, true)
+}
+
+func CheckoutRemoteTrackingBranch(ctx context.Context, localPath string, remoteRef string) (BranchActionResult, error) {
+	remoteRef = strings.TrimSpace(remoteRef)
+	snapshot, err := Detect(ctx, localPath)
+	if err != nil {
+		return BranchActionResult{}, err
+	}
+	result := BranchActionResult{
+		BranchName:      snapshot.BranchName,
+		SnapshotChanged: true,
+	}
+	if snapshot.Status != StatusReady {
+		return branchFailure(result, "Git repository not ready", "Initialize git before running branch actions.", ""), nil
+	}
+	if remoteRef == "" {
+		return branchFailure(result, "Branch required", "Choose a branch first.", ""), nil
+	}
+	localName := localBranchNameForRemoteRef(remoteRef)
+	if localName == "" {
+		return branchFailure(result, "Branch action failed", "Remote branch name is invalid.", remoteRef), nil
+	}
+
+	if localBranchExists(ctx, snapshot.RepositoryRoot, localName) {
+		return branchCommand(ctx, snapshot.RepositoryRoot, []string{"switch", localName}, true)
+	}
+	if output, err := gitOutput(ctx, snapshot.RepositoryRoot, "switch", "--track", remoteRef); err != nil {
+		return branchFailure(result, "Branch action failed", err.Error(), output), nil
+	}
+	updated, _ := Detect(ctx, snapshot.RepositoryRoot)
+	result.OK = true
+	result.BranchName = updated.BranchName
+	return result, nil
 }
 
 func CreateBranch(ctx context.Context, localPath string, branchName string) (BranchActionResult, error) {
-	return branchCommand(ctx, localPath, []string{"checkout", "-b", strings.TrimSpace(branchName)}, true)
+	return branchCommand(ctx, localPath, []string{"switch", "-c", strings.TrimSpace(branchName)}, true)
 }
 
 func PreviewMergeBranch(ctx context.Context, localPath string, targetBranch string) (MergePreviewResult, error) {
@@ -171,26 +209,48 @@ func parseBranchLine(line string) (BranchListEntry, bool) {
 	if line == "" {
 		return BranchListEntry{}, false
 	}
-	parts := strings.SplitN(line, "|", 2)
-	name := strings.TrimSpace(parts[0])
-	if name == "" || name == "origin/HEAD" {
+	parts := strings.SplitN(line, "|", 3)
+	if len(parts) < 2 {
 		return BranchListEntry{}, false
 	}
-	entry := BranchListEntry{
-		ID:          "branch:" + name,
-		Kind:        "local",
-		Name:        name,
-		DisplayName: name,
+	refName := strings.TrimSpace(parts[0])
+	shortName := strings.TrimSpace(parts[1])
+	updatedAt := ""
+	if len(parts) > 2 {
+		updatedAt = strings.TrimSpace(parts[2])
 	}
-	if len(parts) > 1 {
-		entry.UpdatedAt = strings.TrimSpace(parts[1])
+	if strings.HasPrefix(refName, localBranchRefPrefix) {
+		name := strings.TrimPrefix(refName, localBranchRefPrefix)
+		if name == "" {
+			return BranchListEntry{}, false
+		}
+		return BranchListEntry{
+			ID:          "branch:" + name,
+			Kind:        "local",
+			Name:        name,
+			DisplayName: name,
+			UpdatedAt:   updatedAt,
+		}, true
 	}
-	if strings.Contains(name, "/") && !strings.HasPrefix(name, "heads/") {
-		entry.Kind = "remote"
-		entry.RemoteRef = name
-		entry.DisplayName = strings.TrimPrefix(name, "origin/")
+	if strings.HasPrefix(refName, remoteBranchRefPrefix) {
+		remoteRef := strings.TrimPrefix(refName, remoteBranchRefPrefix)
+		if remoteRef == "" || strings.HasSuffix(remoteRef, "/HEAD") {
+			return BranchListEntry{}, false
+		}
+		displayName := localBranchNameForRemoteRef(remoteRef)
+		if displayName == "" {
+			displayName = shortName
+		}
+		return BranchListEntry{
+			ID:          "branch:" + remoteRef,
+			Kind:        "remote",
+			Name:        remoteRef,
+			DisplayName: displayName,
+			UpdatedAt:   updatedAt,
+			RemoteRef:   remoteRef,
+		}, true
 	}
-	return entry, true
+	return BranchListEntry{}, false
 }
 
 func countCommits(ctx context.Context, root string, revisionRange string) int {
@@ -203,6 +263,23 @@ func countCommits(ctx context.Context, root string, revisionRange string) int {
 		return 0
 	}
 	return count
+}
+
+func localBranchExists(ctx context.Context, root string, name string) bool {
+	if strings.TrimSpace(name) == "" {
+		return false
+	}
+	_, err := gitOutput(ctx, root, "show-ref", "--verify", "--quiet", "refs/heads/"+name)
+	return err == nil
+}
+
+func localBranchNameForRemoteRef(remoteRef string) string {
+	remoteRef = strings.Trim(strings.TrimSpace(remoteRef), "/")
+	parts := strings.SplitN(remoteRef, "/", 2)
+	if len(parts) != 2 {
+		return ""
+	}
+	return strings.Trim(parts[1], "/")
 }
 
 func branchFailure(result BranchActionResult, title string, message string, detail string) BranchActionResult {

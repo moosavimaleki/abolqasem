@@ -82,7 +82,7 @@ export const fa: TranslationDictionary = {
   localDev: {
     addProject: "افزودن پروژه",
     checkStatus: "بررسی وضعیت سرور، راه‌اندازی و هوک‌ها",
-    cliTitle: () => "AI Agent Manager CLI",
+    cliTitle: () => "Abolqasem CLI",
     cliSubtitle: "روی دستگاه شما",
     connectTitle: () => `اتصال ${APP_NAME}`,
     connectedSubtitle: () => `${APP_NAME} وصل است. برای شروع یک پروژه را انتخاب کنید.`,

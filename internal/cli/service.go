@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"ai-agent-manager/internal/appinfo"
 	"ai-agent-manager/internal/state"
 	"fmt"
 	"os"
@@ -11,9 +12,9 @@ import (
 )
 
 const (
-	serviceName       = "ai-agent-manager"
-	launchAgentLabel  = "com.ai-agent-manager"
-	windowsTaskName   = "AI Agent Manager"
+	serviceName       = appinfo.Name
+	launchAgentLabel  = appinfo.LaunchAgentLabel
+	windowsTaskName   = appinfo.WindowsTaskName
 	serviceCommandUse = "__server --auto-port"
 )
 
@@ -29,10 +30,13 @@ func installService() error {
 
 	switch runtime.GOOS {
 	case "linux":
+		_ = uninstallLegacySystemdUserService()
 		return installSystemdUserService(exe)
 	case "darwin":
+		_ = uninstallLegacyLaunchAgent()
 		return installLaunchAgent(exe)
 	case "windows":
+		_ = uninstallLegacyScheduledTask()
 		return installScheduledTask(exe)
 	default:
 		return fmt.Errorf("persistent service is not supported on %s", runtime.GOOS)
@@ -47,6 +51,10 @@ func isServiceInstalled() bool {
 			return false
 		}
 		_, err = os.Stat(filepath.Join(home, ".config", "systemd", "user", serviceName+".service"))
+		if err == nil {
+			return true
+		}
+		_, err = os.Stat(filepath.Join(home, ".config", "systemd", "user", appinfo.LegacyName+".service"))
 		return err == nil
 	case "darwin":
 		home, err := os.UserHomeDir()
@@ -54,9 +62,14 @@ func isServiceInstalled() bool {
 			return false
 		}
 		_, err = os.Stat(filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist"))
+		if err == nil {
+			return true
+		}
+		_, err = os.Stat(filepath.Join(home, "Library", "LaunchAgents", appinfo.LegacyLaunchAgentLabel+".plist"))
 		return err == nil
 	case "windows":
-		return exec.Command("schtasks", "/Query", "/TN", windowsTaskName).Run() == nil
+		return exec.Command("schtasks", "/Query", "/TN", windowsTaskName).Run() == nil ||
+			exec.Command("schtasks", "/Query", "/TN", appinfo.LegacyWindowsTaskName).Run() == nil
 	default:
 		return false
 	}
@@ -65,11 +78,22 @@ func isServiceInstalled() bool {
 func uninstallService() error {
 	switch runtime.GOOS {
 	case "linux":
-		return uninstallSystemdUserService()
+		if err := uninstallSystemdUserService(); err != nil {
+			return err
+		}
+		return uninstallLegacySystemdUserService()
 	case "darwin":
-		return uninstallLaunchAgent()
+		if err := uninstallLaunchAgent(); err != nil {
+			return err
+		}
+		return uninstallLegacyLaunchAgent()
 	case "windows":
-		return uninstallScheduledTask()
+		err := uninstallScheduledTask()
+		legacyErr := uninstallLegacyScheduledTask()
+		if err != nil && legacyErr != nil {
+			return err
+		}
+		return nil
 	default:
 		return fmt.Errorf("persistent service is not supported on %s", runtime.GOOS)
 	}
@@ -80,13 +104,14 @@ func restartService() error {
 	case "linux":
 		return restartSystemdUserService()
 	case "darwin":
-		if err := uninstallLaunchAgent(); err != nil {
+		if err := uninstallLaunchAgentByLabel(currentLaunchAgentLabel()); err != nil {
 			return err
 		}
 		return installService()
 	case "windows":
-		_ = runCommand("schtasks", "/End", "/TN", windowsTaskName)
-		return runCommand("schtasks", "/Run", "/TN", windowsTaskName)
+		taskName := currentWindowsTaskName()
+		_ = runCommand("schtasks", "/End", "/TN", taskName)
+		return runCommand("schtasks", "/Run", "/TN", taskName)
 	default:
 		return fmt.Errorf("persistent service is not supported on %s", runtime.GOOS)
 	}
@@ -95,15 +120,15 @@ func restartService() error {
 func stopService() error {
 	switch runtime.GOOS {
 	case "linux":
-		return runCommand("systemctl", "--user", "stop", serviceName+".service")
+		return runCommand("systemctl", "--user", "stop", currentSystemdServiceName()+".service")
 	case "darwin":
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return err
 		}
-		return runCommand("launchctl", "unload", filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist"))
+		return runCommand("launchctl", "unload", filepath.Join(home, "Library", "LaunchAgents", currentLaunchAgentLabel()+".plist"))
 	case "windows":
-		return runCommand("schtasks", "/End", "/TN", windowsTaskName)
+		return runCommand("schtasks", "/End", "/TN", currentWindowsTaskName())
 	default:
 		return fmt.Errorf("persistent service is not supported on %s", runtime.GOOS)
 	}
@@ -112,15 +137,15 @@ func stopService() error {
 func startService() error {
 	switch runtime.GOOS {
 	case "linux":
-		return runCommand("systemctl", "--user", "start", serviceName+".service")
+		return runCommand("systemctl", "--user", "start", currentSystemdServiceName()+".service")
 	case "darwin":
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return err
 		}
-		return runCommand("launchctl", "load", "-w", filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist"))
+		return runCommand("launchctl", "load", "-w", filepath.Join(home, "Library", "LaunchAgents", currentLaunchAgentLabel()+".plist"))
 	case "windows":
-		return runCommand("schtasks", "/Run", "/TN", windowsTaskName)
+		return runCommand("schtasks", "/Run", "/TN", currentWindowsTaskName())
 	default:
 		return fmt.Errorf("persistent service is not supported on %s", runtime.GOOS)
 	}
@@ -129,8 +154,9 @@ func startService() error {
 func serviceStatus() (string, error) {
 	switch runtime.GOOS {
 	case "linux":
-		status, statusErr := commandOutput("systemctl", "--user", "status", serviceName+".service", "--no-pager")
-		logs, logsErr := commandOutput("journalctl", "--user", "-u", serviceName+".service", "-n", "80", "--no-pager")
+		name := currentSystemdServiceName()
+		status, statusErr := commandOutput("systemctl", "--user", "status", name+".service", "--no-pager")
+		logs, logsErr := commandOutput("journalctl", "--user", "-u", name+".service", "-n", "80", "--no-pager")
 		if statusErr != nil && logsErr != nil {
 			return "", statusErr
 		}
@@ -143,10 +169,10 @@ func serviceStatus() (string, error) {
 		return status + "\n\nRecent logs:\n" + logs, nil
 	case "darwin":
 		uid := fmt.Sprintf("%d", os.Getuid())
-		status, statusErr := commandOutput("launchctl", "print", "gui/"+uid+"/"+launchAgentLabel)
+		status, statusErr := commandOutput("launchctl", "print", "gui/"+uid+"/"+currentLaunchAgentLabel())
 		return appendServiceLogFiles(status, statusErr)
 	case "windows":
-		status, statusErr := commandOutput("schtasks", "/Query", "/TN", windowsTaskName, "/V", "/FO", "LIST")
+		status, statusErr := commandOutput("schtasks", "/Query", "/TN", currentWindowsTaskName(), "/V", "/FO", "LIST")
 		return appendServiceLogFiles(status, statusErr)
 	default:
 		return "", fmt.Errorf("persistent service is not supported on %s", runtime.GOOS)
@@ -164,6 +190,54 @@ func requireServiceInstalled() bool {
 func serviceLogPaths() (string, string) {
 	dir := state.GetStateDir()
 	return filepath.Join(dir, "service.log"), filepath.Join(dir, "service.err.log")
+}
+
+func currentSystemdServiceName() string {
+	if systemdUserServiceExists(serviceName) {
+		return serviceName
+	}
+	if systemdUserServiceExists(appinfo.LegacyName) {
+		return appinfo.LegacyName
+	}
+	return serviceName
+}
+
+func systemdUserServiceExists(name string) bool {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return false
+	}
+	_, err = os.Stat(filepath.Join(home, ".config", "systemd", "user", name+".service"))
+	return err == nil
+}
+
+func currentLaunchAgentLabel() string {
+	if launchAgentExists(launchAgentLabel) {
+		return launchAgentLabel
+	}
+	if launchAgentExists(appinfo.LegacyLaunchAgentLabel) {
+		return appinfo.LegacyLaunchAgentLabel
+	}
+	return launchAgentLabel
+}
+
+func launchAgentExists(label string) bool {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return false
+	}
+	_, err = os.Stat(filepath.Join(home, "Library", "LaunchAgents", label+".plist"))
+	return err == nil
+}
+
+func currentWindowsTaskName() string {
+	if exec.Command("schtasks", "/Query", "/TN", windowsTaskName).Run() == nil {
+		return windowsTaskName
+	}
+	if exec.Command("schtasks", "/Query", "/TN", appinfo.LegacyWindowsTaskName).Run() == nil {
+		return appinfo.LegacyWindowsTaskName
+	}
+	return windowsTaskName
 }
 
 func appendServiceLogFiles(status string, statusErr error) (string, error) {
@@ -208,7 +282,7 @@ func installSystemdUserService(exe string) error {
 	}
 	unitPath := filepath.Join(unitDir, serviceName+".service")
 	unit := fmt.Sprintf(`[Unit]
-Description=AI Agent Manager local viewer
+Description=Abolqasem local viewer
 After=network.target
 
 [Service]
@@ -242,11 +316,24 @@ func uninstallSystemdUserService() error {
 	return runCommand("systemctl", "--user", "daemon-reload")
 }
 
+func uninstallLegacySystemdUserService() error {
+	_ = runCommand("systemctl", "--user", "disable", "--now", appinfo.LegacyName+".service")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	unitPath := filepath.Join(home, ".config", "systemd", "user", appinfo.LegacyName+".service")
+	if err := os.Remove(unitPath); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return runCommand("systemctl", "--user", "daemon-reload")
+}
+
 func restartSystemdUserService() error {
 	if err := runCommand("systemctl", "--user", "daemon-reload"); err != nil {
 		return err
 	}
-	return runCommand("systemctl", "--user", "restart", serviceName+".service")
+	return runCommand("systemctl", "--user", "restart", currentSystemdServiceName()+".service")
 }
 
 func installLaunchAgent(exe string) error {
@@ -291,11 +378,19 @@ func installLaunchAgent(exe string) error {
 }
 
 func uninstallLaunchAgent() error {
+	return uninstallLaunchAgentByLabel(launchAgentLabel)
+}
+
+func uninstallLegacyLaunchAgent() error {
+	return uninstallLaunchAgentByLabel(appinfo.LegacyLaunchAgentLabel)
+}
+
+func uninstallLaunchAgentByLabel(label string) error {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return err
 	}
-	plistPath := filepath.Join(home, "Library", "LaunchAgents", launchAgentLabel+".plist")
+	plistPath := filepath.Join(home, "Library", "LaunchAgents", label+".plist")
 	_ = runCommand("launchctl", "unload", plistPath)
 	if err := os.Remove(plistPath); err != nil && !os.IsNotExist(err) {
 		return err
@@ -315,6 +410,10 @@ func installScheduledTask(exe string) error {
 
 func uninstallScheduledTask() error {
 	return runCommand("schtasks", "/Delete", "/TN", windowsTaskName, "/F")
+}
+
+func uninstallLegacyScheduledTask() error {
+	return runCommand("schtasks", "/Delete", "/TN", appinfo.LegacyWindowsTaskName, "/F")
 }
 
 func runCommand(name string, args ...string) error {

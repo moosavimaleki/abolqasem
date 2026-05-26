@@ -176,7 +176,12 @@ func workspaceCheckoutBranch(raw json.RawMessage) (gitservice.BranchActionResult
 	if err != nil {
 		return gitservice.BranchActionResult{}, "", err
 	}
-	result, err := gitservice.CheckoutBranch(context.Background(), project.LocalPath, payload.Branch.Target())
+	var result gitservice.BranchActionResult
+	if payload.Branch.Kind == "remote" || (payload.Branch.Kind == "pull_request" && strings.TrimSpace(payload.Branch.RemoteRef) != "") {
+		result, err = gitservice.CheckoutRemoteTrackingBranch(context.Background(), project.LocalPath, payload.Branch.Target())
+	} else {
+		result, err = gitservice.CheckoutBranch(context.Background(), project.LocalPath, payload.Branch.Target())
+	}
 	return result, project.ID, err
 }
 

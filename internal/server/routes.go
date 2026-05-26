@@ -1,6 +1,7 @@
 package server
 
 import (
+	"ai-agent-manager/internal/appinfo"
 	"ai-agent-manager/internal/state"
 	"io/fs"
 	"net/http"
@@ -38,7 +39,7 @@ func setupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/ws", handleWorkspaceWS)
 	mux.HandleFunc("/auth/status", handleWorkspaceAuthStatus)
 	mux.HandleFunc("/auth/logout", handleWorkspaceAuthLogout)
-	if strings.TrimSpace(os.Getenv("AI_AGENT_MANAGER_PPROF")) == "1" {
+	if strings.TrimSpace(os.Getenv(appinfo.EnvPrefix+"_PPROF")) == "1" || strings.TrimSpace(os.Getenv(appinfo.LegacyEnvPrefix+"_PPROF")) == "1" {
 		registerPprofRoutes(mux)
 	}
 

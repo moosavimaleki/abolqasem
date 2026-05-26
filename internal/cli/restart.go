@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"ai-agent-manager/internal/appinfo"
 	"ai-agent-manager/internal/state"
 	"fmt"
 	"os"
@@ -11,7 +12,7 @@ import (
 
 var restartCmd = &cobra.Command{
 	Use:   "restart",
-	Short: "Restart AI Agent Manager in the active startup mode",
+	Short: "Restart " + appinfo.DisplayName + " in the active startup mode",
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := restartActiveMode(); err != nil {
 			fmt.Printf("Restart failed: %v\n", err)

@@ -5,6 +5,7 @@ import (
 	"ai-agent-manager/internal/adapters/claude"
 	"ai-agent-manager/internal/adapters/codex"
 	"ai-agent-manager/internal/adapters/gemini"
+	"ai-agent-manager/internal/appinfo"
 	"ai-agent-manager/internal/buildinfo"
 	"ai-agent-manager/internal/state"
 	"encoding/json"
@@ -21,7 +22,7 @@ import (
 )
 
 const (
-	appReleaseAPIURL = "https://api.github.com/repos/moosavimaleki/ai-agent-manager/releases/latest"
+	appReleaseAPIURL = "https://api.github.com/repos/" + appinfo.GitHubRepo + "/releases/latest"
 )
 
 var (
@@ -142,17 +143,26 @@ func workspaceServiceInstalled() bool {
 		if err != nil {
 			return false
 		}
-		_, err = os.Stat(filepath.Join(home, ".config", "systemd", "user", "ai-agent-manager.service"))
+		_, err = os.Stat(filepath.Join(home, ".config", "systemd", "user", appinfo.Name+".service"))
+		if err == nil {
+			return true
+		}
+		_, err = os.Stat(filepath.Join(home, ".config", "systemd", "user", appinfo.LegacyName+".service"))
 		return err == nil
 	case "darwin":
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return false
 		}
-		_, err = os.Stat(filepath.Join(home, "Library", "LaunchAgents", "com.ai-agent-manager.plist"))
+		_, err = os.Stat(filepath.Join(home, "Library", "LaunchAgents", appinfo.LaunchAgentLabel+".plist"))
+		if err == nil {
+			return true
+		}
+		_, err = os.Stat(filepath.Join(home, "Library", "LaunchAgents", appinfo.LegacyLaunchAgentLabel+".plist"))
 		return err == nil
 	case "windows":
-		return exec.Command("schtasks", "/Query", "/TN", "AI Agent Manager").Run() == nil
+		return exec.Command("schtasks", "/Query", "/TN", appinfo.WindowsTaskName).Run() == nil ||
+			exec.Command("schtasks", "/Query", "/TN", appinfo.LegacyWindowsTaskName).Run() == nil
 	default:
 		return false
 	}
@@ -191,7 +201,7 @@ func workspaceCheckUpdate() map[string]any {
 		return workspaceUpdateError(snapshot, err)
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "ai-agent-manager/"+normalizedAppVersion())
+	req.Header.Set("User-Agent", appinfo.Name+"/"+normalizedAppVersion())
 
 	resp, err := appUpdateHTTPClient.Do(req)
 	if err != nil {

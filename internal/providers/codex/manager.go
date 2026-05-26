@@ -1,6 +1,7 @@
 package codex
 
 import (
+	"ai-agent-manager/internal/appinfo"
 	"context"
 	"errors"
 	"strings"
@@ -90,8 +91,8 @@ func (m *Manager) initialize(ctx context.Context) error {
 	var result any
 	err := m.client.Call(ctx, "initialize", codexprotocol.InitializeParams{
 		ClientInfo: codexprotocol.ClientInfo{
-			Name:    "ai-agent-manager",
-			Title:   "AI Agent Manager",
+			Name:    appinfo.Name,
+			Title:   appinfo.DisplayName,
 			Version: "dev",
 		},
 		Capabilities: codexprotocol.Capabilities{

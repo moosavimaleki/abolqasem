@@ -3,7 +3,7 @@ package appinfo
 const (
 	Name        = "abolqasem"
 	DisplayName = "Abolqasem"
-	GitHubRepo  = "jakemor/abolqasem"
+	GitHubRepo  = "moosavimaleki/abolqasem"
 
 	LegacyName        = "ai-agent-manager"
 	LegacyDisplayName = "AI Agent Manager"

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"ai-agent-manager/internal/appinfo"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -68,7 +69,7 @@ func handleAPIState(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, map[string]any{
-		"app":                "ai-agent-manager",
+		"app":                appinfo.Name,
 		"pid":                os.Getpid(),
 		"latest_session_key": appState.LatestSessionKey,
 		"latest_session_id":  appState.LatestSessionID,

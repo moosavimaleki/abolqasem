@@ -1,6 +1,7 @@
 package server
 
 import (
+	"ai-agent-manager/internal/appinfo"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -195,7 +196,7 @@ func uploadDir(projectID string) string {
 	if err != nil {
 		base = os.TempDir()
 	}
-	return filepath.Join(base, "ai-agent-manager", "uploads", safeSegment(projectID))
+	return filepath.Join(base, appinfo.Name, "uploads", safeSegment(projectID))
 }
 
 func detectUploadMime(path string, headerMime string) string {

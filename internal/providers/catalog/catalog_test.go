@@ -9,7 +9,6 @@ import (
 func withCodexRuntimeProbe(t *testing.T, info CodexRuntimeInfo) {
 	t.Helper()
 	oldProbe := codexRuntimeProbe
-	oldOnce := codexRuntimeOnce
 	oldInfo := codexRuntimeInfo
 	codexRuntimeProbe = func(context.Context) CodexRuntimeInfo {
 		return info
@@ -18,7 +17,7 @@ func withCodexRuntimeProbe(t *testing.T, info CodexRuntimeInfo) {
 	codexRuntimeInfo = CodexRuntimeInfo{}
 	t.Cleanup(func() {
 		codexRuntimeProbe = oldProbe
-		codexRuntimeOnce = oldOnce
+		codexRuntimeOnce = sync.Once{}
 		codexRuntimeInfo = oldInfo
 	})
 }

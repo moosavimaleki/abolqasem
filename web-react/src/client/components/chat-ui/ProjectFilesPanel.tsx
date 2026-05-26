@@ -151,7 +151,7 @@ function ProjectFileRow({
   const parentPath = fileParentPath(entry.path, entry.name)
   const handleDragStart = useCallback((event: DragEvent<HTMLSpanElement>) => {
     event.dataTransfer.effectAllowed = "copy"
-    event.dataTransfer.setData("application/x-ai-agent-manager-project-path", entry.path)
+    event.dataTransfer.setData("application/x-abolqasem-project-path", entry.path)
     event.dataTransfer.setData("text/plain", entry.path)
   }, [entry.path])
 
