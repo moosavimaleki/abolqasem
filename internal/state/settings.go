@@ -36,6 +36,7 @@ type AppSettings struct {
 	DefaultProvider                 string                                   `json:"default_provider"`
 	ProviderDefaults                map[string]ProviderPreference            `json:"provider_defaults"`
 	ProviderModelCatalog            catalog.ProviderModelInventoryByProvider `json:"provider_model_catalog"`
+	CommitMessageGenerator          CommitMessageGeneratorSettings           `json:"commit_message_generator"`
 	DefaultAgent                    string                                   `json:"default_agent"`
 	AgentModels                     map[string]string                        `json:"agent_models"`
 }
@@ -75,6 +76,7 @@ type AppSettingsPatch struct {
 	DefaultProvider         string                                 `json:"defaultProvider"`
 	ProviderDefaults        map[string]ProviderPreferencePatch     `json:"providerDefaults"`
 	ProviderModelCatalog    map[string]ProviderModelInventoryPatch `json:"providerModelCatalog"`
+	CommitMessageGenerator  *CommitMessageGeneratorPatch           `json:"commitMessageGenerator"`
 }
 
 type TerminalSettingsPatch struct {
@@ -101,6 +103,16 @@ type ProviderPreferencePatch struct {
 
 type ProviderModelInventoryPatch struct {
 	CustomModels *[]catalog.ProviderModelOption `json:"customModels"`
+}
+
+type CommitMessageGeneratorSettings struct {
+	Provider string `json:"provider"`
+	Model    string `json:"model"`
+}
+
+type CommitMessageGeneratorPatch struct {
+	Provider string `json:"provider"`
+	Model    string `json:"model"`
 }
 
 func DefaultAppSettings() AppSettings {
@@ -149,8 +161,12 @@ func DefaultAppSettings() AppSettings {
 			},
 		},
 		ProviderModelCatalog: catalog.ProviderModelInventoryByProvider{},
-		DefaultAgent:         "codex",
-		AgentModels:          map[string]string{"codex": ""},
+		CommitMessageGenerator: CommitMessageGeneratorSettings{
+			Provider: "codex",
+			Model:    catalog.CodexRuntimeDefaultModel(),
+		},
+		DefaultAgent: "codex",
+		AgentModels:  map[string]string{"codex": ""},
 	}
 }
 
@@ -223,6 +239,7 @@ func NormalizeSettings(settings AppSettings) AppSettings {
 	settings.ProviderProxy = normalizeProviderProxySettings(settings.ProviderProxy)
 	settings.DefaultProvider = normalizeDefaultProvider(settings.DefaultProvider, defaults.DefaultProvider)
 	settings.ProviderModelCatalog = normalizeProviderModelCatalog(settings.ProviderModelCatalog)
+	settings.CommitMessageGenerator = normalizeCommitMessageGenerator(settings.CommitMessageGenerator, settings.ProviderModelCatalog)
 	settings.ProviderDefaults = normalizeProviderDefaults(settings.ProviderDefaults, defaults.ProviderDefaults, settings.ProviderModelCatalog)
 	settings.AgentModels = normalizeAgentModels(settings.AgentModels)
 	return settings
@@ -313,6 +330,14 @@ func ApplySettingsPatch(settings AppSettings, patch AppSettingsPatch) AppSetting
 				current.CustomModels = append([]catalog.ProviderModelOption(nil), (*modelPatch.CustomModels)...)
 			}
 			settings.ProviderModelCatalog[provider] = current
+		}
+	}
+	if patch.CommitMessageGenerator != nil {
+		if provider := normalizeWorkspaceProvider(patch.CommitMessageGenerator.Provider); provider != "" {
+			settings.CommitMessageGenerator.Provider = provider
+		}
+		if model := strings.TrimSpace(patch.CommitMessageGenerator.Model); model != "" {
+			settings.CommitMessageGenerator.Model = model
 		}
 	}
 	return NormalizeSettings(settings)
@@ -475,6 +500,25 @@ func normalizeProviderDefaults(settings map[string]ProviderPreference, defaults 
 		normalized[provider] = current
 	}
 	return normalized
+}
+
+func normalizeCommitMessageGenerator(generator CommitMessageGeneratorSettings, modelCatalog catalog.ProviderModelInventoryByProvider) CommitMessageGeneratorSettings {
+	provider := normalizeWorkspaceProvider(generator.Provider)
+	if provider == "" {
+		provider = "codex"
+	}
+	model := strings.TrimSpace(generator.Model)
+	if model == "" {
+		model = catalog.GetOrDefaultWithInventory(provider, modelCatalog).DefaultModel
+	}
+	if provider == "codex" {
+		model = normalizeCodexCLIDefaultModel(model)
+	}
+	model = catalog.NormalizeServerModelWithInventory(provider, model, modelCatalog)
+	return CommitMessageGeneratorSettings{
+		Provider: provider,
+		Model:    model,
+	}
 }
 
 func normalizeProviderModelCatalog(modelCatalog catalog.ProviderModelInventoryByProvider) catalog.ProviderModelInventoryByProvider {

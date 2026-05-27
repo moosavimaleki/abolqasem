@@ -176,6 +176,7 @@ function StandaloneTranscriptApp() {
             onOpenLocalLink={handleOpenLocalLink}
             onAskUserQuestionSubmit={handleAskUserQuestion}
             onExitPlanModeConfirm={handleExitPlanMode}
+            showUnreadDot={false}
             showScrollButton={!isAtEnd && messages.length > 0}
             onIsAtEndChange={setIsAtEnd}
             scrollToBottom={scrollToBottom}

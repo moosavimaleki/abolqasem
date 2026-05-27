@@ -9,6 +9,7 @@ import {
   hasFileDragTypes,
   shouldUseMobileRightSidebarOverlay,
   shouldAutoFollowTranscriptResize,
+  shouldShowTranscriptUnreadIndicator,
 } from "./ChatPage"
 
 describe("hasFileDragTypes", () => {
@@ -46,6 +47,17 @@ describe("shouldAutoFollowTranscriptResize", () => {
 
   test("stops forcing auto-follow after the selection window expires", () => {
     expect(shouldAutoFollowTranscriptResize(true, 2_000, 2_000)).toBe(false)
+  })
+})
+
+describe("shouldShowTranscriptUnreadIndicator", () => {
+  test("lights the indicator only for appended messages while scrolled away from the end", () => {
+    expect(shouldShowTranscriptUnreadIndicator(2, "msg-2", [{ id: "msg-1" }, { id: "msg-2" }, { id: "msg-3" }], false)).toBe(true)
+  })
+
+  test("does not light the indicator for prepended history or when already at the end", () => {
+    expect(shouldShowTranscriptUnreadIndicator(2, "msg-2", [{ id: "older-1" }, { id: "older-2" }, { id: "msg-2" }], false)).toBe(false)
+    expect(shouldShowTranscriptUnreadIndicator(2, "msg-2", [{ id: "msg-1" }, { id: "msg-2" }, { id: "msg-3" }], true)).toBe(false)
   })
 })
 

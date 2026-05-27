@@ -1152,6 +1152,7 @@ func workspaceStoredChatIDForLegacyMeta(stateSnapshot readmodels.StoreState, met
 	if sessionToken == "" || provider == "" {
 		return ""
 	}
+	var pendingForkChatID string
 	for chatID, chat := range stateSnapshot.ChatsByID {
 		if chat.DeletedAt != 0 {
 			continue
@@ -1160,9 +1161,15 @@ func workspaceStoredChatIDForLegacyMeta(stateSnapshot readmodels.StoreState, met
 			continue
 		}
 		if !strings.EqualFold(strings.TrimSpace(derefWorkspaceString(chat.SessionToken)), sessionToken) {
+			if pendingForkChatID == "" && strings.EqualFold(strings.TrimSpace(derefWorkspaceString(chat.PendingForkSessionToken)), sessionToken) {
+				pendingForkChatID = chatID
+			}
 			continue
 		}
 		return chatID
+	}
+	if pendingForkChatID != "" {
+		return pendingForkChatID
 	}
 	return ""
 }

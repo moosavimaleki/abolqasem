@@ -57,6 +57,7 @@ import {
   isAbsoluteLocalPath,
   resolveDiffFilePath,
   sameContextWindowSnapshot,
+  shouldShowTranscriptUnreadIndicator,
 } from "./utils"
 import { useI18n } from "../../i18n/context"
 
@@ -65,6 +66,7 @@ export {
   getIgnoreFolderEntryFromDiffPath,
   hasFileDragTypes,
   shouldAutoFollowTranscriptResize,
+  shouldShowTranscriptUnreadIndicator,
 } from "./utils"
 
 const PROJECT_FILE_PREVIEW_NAVBAR_OFFSET_PX = 52
@@ -887,6 +889,8 @@ export function ChatPage() {
   const chatInputElementRef = useRef<HTMLTextAreaElement>(null)
   const chatInputRef = useRef<ChatInputHandle | null>(null)
   const messagesRef = useRef(state.messages)
+  const previousMessageCountRef = useRef(state.messages.length)
+  const previousLastMessageIdRef = useRef(state.messages.at(-1)?.id ?? null)
   const latestToolIdsRef = useRef(state.latestToolIds)
   const hasOlderHistoryRef = useRef(state.hasOlderHistory)
   const loadOlderHistoryRef = useRef(state.loadOlderHistory)
@@ -894,6 +898,7 @@ export function ChatPage() {
   const lastShiftKeydownRef = useRef(0)
   const { inputRef, syncInputHeight, transcriptPaddingBottom } = useTranscriptPaddingBottom()
   const [showScrollToBottom, setShowScrollToBottom] = useState(false)
+  const [hasUnreadMessages, setHasUnreadMessages] = useState(false)
   const [conversationIndex, setConversationIndex] = useState<TranscriptIndexItem[]>([])
   const [conversationIndexLoading, setConversationIndexLoading] = useState(false)
   const [conversationIndexChatId, setConversationIndexChatId] = useState<string | null>(null)
@@ -944,6 +949,24 @@ export function ChatPage() {
   }, [state.chatSnapshot?.messages])
   useLayoutEffect(() => {
     messagesRef.current = state.messages
+  }, [state.messages])
+
+  useEffect(() => {
+    const nextLastMessageId = state.messages.at(-1)?.id ?? null
+    if (shouldShowTranscriptUnreadIndicator(
+      previousMessageCountRef.current,
+      previousLastMessageIdRef.current,
+      state.messages,
+      isAtEndRef.current,
+    )) {
+      setHasUnreadMessages(true)
+    }
+    if (isAtEndRef.current) {
+      setHasUnreadMessages(false)
+    }
+
+    previousMessageCountRef.current = state.messages.length
+    previousLastMessageIdRef.current = nextLastMessageId
   }, [state.messages])
 
   useLayoutEffect(() => {
@@ -1237,6 +1260,7 @@ export function ChatPage() {
     if (isAtEnd) {
       clearShowScrollTimeout()
       setShowScrollToBottom(false)
+      setHasUnreadMessages(false)
       return
     }
 
@@ -1258,6 +1282,7 @@ export function ChatPage() {
     isAtEndRef.current = true
     clearShowScrollTimeout()
     setShowScrollToBottom(false)
+    setHasUnreadMessages(false)
     await transcriptListRef.current?.scrollToEnd?.({ animated })
   }, [clearShowScrollTimeout])
 
@@ -1465,6 +1490,9 @@ export function ChatPage() {
     transcriptNavigationRequestIdRef.current += 1
     clearShowScrollTimeout()
     setShowScrollToBottom(false)
+    setHasUnreadMessages(false)
+    previousMessageCountRef.current = messagesRef.current.length
+    previousLastMessageIdRef.current = messagesRef.current.at(-1)?.id ?? null
   }, [clearShowScrollTimeout, state.activeChatId])
 
   useEffect(() => {
@@ -1844,6 +1872,7 @@ export function ChatPage() {
             checkpoints={state.chatDiffSnapshot?.checkpoints ?? []}
             onRestoreCheckpoint={state.handleRestoreCheckpoint}
             showScrollButton={showScrollToBottom && state.messages.length > 0}
+            showUnreadDot={hasUnreadMessages}
             onIsAtEndChange={onIsAtEndChange}
             scrollToBottom={() => scrollToTranscriptEnd(true)}
             typedEmptyStateText={typedEmptyStateText}

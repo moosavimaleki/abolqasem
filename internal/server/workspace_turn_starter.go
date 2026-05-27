@@ -128,6 +128,18 @@ func (m *workspaceCodexSessionManager) remove(chatID string, process *workspaceC
 	m.mu.Unlock()
 }
 
+func (m *workspaceCodexSessionManager) close(chatID string) {
+	m.mu.Lock()
+	session := m.sessions[chatID]
+	if session != nil {
+		delete(m.sessions, chatID)
+	}
+	m.mu.Unlock()
+	if session != nil {
+		session.close()
+	}
+}
+
 func (s *workspaceCodexSession) reusableFor(request agent.TurnRequest) bool {
 	if s == nil || s.process == nil || s.process.Exited() {
 		return false

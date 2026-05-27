@@ -743,6 +743,7 @@ export interface AbolqasemState {
   localProjectsReady: boolean
   commandError: string | null
   sessionForkOperation: SessionForkOperation | null
+  creatingChatProjectId: string | null
   pendingArchiveChatIds: ReadonlySet<string>
   startingLocalPath: string | null
   sidebarOpen: boolean
@@ -857,6 +858,7 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
   const [addProjectModalOpen, setAddProjectModalOpen] = useState(false)
   const [commandError, setCommandError] = useState<string | null>(null)
   const [sessionForkOperation, setSessionForkOperation] = useState<SessionForkOperation | null>(null)
+  const [creatingChatProjectId, setCreatingChatProjectId] = useState<string | null>(null)
   const [pendingArchiveChatIds, setPendingArchiveChatIds] = useState<Set<string>>(() => new Set())
   const [isExportingStandalone, setIsExportingStandalone] = useState(false)
   const [standaloneShareUrl, setStandaloneShareUrl] = useState<string | null>(null)
@@ -866,6 +868,7 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
   const [optimisticUserPrompts, setOptimisticUserPrompts] = useState<OptimisticUserPrompt[]>([])
   const [optimisticProcessing, setOptimisticProcessing] = useState<OptimisticProcessingState | null>(null)
   const [focusEpoch, setFocusEpoch] = useState(0)
+  const creatingChatProjectIdRef = useRef<string | null>(null)
   const sendToStartingProfilesRef = useRef<Map<string, SendToStartingTrace>>(new Map())
   const pendingArchiveChatIdsRef = useRef<Set<string>>(new Set())
   const draftChatIds = useChatInputStore(useShallow((state) => Object.keys(state.drafts).sort()))
@@ -1501,22 +1504,33 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
   }, [activeChatId, isHistoryLoading, socket])
 
   const createChatForProject = useCallback(async (projectId: string) => {
+    if (creatingChatProjectIdRef.current) {
+      return
+    }
+    creatingChatProjectIdRef.current = projectId
+    setCreatingChatProjectId(projectId)
     const chatPreferences = useChatPreferencesStore.getState()
-    const baseSourceComposerState = activeChatId
-      ? chatPreferences.getComposerState(activeChatId)
-      : chatPreferences.getComposerState(NEW_CHAT_COMPOSER_ID)
-    const sourceComposerState = getComposerStateForActiveProvider(
-      baseSourceComposerState,
-      activeChatId ? runtime?.provider ?? null : null,
-      chatPreferences.providerDefaults
-    )
-    const result = await socket.command<{ chatId: string }>({ type: "chat.create", projectId })
-    chatPreferences.initializeComposerForChat(result.chatId, { sourceState: sourceComposerState })
-    setSelectedProjectId(projectId)
-    setPendingChatId(result.chatId)
-    navigate(chatRoute(result.chatId))
-    setSidebarOpen(false)
-    setCommandError(null)
+    try {
+      setCommandError(null)
+      const baseSourceComposerState = activeChatId
+        ? chatPreferences.getComposerState(activeChatId)
+        : chatPreferences.getComposerState(NEW_CHAT_COMPOSER_ID)
+      const sourceComposerState = getComposerStateForActiveProvider(
+        baseSourceComposerState,
+        activeChatId ? runtime?.provider ?? null : null,
+        chatPreferences.providerDefaults
+      )
+      const result = await socket.command<{ chatId: string }>({ type: "chat.create", projectId })
+      chatPreferences.initializeComposerForChat(result.chatId, { sourceState: sourceComposerState })
+      setSelectedProjectId(projectId)
+      setPendingChatId(result.chatId)
+      navigate(chatRoute(result.chatId))
+      setSidebarOpen(false)
+      setCommandError(null)
+    } finally {
+      creatingChatProjectIdRef.current = null
+      setCreatingChatProjectId(null)
+    }
   }, [activeChatId, navigate, runtime?.provider, socket])
 
   const resolveProjectIdForStartChat = useCallback(async (intent: StartChatIntent): Promise<{ projectId: string; localPath?: string }> => {
@@ -2292,6 +2306,7 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
     localProjectsReady,
     commandError,
     sessionForkOperation,
+    creatingChatProjectId,
     pendingArchiveChatIds,
     startingLocalPath,
     sidebarOpen,

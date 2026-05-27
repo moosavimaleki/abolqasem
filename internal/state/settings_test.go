@@ -25,6 +25,8 @@ func TestApplySettingsPatchPersistsAbolqasemSettings(t *testing.T) {
 	fastMode := true
 	planMode := true
 	analytics := true
+	commitProvider := "gemini"
+	commitModel := "gemini-2.5-flash"
 	settings = ApplySettingsPatch(settings, AppSettingsPatch{
 		AnalyticsEnabled: &analytics,
 		Locale:           "fa",
@@ -53,6 +55,10 @@ func TestApplySettingsPatchPersistsAbolqasemSettings(t *testing.T) {
 				PlanMode: &planMode,
 			},
 		},
+		CommitMessageGenerator: &CommitMessageGeneratorPatch{
+			Provider: commitProvider,
+			Model:    commitModel,
+		},
 	})
 	if err := SaveSettings(settings); err != nil {
 		t.Fatalf("SaveSettings returned error: %v", err)
@@ -80,6 +86,9 @@ func TestApplySettingsPatchPersistsAbolqasemSettings(t *testing.T) {
 	codex := loaded.ProviderDefaults["codex"]
 	if codex.Model != "gpt-5.4" || !codex.PlanMode || codex.ModelOptions["fastMode"] != true {
 		t.Fatalf("unexpected codex defaults: %#v", codex)
+	}
+	if loaded.CommitMessageGenerator.Provider != commitProvider || loaded.CommitMessageGenerator.Model != commitModel {
+		t.Fatalf("unexpected commit message generator: %#v", loaded.CommitMessageGenerator)
 	}
 }
 

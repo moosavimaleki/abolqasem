@@ -114,6 +114,7 @@ export type ClientCommand =
   | { type: "mcp.save"; server: McpServerConfig }
   | { type: "mcp.remove"; name: string }
   | { type: "mcp.registrySearch"; query: string; limit?: number }
+  | { type: "mcp.registryInstall"; config: McpServerConfig; installCommand?: string[] }
   | {
       type: "settings.writeLlmProvider"
       provider: LlmProviderSnapshot["provider"]

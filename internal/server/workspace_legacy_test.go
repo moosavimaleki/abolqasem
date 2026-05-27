@@ -859,6 +859,84 @@ func TestWorkspaceRecordHookPromptCheckpointReusesStoredChatBySessionToken(t *te
 	}
 }
 
+func TestWorkspaceRecordHookPromptCheckpointReusesStoredChatByPendingForkSessionToken(t *testing.T) {
+	dir := t.TempDir()
+	previousDataDir := workspaceDataDir
+	previousCoordinator := workspaceCoordinator
+	previousCoordinatorDir := workspaceCoordinatorDir
+	workspaceDataDir = func() string { return filepath.Join(dir, "workspace-data") }
+	workspaceCoordinator = nil
+	workspaceCoordinatorDir = ""
+	t.Cleanup(func() {
+		workspaceDataDir = previousDataDir
+		workspaceCoordinator = previousCoordinator
+		workspaceCoordinatorDir = previousCoordinatorDir
+	})
+
+	projectDir := filepath.Join(dir, "project")
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		t.Fatalf("mkdir project: %v", err)
+	}
+	transcriptPath := filepath.Join(dir, "rollout-2026-05-16T00-00-00-000Z-aaaa-bbbb-cccc-dddd-eeee.jsonl")
+	body := `{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"old prompt"}]}}` + "\n" +
+		`{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"old answer"}]}}` + "\n"
+	if err := os.WriteFile(transcriptPath, []byte(body), 0o644); err != nil {
+		t.Fatalf("write transcript: %v", err)
+	}
+	meta := state.SessionMeta{
+		Key:            "codex:aaaa-bbbb-cccc-dddd-eeee",
+		Agent:          "codex",
+		SessionID:      "aaaa-bbbb-cccc-dddd-eeee",
+		TranscriptPath: transcriptPath,
+		Cwd:            projectDir,
+		ProjectName:    "Project",
+		UpdatedAt:      time.Unix(1700000000, 0),
+	}
+	withLegacyState(t, &state.AppState{Sessions: map[string]state.SessionMeta{meta.Key: meta}})
+
+	store := workspaceStore()
+	project := legacyimport.ImportSession(meta, nil, legacyimport.ImportOptions{}).Project
+	appendWorkspaceEvent(t, store, events.StreamProjects, events.TypeProjectOpened, 100, map[string]any{
+		"projectId": project.ID,
+		"localPath": project.LocalPath,
+		"title":     project.Title,
+	})
+	appendWorkspaceEvent(t, store, events.StreamChats, events.TypeChatCreated, 100, map[string]any{
+		"chatId":    "chat-existing",
+		"projectId": project.ID,
+		"title":     "New Chat",
+	})
+	appendWorkspaceEvent(t, store, events.StreamChats, events.TypeChatProviderSet, 101, map[string]any{
+		"chatId":   "chat-existing",
+		"provider": "codex",
+	})
+	appendWorkspaceEvent(t, store, events.StreamTurns, events.TypePendingForkSessionTokenSet, 102, map[string]any{
+		"chatId":                  "chat-existing",
+		"pendingForkSessionToken": meta.SessionID,
+	})
+
+	record, err := workspaceRecordHookPromptCheckpoint(meta, state.HookEvent{
+		Agent:         "codex",
+		HookEventName: "UserPromptSubmit",
+		PromptPreview: "new prompt",
+	})
+	if err != nil {
+		t.Fatalf("workspaceRecordHookPromptCheckpoint returned error: %v", err)
+	}
+	if record.ChatID != "chat-existing" {
+		t.Fatalf("expected hook checkpoint to target existing chat, got %#v", record)
+	}
+
+	storeState, err := store.LoadState()
+	if err != nil {
+		t.Fatalf("LoadState returned error: %v", err)
+	}
+	sidebar := mergeLegacySidebarData(readmodels.DeriveSidebarData(storeState))
+	if len(sidebar.ProjectGroups) != 1 || len(sidebar.ProjectGroups[0].Chats) != 1 {
+		t.Fatalf("expected sidebar to keep one chat row, got %#v", sidebar.ProjectGroups)
+	}
+}
+
 func TestWorkspaceMaterializeLegacyClaudeChatPreservesToolEntries(t *testing.T) {
 	dir := t.TempDir()
 	previousDataDir := workspaceDataDir

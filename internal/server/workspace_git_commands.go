@@ -235,6 +235,11 @@ func workspaceGenerateCommitMessage(raw json.RawMessage) (map[string]any, error)
 	if err != nil {
 		return nil, err
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), workspaceCommitMessageAITimeout)
+	defer cancel()
+	if subject, body, err := workspaceGenerateCommitMessageAI(ctx, project.LocalPath, payload.Paths); err == nil && strings.TrimSpace(subject) != "" {
+		return map[string]any{"subject": subject, "body": body}, nil
+	}
 	subject, body := gitservice.GenerateCommitMessage(context.Background(), project.LocalPath, payload.Paths)
 	return map[string]any{"subject": subject, "body": body}, nil
 }

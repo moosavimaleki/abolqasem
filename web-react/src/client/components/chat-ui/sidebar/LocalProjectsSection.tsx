@@ -44,6 +44,7 @@ interface Props {
   onReorderGroups?: (newOrder: string[]) => void
   isConnected?: boolean
   startingLocalPath?: string | null
+  creatingChatProjectId?: string | null
 }
 
 interface SortableProjectGroupProps {
@@ -63,6 +64,7 @@ interface SortableProjectGroupProps {
   onHideProject?: (projectId: string) => void
   isConnected?: boolean
   startingLocalPath?: string | null
+  creatingChatProjectId?: string | null
 }
 
 const DRAG_REORDER_TRIGGER_OFFSET_PX = 20
@@ -120,14 +122,17 @@ function EmptyProjectChatButton({
   onNewLocalChat,
   isConnected,
   startingLocalPath,
+  isCreatingChat,
 }: {
   localPath: string
   onNewLocalChat: (localPath: string) => void
   isConnected?: boolean
   startingLocalPath?: string | null
+  isCreatingChat?: boolean
 }) {
   const { t } = useI18n()
-  const disabled = !isConnected || startingLocalPath === localPath
+  const disabled = !isConnected || startingLocalPath === localPath || isCreatingChat
+  const isLoading = startingLocalPath === localPath || isCreatingChat
 
   return (
     <button
@@ -144,7 +149,9 @@ function EmptyProjectChatButton({
       <span className="text-sm truncate flex-1 translate-y-[-0.5px] text-muted-foreground">
         {t.sidebar.newChat}
       </span>
-      <div className="h-7 w-6 mr-[2px] shrink-0" aria-hidden />
+      <div className="mr-[2px] flex h-7 w-6 shrink-0 items-center justify-center" aria-hidden>
+        {isLoading ? <Loader2 className="size-4 animate-spin text-muted-foreground" /> : null}
+      </div>
     </button>
   )
 }
@@ -212,6 +219,7 @@ const SortableProjectGroup = memo(function SortableProjectGroup({
   onHideProject,
   isConnected,
   startingLocalPath,
+  creatingChatProjectId,
 }: SortableProjectGroupProps) {
   const { t, direction } = useI18n()
   const tooltipSide = direction === "rtl" ? "left" : "right"
@@ -220,6 +228,7 @@ const SortableProjectGroup = memo(function SortableProjectGroup({
   const isEmptyProject = group.chats.length === 0
   const hasMore = group.olderChats.length > 0
   const hasProjectMenu = Boolean(onHideProject && onCopyPath && onOpenExternalPath)
+  const isCreatingChat = creatingChatProjectId === groupKey
 
   const {
     attributes,
@@ -298,15 +307,15 @@ const SortableProjectGroup = memo(function SortableProjectGroup({
                   size="icon"
                   className={cn(
                     "h-5.5 w-5.5 !rounded",
-                    (!isConnected || startingLocalPath === localPath) && "opacity-50 cursor-not-allowed"
+                    (!isConnected || startingLocalPath === localPath || isCreatingChat) && "opacity-50 cursor-not-allowed"
                   )}
-                  disabled={!isConnected || startingLocalPath === localPath}
+                  disabled={!isConnected || startingLocalPath === localPath || isCreatingChat}
                   onClick={(event) => {
                     event.stopPropagation()
                     onNewLocalChat(localPath)
                   }}
                 >
-                  {startingLocalPath === localPath ? (
+                  {startingLocalPath === localPath || isCreatingChat ? (
                     <Loader2 className="size-4 text-muted-foreground animate-spin" />
                   ) : (
                     <SquarePen className="size-3.5 text-muted-foreground" />
@@ -355,6 +364,7 @@ const SortableProjectGroup = memo(function SortableProjectGroup({
               onNewLocalChat={onNewLocalChat}
               isConnected={isConnected}
               startingLocalPath={startingLocalPath}
+              isCreatingChat={isCreatingChat}
             />
           ) : (
             <>
@@ -401,6 +411,7 @@ const LocalProjectsSectionImpl = function LocalProjectsSection({
   onReorderGroups,
   isConnected,
   startingLocalPath,
+  creatingChatProjectId,
 }: Props) {
   const isReorderEnabled = useSidebarReorderEnabled()
   const sensors = useSensors(
@@ -485,6 +496,7 @@ const LocalProjectsSectionImpl = function LocalProjectsSection({
           onHideProject={onHideProject}
           isConnected={isConnected}
           startingLocalPath={startingLocalPath}
+          creatingChatProjectId={creatingChatProjectId}
         />
         ))}
       </SortableContext>

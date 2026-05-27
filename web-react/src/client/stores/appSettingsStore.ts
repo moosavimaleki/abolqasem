@@ -30,6 +30,10 @@ export function mergeAppSettingsPatch(
       ...settings.providerProxy,
       ...patch.providerProxy,
     },
+    commitMessageGenerator: {
+      ...settings.commitMessageGenerator,
+      ...patch.commitMessageGenerator,
+    },
     providerDefaults: {
       claude: {
         ...settings.providerDefaults.claude,

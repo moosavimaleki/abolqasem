@@ -78,6 +78,7 @@ const (
 	CommandMCPSave                         = "mcp.save"
 	CommandMCPRemove                       = "mcp.remove"
 	CommandMCPRegistrySearch               = "mcp.registrySearch"
+	CommandMCPRegistryInstall              = "mcp.registryInstall"
 	CommandSystemOpenExternal              = "system.openExternal"
 	CommandChatCreate                      = "chat.create"
 	CommandChatFork                        = "chat.fork"

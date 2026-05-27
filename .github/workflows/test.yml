@@ -44,6 +44,7 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: web-react/package-lock.json
+      - uses: oven-sh/setup-bun@v2
 
       - run: npm ci
         working-directory: web-react

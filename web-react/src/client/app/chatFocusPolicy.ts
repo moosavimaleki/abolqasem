@@ -1,6 +1,7 @@
 export const FOCUS_FALLBACK_IGNORE_ATTRIBUTE = "data-focus-fallback-ignore"
 export const ALLOW_FOCUS_RETAIN_ATTRIBUTE = "data-allow-focus-retain"
 export const RESTORE_CHAT_INPUT_FOCUS_EVENT = "abolqasem:restore-chat-input-focus"
+export const READER_MODE_CHANGE_EVENT = "abolqasem:reader-mode-change"
 export const CHAT_INPUT_ATTRIBUTE = "data-chat-input"
 export const CHAT_SELECTION_ZONE_ATTRIBUTE = "data-chat-selection-zone"
 

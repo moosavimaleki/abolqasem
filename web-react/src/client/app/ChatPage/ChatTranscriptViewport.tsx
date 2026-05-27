@@ -26,6 +26,7 @@ import type { AbolqasemState } from "../useAbolqasemState"
 import {
   CHAT_NAVBAR_OFFSET_PX,
 } from "./utils"
+import { READER_MODE_CHANGE_EVENT } from "../chatFocusPolicy"
 import { buildAssistantReaderDocument, type AssistantReaderDocument } from "./readerBlocks"
 import type { EditorPreset } from "../../../shared/protocol"
 import type { ChatCheckpointSummary, HydratedTranscriptMessage, TranscriptIndexItem } from "../../../shared/types"
@@ -127,6 +128,7 @@ interface ChatTranscriptViewportProps {
   checkpoints?: ChatCheckpointSummary[]
   onRestoreCheckpoint?: AbolqasemState["handleRestoreCheckpoint"]
   showScrollButton: boolean
+  showUnreadDot: boolean
   onIsAtEndChange: (isAtEnd: boolean) => void
   scrollToBottom: () => void
   typedEmptyStateText: string
@@ -168,6 +170,7 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
   checkpoints = [],
   onRestoreCheckpoint,
   showScrollButton,
+  showUnreadDot,
   onIsAtEndChange,
   scrollToBottom,
   typedEmptyStateText,
@@ -252,6 +255,22 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
     setReaderDocument(null)
     setFloatingReaderMessageId(null)
   }, [activeChatId])
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    window.dispatchEvent(new CustomEvent(READER_MODE_CHANGE_EVENT, {
+      detail: { open: Boolean(readerDocument) },
+    }))
+  }, [readerDocument])
+
+  useEffect(() => {
+    return () => {
+      if (typeof window === "undefined") return
+      window.dispatchEvent(new CustomEvent(READER_MODE_CHANGE_EVENT, {
+        detail: { open: false },
+      }))
+    }
+  }, [])
 
   useEffect(() => {
     const previousRowCount = previousRowCountRef.current
@@ -672,9 +691,15 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
       >
         <button
           onClick={scrollToBottom}
-          className="flex aspect-square cursor-pointer items-center gap-1.5 rounded-full border border-border bg-white px-2 text-sm text-primary transition-colors hover:bg-muted hover:text-foreground dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
+          className="relative flex aspect-square cursor-pointer items-center gap-1.5 rounded-full border border-border bg-white px-2 text-sm text-primary transition-colors hover:bg-muted hover:text-foreground dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
         >
           <ArrowDown className="h-5 w-5" />
+          {showUnreadDot ? (
+            <span
+              aria-hidden="true"
+              className="absolute end-1 top-1 size-2 rounded-full bg-primary shadow-[0_0_0_2px_theme(colors.white)] dark:shadow-[0_0_0_2px_theme(colors.slate.700)]"
+            />
+          ) : null}
         </button>
       </div>
 

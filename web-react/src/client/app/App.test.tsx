@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { applyDocumentLocale, getAppAuthStateFromStatus, getDocumentBootstrapLocale, shouldPlayChatNotificationSound, shouldRedirectToChangelog, shouldRetryAuthStatusRequest, shouldShowHookUpdateToast, shouldShowStartupSplash, type HookStreamEvent } from "./App"
+import { applyDocumentLocale, getAppAuthStateFromStatus, getDocumentBootstrapLocale, getHookToastMode, shouldPlayChatNotificationSound, shouldRedirectToChangelog, shouldRetryAuthStatusRequest, shouldShowHookUpdateToast, shouldShowStartupSplash, type HookStreamEvent } from "./App"
 import { getChatNotificationSnapshot, getChatSoundBurstCount, getNotificationTitleCount } from "./chatNotifications"
 import { DEFAULT_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, clampSidebarWidth } from "./AbolqasemSidebar"
 import { isBrowserUnfocused, shouldPlayChatSound } from "../lib/chatSounds"
@@ -114,14 +114,40 @@ describe("shouldShowHookUpdateToast", () => {
     expect(shouldShowHookUpdateToast(event, "chat-active", noticeSettings)).toBe(true)
   })
 
+  test("shows follow-mode hook updates for a different chat", () => {
+    expect(shouldShowHookUpdateToast(event, "chat-active", {
+      management: { hookNotifications: { enabled: true, followMode: "auto" } },
+    } as AppSettingsSnapshot)).toBe(true)
+  })
+
   test("does not toast the active chat or disabled hook modes", () => {
     expect(shouldShowHookUpdateToast(event, "chat-updated", noticeSettings)).toBe(false)
     expect(shouldShowHookUpdateToast(event, "chat-active", {
-      management: { hookNotifications: { enabled: true, followMode: "auto" } },
+      management: { hookNotifications: { enabled: true, followMode: "off" } },
     } as AppSettingsSnapshot)).toBe(false)
     expect(shouldShowHookUpdateToast(event, "chat-active", {
       management: { hookNotifications: { enabled: false, followMode: "notice" } },
     } as AppSettingsSnapshot)).toBe(false)
+  })
+})
+
+describe("getHookToastMode", () => {
+  test("maps enabled hook settings to a toast behavior", () => {
+    expect(getHookToastMode({
+      management: { hookNotifications: { enabled: true, followMode: "auto" } },
+    } as AppSettingsSnapshot)).toBe("follow")
+    expect(getHookToastMode({
+      management: { hookNotifications: { enabled: true, followMode: "notice" } },
+    } as AppSettingsSnapshot)).toBe("notice")
+  })
+
+  test("returns null when hook toasts are disabled", () => {
+    expect(getHookToastMode({
+      management: { hookNotifications: { enabled: true, followMode: "off" } },
+    } as AppSettingsSnapshot)).toBeNull()
+    expect(getHookToastMode({
+      management: { hookNotifications: { enabled: false, followMode: "notice" } },
+    } as AppSettingsSnapshot)).toBeNull()
   })
 })
 

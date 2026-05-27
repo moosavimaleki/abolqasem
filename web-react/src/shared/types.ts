@@ -297,6 +297,11 @@ export interface ProviderModelInventory {
 
 export type ProviderModelCatalog = Record<AgentProvider, ProviderModelInventory>
 
+export interface CommitMessageGeneratorSettings {
+  provider: AgentProvider
+  model: string
+}
+
 export const PROVIDERS: ProviderCatalogEntry[] = [
   {
     id: "claude",
@@ -524,6 +529,7 @@ export interface AppSettingsSnapshot {
   defaultProvider: DefaultProviderPreference
   providerDefaults: ChatProviderPreferences
   providerModelCatalog: ProviderModelCatalog
+  commitMessageGenerator: CommitMessageGeneratorSettings
   availableProviders: ProviderCatalogEntry[]
   management?: AppManagementSnapshot
   warning: string | null
@@ -579,6 +585,7 @@ export interface AppSettingsPatch {
   providerModelCatalog?: Partial<Record<AgentProvider, {
     customModels?: ProviderModelOption[]
   }>>
+  commitMessageGenerator?: Partial<CommitMessageGeneratorSettings>
 }
 
 export interface LlmProviderFile {
@@ -693,6 +700,13 @@ export interface McpSaveResult extends McpSettingsSnapshot {
   server: McpServerConfig
 }
 
+export interface McpRegistryInstallResult extends McpSaveResult {
+  installCommand?: string[]
+  cwd?: string
+  stdout?: string
+  stderr?: string
+}
+
 export interface McpRegistrySearchResult {
   id: string
   registryName: string
@@ -709,6 +723,7 @@ export interface McpRegistrySearchResult {
   command?: string
   args?: string[]
   url?: string
+  installCommand?: string[]
   installable: boolean
   installReason?: string
   requiresConfiguration?: boolean

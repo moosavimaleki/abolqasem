@@ -93,3 +93,23 @@ func TestWorkspaceProjectGitSubscriptionSnapshotIsLightweight(t *testing.T) {
 		t.Fatalf("expected initialized empty fields, got %#v", snapshot)
 	}
 }
+
+func TestWorkspaceParseCommitMessageJSON(t *testing.T) {
+	subject, body, err := workspaceParseCommitMessageJSON("```json\n{\"subject\":\"Add AI commit messages.\",\"body\":\"Uses a hidden provider session.\"}\n```")
+	if err != nil {
+		t.Fatalf("workspaceParseCommitMessageJSON returned error: %v", err)
+	}
+	if subject != "Add AI commit messages" || body != "Uses a hidden provider session." {
+		t.Fatalf("unexpected commit message: subject=%q body=%q", subject, body)
+	}
+}
+
+func TestWorkspaceParseCommitMessageJSONExtractsObject(t *testing.T) {
+	subject, body, err := workspaceParseCommitMessageJSON("Here is the JSON:\n{\"message\":\"Update git panel\\n\\nGenerate commit messages with AI.\"}")
+	if err != nil {
+		t.Fatalf("workspaceParseCommitMessageJSON returned error: %v", err)
+	}
+	if subject != "Update git panel" || body != "Generate commit messages with AI." {
+		t.Fatalf("unexpected commit message: subject=%q body=%q", subject, body)
+	}
+}

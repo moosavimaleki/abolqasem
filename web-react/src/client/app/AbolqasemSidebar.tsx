@@ -264,6 +264,7 @@ interface AbolqasemSidebarProps {
   onForkChat: (chat: SidebarChatRow) => void
   onConvertChat: (chat: SidebarChatRow, provider: AgentProvider) => void
   currentProjectId: string | null
+  creatingChatProjectId: string | null
   keybindings: KeybindingsSnapshot | null
   onRenameChat: (chat: SidebarChatRow) => void
   onShareChat: (chatId: string) => void
@@ -338,6 +339,7 @@ function AbolqasemSidebarImpl({
   onForkChat,
   onConvertChat,
   currentProjectId,
+  creatingChatProjectId,
   keybindings,
   onRenameChat,
   onShareChat,
@@ -797,6 +799,7 @@ function AbolqasemSidebarImpl({
               onRenameProject={onRenameProject}
               onHideProject={onHideProject}
               isConnected={connectionStatus === "connected"}
+              creatingChatProjectId={creatingChatProjectId}
             />
           </div>
         </div>

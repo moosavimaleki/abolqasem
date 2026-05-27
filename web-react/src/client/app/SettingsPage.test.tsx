@@ -182,6 +182,7 @@ describe("McpSection", () => {
 
     expect(html).toContain("Configured MCP Servers")
     expect(html).toContain("Registry")
+    expect(html).toContain("Search MCP in registry")
     expect(html).toContain("Search MCP registry")
   })
 })

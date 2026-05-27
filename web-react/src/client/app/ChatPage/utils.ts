@@ -27,6 +27,17 @@ export function shouldAutoFollowTranscriptResize(
   return !showScrollButton || now < selectionAutoFollowUntil
 }
 
+export function shouldShowTranscriptUnreadIndicator(
+  previousMessageCount: number,
+  previousLastMessageId: string | null,
+  nextMessages: Array<{ id: string }>,
+  isAtEnd: boolean,
+) {
+  if (isAtEnd) return false
+  if (nextMessages.length <= previousMessageCount) return false
+  return (nextMessages.at(-1)?.id ?? null) !== previousLastMessageId
+}
+
 export function serializeBranchSelection(branch: ChatBranchListEntry) {
   return branch.kind === "local"
     ? { kind: "local" as const, name: branch.name }

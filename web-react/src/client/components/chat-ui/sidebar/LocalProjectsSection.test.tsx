@@ -33,10 +33,12 @@ function renderSection(
     expandedGroups = new Set<string>(),
     collapsedSections = new Set<string>(),
     onNewLocalChat,
+    creatingChatProjectId,
   }: {
     expandedGroups?: Set<string>
     collapsedSections?: Set<string>
     onNewLocalChat?: (localPath: string) => void
+    creatingChatProjectId?: string | null
   } = {}
 ) {
   return renderToStaticMarkup(createElement(
@@ -52,6 +54,7 @@ function renderSection(
       renderChatRow: (chat: SidebarChatRow) => createElement("div", { key: chat.chatId }, chat.title),
       onNewLocalChat,
       isConnected: true,
+      creatingChatProjectId,
     })
   ))
 }
@@ -139,6 +142,27 @@ describe("LocalProjectsSection", () => {
 
     expect(html).toContain("New Chat")
     expect(html).not.toContain("Show more")
+  })
+
+  test("locks the new chat button while a chat is being created", () => {
+    const projectGroups: SidebarProjectGroup[] = [{
+      groupKey: "project-a",
+      title: "Project A",
+      realTitle: "Project A",
+      localPath: "/tmp/project-a",
+      chats: [],
+      previewChats: [],
+      olderChats: [],
+      defaultCollapsed: false,
+    }]
+
+    const html = renderSection(projectGroups, {
+      onNewLocalChat: () => undefined,
+      creatingChatProjectId: "project-a",
+    })
+
+    expect((html.match(/animate-spin/g) ?? []).length).toBe(2)
+    expect(html).toContain("disabled")
   })
 
   test("renders the sidebar project title instead of the path basename", () => {

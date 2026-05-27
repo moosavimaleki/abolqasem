@@ -136,7 +136,7 @@ func (c *workspaceConnection) shouldHandleCommandAsync(raw json.RawMessage) bool
 		return false
 	}
 	switch commandType {
-	case protocol.CommandSkillsInstall, protocol.CommandSkillsUninstall:
+	case protocol.CommandSkillsInstall, protocol.CommandSkillsUninstall, protocol.CommandMCPRegistryInstall:
 		return true
 	default:
 		return false
@@ -317,6 +317,14 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 		return &response
 	case protocol.CommandMCPRegistrySearch:
 		result, err := workspaceMCPRegistrySearch(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		response := protocol.AckEnvelope(envelope.ID, result)
+		return &response
+	case protocol.CommandMCPRegistryInstall:
+		result, err := workspaceMCPRegistryInstall(envelope.Command)
 		if err != nil {
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
@@ -1143,10 +1151,14 @@ func workspaceAppSettingsSnapshot() map[string]any {
 		"defaultProvider":      settings.DefaultProvider,
 		"providerDefaults":     providerDefaultsSnapshot(settings.ProviderDefaults),
 		"providerModelCatalog": providerModelCatalogSnapshot(settings.ProviderModelCatalog),
-		"availableProviders":   workspaceAvailableProvidersForSettings(settings),
-		"management":           workspaceManagementSnapshot(),
-		"warning":              nil,
-		"filePathDisplay":      state.GetSettingsFilePath(),
+		"commitMessageGenerator": map[string]any{
+			"provider": settings.CommitMessageGenerator.Provider,
+			"model":    settings.CommitMessageGenerator.Model,
+		},
+		"availableProviders": workspaceAvailableProvidersForSettings(settings),
+		"management":         workspaceManagementSnapshot(),
+		"warning":            nil,
+		"filePathDisplay":    state.GetSettingsFilePath(),
 	}
 }
 

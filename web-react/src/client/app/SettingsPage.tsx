@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react"
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react"
 import {
   BookText,
   Command,
@@ -49,6 +49,7 @@ import {
   type SkillSearchSnapshot,
   type SkillUninstallResult,
   type McpProviderId,
+  type McpRegistryInstallResult,
   type McpRegistrySearchResult,
   type McpRegistrySearchSnapshot,
   type McpSaveResult,
@@ -1282,6 +1283,42 @@ function McpRegistryResultRow({
   )
 }
 
+function McpRegistrySkeletonList() {
+  const rows = [
+    ["w-40", "w-64", "w-28"],
+    ["w-56", "w-80", "w-32"],
+    ["w-44", "w-72", "w-24"],
+    ["w-52", "w-60", "w-36"],
+  ]
+  return (
+    <div className="border-t border-border" aria-hidden="true">
+      {rows.map((row, index) => (
+        <div
+          key={index}
+          className={cn(
+            "grid gap-3 py-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center md:gap-4",
+            index > 0 ? "border-t border-border" : undefined
+          )}
+        >
+          <div className="min-w-0 animate-pulse space-y-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <div className={cn("h-4 rounded bg-muted", row[0])} />
+              <div className="h-3 w-32 rounded bg-muted/70" />
+              <div className="h-3 w-12 rounded bg-muted/70" />
+            </div>
+            <div className={cn("h-3 max-w-full rounded bg-muted/70", row[1])} />
+            <div className={cn("h-3 rounded bg-muted/60", row[2])} />
+          </div>
+          <div className="flex shrink-0 animate-pulse items-center gap-2">
+            <div className="h-8 w-8 rounded-full bg-muted/70" />
+            <div className="h-7 w-16 rounded-full bg-muted" />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export function McpSection({
   state,
 }: {
@@ -1290,6 +1327,8 @@ export function McpSection({
   const { t, direction } = useI18n()
   const socket = state.socket
   const connectionStatus = state.connectionStatus
+  const registrySectionRef = useRef<HTMLElement | null>(null)
+  const registrySearchInputRef = useRef<HTMLInputElement | null>(null)
   const [snapshot, setSnapshot] = useState<McpSettingsSnapshot | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -1457,9 +1496,10 @@ export function McpSection({
         delete next[result.id]
         return next
       })
-      const saveResult = await socket.command<McpSaveResult>({
-        type: "mcp.save",
-        server: result.config,
+      const saveResult = await socket.command<McpRegistryInstallResult>({
+        type: "mcp.registryInstall",
+        config: result.config,
+        installCommand: result.installCommand,
       })
       setSnapshot({ configPaths: saveResult.configPaths, servers: saveResult.servers })
       setRegistryMessages((current) => ({
@@ -1486,6 +1526,11 @@ export function McpSection({
     setEditingName(null)
     setForm(emptyMcpForm())
     setDialogOpen(true)
+  }
+
+  function scrollToRegistrySearch() {
+    registrySectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+    window.setTimeout(() => registrySearchInputRef.current?.focus(), 250)
   }
 
   function openEditDialog(server: McpServerConfig) {
@@ -1527,8 +1572,12 @@ export function McpSection({
           description={t.settings.mcpServersDescription}
           bordered={false}
         >
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             {loading ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> : null}
+            <Button type="button" variant="secondary" size="sm" onClick={scrollToRegistrySearch}>
+              <Search className="h-4 w-4" />
+              {t.settings.searchMcpRegistryAction}
+            </Button>
             <Button type="button" variant="outline" size="sm" onClick={openAddDialog}>
               <Plus className="h-4 w-4" />
               {t.settings.addMcpServer}
@@ -1593,7 +1642,7 @@ export function McpSection({
         ) : null}
       </section>
 
-      <section className="mt-7 border-y border-border">
+      <section ref={registrySectionRef} className="mt-7 scroll-mt-4 border-y border-border">
         <SettingsRow
           title={t.settings.registryMcpServers}
           description={t.settings.registryMcpServersDescription}
@@ -1604,6 +1653,7 @@ export function McpSection({
             <div className="flex h-10 items-center gap-2 rounded-lg border border-border bg-card/30 px-3">
               <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
               <input
+                ref={registrySearchInputRef}
                 type="text"
                 role="searchbox"
                 value={registryQuery}
@@ -1628,7 +1678,9 @@ export function McpSection({
           </div>
         </SettingsRow>
 
-        {registryResults.length > 0 ? (
+        {registryLoading ? (
+          <McpRegistrySkeletonList />
+        ) : registryResults.length > 0 ? (
           <div className="border-t border-border">
             {registryResults.map((result, index) => (
               <div key={result.id} className={index > 0 ? "border-t border-border" : undefined}>
@@ -1637,7 +1689,9 @@ export function McpSection({
                   installed={Boolean(result.configName && configuredServerNames.has(result.configName))}
                   installing={installingRegistryId === result.id}
                   message={registryMessages[result.id]}
-                  onInstall={() => { void installRegistryServer(result) }}
+                  onInstall={() => {
+                    void installRegistryServer(result)
+                  }}
                 />
               </div>
             ))}
@@ -1970,6 +2024,24 @@ export function SettingsPage() {
   }, [dictionary, locale, providerModelCatalog])
   const modelCatalogErrorCount = useMemo(() => Object.values(providerModelCatalog ?? {})
     .filter((inventory) => Boolean(inventory.lastError)).length, [providerModelCatalog])
+  const commitMessageGenerator = appSettings?.commitMessageGenerator ?? {
+    provider: "codex" as AgentProvider,
+    model: providerDefaults.codex.model,
+  }
+  const commitMessageProviderConfig = providerCatalogEntry(commitMessageGenerator.provider)
+  const commitMessageModelOptions = useMemo(() => {
+    if (!commitMessageGenerator.model || commitMessageProviderConfig.models.some((model) => model.id === commitMessageGenerator.model)) {
+      return commitMessageProviderConfig.models
+    }
+    return [
+      {
+        id: commitMessageGenerator.model,
+        label: commitMessageGenerator.model,
+        supportsEffort: false,
+      },
+      ...commitMessageProviderConfig.models,
+    ]
+  }, [commitMessageGenerator.model, commitMessageProviderConfig.models])
   const [scrollbackDraft, setScrollbackDraft] = useState(String(scrollbackLines))
   const [minColumnWidthDraft, setMinColumnWidthDraft] = useState(String(minColumnWidth))
   const [editorCommandDraft, setEditorCommandDraft] = useState(editorCommandTemplate)
@@ -2266,6 +2338,24 @@ export function SettingsPage() {
     setDefaultProvider(nextValue)
     void handleWriteAppSettings({ defaultProvider: nextValue }).catch((error) => {
       setAppSettingsError(error instanceof Error ? error.message : "Unable to save provider settings.")
+    })
+  }
+
+  function handleCommitMessageProviderChange(provider: AgentProvider) {
+    const providerConfig = providerCatalogEntry(provider)
+    const model = providerConfig.defaultModel || providerConfig.models[0]?.id || ""
+    void handleWriteAppSettings({
+      commitMessageGenerator: { provider, model },
+    }).catch((error) => {
+      setAppSettingsError(error instanceof Error ? error.message : "Unable to save commit message generator.")
+    })
+  }
+
+  function handleCommitMessageModelChange(model: string) {
+    void handleWriteAppSettings({
+      commitMessageGenerator: { model },
+    }).catch((error) => {
+      setAppSettingsError(error instanceof Error ? error.message : "Unable to save commit message generator.")
     })
   }
 
@@ -3049,6 +3139,60 @@ export function SettingsPage() {
                           </SelectGroup>
                         </SelectContent>
                       </Select>
+                    </SettingsRow>
+
+                    <SettingsRow
+                      title={dictionary.settings.commitMessageAi}
+                      description={(
+                        <>
+                          <span>{dictionary.settings.commitMessageAiDescription}</span>
+                          <span className="mt-1 block">{dictionary.settings.commitMessageAiTemporarySession}</span>
+                        </>
+                      )}
+                      alignStart
+                    >
+                      <div className="grid w-full max-w-[420px] gap-3 sm:grid-cols-2">
+                        <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-muted-foreground">
+                          <span>{dictionary.settings.commitMessageAiAgent}</span>
+                          <Select
+                            value={commitMessageGenerator.provider}
+                            onValueChange={(value) => handleCommitMessageProviderChange(value as AgentProvider)}
+                          >
+                            <SelectTrigger className="min-w-0">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectGroup>
+                                {settingsAvailableProviders.map((provider) => (
+                                  <SelectItem key={provider.id} value={provider.id}>
+                                    {provider.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectGroup>
+                            </SelectContent>
+                          </Select>
+                        </label>
+                        <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-muted-foreground">
+                          <span>{dictionary.settings.commitMessageAiModel}</span>
+                          <Select
+                            value={commitMessageGenerator.model}
+                            onValueChange={handleCommitMessageModelChange}
+                          >
+                            <SelectTrigger className="min-w-0">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectGroup>
+                                {commitMessageModelOptions.map((model) => (
+                                  <SelectItem key={model.id} value={model.id}>
+                                    {model.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectGroup>
+                            </SelectContent>
+                          </Select>
+                        </label>
+                      </div>
                     </SettingsRow>
 
                     <SettingsRow

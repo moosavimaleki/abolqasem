@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -171,7 +172,67 @@ func TestMCPRegistryPackageMapsToStdioConfig(t *testing.T) {
 	if got := result.Config.Args; len(got) != 2 || got[0] != "-y" || got[1] != "@pulsemcp/pulse-fetch@0.3.2" {
 		t.Fatalf("unexpected args: %#v", got)
 	}
+	expectedInstallCommand := []string{npmCommandName(), "cache", "add", "@pulsemcp/pulse-fetch@0.3.2"}
+	if !slices.Equal(result.InstallCommand, expectedInstallCommand) {
+		t.Fatalf("unexpected install command: %#v", result.InstallCommand)
+	}
 	if !result.RequiresConfiguration || len(result.ConfigurationNotes) == 0 {
 		t.Fatalf("expected missing env to be reported, got %#v", result.ConfigurationNotes)
+	}
+}
+
+func TestWorkspaceMCPRegistryInstallDownloadsAndSaves(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CODEX_HOME", filepath.Join(home, "codex-home"))
+	t.Setenv("GEMINI_CLI_HOME", filepath.Join(home, "gemini-home"))
+
+	previousRun := runMCPRegistryInstallCommand
+	var receivedCommand []string
+	runMCPRegistryInstallCommand = func(command []string) (mcpRegistryCommandOutput, error) {
+		receivedCommand = append([]string(nil), command...)
+		return mcpRegistryCommandOutput{CWD: home, Stdout: "cached", Stderr: ""}, nil
+	}
+	t.Cleanup(func() { runMCPRegistryInstallCommand = previousRun })
+
+	payload, err := json.Marshal(struct {
+		Config         mcpServerConfig `json:"config"`
+		InstallCommand []string        `json:"installCommand"`
+	}{
+		Config: mcpServerConfig{
+			Name:      "pulse-fetch",
+			Transport: mcpTransportStdio,
+			Providers: []mcpProviderID{mcpProviderCodex, mcpProviderClaude},
+			Command:   "npx",
+			Args:      []string{"-y", "@pulsemcp/pulse-fetch@0.3.2"},
+		},
+		InstallCommand: []string{npmCommandName(), "cache", "add", "@pulsemcp/pulse-fetch@0.3.2"},
+	})
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+
+	result, err := workspaceMCPRegistryInstall(payload)
+	if err != nil {
+		t.Fatalf("workspaceMCPRegistryInstall returned error: %v", err)
+	}
+	expectedCommand := []string{npmCommandName(), "cache", "add", "@pulsemcp/pulse-fetch@0.3.2"}
+	if !slices.Equal(receivedCommand, expectedCommand) {
+		t.Fatalf("unexpected download command: %#v", receivedCommand)
+	}
+	if result.Server.Name != "pulse-fetch" || result.CWD != home || result.Stdout != "cached" {
+		t.Fatalf("unexpected install result: %#v", result)
+	}
+	if len(result.Servers) != 1 || result.Servers[0].Name != "pulse-fetch" {
+		t.Fatalf("expected saved MCP server, got %#v", result.Servers)
+	}
+}
+
+func TestMCPRegistryInstallCommandValidationRejectsArbitraryCommands(t *testing.T) {
+	if _, err := normalizeMCPRegistryInstallCommand([]string{"sh", "-c", "npm cache add package"}); err == nil {
+		t.Fatal("expected shell install command to be rejected")
+	}
+	if _, err := normalizeMCPRegistryInstallCommand([]string{npmCommandName(), "install", "@pulsemcp/pulse-fetch"}); err == nil {
+		t.Fatal("expected unsupported npm install command to be rejected")
 	}
 }
