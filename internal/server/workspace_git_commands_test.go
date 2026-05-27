@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -91,6 +92,53 @@ func TestWorkspaceProjectGitSubscriptionSnapshotIsLightweight(t *testing.T) {
 	}
 	if snapshot.Files == nil || snapshot.BranchHistory.Entries == nil {
 		t.Fatalf("expected initialized empty fields, got %#v", snapshot)
+	}
+}
+
+func TestWorkspaceRefreshDiffsReportsOnlyRealSnapshotChanges(t *testing.T) {
+	withWorkspaceComposerStore(t)
+	originalCache := workspaceProjectGitSnapshots
+	workspaceProjectGitSnapshots = newWorkspaceProjectGitSnapshotCache()
+	t.Cleanup(func() { workspaceProjectGitSnapshots = originalCache })
+
+	conn := newTestWorkspaceConnection(nil)
+	projectDir := t.TempDir()
+	runGit(t, projectDir, "init")
+	if err := os.WriteFile(filepath.Join(projectDir, "app.txt"), []byte("one\n"), 0o644); err != nil {
+		t.Fatalf("write app.txt failed: %v", err)
+	}
+	projectID := mustCreateWorkspaceProject(t, conn, projectDir)
+	chatID := mustCreateWorkspaceChat(t, conn, projectID)
+	raw, err := json.Marshal(map[string]any{"chatId": chatID})
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+
+	snapshot, returnedProjectID, changed, err := workspaceRefreshDiffs(raw)
+	if err != nil {
+		t.Fatalf("workspaceRefreshDiffs returned error: %v", err)
+	}
+	if returnedProjectID != projectID || !changed || len(snapshot.Files) != 1 {
+		t.Fatalf("expected initial changed snapshot, project=%q changed=%t snapshot=%#v", returnedProjectID, changed, snapshot)
+	}
+
+	_, _, changed, err = workspaceRefreshDiffs(raw)
+	if err != nil {
+		t.Fatalf("workspaceRefreshDiffs returned error: %v", err)
+	}
+	if changed {
+		t.Fatalf("expected unchanged snapshot on repeated refresh")
+	}
+
+	if err := os.WriteFile(filepath.Join(projectDir, "app.txt"), []byte("one\ntwo\n"), 0o644); err != nil {
+		t.Fatalf("write app.txt failed: %v", err)
+	}
+	_, _, changed, err = workspaceRefreshDiffs(raw)
+	if err != nil {
+		t.Fatalf("workspaceRefreshDiffs returned error: %v", err)
+	}
+	if !changed {
+		t.Fatalf("expected changed snapshot after file update")
 	}
 }
 

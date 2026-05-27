@@ -3,11 +3,47 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"strings"
+	"sync"
 
 	"ai-agent-manager/internal/workspace/gitservice"
 	"ai-agent-manager/internal/workspace/readmodels"
 )
+
+var workspaceProjectGitSnapshots = newWorkspaceProjectGitSnapshotCache()
+
+type workspaceProjectGitSnapshotCache struct {
+	mu        sync.Mutex
+	snapshots map[string]gitservice.Snapshot
+}
+
+func newWorkspaceProjectGitSnapshotCache() *workspaceProjectGitSnapshotCache {
+	return &workspaceProjectGitSnapshotCache{
+		snapshots: map[string]gitservice.Snapshot{},
+	}
+}
+
+func (c *workspaceProjectGitSnapshotCache) store(projectID string, snapshot gitservice.Snapshot) {
+	if strings.TrimSpace(projectID) == "" {
+		return
+	}
+	c.mu.Lock()
+	c.snapshots[projectID] = snapshot
+	c.mu.Unlock()
+}
+
+func (c *workspaceProjectGitSnapshotCache) update(projectID string, snapshot gitservice.Snapshot) bool {
+	if strings.TrimSpace(projectID) == "" {
+		return true
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	previous, ok := c.snapshots[projectID]
+	changed := !ok || !reflect.DeepEqual(previous, snapshot)
+	c.snapshots[projectID] = snapshot
+	return changed
+}
 
 func workspaceProjectGitSnapshot(projectID string) any {
 	project, err := workspaceRuntimeProjectRequired(projectID)
@@ -18,7 +54,9 @@ func workspaceProjectGitSnapshot(projectID string) any {
 	if err != nil {
 		snapshot = gitservice.Snapshot{Status: gitservice.StatusUnknown}
 	}
-	return workspaceProjectGitSnapshotWithCheckpoints(project.ID, snapshot)
+	snapshot = workspaceProjectGitSnapshotWithCheckpoints(project.ID, snapshot)
+	workspaceProjectGitSnapshots.store(project.ID, snapshot)
+	return snapshot
 }
 
 func workspaceProjectGitSubscriptionSnapshot(projectID string) any {
@@ -71,16 +109,18 @@ func workspaceInitGit(raw json.RawMessage) (gitservice.BranchActionResult, strin
 	return result, project.ID, err
 }
 
-func workspaceRefreshDiffs(raw json.RawMessage) (gitservice.Snapshot, string, error) {
+func workspaceRefreshDiffs(raw json.RawMessage) (gitservice.Snapshot, string, bool, error) {
 	_, project, err := workspaceChatProjectFromRaw(raw)
 	if err != nil {
-		return gitservice.Snapshot{}, "", err
+		return gitservice.Snapshot{}, "", false, err
 	}
 	snapshot, err := gitservice.Detect(context.Background(), project.LocalPath)
 	if err != nil {
-		return gitservice.Snapshot{}, project.ID, err
+		return gitservice.Snapshot{}, project.ID, false, err
 	}
-	return workspaceProjectGitSnapshotWithCheckpoints(project.ID, snapshot), project.ID, nil
+	snapshot = workspaceProjectGitSnapshotWithCheckpoints(project.ID, snapshot)
+	changed := workspaceProjectGitSnapshots.update(project.ID, snapshot)
+	return snapshot, project.ID, changed, nil
 }
 
 func workspaceGetGitHubPublishInfo(raw json.RawMessage) (gitservice.GitHubPublishInfo, error) {

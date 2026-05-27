@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -119,6 +120,12 @@ func TestWorkspaceAuthDisabledEndpointsMatchAbolqasemShape(t *testing.T) {
 
 func TestEmbeddedViewerAssetsUseRelativePathsForLegacyRoute(t *testing.T) {
 	legacyFS := webFSOrDisk()
+	if _, err := fs.Stat(legacyFS, "index.html"); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			t.Skip("embedded web assets are not prepared; run scripts/prepare-web-assets.sh")
+		}
+		t.Fatalf("Stat index.html returned error: %v", err)
+	}
 	for _, path := range []string{"index.html", "styles.css", "styles/base.css", "styles/icons.css"} {
 		data, err := fs.ReadFile(legacyFS, path)
 		if err != nil {

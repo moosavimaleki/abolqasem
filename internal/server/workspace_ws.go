@@ -599,13 +599,15 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
 		return &response
 	case protocol.CommandChatRefreshDiffs:
-		snapshot, projectID, err := workspaceRefreshDiffs(envelope.Command)
+		snapshot, projectID, changed, err := workspaceRefreshDiffs(envelope.Command)
 		if err != nil {
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
 		}
-		workspaceConnections.broadcastProjectGitSnapshot(projectID, snapshot)
-		response := protocol.AckEnvelope(envelope.ID, snapshot)
+		if changed {
+			workspaceConnections.broadcastProjectGitSnapshot(projectID, snapshot)
+		}
+		response := protocol.AckEnvelope(envelope.ID, map[string]any{"changed": changed})
 		return &response
 	case protocol.CommandChatInitGit:
 		result, projectID, err := workspaceInitGit(envelope.Command)

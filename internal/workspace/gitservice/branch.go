@@ -2,6 +2,7 @@ package gitservice
 
 import (
 	"context"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -53,23 +54,33 @@ type MergePreviewResult struct {
 }
 
 func ListBranches(ctx context.Context, localPath string) (BranchListResult, error) {
-	snapshot, err := Detect(ctx, localPath)
-	if err != nil {
-		return BranchListResult{}, err
-	}
 	result := BranchListResult{
-		CurrentBranchName:  snapshot.BranchName,
-		DefaultBranchName:  snapshot.DefaultBranchName,
 		Recent:             []BranchListEntry{},
 		Local:              []BranchListEntry{},
 		Remote:             []BranchListEntry{},
 		PullRequests:       []BranchListEntry{},
 		PullRequestsStatus: "unavailable",
 	}
-	if snapshot.Status != StatusReady {
-		return result, nil
+	root, err := gitOutput(ctx, localPath, "rev-parse", "--show-toplevel")
+	if err != nil {
+		if isNoRepoError(err) {
+			return result, nil
+		}
+		return BranchListResult{}, err
 	}
-	output, err := gitOutput(ctx, snapshot.RepositoryRoot, "for-each-ref", "--sort=-committerdate", "--format=%(refname)|%(refname:short)|%(committerdate:iso8601)", "refs/heads", "refs/remotes")
+	root = filepath.Clean(root)
+	if branch, err := gitOutput(ctx, root, "branch", "--show-current"); err == nil {
+		result.CurrentBranchName = branch
+	}
+	if result.CurrentBranchName == "" {
+		if branch, err := gitOutput(ctx, root, "rev-parse", "--abbrev-ref", "HEAD"); err == nil && branch != "HEAD" {
+			result.CurrentBranchName = branch
+		}
+	}
+	if defaultBranch, err := gitOutput(ctx, root, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"); err == nil {
+		result.DefaultBranchName = strings.TrimPrefix(defaultBranch, "origin/")
+	}
+	output, err := gitOutput(ctx, root, "for-each-ref", "--sort=-committerdate", "--format=%(refname)|%(refname:short)|%(committerdate:iso8601)", "refs/heads", "refs/remotes")
 	if err != nil {
 		return result, nil
 	}
@@ -87,7 +98,34 @@ func ListBranches(ctx context.Context, localPath string) (BranchListResult, erro
 			}
 		}
 	}
+	if result.DefaultBranchName == "" {
+		result.DefaultBranchName = defaultBranchFromEntries(result.Local, result.CurrentBranchName)
+	}
 	return result, nil
+}
+
+func defaultBranchFromEntries(local []BranchListEntry, currentBranch string) string {
+	for _, candidate := range []string{"main", "master"} {
+		if branchListContains(local, candidate) {
+			return candidate
+		}
+	}
+	if currentBranch != "" {
+		return currentBranch
+	}
+	if len(local) > 0 {
+		return local[0].Name
+	}
+	return ""
+}
+
+func branchListContains(entries []BranchListEntry, name string) bool {
+	for _, entry := range entries {
+		if entry.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func CheckoutBranch(ctx context.Context, localPath string, branchName string) (BranchActionResult, error) {
