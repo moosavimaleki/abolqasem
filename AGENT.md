@@ -8,3 +8,14 @@
 
 ## محدودیت‌ها و راهکار ایده‌آل
 راهکار ارائه شده نباید هزینه‌بر باشد (مثلاً نباید برای انجام این تبدیل ساده، درخواستی به LLM ارسال شود و توکن مصرف کند). همچنین کاربر تمایل دارد این قابلیت به صورت یک **پلاگین مستقل** طراحی شود تا بتواند آن را در یک مخزن گیت‌هاب (مانند `ai-agent-manager`) منتشر کند و سایر کاربران نیز بتوانند بدون نیاز به دستکاری کدهای هسته (Core) سیستم Codex، از آن بهره‌مند شوند.
+
+## دستورالعمل دائمی توسعه Cross-platform
+این پروژه فقط یک وب‌اپ ساده نیست؛ با فایل‌سیستم، cache، مسیرهای خانه کاربر، hooks، نصب باینری، Git، processها و تنظیمات ابزارهای مختلف کار می‌کند. بنابراین هر تغییری باید از ابتدا با فرض اجرای واقعی روی Linux، macOS و Windows طراحی شود.
+
+- قبل از تغییر کدی که با path، فایل، cache، temp dir، home dir، process execution، shell command، Git یا installer سروکار دارد، تفاوت‌های Linux/macOS/Windows را صریح بررسی کن.
+- مسیرها را با `filepath` و APIهای استاندارد سیستم‌عامل بساز، نه با concat کردن رشته‌ها یا `/` ثابت. فقط برای payloadهای وب/API از slash-normalized path استفاده کن.
+- مسیرهای filesystem را در تست‌ها literal مقایسه نکن مگر مطمئن باشی canonical هستند. روی macOS مسیرهای temp ممکن است از `/var` به `/private/var` resolve شوند؛ در این موارد از `filepath.EvalSymlinks` یا normalization مناسب استفاده کن.
+- برای cache و home dir به تفاوت‌های `XDG_CACHE_HOME`، `HOME`, `USERPROFILE`, `LOCALAPPDATA` و `os.UserCacheDir()` توجه کن. تست‌ها نباید روی cache واقعی runner یا سیستم توسعه‌دهنده بنویسند.
+- کدهای نصب و hook باید command، permission، extension باینری (`.exe`) و shell متفاوت Windows/Unix را در نظر بگیرند. فرض نکن `sh`, `bash`, `chmod`, `install`, `tar` یا مسیرهای Unix همیشه موجودند.
+- تستی که به asset ساخته‌شده، web build، binary release یا فایل generated نیاز دارد، یا خودش fixture را آماده کند یا در نبود fixture به شکل واضح skip شود. jobهای CI نباید به artifact باقی‌مانده از اجرای قبلی وابسته باشند.
+- هر fix مرتبط با filesystem یا installer باید حداقل با `GOTOOLCHAIN=local go test ./...` و در صورت ارتباط با frontend با `npm run check` بررسی شود. اگر نمی‌توان یک OS را محلی اجرا کرد، تست‌ها را طوری بنویس که اختلاف‌های شناخته‌شده آن OS را پوشش دهند.

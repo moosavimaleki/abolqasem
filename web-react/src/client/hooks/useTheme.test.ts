@@ -1,15 +1,6 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { describe, expect, test } from "bun:test"
+import { replaceGlobalProperty, restoreGlobalProperties } from "../test/globalProperty"
 import { getAppleMobileWebAppStatusBarStyle, syncThemeMetadata } from "./useTheme"
-
-const originalDocument = globalThis.document
-const originalWindow = globalThis.window
-const originalGetComputedStyle = globalThis.getComputedStyle
-
-afterEach(() => {
-  globalThis.document = originalDocument
-  globalThis.window = originalWindow
-  globalThis.getComputedStyle = originalGetComputedStyle
-})
 
 function createFakeDocument() {
   const headChildren: Array<{ attributes: Map<string, string>; setAttribute: (name: string, value: string) => void; getAttribute: (name: string) => string | null }> = []
@@ -61,17 +52,23 @@ describe("getAppleMobileWebAppStatusBarStyle", () => {
 describe("syncThemeMetadata", () => {
   test("updates theme-color and color-scheme from the active theme", () => {
     const fakeDocument = createFakeDocument()
-    globalThis.document = fakeDocument as typeof document
-    globalThis.window = {} as typeof window
-    globalThis.getComputedStyle = (() => ({ backgroundColor: "rgb(34, 34, 34)" })) as typeof getComputedStyle
+    const restores = [
+      replaceGlobalProperty("document", fakeDocument),
+      replaceGlobalProperty("window", {}),
+      replaceGlobalProperty("getComputedStyle", () => ({ backgroundColor: "rgb(34, 34, 34)" })),
+    ]
 
-    syncThemeMetadata("dark")
+    try {
+      syncThemeMetadata("dark")
 
-    const themeColorTag = fakeDocument.head.querySelector('meta[name="theme-color"]')
-    const statusBarTag = fakeDocument.head.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]')
+      const themeColorTag = fakeDocument.head.querySelector('meta[name="theme-color"]')
+      const statusBarTag = fakeDocument.head.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]')
 
-    expect(themeColorTag?.getAttribute("content")).toBe("rgb(34, 34, 34)")
-    expect(statusBarTag?.getAttribute("content")).toBe("black-translucent")
-    expect(fakeDocument.documentElement.style.colorScheme).toBe("dark")
+      expect(themeColorTag?.getAttribute("content")).toBe("rgb(34, 34, 34)")
+      expect(statusBarTag?.getAttribute("content")).toBe("black-translucent")
+      expect(fakeDocument.documentElement.style.colorScheme).toBe("dark")
+    } finally {
+      restoreGlobalProperties(restores)
+    }
   })
 })

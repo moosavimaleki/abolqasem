@@ -107,14 +107,18 @@ func TestUpsertSessionUsesCompositeKey(t *testing.T) {
 
 func TestUpsertSessionCanonicalizesTranscriptDuplicatesAndPreservesCustomName(t *testing.T) {
 	appState := newAppState()
-	transcriptPath := "/tmp/codex/rollout-2026-05-15T09-23-21-019e2a32-513d-7c02-a78c-ab1b0130635c.jsonl"
+	cwd := t.TempDir()
+	transcriptPath := filepath.Join(cwd, "rollout-2026-05-15T09-23-21-019e2a32-513d-7c02-a78c-ab1b0130635c.jsonl")
+	if err := os.WriteFile(transcriptPath, []byte("{}\n"), 0o644); err != nil {
+		t.Fatalf("write transcript: %v", err)
+	}
 	alias := SessionMeta{
 		Key:            "codex:rollout-2026-05-15T09-23-21-019e2a32-513d-7c02-a78c-ab1b0130635c",
 		Agent:          "codex",
 		SessionID:      "rollout-2026-05-15T09-23-21-019e2a32-513d-7c02-a78c-ab1b0130635c",
 		SessionName:    "تست",
 		TranscriptPath: transcriptPath,
-		Cwd:            "/tmp/codex",
+		Cwd:            cwd,
 		ProjectName:    "codex",
 	}
 	appState.Sessions[alias.Key] = alias
@@ -123,7 +127,7 @@ func TestUpsertSessionCanonicalizesTranscriptDuplicatesAndPreservesCustomName(t 
 		Agent:          "codex",
 		SessionID:      "019e2a32-513d-7c02-a78c-ab1b0130635c",
 		TranscriptPath: transcriptPath,
-		Cwd:            "/tmp/codex",
+		Cwd:            cwd,
 		ProjectName:    "codex",
 		MetadataOnly:   true,
 	})

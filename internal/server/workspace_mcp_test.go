@@ -15,7 +15,7 @@ func TestWorkspaceMCPSaveListRemoveAcrossProviders(t *testing.T) {
 	codexHome := filepath.Join(home, "codex-home")
 	geminiHome := filepath.Join(home, "gemini-home")
 	geminiConfigDir := filepath.Join(geminiHome, ".gemini")
-	t.Setenv("HOME", home)
+	setTestUserHome(t, home)
 	t.Setenv("CODEX_HOME", codexHome)
 	t.Setenv("GEMINI_CLI_HOME", geminiHome)
 
@@ -183,7 +183,7 @@ func TestMCPRegistryPackageMapsToStdioConfig(t *testing.T) {
 
 func TestWorkspaceMCPRegistryInstallDownloadsAndSaves(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestUserHome(t, home)
 	t.Setenv("CODEX_HOME", filepath.Join(home, "codex-home"))
 	t.Setenv("GEMINI_CLI_HOME", filepath.Join(home, "gemini-home"))
 

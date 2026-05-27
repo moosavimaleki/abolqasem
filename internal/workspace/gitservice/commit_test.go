@@ -113,4 +113,6 @@ func initRepoWithIdentity(t *testing.T, root string) {
 	runGit(t, root, "init")
 	runGit(t, root, "config", "user.email", "test@example.com")
 	runGit(t, root, "config", "user.name", "Test User")
+	runGit(t, root, "config", "core.autocrlf", "false")
+	runGit(t, root, "config", "core.eol", "lf")
 }

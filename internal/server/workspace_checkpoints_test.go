@@ -115,6 +115,8 @@ func newGitProject(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	runGit(t, dir, "init")
+	runGit(t, dir, "config", "core.autocrlf", "false")
+	runGit(t, dir, "config", "core.eol", "lf")
 	if err := os.WriteFile(filepath.Join(dir, "app.txt"), []byte("base\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}

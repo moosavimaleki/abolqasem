@@ -36,7 +36,7 @@ func withLegacyState(t *testing.T, appState *state.AppState) {
 func TestMergeLegacySidebarDataSkipsLegacySessionsWithoutRealProjectRoot(t *testing.T) {
 	updatedAt := time.Unix(1700000000, 0)
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestUserHome(t, home)
 	appState := &state.AppState{Sessions: map[string]state.SessionMeta{
 		"codex:bad-1": {
 			Key:            "codex:bad-1",

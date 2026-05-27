@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -17,7 +18,16 @@ func TestStartWorkspaceGeminiTurnPassesResumeToken(t *testing.T) {
 	writeFakeExecutable(t, filepath.Join(binDir, "gemini"), fmt.Sprintf(`#!/bin/sh
 printf '%%s\n' "$@" > %q
 echo gemini-output
-`, argsPath))
+`, argsPath), fmt.Sprintf(`@echo off
+type nul > "%s"
+:args
+if "%%~1"=="" goto done
+>> "%s" echo %%~1
+shift /1
+goto args
+:done
+echo gemini-output
+`, argsPath, argsPath))
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	turn := startWorkspaceGeminiTurn(context.Background(), agent.TurnRequest{
@@ -41,7 +51,17 @@ func TestStartWorkspaceClaudeTurnUsesPendingForkToken(t *testing.T) {
 printf '%%s\n' "$@" > %q
 printf '%%s\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"forked"}]}}'
 printf '%%s\n' '{"type":"result","result":"done","duration_ms":1,"session_id":"claude-forked-session"}'
-`, argsPath))
+`, argsPath), fmt.Sprintf(`@echo off
+type nul > "%s"
+:args
+if "%%~1"=="" goto done
+>> "%s" echo %%~1
+shift /1
+goto args
+:done
+echo {"type":"assistant","message":{"content":[{"type":"text","text":"forked"}]}}
+echo {"type":"result","result":"done","duration_ms":1,"session_id":"claude-forked-session"}
+`, argsPath, argsPath))
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	turn := startWorkspaceClaudeTurn(context.Background(), agent.TurnRequest{
@@ -61,9 +81,16 @@ printf '%%s\n' '{"type":"result","result":"done","duration_ms":1,"session_id":"c
 	}
 }
 
-func writeFakeExecutable(t *testing.T, path string, body string) {
+func writeFakeExecutable(t *testing.T, path string, unixBody string, windowsBody string) {
 	t.Helper()
-	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
+	if runtime.GOOS == "windows" {
+		path += ".cmd"
+		if err := os.WriteFile(path, []byte(windowsBody), 0o755); err != nil {
+			t.Fatalf("write fake executable: %v", err)
+		}
+		return
+	}
+	if err := os.WriteFile(path, []byte(unixBody), 0o755); err != nil {
 		t.Fatalf("write fake executable: %v", err)
 	}
 }
@@ -87,7 +114,15 @@ func readArgsFile(t *testing.T, path string) []string {
 	if text == "" {
 		return nil
 	}
-	return strings.Split(text, "\n")
+	lines := strings.Split(text, "\n")
+	args := make([]string, 0, len(lines))
+	for _, line := range lines {
+		arg := strings.TrimSpace(line)
+		if arg != "" {
+			args = append(args, arg)
+		}
+	}
+	return args
 }
 
 func containsArg(args []string, expected string) bool {

@@ -375,8 +375,13 @@ func tokenizeExternalCommandTemplate(template string) ([]string, error) {
 	for index := 0; index < len(runes); index++ {
 		char := runes[index]
 		if char == '\\' && index+1 < len(runes) {
-			current.WriteRune(runes[index+1])
-			index++
+			next := runes[index+1]
+			if next == '\\' || next == '\'' || next == '"' || isExternalCommandTemplateWhitespace(next) {
+				current.WriteRune(next)
+				index++
+				continue
+			}
+			current.WriteRune(char)
 			continue
 		}
 		if quote != 0 {
@@ -391,7 +396,7 @@ func tokenizeExternalCommandTemplate(template string) ([]string, error) {
 			quote = char
 			continue
 		}
-		if char == ' ' || char == '\t' || char == '\n' || char == '\r' {
+		if isExternalCommandTemplateWhitespace(char) {
 			if current.Len() > 0 {
 				tokens = append(tokens, current.String())
 				current.Reset()
@@ -407,6 +412,10 @@ func tokenizeExternalCommandTemplate(template string) ([]string, error) {
 		tokens = append(tokens, current.String())
 	}
 	return tokens, nil
+}
+
+func isExternalCommandTemplateWhitespace(char rune) bool {
+	return char == ' ' || char == '\t' || char == '\n' || char == '\r'
 }
 
 func normalizeExternalEditorSettings(editor workspaceEditorOpenSettings) workspaceEditorOpenSettings {

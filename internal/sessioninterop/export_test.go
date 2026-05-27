@@ -12,9 +12,15 @@ import (
 	"ai-agent-manager/internal/workspace/transcript"
 )
 
+func setTestHome(t *testing.T, home string) {
+	t.Helper()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+}
+
 func TestExportNativeSessionRoundTripClaude(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 	entries := []readmodels.TranscriptEntry{
 		transcript.New(transcript.KindUserPrompt, map[string]any{"content": "hello"}),
 		transcript.New(transcript.KindAssistantText, map[string]any{"text": "world"}),
@@ -51,7 +57,7 @@ func TestExportNativeSessionRoundTripClaude(t *testing.T) {
 
 func TestExportNativeSessionRoundTripCodex(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 	entries := []readmodels.TranscriptEntry{
 		transcript.New(transcript.KindUserPrompt, map[string]any{"content": "hello"}),
 		transcript.New(transcript.KindAssistantText, map[string]any{"text": "world"}),
@@ -114,8 +120,10 @@ func TestExportNativeSessionRoundTripCodex(t *testing.T) {
 
 func TestExportNativeSessionRoundTripGemini(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 	t.Setenv("GEMINI_CLI_HOME", filepath.Join(home, ".gemini"))
+	localPath := "/tmp/project"
+	normalizedLocalPath := normalizeGeminiProjectPath(localPath)
 	entries := []readmodels.TranscriptEntry{
 		transcript.New(transcript.KindCompactSummary, map[string]any{"summary": "older work"}),
 		transcript.New(transcript.KindUserPrompt, map[string]any{"content": "hello"}),
@@ -136,7 +144,7 @@ func TestExportNativeSessionRoundTripGemini(t *testing.T) {
 	}
 	result, err := ExportNativeSession(ExportArgs{
 		Provider:  "gemini",
-		LocalPath: "/tmp/project",
+		LocalPath: localPath,
 		Entries:   entries,
 	})
 	if err != nil {
@@ -148,7 +156,7 @@ func TestExportNativeSessionRoundTripGemini(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(filepath.Dir(filepath.Dir(result.ProjectPath)), "history", filepath.Base(result.ProjectPath), ".project_root")); err != nil {
 		t.Fatalf("expected gemini history .project_root marker: %v", err)
 	}
-	imported, err := ImportLegacySession(state.SessionMeta{Agent: "gemini", SessionID: result.SessionToken, TranscriptPath: result.TranscriptPath, Cwd: "/tmp/project", ProjectName: "project"})
+	imported, err := ImportLegacySession(state.SessionMeta{Agent: "gemini", SessionID: result.SessionToken, TranscriptPath: result.TranscriptPath, Cwd: normalizedLocalPath, ProjectName: "project"})
 	if err != nil {
 		t.Fatalf("ImportLegacySession returned error: %v", err)
 	}
@@ -165,7 +173,7 @@ func TestExportNativeSessionRoundTripGemini(t *testing.T) {
 	if err := json.Unmarshal(data, &registry); err != nil {
 		t.Fatalf("parse gemini projects registry: %v", err)
 	}
-	if registry.Projects["/tmp/project"] != filepath.Base(result.ProjectPath) {
+	if registry.Projects[normalizedLocalPath] != filepath.Base(result.ProjectPath) {
 		t.Fatalf("expected registry to point to exported project path, got %#v", registry.Projects)
 	}
 	lines := readJSONLRecords(t, result.TranscriptPath)
@@ -187,7 +195,7 @@ func TestExportNativeSessionRoundTripGemini(t *testing.T) {
 
 func TestExportNativeSessionGeminiAvoidsSlugCollision(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 	t.Setenv("GEMINI_CLI_HOME", filepath.Join(home, ".gemini"))
 	collidingMarker := filepath.Join(home, ".gemini", "tmp", "project", ".project_root")
 	if err := os.MkdirAll(filepath.Dir(collidingMarker), 0o755); err != nil {
@@ -213,7 +221,7 @@ func TestExportNativeSessionGeminiAvoidsSlugCollision(t *testing.T) {
 
 func TestExportNativeSessionPairwiseMatrix(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 	t.Setenv("GEMINI_CLI_HOME", filepath.Join(home, ".gemini"))
 	t.Setenv("CODEX_HOME", filepath.Join(home, ".codex"))
 	t.Setenv("CLAUDE_HOME", filepath.Join(home, ".claude"))
@@ -407,7 +415,8 @@ func assertGeminiNativeShape(t *testing.T, result ExportResult, cwd string) {
 	if err != nil {
 		t.Fatalf("read gemini project marker: %v", err)
 	}
-	if strings.TrimSpace(string(marker)) != cwd {
+	expectedCWD := normalizeGeminiProjectPath(cwd)
+	if strings.TrimSpace(string(marker)) != expectedCWD {
 		t.Fatalf("gemini project marker cwd mismatch: %q", string(marker))
 	}
 	lines := readJSONLRecords(t, result.TranscriptPath)

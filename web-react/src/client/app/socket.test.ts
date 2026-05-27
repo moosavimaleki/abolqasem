@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { replaceGlobalProperty, restoreGlobalProperties } from "../test/globalProperty"
 import { AbolqasemSocket } from "./socket"
 
 type EventHandler = (event?: unknown) => void
@@ -114,13 +115,10 @@ class FakeWebSocket {
 }
 
 describe("AbolqasemSocket", () => {
-  const originalWindow = globalThis.window
-  const originalDocument = globalThis.document
-  const originalWebSocket = globalThis.WebSocket
-
   let windowTarget: FakeEventTarget
   let documentTarget: FakeEventTarget & { visibilityState: "visible" | "hidden" }
   let timers: FakeTimers
+  let restoreGlobals: Array<() => void> = []
 
   beforeEach(() => {
     FakeWebSocket.instances = []
@@ -128,21 +126,22 @@ describe("AbolqasemSocket", () => {
     windowTarget = new FakeEventTarget()
     documentTarget = Object.assign(new FakeEventTarget(), { visibilityState: "visible" as const })
 
-    ;(globalThis as any).window = Object.assign(windowTarget, {
-      setTimeout: timers.setTimeout,
-      clearTimeout: timers.clearTimeout,
-      setInterval: timers.setInterval,
-      clearInterval: timers.clearInterval,
-      location: { protocol: "http:", host: "localhost:3211" },
-    })
-    ;(globalThis as any).document = documentTarget
-    ;(globalThis as any).WebSocket = FakeWebSocket
+    restoreGlobals = [
+      replaceGlobalProperty("window", Object.assign(windowTarget, {
+        setTimeout: timers.setTimeout,
+        clearTimeout: timers.clearTimeout,
+        setInterval: timers.setInterval,
+        clearInterval: timers.clearInterval,
+        location: { protocol: "http:", host: "localhost:3211" },
+      })),
+      replaceGlobalProperty("document", documentTarget),
+      replaceGlobalProperty("WebSocket", FakeWebSocket),
+    ]
   })
 
   afterEach(() => {
-    ;(globalThis as any).window = originalWindow
-    ;(globalThis as any).document = originalDocument
-    ;(globalThis as any).WebSocket = originalWebSocket
+    restoreGlobalProperties(restoreGlobals)
+    restoreGlobals = []
   })
 
   test("does not ping when the connection is already fresh", async () => {

@@ -29,7 +29,7 @@ func TestExportNativeSessionRealCLISmoke(t *testing.T) {
 			if err := os.MkdirAll(projectDir, 0o755); err != nil {
 				t.Fatalf("mkdir project: %v", err)
 			}
-			t.Setenv("HOME", home)
+			setTestHome(t, home)
 			t.Setenv("CODEX_HOME", filepath.Join(home, ".codex"))
 			t.Setenv("CLAUDE_HOME", filepath.Join(home, ".claude"))
 			t.Setenv("GEMINI_CLI_HOME", filepath.Join(home, ".gemini"))
@@ -93,6 +93,7 @@ func runProviderResumeSmoke(t *testing.T, provider string, cwd string, sessionTo
 	cmd.Dir = cwd
 	cmd.Env = append(os.Environ(),
 		"HOME="+home,
+		"USERPROFILE="+home,
 		"CODEX_HOME="+filepath.Join(home, ".codex"),
 		"CLAUDE_HOME="+filepath.Join(home, ".claude"),
 		"GEMINI_CLI_HOME="+filepath.Join(home, ".gemini"),
