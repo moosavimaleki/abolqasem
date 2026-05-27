@@ -75,7 +75,7 @@ func TestPublishToGitHubCreatesRepoAndPushes(t *testing.T) {
 	requireGit(t)
 	remote := filepath.Join(t.TempDir(), "origin.git")
 	runGit(t, "", "init", "--bare", remote)
-	root := t.TempDir()
+	root := canonicalGitserviceTestPath(t, t.TempDir())
 	initRepoWithIdentity(t, root)
 	runGit(t, root, "remote", "add", "origin", remote)
 	writeFile(t, filepath.Join(root, "a.txt"), "a\n")

@@ -25,7 +25,7 @@ func TestDetectReturnsNoRepoForPlainDirectory(t *testing.T) {
 
 func TestDetectFindsRepositoryRootAndBranch(t *testing.T) {
 	requireGit(t)
-	root := t.TempDir()
+	root := canonicalGitserviceTestPath(t, t.TempDir())
 	runGit(t, root, "init")
 	runGit(t, root, "remote", "add", "origin", "git@github.com:owner/repo.git")
 	nested := filepath.Join(root, "a", "b")

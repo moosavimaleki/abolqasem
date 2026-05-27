@@ -14,7 +14,7 @@ import (
 )
 
 func TestUploadServiceStoresMetadataAndServesContent(t *testing.T) {
-	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	setTestUploadCacheHome(t)
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 	part, err := writer.CreateFormFile("files", "hello.txt")
@@ -49,7 +49,7 @@ func TestUploadServiceStoresMetadataAndServesContent(t *testing.T) {
 	if attachment.Kind != "file" || attachment.DisplayName != "hello.txt" || attachment.Size != int64(len("hello upload")) {
 		t.Fatalf("unexpected attachment: %#v", attachment)
 	}
-	if !strings.HasPrefix(attachment.AbsolutePath, filepath.Join(os.Getenv("XDG_CACHE_HOME"), "abolqasem", "uploads", "project-1")) {
+	if !strings.HasPrefix(attachment.AbsolutePath, uploadDir("project-1")) {
 		t.Fatalf("attachment escaped cache: %#v", attachment.AbsolutePath)
 	}
 	if _, err := os.Stat(attachment.AbsolutePath + ".json"); err != nil {
@@ -68,7 +68,7 @@ func TestUploadServiceStoresMetadataAndServesContent(t *testing.T) {
 }
 
 func TestUploadServiceRejectsOversizedRequest(t *testing.T) {
-	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	setTestUploadCacheHome(t)
 	body := strings.NewReader(strings.Repeat("x", maxUploadBytes+1))
 	request := httptest.NewRequest(http.MethodPost, "/api/projects/project-1/uploads", body)
 	request.Header.Set("Content-Type", "multipart/form-data; boundary=missing")
@@ -81,7 +81,7 @@ func TestUploadServiceRejectsOversizedRequest(t *testing.T) {
 }
 
 func TestUploadDeleteRemovesFileAndMetadata(t *testing.T) {
-	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	setTestUploadCacheHome(t)
 	attachment, err := saveUploadedFile("project-1", "delete.txt", "text/plain", int64(len("delete")), strings.NewReader("delete"))
 	if err != nil {
 		t.Fatalf("saveUploadedFile failed: %v", err)
@@ -98,4 +98,13 @@ func TestUploadDeleteRemovesFileAndMetadata(t *testing.T) {
 	if _, err := os.Stat(attachment.AbsolutePath + ".json"); !os.IsNotExist(err) {
 		t.Fatalf("expected metadata removed, err=%v", err)
 	}
+}
+
+func setTestUploadCacheHome(t *testing.T) {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
+	t.Setenv("LOCALAPPDATA", filepath.Join(home, "AppData", "Local"))
 }

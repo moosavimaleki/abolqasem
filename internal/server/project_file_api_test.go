@@ -316,7 +316,7 @@ func TestFileContextPrefersKnownProjectRootOverNestedLegacySession(t *testing.T)
 func TestFileContextFallsBackToGitRootBeforeContainingFolder(t *testing.T) {
 	withWorkspaceComposerStore(t)
 
-	root := t.TempDir()
+	root := canonicalServerTestPath(t, t.TempDir())
 	mustMkdir(t, filepath.Join(root, ".git"))
 	target := filepath.Join(root, "scripts", "open_ui.py")
 	mustWriteFile(t, target, "print('ok')\n")
@@ -370,6 +370,15 @@ func mustWriteFile(t *testing.T, path string, content string) {
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("write %s failed: %v", path, err)
 	}
+}
+
+func canonicalServerTestPath(t *testing.T, path string) string {
+	t.Helper()
+	canonical, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		t.Fatalf("EvalSymlinks %s failed: %v", path, err)
+	}
+	return canonical
 }
 
 func projectFileEntryPaths(entries []projectFileEntry) []string {
