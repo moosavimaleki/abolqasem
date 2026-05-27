@@ -11,6 +11,7 @@ dist/
 /ai-session-viewer
 /abolqasem
 web-react/node_modules/
+.playwright-mcp
 web-react/dist/
 
 # Test binary, built with `go test -c`
