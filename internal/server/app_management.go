@@ -7,6 +7,7 @@ import (
 	"ai-agent-manager/internal/adapters/gemini"
 	"ai-agent-manager/internal/appinfo"
 	"ai-agent-manager/internal/buildinfo"
+	"ai-agent-manager/internal/netproxy"
 	"ai-agent-manager/internal/state"
 	"encoding/json"
 	"fmt"
@@ -26,7 +27,7 @@ const (
 )
 
 var (
-	appUpdateHTTPClient = &http.Client{Timeout: 6 * time.Second}
+	appUpdateHTTPClient *http.Client
 	executablePath      = os.Executable
 	startDetached       = func(exe string, args ...string) error {
 		return exec.Command(exe, args...).Start()
@@ -203,7 +204,7 @@ func workspaceCheckUpdate() map[string]any {
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", appinfo.Name+"/"+normalizedAppVersion())
 
-	resp, err := appUpdateHTTPClient.Do(req)
+	resp, err := workspaceUpdateHTTPClient().Do(req)
 	if err != nil {
 		return workspaceUpdateError(snapshot, err)
 	}
@@ -259,6 +260,13 @@ func workspaceInstallUpdate() map[string]any {
 	}
 }
 
+func workspaceUpdateHTTPClient() *http.Client {
+	if appUpdateHTTPClient != nil {
+		return appUpdateHTTPClient
+	}
+	return netproxy.HTTPClient(20 * time.Second)
+}
+
 func scheduleServerRestart() error {
 	return scheduleServerCommand("restart")
 }
@@ -311,10 +319,29 @@ func updateVersionNewer(latest string, current string) bool {
 	if latest == "" || current == "" || latest == current {
 		return false
 	}
-	if current == "dev" || strings.Contains(current, "-") {
-		return false
+	if isDevelopmentVersion(current) {
+		return true
 	}
-	return compareDottedVersion(latest, current) > 0
+	latestBase, latestPrerelease := splitVersionPrerelease(latest)
+	currentBase, currentPrerelease := splitVersionPrerelease(current)
+	switch compareDottedVersion(latestBase, currentBase) {
+	case 1:
+		return true
+	case -1:
+		return false
+	default:
+		return currentPrerelease != "" && latestPrerelease == ""
+	}
+}
+
+func isDevelopmentVersion(version string) bool {
+	version = strings.ToLower(strings.TrimSpace(version))
+	return version == "dev" || strings.HasPrefix(version, "dev-")
+}
+
+func splitVersionPrerelease(version string) (base string, prerelease string) {
+	base, prerelease, _ = strings.Cut(strings.TrimSpace(version), "-")
+	return strings.TrimSpace(base), strings.TrimSpace(prerelease)
 }
 
 func compareDottedVersion(left string, right string) int {

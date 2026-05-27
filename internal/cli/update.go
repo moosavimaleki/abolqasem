@@ -2,13 +2,14 @@ package cli
 
 import (
 	"ai-agent-manager/internal/appinfo"
+	"ai-agent-manager/internal/netproxy"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -71,7 +72,7 @@ func downloadUpdateScript() (string, error) {
 		url = override
 	}
 
-	resp, err := http.Get(url)
+	resp, err := netproxy.HTTPClient(60 * time.Second).Get(url)
 	if err != nil {
 		return "", err
 	}
@@ -106,5 +107,6 @@ func executeUpdateScript(scriptPath, startup, binDir string) error {
 	command.Stdout = os.Stdout
 	command.Stderr = os.Stderr
 	command.Stdin = os.Stdin
+	command.Env = netproxy.CommandEnv()
 	return command.Run()
 }

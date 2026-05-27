@@ -228,6 +228,53 @@ export function setCachedChangelog(releases: GithubRelease[]) {
   }
 }
 
+export function isChangelogReleaseNewer(latest: string | null | undefined, current: string | null | undefined) {
+  const latestVersion = normalizeVersionForComparison(latest)
+  const currentVersion = normalizeVersionForComparison(current)
+  if (!latestVersion || !currentVersion || latestVersion === currentVersion) return false
+  if (isDevelopmentVersion(currentVersion)) return true
+
+  const [latestBase, latestPrerelease] = splitVersionPrerelease(latestVersion)
+  const [currentBase, currentPrerelease] = splitVersionPrerelease(currentVersion)
+  const versionComparison = compareDottedVersion(latestBase, currentBase)
+  if (versionComparison > 0) return true
+  if (versionComparison < 0) return false
+  return currentPrerelease.length > 0 && latestPrerelease.length === 0
+}
+
+function normalizeVersionForComparison(version: string | null | undefined) {
+  return (version ?? "").trim().replace(/^v/i, "")
+}
+
+function isDevelopmentVersion(version: string) {
+  const normalized = version.trim().toLowerCase()
+  return normalized === "dev" || normalized.startsWith("dev-")
+}
+
+function splitVersionPrerelease(version: string): [string, string] {
+  const [base, prerelease = ""] = version.trim().split("-", 2)
+  return [base.trim(), prerelease.trim()]
+}
+
+function compareDottedVersion(left: string, right: string) {
+  const leftParts = left.split(".")
+  const rightParts = right.split(".")
+  const maxParts = Math.max(leftParts.length, rightParts.length)
+  for (let index = 0; index < maxParts; index += 1) {
+    const leftValue = versionPart(leftParts[index])
+    const rightValue = versionPart(rightParts[index])
+    if (leftValue > rightValue) return 1
+    if (leftValue < rightValue) return -1
+  }
+  return 0
+}
+
+function versionPart(part: string | undefined) {
+  const trimmed = (part ?? "").trim()
+  if (!/^\d+$/.test(trimmed)) return 0
+  return Number.parseInt(trimmed, 10)
+}
+
 export async function loadChangelog(options?: { force?: boolean; fetchImpl?: FetchReleases }) {
   const cached = options?.force ? null : getCachedChangelog()
   if (cached) {
@@ -268,17 +315,51 @@ export function ChangelogSection({
   onRetry: () => void
   updateSnapshot: UpdateSnapshot | null
   currentVersion: string
-  onInstallUpdate: () => void
-  onCheckForUpdates: () => void
+  onInstallUpdate: () => void | Promise<void>
+  onCheckForUpdates: () => void | Promise<void>
 }) {
   const { t } = useI18n()
-  const latestVersion = updateSnapshot?.latestVersion ?? releases[0]?.tag_name ?? t.common.unknown
+  const [checkPending, setCheckPending] = useState(false)
+  const [installPending, setInstallPending] = useState(false)
+  const mountedRef = useRef(true)
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
+
+  const latestStableRelease = releases.find((release) => !release.prerelease)
+  const latestVersion = updateSnapshot?.latestVersion ?? latestStableRelease?.tag_name ?? releases[0]?.tag_name ?? t.common.unknown
   const currentVersionLabel = updateSnapshot?.currentVersion ?? currentVersion
-  const isChecking = updateSnapshot?.status === "checking"
-  const isUpdating = updateSnapshot?.status === "updating" || updateSnapshot?.status === "restart_pending"
-  const canInstallUpdate = updateSnapshot?.updateAvailable === true
+  const isChecking = checkPending || updateSnapshot?.status === "checking"
+  const isUpdating = installPending || updateSnapshot?.status === "updating" || updateSnapshot?.status === "restart_pending"
+  const canInstallUpdate = updateSnapshot?.updateAvailable === true ||
+    (status === "success" && isChangelogReleaseNewer(latestStableRelease?.tag_name, currentVersionLabel))
   const normalizedLatestVersion = latestVersion.replace(/^v/i, "")
   const normalizedCurrentVersion = currentVersionLabel.replace(/^v/i, "")
+
+  const runWithPending = (
+    action: () => void | Promise<void>,
+    setPending: (pending: boolean) => void
+  ) => {
+    setPending(true)
+    void Promise.resolve()
+      .then(action)
+      .finally(() => {
+        if (mountedRef.current) setPending(false)
+      })
+  }
+
+  const handleCheckForUpdatesClick = () => {
+    if (isChecking || isUpdating) return
+    runWithPending(onCheckForUpdates, setCheckPending)
+  }
+
+  const handleInstallUpdateClick = () => {
+    if (isChecking || isUpdating) return
+    runWithPending(onInstallUpdate, setInstallPending)
+  }
 
   return (
     <div className="space-y-4">
@@ -324,7 +405,7 @@ export function ChangelogSection({
         <div className="flex justify-end">
           <SettingsHeaderButton
             variant="outline"
-            onClick={onCheckForUpdates}
+            onClick={handleCheckForUpdatesClick}
             disabled={isChecking || isUpdating}
           >
             {isChecking ? `${t.common.loading}…` : t.settings.checkForUpdates}
@@ -405,8 +486,8 @@ export function ChangelogSection({
                   <SettingsHeaderButton
                     variant="default"
                     className=""
-                    onClick={onInstallUpdate}
-                    disabled={isUpdating}
+                    onClick={handleInstallUpdateClick}
+                    disabled={isChecking || isUpdating}
                   >
                     <div className="flex flex-row items-center justify-center gap-2">
                     <DownloadCloud className="size-4"/>
@@ -3504,12 +3585,8 @@ export function SettingsPage() {
                     onRetry={retryChangelog}
                     updateSnapshot={updateSnapshot}
                     currentVersion={appVersion}
-                    onInstallUpdate={() => {
-                      void state.handleInstallUpdate()
-                    }}
-                    onCheckForUpdates={() => {
-                      void state.handleCheckForUpdates({ force: true })
-                    }}
+                    onInstallUpdate={() => state.handleInstallUpdate()}
+                    onCheckForUpdates={() => state.handleCheckForUpdates({ force: true })}
                   />
                 )}
               </div>

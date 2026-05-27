@@ -6,6 +6,7 @@ import {
   fetchGithubReleases,
   formatPublishedDate,
   getCachedChangelog,
+  isChangelogReleaseNewer,
   getKeybindingsSubtitle,
   loadChangelog,
   resetSettingsPageChangelogCache,
@@ -127,6 +128,18 @@ describe("changelog cache", () => {
     })
 
     expect(releases).toEqual([SAMPLE_RELEASES[1]])
+  })
+})
+
+describe("isChangelogReleaseNewer", () => {
+  test("allows dev-local builds to install the latest stable release", () => {
+    expect(isChangelogReleaseNewer("1.0.4", "dev-local")).toBe(true)
+  })
+
+  test("compares release and prerelease versions", () => {
+    expect(isChangelogReleaseNewer("1.0.4", "1.0.3")).toBe(true)
+    expect(isChangelogReleaseNewer("1.0.3", "1.0.4")).toBe(false)
+    expect(isChangelogReleaseNewer("1.0.4", "1.0.4-beta.1")).toBe(true)
   })
 })
 
@@ -297,6 +310,29 @@ describe("ChangelogSection", () => {
 
     expect(html).toContain("Check for updates")
     expect(html).not.toContain(">Update<")
+  })
+
+  test("renders update action for dev-local from changelog releases when server check errored", () => {
+    const html = renderToStaticMarkup(
+      <ChangelogSection
+        status="success"
+        releases={SAMPLE_RELEASES}
+        error={null}
+        onRetry={() => {}}
+        updateSnapshot={createUpdateSnapshot({
+          currentVersion: "dev-local",
+          latestVersion: null,
+          status: "error",
+          updateAvailable: false,
+        })}
+        currentVersion="dev-local"
+        onInstallUpdate={() => {}}
+        onCheckForUpdates={() => {}}
+      />
+    )
+
+    expect(html).toContain(">Update<")
+    expect(html).not.toContain("Check for updates")
   })
 
   test("disables the update action while updating", () => {

@@ -61,6 +61,31 @@ func TestWorkspaceCheckUpdateDetectsRelease(t *testing.T) {
 	}
 }
 
+func TestWorkspaceCheckUpdateAllowsDevLocalBuildToInstallRelease(t *testing.T) {
+	resetWorkspaceUpdateState(t)
+	previousVersion := buildinfo.Version
+	previousClient := appUpdateHTTPClient
+	buildinfo.Version = "dev-local"
+	appUpdateHTTPClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Body:       io.NopCloser(strings.NewReader(`{"tag_name":"1.0.4"}`)),
+			Header:     make(http.Header),
+			Request:    req,
+		}, nil
+	})}
+	t.Cleanup(func() {
+		buildinfo.Version = previousVersion
+		appUpdateHTTPClient = previousClient
+	})
+
+	snapshot := workspaceCheckUpdate()
+	if snapshot["status"] != "available" || snapshot["updateAvailable"] != true {
+		t.Fatalf("expected dev-local build to show available release update, got %#v", snapshot)
+	}
+}
+
 func TestWorkspaceInstallUpdateSchedulesDetachedCommand(t *testing.T) {
 	resetWorkspaceUpdateState(t)
 	previousExecutablePath := executablePath
@@ -92,14 +117,23 @@ func TestWorkspaceInstallUpdateSchedulesDetachedCommand(t *testing.T) {
 	}
 }
 
-func TestUpdateVersionNewerIgnoresDevelopmentBuilds(t *testing.T) {
-	if updateVersionNewer("0.1.3", "dev") {
-		t.Fatal("development builds should not be marked as updateable")
+func TestUpdateVersionNewerAllowsDevelopmentBuildsToInstallLatestRelease(t *testing.T) {
+	if !updateVersionNewer("0.1.3", "dev") {
+		t.Fatal("development builds should be able to install the latest release")
 	}
+	if !updateVersionNewer("0.1.3", "dev-local") {
+		t.Fatal("local development builds should be able to install the latest release")
+	}
+}
+
+func TestUpdateVersionNewerComparesReleaseVersions(t *testing.T) {
 	if !updateVersionNewer("0.1.3", "0.1.2") {
 		t.Fatal("expected 0.1.3 to be newer than 0.1.2")
 	}
 	if updateVersionNewer("0.1.2", "0.1.3") {
 		t.Fatal("expected older latest version to be ignored")
+	}
+	if !updateVersionNewer("0.1.3", "0.1.3-beta.1") {
+		t.Fatal("expected stable release to be newer than prerelease of the same version")
 	}
 }
