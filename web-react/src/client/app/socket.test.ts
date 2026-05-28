@@ -133,6 +133,8 @@ describe("AbolqasemSocket", () => {
         setInterval: timers.setInterval,
         clearInterval: timers.clearInterval,
         location: { protocol: "http:", host: "localhost:3211" },
+        sessionStorage: { getItem: () => null },
+        localStorage: { getItem: () => null },
       })),
       replaceGlobalProperty("document", documentTarget),
       replaceGlobalProperty("WebSocket", FakeWebSocket),
@@ -261,6 +263,39 @@ describe("AbolqasemSocket", () => {
       { type: "sidebar" },
       { type: "chat", chatId: "chat-1" },
     ])
+    socket.dispose()
+  })
+
+  test("profiles starting chat snapshots with null messages without crashing", () => {
+    ;(window as unknown as { sessionStorage: { getItem: () => string } }).sessionStorage.getItem = () => "1"
+    const debugCalls: unknown[][] = []
+    restoreGlobals.push(replaceGlobalProperty("console", {
+      ...console,
+      debug: (...args: unknown[]) => debugCalls.push(args),
+    }))
+    const socket = new AbolqasemSocket("ws://localhost/ws")
+    socket.start()
+    const ws = FakeWebSocket.instances[0]!
+    ws.open()
+
+    expect(() => {
+      ws.receive({
+        v: 1,
+        type: "snapshot",
+        id: "sub-1",
+        snapshot: {
+          type: "chat",
+          data: {
+            runtime: {
+              chatId: "chat-1",
+              status: "starting",
+            },
+            messages: null,
+          },
+        },
+      })
+    }).not.toThrow()
+    expect(debugCalls[0]?.[1]).toMatchObject({ messageCount: 0 })
     socket.dispose()
   })
 

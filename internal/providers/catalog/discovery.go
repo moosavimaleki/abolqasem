@@ -1,7 +1,6 @@
 package catalog
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,8 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -86,69 +83,69 @@ func discoverCodexModels(ctx context.Context) ([]ProviderModelOption, error) {
 }
 
 func discoverClaudeModels(ctx context.Context) ([]ProviderModelOption, error) {
-	var failures []string
+	if strings.TrimSpace(os.Getenv("ANTHROPIC_BASE_URL")) != "" {
+		if !useClaudeGatewayModelDiscovery() {
+			return sourceProviderModels("claude"), nil
+		}
+		endpoint, err := anthropicModelsEndpoint(os.Getenv("ANTHROPIC_BASE_URL"))
+		if err != nil {
+			return nil, err
+		}
+		models, err := discoverAnthropicModelsEndpoint(ctx, endpoint, os.Getenv("ANTHROPIC_API_KEY"))
+		if len(models) > 0 {
+			return models, nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("Claude gateway /v1/models: %w", err)
+		}
+		return nil, errors.New("Claude gateway /v1/models returned no models")
+	}
+
 	if apiKey := strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY")); apiKey != "" {
 		models, err := discoverAnthropicAPIModels(ctx, apiKey)
 		if len(models) > 0 {
 			return models, nil
 		}
 		if err != nil {
-			failures = append(failures, "Anthropic API: "+err.Error())
+			return nil, fmt.Errorf("Anthropic API: %w", err)
 		}
-	} else {
-		failures = append(failures, "Anthropic API: ANTHROPIC_API_KEY is not set")
+		return nil, errors.New("Anthropic API returned no models")
 	}
 
-	models, err := discoverCLIModels(ctx, "claude", [][]string{
-		{"claude", "models", "list", "--format", "json"},
-		{"claude", "model", "list", "--format", "json"},
-		{"claude", "models", "list"},
-		{"claude", "--list-models"},
-	})
-	if len(models) > 0 {
-		return models, nil
-	}
-	if err != nil {
-		failures = append(failures, "Claude CLI: "+err.Error())
-	}
-	return nil, errors.New(strings.Join(failures, "; "))
+	return sourceProviderModels("claude"), nil
 }
 
 func discoverGeminiModels(ctx context.Context) ([]ProviderModelOption, error) {
-	var failures []string
 	if apiKey := firstEnv("GEMINI_API_KEY", "GOOGLE_API_KEY"); apiKey != "" {
 		models, err := discoverGeminiAPIModels(ctx, apiKey)
 		if len(models) > 0 {
 			return models, nil
 		}
 		if err != nil {
-			failures = append(failures, "Gemini API: "+err.Error())
+			return nil, fmt.Errorf("Gemini API: %w", err)
 		}
-	} else {
-		failures = append(failures, "Gemini API: GEMINI_API_KEY/GOOGLE_API_KEY is not set")
+		return nil, errors.New("Gemini API returned no models")
 	}
 
-	models, err := discoverCLIModels(ctx, "gemini", [][]string{
-		{"gemini", "models", "list", "--format", "json"},
-		{"gemini", "models", "list", "--json"},
-		{"gemini", "models", "list"},
-		{"gemini", "--list-models"},
-	})
-	if len(models) > 0 {
-		return models, nil
-	}
-	if err != nil {
-		failures = append(failures, "Gemini CLI: "+err.Error())
-	}
-	return nil, errors.New(strings.Join(failures, "; "))
+	return sourceProviderModels("gemini"), nil
 }
 
 func discoverAnthropicAPIModels(ctx context.Context, apiKey string) ([]ProviderModelOption, error) {
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.anthropic.com/v1/models?limit=1000", nil)
+	endpoint, err := anthropicModelsEndpoint("https://api.anthropic.com")
 	if err != nil {
 		return nil, err
 	}
-	request.Header.Set("x-api-key", apiKey)
+	return discoverAnthropicModelsEndpoint(ctx, endpoint, apiKey)
+}
+
+func discoverAnthropicModelsEndpoint(ctx context.Context, endpoint string, apiKey string) ([]ProviderModelOption, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	if apiKey = strings.TrimSpace(apiKey); apiKey != "" {
+		request.Header.Set("x-api-key", apiKey)
+	}
 	request.Header.Set("anthropic-version", "2023-06-01")
 	request.Header.Set("accept", "application/json")
 	response, err := http.DefaultClient.Do(request)
@@ -182,6 +179,37 @@ func discoverAnthropicAPIModels(ctx context.Context, apiKey string) ([]ProviderM
 		models = append(models, ProviderModelOption{ID: item.ID, Label: label})
 	}
 	return models, nil
+}
+
+func anthropicModelsEndpoint(baseURL string) (string, error) {
+	parsed, err := url.Parse(strings.TrimSpace(baseURL))
+	if err != nil {
+		return "", err
+	}
+	if parsed.Scheme == "" || parsed.Host == "" {
+		return "", fmt.Errorf("invalid ANTHROPIC_BASE_URL: %s", baseURL)
+	}
+	parsed.Path = strings.TrimRight(parsed.Path, "/")
+	if strings.HasSuffix(parsed.Path, "/v1") {
+		parsed.Path += "/models"
+	} else {
+		parsed.Path += "/v1/models"
+	}
+	query := parsed.Query()
+	if query.Get("limit") == "" {
+		query.Set("limit", "1000")
+	}
+	parsed.RawQuery = query.Encode()
+	return parsed.String(), nil
+}
+
+func useClaudeGatewayModelDiscovery() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func discoverGeminiAPIModels(ctx context.Context, apiKey string) ([]ProviderModelOption, error) {
@@ -227,122 +255,6 @@ func discoverGeminiAPIModels(ctx context.Context, apiKey string) ([]ProviderMode
 	return models, nil
 }
 
-func discoverCLIModels(ctx context.Context, provider string, commands [][]string) ([]ProviderModelOption, error) {
-	var failures []string
-	for _, command := range commands {
-		if len(command) == 0 {
-			continue
-		}
-		cmd := exec.CommandContext(ctx, command[0], command[1:]...)
-		cmd.Env = os.Environ()
-		var stdout bytes.Buffer
-		var stderr bytes.Buffer
-		cmd.Stdout = &stdout
-		cmd.Stderr = &stderr
-		err := cmd.Run()
-		models := parseModelListOutput(provider, stdout.Bytes())
-		if len(models) > 0 {
-			return models, nil
-		}
-		message := strings.TrimSpace(stderr.String())
-		if message == "" && err != nil {
-			message = err.Error()
-		}
-		if message != "" {
-			failures = append(failures, strings.Join(command, " ")+": "+message)
-		}
-	}
-	if len(failures) == 0 {
-		return nil, errors.New("no model list command returned models")
-	}
-	return nil, errors.New(strings.Join(failures, "; "))
-}
-
-func parseModelListOutput(provider string, data []byte) []ProviderModelOption {
-	data = bytes.TrimSpace(data)
-	if len(data) == 0 {
-		return nil
-	}
-	var raw any
-	if json.Unmarshal(data, &raw) == nil {
-		models := collectModelOptions(provider, raw)
-		if len(models) > 0 {
-			return models
-		}
-	}
-	return modelOptionsFromText(provider, string(data))
-}
-
-func collectModelOptions(provider string, raw any) []ProviderModelOption {
-	out := []ProviderModelOption{}
-	var walk func(any)
-	walk = func(value any) {
-		switch typed := value.(type) {
-		case []any:
-			for _, item := range typed {
-				walk(item)
-			}
-		case map[string]any:
-			if model := modelOptionFromMap(provider, typed); model.ID != "" {
-				out = append(out, model)
-				return
-			}
-			for _, item := range typed {
-				walk(item)
-			}
-		}
-	}
-	walk(raw)
-	return out
-}
-
-func modelOptionFromMap(provider string, item map[string]any) ProviderModelOption {
-	if provider == "gemini" {
-		if methods, ok := stringSliceField(item, "supportedGenerationMethods"); ok && len(methods) > 0 && !containsString(methods, "generateContent") {
-			return ProviderModelOption{}
-		}
-	}
-	id := firstNonEmpty(
-		stringMapField(item, "id"),
-		stringMapField(item, "model"),
-		stringMapField(item, "baseModelId"),
-		strings.TrimPrefix(stringMapField(item, "name"), "models/"),
-	)
-	if !providerModelIDLooksValid(provider, id) {
-		return ProviderModelOption{}
-	}
-	return ProviderModelOption{
-		ID:    id,
-		Label: firstNonEmpty(stringMapField(item, "displayName"), stringMapField(item, "display_name"), stringMapField(item, "label"), id),
-	}
-}
-
-func modelOptionsFromText(provider string, text string) []ProviderModelOption {
-	pattern := providerModelPattern(provider)
-	matches := pattern.FindAllString(text, -1)
-	out := make([]ProviderModelOption, 0, len(matches))
-	seen := map[string]bool{}
-	for _, id := range matches {
-		if seen[id] || !providerModelIDLooksValid(provider, id) {
-			continue
-		}
-		seen[id] = true
-		out = append(out, ProviderModelOption{ID: id, Label: id})
-	}
-	return out
-}
-
-func providerModelPattern(provider string) *regexp.Regexp {
-	switch provider {
-	case "claude":
-		return regexp.MustCompile(`claude-[a-zA-Z0-9_.-]+`)
-	case "gemini":
-		return regexp.MustCompile(`gemini-[a-zA-Z0-9_.-]+|auto`)
-	default:
-		return regexp.MustCompile(`gpt-[a-zA-Z0-9_.-]+`)
-	}
-}
-
 func providerModelIDLooksValid(provider string, id string) bool {
 	id = strings.TrimSpace(id)
 	switch provider {
@@ -351,15 +263,10 @@ func providerModelIDLooksValid(provider string, id string) bool {
 	case "codex":
 		return strings.HasPrefix(id, "gpt-")
 	case "gemini":
-		return id == "auto" || strings.HasPrefix(id, "gemini-")
+		return id == "auto" || strings.HasPrefix(id, "gemini-") || strings.HasPrefix(id, "gemma-")
 	default:
 		return false
 	}
-}
-
-func stringMapField(item map[string]any, key string) string {
-	value, _ := item[key].(string)
-	return strings.TrimSpace(value)
 }
 
 func stringSliceField(item map[string]any, key string) ([]string, bool) {
@@ -390,6 +297,15 @@ func containsString(values []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func sourceProviderModels(providerID string) []ProviderModelOption {
+	for _, provider := range serverProviders {
+		if provider.ID == providerID {
+			return cloneProvider(provider).Models
+		}
+	}
+	return nil
 }
 
 func firstEnv(keys ...string) string {

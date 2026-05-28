@@ -11,6 +11,7 @@ import {
   getUiUpdateReadinessPath,
   getUserPromptSignature,
   getUiUpdateRestartReconnectAction,
+  normalizeChatSnapshot,
   reconcileOptimisticUserPrompts,
   resolveComposeIntent,
   resolveProjectStartIntent,
@@ -374,6 +375,39 @@ describe("getActiveChatSnapshot", () => {
     }
 
     expect(getActiveChatSnapshot(snapshot, "chat-new")).toBeNull()
+  })
+})
+
+describe("normalizeChatSnapshot", () => {
+  test("coerces nullable server arrays to empty arrays", () => {
+    const snapshot = {
+      runtime: {
+        chatId: "chat-1",
+        projectId: "project-1",
+        localPath: "/tmp/project-1",
+        title: "Chat 1",
+        status: "starting",
+        isDraining: false,
+        provider: "codex",
+        planMode: false,
+        sessionToken: null,
+      },
+      queuedMessages: null,
+      messages: null,
+      history: null,
+      availableProviders: null,
+    } as unknown as ChatSnapshot
+
+    const normalized = normalizeChatSnapshot(snapshot)
+
+    expect(normalized?.queuedMessages).toEqual([])
+    expect(normalized?.messages).toEqual([])
+    expect(normalized?.history).toEqual({
+      hasOlder: false,
+      olderCursor: null,
+      recentLimit: 200,
+    })
+    expect(normalized?.availableProviders).toEqual([])
   })
 })
 

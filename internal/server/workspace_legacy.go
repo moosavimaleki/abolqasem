@@ -848,7 +848,7 @@ func workspaceLegacyImportedMessages(meta state.SessionMeta, entries []readmodel
 func workspaceRecentTranscriptEntries(entries []readmodels.TranscriptEntry, recentLimit int) ([]readmodels.TranscriptEntry, readmodels.ChatHistorySnapshot) {
 	history := readmodels.ChatHistorySnapshot{RecentLimit: recentLimit}
 	if recentLimit <= 0 || len(entries) <= recentLimit {
-		return append([]readmodels.TranscriptEntry(nil), entries...), history
+		return append([]readmodels.TranscriptEntry{}, entries...), history
 	}
 	cursor := strconv.Itoa(len(entries) - recentLimit + 1)
 	history.HasOlder = true

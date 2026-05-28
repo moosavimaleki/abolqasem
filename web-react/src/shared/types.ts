@@ -289,6 +289,7 @@ export interface ProviderCatalogEntry {
 }
 
 export interface ProviderModelInventory {
+  catalogModels: ProviderModelOption[]
   discoveredModels: ProviderModelOption[]
   customModels: ProviderModelOption[]
   lastRefreshAt?: string
@@ -353,10 +354,16 @@ export const PROVIDERS: ProviderCatalogEntry[] = [
     defaultModel: DEFAULT_GEMINI_MODEL,
     supportsPlanMode: true,
     models: [
-      { id: "gemini-3-pro-preview", label: "Gemini 3 Pro", supportsEffort: false },
-      { id: "gemini-3-flash-preview", label: "Gemini 3 Flash", supportsEffort: false },
+      { id: "auto", label: "Auto", supportsEffort: false },
+      { id: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro Preview", supportsEffort: false },
+      { id: "gemini-3.1-flash-lite-preview", label: "Gemini 3.1 Flash Lite Preview", supportsEffort: false },
+      { id: "gemini-3-pro-preview", label: "Gemini 3 Pro Preview", supportsEffort: false },
+      { id: "gemini-3-flash-preview", label: "Gemini 3 Flash Preview", supportsEffort: false },
       { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro", supportsEffort: false },
       { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash", supportsEffort: false },
+      { id: "gemini-2.5-flash-lite", label: "Gemini 2.5 Flash Lite", supportsEffort: false },
+      { id: "gemma-4-31b-it", label: "gemma-4-31b-it", supportsEffort: false },
+      { id: "gemma-4-26b-a4b-it", label: "gemma-4-26b-a4b-it", supportsEffort: false },
     ],
     efforts: [],
   },
@@ -583,6 +590,7 @@ export interface AppSettingsPatch {
     gemini?: Partial<ProviderPreference<GeminiModelOptions>>
   }
   providerModelCatalog?: Partial<Record<AgentProvider, {
+    catalogModels?: ProviderModelOption[]
     customModels?: ProviderModelOption[]
   }>>
   commitMessageGenerator?: Partial<CommitMessageGeneratorSettings>

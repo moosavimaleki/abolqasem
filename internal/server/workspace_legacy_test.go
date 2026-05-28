@@ -33,6 +33,19 @@ func withLegacyState(t *testing.T, appState *state.AppState) {
 	})
 }
 
+func TestWorkspaceRecentTranscriptEntriesReturnsEmptySliceForNilEntries(t *testing.T) {
+	messages, history := workspaceRecentTranscriptEntries(nil, 20)
+	if messages == nil {
+		t.Fatal("expected empty messages slice, got nil")
+	}
+	if len(messages) != 0 {
+		t.Fatalf("expected no messages, got %d", len(messages))
+	}
+	if history.HasOlder || history.OlderCursor != nil || history.RecentLimit != 20 {
+		t.Fatalf("unexpected history: %#v", history)
+	}
+}
+
 func TestMergeLegacySidebarDataSkipsLegacySessionsWithoutRealProjectRoot(t *testing.T) {
 	updatedAt := time.Unix(1700000000, 0)
 	home := t.TempDir()

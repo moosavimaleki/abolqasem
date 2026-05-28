@@ -11,6 +11,7 @@ import {
   loadChangelog,
   resetSettingsPageChangelogCache,
   resolveSettingsSectionId,
+  resolveSettingsAppVersion,
   setCachedChangelog,
   shouldPreviewChatSoundChange,
   McpSection,
@@ -158,6 +159,24 @@ describe("resolveSettingsSectionId", () => {
     expect(resolveSettingsSectionId("page-3")).toBeNull()
     expect(resolveSettingsSectionId("nope")).toBeNull()
     expect(resolveSettingsSectionId(undefined)).toBeNull()
+  })
+})
+
+describe("resolveSettingsAppVersion", () => {
+  test("uses the backend app version instead of the web package version", () => {
+    const appSettings = {
+      management: {
+        update: createUpdateSnapshot({ currentVersion: "2.4.6" }),
+      },
+    } as never
+
+    expect(resolveSettingsAppVersion(null, appSettings)).toBe("2.4.6")
+    expect(resolveSettingsAppVersion(createUpdateSnapshot({ currentVersion: "2.4.7" }), appSettings)).toBe("2.4.7")
+    expect(resolveSettingsAppVersion(null, appSettings)).not.toBe("0.1.0")
+  })
+
+  test("falls back to unknown when the backend version is unavailable", () => {
+    expect(resolveSettingsAppVersion(null, null)).toBe("unknown")
   })
 })
 

@@ -212,13 +212,14 @@ export class AbolqasemSocket {
       }
 
       if (isSendToStartingProfilingEnabled() && payload.type === "snapshot" && payload.snapshot.type === "chat" && payload.snapshot.data?.runtime.status === "starting") {
+        const messageCount = Array.isArray(payload.snapshot.data.messages) ? payload.snapshot.data.messages.length : 0
         console.debug("[abolqasem/send->starting][client-ws]", {
           stage: "socket_message_received",
           receivedAt,
           payloadBytes: rawText.length,
           chatId: payload.snapshot.data.runtime.chatId,
           status: payload.snapshot.data.runtime.status,
-          messageCount: payload.snapshot.data.messages.length,
+          messageCount,
         })
       }
 

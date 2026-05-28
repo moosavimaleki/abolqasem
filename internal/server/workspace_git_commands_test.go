@@ -95,6 +95,48 @@ func TestWorkspaceProjectGitSubscriptionSnapshotIsLightweight(t *testing.T) {
 	}
 }
 
+func TestWorkspaceProjectGitSubscriptionSnapshotUsesCachedSnapshot(t *testing.T) {
+	withWorkspaceComposerStore(t)
+	originalCache := workspaceProjectGitSnapshots
+	workspaceProjectGitSnapshots = newWorkspaceProjectGitSnapshotCache()
+	t.Cleanup(func() { workspaceProjectGitSnapshots = originalCache })
+
+	conn := newTestWorkspaceConnection(nil)
+	projectDir := t.TempDir()
+	runGit(t, projectDir, "init")
+	if err := os.WriteFile(filepath.Join(projectDir, "app.txt"), []byte("one\n"), 0o644); err != nil {
+		t.Fatalf("write app.txt failed: %v", err)
+	}
+	projectID := mustCreateWorkspaceProject(t, conn, projectDir)
+	chatID := mustCreateWorkspaceChat(t, conn, projectID)
+	raw, err := json.Marshal(map[string]any{"chatId": chatID})
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+
+	snapshot, returnedProjectID, changed, err := workspaceRefreshDiffs(raw)
+	if err != nil {
+		t.Fatalf("workspaceRefreshDiffs returned error: %v", err)
+	}
+	if returnedProjectID != projectID || !changed {
+		t.Fatalf("expected changed refresh snapshot, project=%q changed=%t", returnedProjectID, changed)
+	}
+
+	cached, ok := workspaceProjectGitSubscriptionSnapshot(projectID).(gitservice.Snapshot)
+	if !ok {
+		t.Fatalf("expected git snapshot, got %#v", cached)
+	}
+	if cached.Status == gitservice.StatusUnknown {
+		t.Fatalf("expected cached subscription snapshot to keep loaded git data, got %#v", cached)
+	}
+	if len(cached.Files) != len(snapshot.Files) {
+		t.Fatalf("expected cached files to match refreshed snapshot, cached=%#v snapshot=%#v", cached, snapshot)
+	}
+	if cached.BranchName != snapshot.BranchName {
+		t.Fatalf("expected cached branch name to match refreshed snapshot, cached=%#v snapshot=%#v", cached, snapshot)
+	}
+}
+
 func TestWorkspaceRefreshDiffsReportsOnlyRealSnapshotChanges(t *testing.T) {
 	withWorkspaceComposerStore(t)
 	originalCache := workspaceProjectGitSnapshots

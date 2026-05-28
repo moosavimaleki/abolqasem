@@ -71,11 +71,19 @@ func providerModelCatalogSnapshot(inventory catalog.ProviderModelInventoryByProv
 	for _, provider := range []string{"claude", "codex", "gemini"} {
 		current := inventory[provider]
 		out[provider] = map[string]any{
-			"discoveredModels": current.DiscoveredModels,
-			"customModels":     current.CustomModels,
+			"catalogModels":    nonNilProviderModelOptions(current.CatalogModels),
+			"discoveredModels": nonNilProviderModelOptions(current.DiscoveredModels),
+			"customModels":     nonNilProviderModelOptions(current.CustomModels),
 			"lastRefreshAt":    current.LastRefreshAt,
 			"lastError":        current.LastError,
 		}
 	}
 	return out
+}
+
+func nonNilProviderModelOptions(models []catalog.ProviderModelOption) []catalog.ProviderModelOption {
+	if models == nil {
+		return []catalog.ProviderModelOption{}
+	}
+	return models
 }

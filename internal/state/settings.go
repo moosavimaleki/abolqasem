@@ -102,7 +102,8 @@ type ProviderPreferencePatch struct {
 }
 
 type ProviderModelInventoryPatch struct {
-	CustomModels *[]catalog.ProviderModelOption `json:"customModels"`
+	CatalogModels *[]catalog.ProviderModelOption `json:"catalogModels"`
+	CustomModels  *[]catalog.ProviderModelOption `json:"customModels"`
 }
 
 type CommitMessageGeneratorSettings struct {
@@ -326,6 +327,9 @@ func ApplySettingsPatch(settings AppSettings, patch AppSettingsPatch) AppSetting
 				continue
 			}
 			current := settings.ProviderModelCatalog[provider]
+			if modelPatch.CatalogModels != nil {
+				current.CatalogModels = append([]catalog.ProviderModelOption(nil), (*modelPatch.CatalogModels)...)
+			}
 			if modelPatch.CustomModels != nil {
 				current.CustomModels = append([]catalog.ProviderModelOption(nil), (*modelPatch.CustomModels)...)
 			}
@@ -529,6 +533,7 @@ func normalizeProviderModelCatalog(modelCatalog catalog.ProviderModelInventoryBy
 			continue
 		}
 		normalized[provider] = catalog.ProviderModelInventory{
+			CatalogModels:    normalizeProviderModelOptions(provider, inventory.CatalogModels),
 			DiscoveredModels: normalizeProviderModelOptions(provider, inventory.DiscoveredModels),
 			CustomModels:     normalizeProviderModelOptions(provider, inventory.CustomModels),
 			LastRefreshAt:    strings.TrimSpace(inventory.LastRefreshAt),
@@ -539,6 +544,9 @@ func normalizeProviderModelCatalog(modelCatalog catalog.ProviderModelInventoryBy
 }
 
 func normalizeProviderModelOptions(provider string, models []catalog.ProviderModelOption) []catalog.ProviderModelOption {
+	if models == nil {
+		return nil
+	}
 	out := make([]catalog.ProviderModelOption, 0, len(models))
 	seen := map[string]bool{}
 	for _, model := range models {

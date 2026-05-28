@@ -88,7 +88,7 @@ func (m *workspaceCodexSessionManager) session(ctx context.Context, request agen
 		existing.close()
 	}
 
-	process, err := startWorkspaceCodexProcess(ctx, request.LocalPath)
+	process, err := startWorkspaceCodexProcess(ctx, request.LocalPath, request.Env)
 	if err != nil {
 		return nil, err
 	}
@@ -307,6 +307,7 @@ func startWorkspaceClaudeTurn(parent context.Context, request agent.TurnRequest)
 			SessionToken: sessionToken,
 			ForkSession:  forkSession,
 			Prompt:       workspacePromptText(request.Content, request.Attachments),
+			Env:          request.Env,
 		})
 		if err != nil {
 			if ctx.Err() != nil {
@@ -357,7 +358,11 @@ func startWorkspaceGeminiTurn(parent context.Context, request agent.TurnRequest)
 			args = append(args, "--model", request.Model)
 		}
 		cmd := exec.CommandContext(ctx, "gemini", args...)
-		cmd.Env = state.CurrentProviderProxyEnv()
+		if len(request.Env) > 0 {
+			cmd.Env = request.Env
+		} else {
+			cmd.Env = state.CurrentProviderProxyEnv()
+		}
 		if request.LocalPath != "" {
 			cmd.Dir = request.LocalPath
 		}
@@ -474,11 +479,15 @@ type workspaceCodexTransport struct {
 	mu      sync.Mutex
 }
 
-func startWorkspaceCodexProcess(ctx context.Context, cwd string) (*workspaceCodexProcess, error) {
+func startWorkspaceCodexProcess(ctx context.Context, cwd string, env []string) (*workspaceCodexProcess, error) {
 	// Abolqasem keeps codex app-server alive across turns; turn cancellation is sent via turn/interrupt.
 	_ = ctx
 	cmd := exec.Command("codex", "app-server")
-	cmd.Env = state.CurrentProviderProxyEnv()
+	if len(env) > 0 {
+		cmd.Env = env
+	} else {
+		cmd.Env = state.CurrentProviderProxyEnv()
+	}
 	if cwd != "" {
 		cmd.Dir = cwd
 	}

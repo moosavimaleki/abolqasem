@@ -125,6 +125,36 @@ func TestLoadSettingsNormalizesCorruptOrInvalidValues(t *testing.T) {
 	}
 }
 
+func TestApplySettingsPatchPersistsEditableProviderModelCatalog(t *testing.T) {
+	settings := DefaultAppSettings()
+	settings = ApplySettingsPatch(settings, AppSettingsPatch{
+		ProviderModelCatalog: map[string]ProviderModelInventoryPatch{
+			"gemini": {
+				CatalogModels: &[]catalog.ProviderModelOption{
+					{ID: " gemini-custom-a ", Label: " Custom A "},
+					{ID: "gemini-custom-a", Label: "Duplicate"},
+					{ID: "gemini-custom-b"},
+				},
+				CustomModels: &[]catalog.ProviderModelOption{},
+			},
+		},
+	})
+
+	models := settings.ProviderModelCatalog["gemini"].CatalogModels
+	if len(models) != 2 {
+		t.Fatalf("expected two normalized catalog models, got %#v", models)
+	}
+	if models[0].ID != "gemini-custom-a" || models[0].Label != "Custom A" {
+		t.Fatalf("unexpected first catalog model: %#v", models[0])
+	}
+	if models[1].ID != "gemini-custom-b" || models[1].Label != "gemini-custom-b" {
+		t.Fatalf("unexpected second catalog model: %#v", models[1])
+	}
+	if got := catalog.NormalizeServerModelWithInventory("gemini", "", settings.ProviderModelCatalog); got != "gemini-custom-a" {
+		t.Fatalf("expected editable catalog default fallback, got %q", got)
+	}
+}
+
 func TestApplyProviderProxyEnvRemovesInheritedProxyByDefault(t *testing.T) {
 	env := []string{
 		"PATH=/bin",

@@ -143,6 +143,7 @@ type TurnRequest struct {
 	PlanMode                bool
 	SessionToken            string
 	PendingForkSessionToken string
+	Env                     []string
 }
 
 type SendResult struct {

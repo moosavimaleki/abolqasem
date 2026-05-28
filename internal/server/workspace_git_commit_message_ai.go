@@ -54,6 +54,11 @@ func workspaceGenerateCommitMessageAI(ctx context.Context, localPath string, pat
 func workspaceRunTransientCommitMessageTurn(ctx context.Context, localPath string, provider string, model string, prompt string) (string, error) {
 	provider = strings.TrimSpace(provider)
 	chatID := "commit-message-" + randomID()
+	env, cleanup, err := workspaceTransientProviderEnv(provider)
+	if err != nil {
+		return "", err
+	}
+	defer cleanup()
 	request := agent.TurnRequest{
 		ChatID:    chatID,
 		LocalPath: localPath,
@@ -61,6 +66,7 @@ func workspaceRunTransientCommitMessageTurn(ctx context.Context, localPath strin
 		Model:     strings.TrimSpace(model),
 		Content:   prompt,
 		PlanMode:  true,
+		Env:       env,
 	}
 
 	var turn agent.Turn

@@ -27,7 +27,7 @@ import {
 import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { useNavigate, useOutletContext, useParams } from "react-router-dom"
-import { getKeybindingsFilePathDisplay, SDK_CLIENT_APP } from "../../shared/branding"
+import { getKeybindingsFilePathDisplay } from "../../shared/branding"
 import { ANALYTICS_STATIC_EVENT_NAMES, ANALYTICS_STATIC_PROPERTY_NAMES } from "../../shared/analytics"
 import {
   DEFAULT_KEYBINDINGS,
@@ -35,6 +35,7 @@ import {
   DEFAULT_OPENROUTER_SDK_MODEL,
   PROVIDERS,
   type AppLocale,
+  type AppSettingsSnapshot,
   type AppSettingsPatch,
   type AgentProvider,
   type InstalledSkillSummary,
@@ -56,6 +57,7 @@ import {
   type McpServerConfig,
   type McpSettingsSnapshot,
   type McpTransport,
+  type ProviderCatalogEntry,
   type ProviderModelOption,
   type UpdateSnapshot,
 } from "../../shared/types"
@@ -157,6 +159,58 @@ const QUICK_RESPONSE_PROVIDER_OPTIONS: Array<{ value: LlmProviderKind; label: st
   { value: "custom", label: "Custom" },
 ]
 
+const AGENT_PROVIDER_IDS: AgentProvider[] = ["claude", "codex", "gemini"]
+
+type ModelCatalogDrafts = Record<AgentProvider, ProviderModelOption[]>
+type NewModelCatalogDrafts = Record<AgentProvider, { id: string; label: string }>
+
+function emptyModelCatalogDrafts(): ModelCatalogDrafts {
+  return { claude: [], codex: [], gemini: [] }
+}
+
+function emptyNewModelCatalogDrafts(): NewModelCatalogDrafts {
+  return {
+    claude: { id: "", label: "" },
+    codex: { id: "", label: "" },
+    gemini: { id: "", label: "" },
+  }
+}
+
+function cloneProviderModelOption(model: ProviderModelOption): ProviderModelOption {
+  return {
+    ...model,
+    aliases: model.aliases ? [...model.aliases] : undefined,
+    contextWindowOptions: model.contextWindowOptions ? model.contextWindowOptions.map((option) => ({ ...option })) : undefined,
+  }
+}
+
+function cloneProviderModelOptions(models: ProviderModelOption[]): ProviderModelOption[] {
+  return models.map(cloneProviderModelOption)
+}
+
+function findProviderCatalogEntry(availableProviders: ProviderCatalogEntry[], provider: AgentProvider): ProviderCatalogEntry {
+  return availableProviders.find((candidate) => candidate.id === provider)
+    ?? PROVIDERS.find((candidate) => candidate.id === provider)
+    ?? PROVIDERS[0]
+}
+
+function normalizeEditableProviderModels(provider: AgentProvider, models: ProviderModelOption[]): ProviderModelOption[] {
+  const seen = new Set<string>()
+  const normalized: ProviderModelOption[] = []
+  for (const model of models) {
+    const id = model.id.trim()
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+    normalized.push({
+      ...cloneProviderModelOption(model),
+      id,
+      label: model.label.trim() || id,
+      supportsEffort: model.supportsEffort || provider === "claude",
+    })
+  }
+  return normalized
+}
+
 const GITHUB_RELEASES_URL = "https://api.github.com/repos/moosavimaleki/abolqasem/releases"
 const CHANGELOG_CACHE_TTL_MS = 5 * 60 * 1000
 
@@ -240,6 +294,12 @@ export function isChangelogReleaseNewer(latest: string | null | undefined, curre
   if (versionComparison > 0) return true
   if (versionComparison < 0) return false
   return currentPrerelease.length > 0 && latestPrerelease.length === 0
+}
+
+export function resolveSettingsAppVersion(updateSnapshot: UpdateSnapshot | null | undefined, appSettings: Pick<AppSettingsSnapshot, "management"> | null | undefined) {
+  const version = updateSnapshot?.currentVersion?.trim()
+    || appSettings?.management?.update?.currentVersion?.trim()
+  return version || "unknown"
 }
 
 function normalizeVersionForComparison(version: string | null | undefined) {
@@ -2027,7 +2087,7 @@ export function SettingsPage() {
   const direction = getLocaleDirection(locale)
   const machineName = state.localProjects?.machine.displayName ?? dictionary.settings.unavailable
   const projectCount = state.localProjects?.projects.length ?? 0
-  const appVersion = SDK_CLIENT_APP.split("/")[1] ?? "unknown"
+  const appVersion = resolveSettingsAppVersion(state.updateSnapshot, appSettings)
   const scrollbackLines = useTerminalPreferencesStore((store) => store.scrollbackLines)
   const minColumnWidth = useTerminalPreferencesStore((store) => store.minColumnWidth)
   const editorPreset = useTerminalPreferencesStore((store) => store.editorPreset)
@@ -2132,11 +2192,8 @@ export function SettingsPage() {
   const [keybindingsError, setKeybindingsError] = useState<string | null>(null)
   const [appSettingsError, setAppSettingsError] = useState<string | null>(null)
   const [modelRefreshStatus, setModelRefreshStatus] = useState<"idle" | "loading" | "success">("idle")
-  const [customModelDrafts, setCustomModelDrafts] = useState<Record<AgentProvider, string>>({
-    claude: "",
-    codex: "",
-    gemini: "",
-  })
+  const [modelCatalogDrafts, setModelCatalogDrafts] = useState<ModelCatalogDrafts>(() => emptyModelCatalogDrafts())
+  const [newModelCatalogDrafts, setNewModelCatalogDrafts] = useState<NewModelCatalogDrafts>(() => emptyNewModelCatalogDrafts())
   const [analyticsDialogOpen, setAnalyticsDialogOpen] = useState(false)
   const [llmProviderDraft, setLlmProviderDraft] = useState({
     provider: "openai" as LlmProviderKind,
@@ -2201,6 +2258,15 @@ export function SettingsPage() {
       ])
     ))
   }, [resolvedKeybindings])
+
+  useEffect(() => {
+    setModelCatalogDrafts(Object.fromEntries(
+      AGENT_PROVIDER_IDS.map((provider) => [
+        provider,
+        cloneProviderModelOptions(findProviderCatalogEntry(settingsAvailableProviders, provider).models),
+      ])
+    ) as ModelCatalogDrafts)
+  }, [settingsAvailableProviders])
 
   useEffect(() => {
     if (!llmProvider) return
@@ -2465,13 +2531,12 @@ export function SettingsPage() {
   }
 
   function providerCatalogEntry(provider: AgentProvider) {
-    return settingsAvailableProviders.find((candidate) => candidate.id === provider)
-      ?? PROVIDERS.find((candidate) => candidate.id === provider)
-      ?? PROVIDERS[0]
+    return findProviderCatalogEntry(settingsAvailableProviders, provider)
   }
 
   function providerModelInventory(provider: AgentProvider) {
     return providerModelCatalog?.[provider] ?? {
+      catalogModels: [],
       discoveredModels: [],
       customModels: [],
     }
@@ -2490,55 +2555,86 @@ export function SettingsPage() {
     }
   }
 
-  function handleCustomModelDraftChange(provider: AgentProvider, value: string) {
-    setCustomModelDrafts((drafts) => ({ ...drafts, [provider]: value }))
+  function persistProviderModelCatalog(provider: AgentProvider, models: ProviderModelOption[]) {
+    const normalized = normalizeEditableProviderModels(provider, models)
+    setModelCatalogDrafts((drafts) => ({ ...drafts, [provider]: cloneProviderModelOptions(normalized) }))
+    void handleWriteAppSettings({
+      providerModelCatalog: {
+        [provider]: { catalogModels: normalized, customModels: [] },
+      } as AppSettingsPatch["providerModelCatalog"],
+    }).catch((error) => {
+      setAppSettingsError(error instanceof Error ? error.message : "Unable to save model catalog.")
+    })
   }
 
-  function buildCustomModelOption(provider: AgentProvider, modelId: string): ProviderModelOption {
+  function handleModelCatalogDraftChange(
+    provider: AgentProvider,
+    index: number,
+    field: "id" | "label",
+    value: string
+  ) {
+    setModelCatalogDrafts((drafts) => ({
+      ...drafts,
+      [provider]: (drafts[provider] ?? []).map((model, modelIndex) =>
+        modelIndex === index ? { ...model, [field]: value } : model
+      ),
+    }))
+  }
+
+  function handleModelCatalogInputKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key !== "Enter") return
+    event.currentTarget.blur()
+  }
+
+  function handleNewModelCatalogDraftChange(provider: AgentProvider, field: "id" | "label", value: string) {
+    setNewModelCatalogDrafts((drafts) => ({
+      ...drafts,
+      [provider]: { ...drafts[provider], [field]: value },
+    }))
+  }
+
+  function buildProviderModelOption(provider: AgentProvider, modelId: string, label: string): ProviderModelOption {
     return {
       id: modelId,
-      label: modelId,
+      label: label.trim() || modelId,
       supportsEffort: provider === "claude",
     }
   }
 
-  function handleAddCustomModel(provider: AgentProvider) {
-    const modelId = customModelDrafts[provider].trim()
+  function handleAddProviderModel(provider: AgentProvider) {
+    const draft = newModelCatalogDrafts[provider]
+    const modelId = draft.id.trim()
     if (!modelId) return
-    const inventory = providerModelInventory(provider)
-    const customModels = inventory.customModels ?? []
-    const nextCustomModels = customModels.some((model) => model.id === modelId)
-      ? customModels
-      : [...customModels, buildCustomModelOption(provider, modelId)]
-    setCustomModelDrafts((drafts) => ({ ...drafts, [provider]: "" }))
+    const current = normalizeEditableProviderModels(provider, modelCatalogDrafts[provider] ?? providerCatalogEntry(provider).models)
+    const nextModel = buildProviderModelOption(provider, modelId, draft.label)
+    const nextModels = [...current.filter((model) => model.id !== modelId), nextModel]
+    setNewModelCatalogDrafts((drafts) => ({ ...drafts, [provider]: { id: "", label: "" } }))
     setProviderDefaultModel(provider, modelId)
     void handleWriteAppSettings({
       providerModelCatalog: {
-        [provider]: { customModels: nextCustomModels },
+        [provider]: { catalogModels: nextModels, customModels: [] },
       } as AppSettingsPatch["providerModelCatalog"],
       providerDefaults: {
         [provider]: { model: modelId },
       } as AppSettingsPatch["providerDefaults"],
     }).catch((error) => {
-      setAppSettingsError(error instanceof Error ? error.message : "Unable to save custom model.")
+      setAppSettingsError(error instanceof Error ? error.message : "Unable to save model catalog.")
     })
   }
 
-  function handleRemoveCustomModel(provider: AgentProvider, modelId: string) {
-    const inventory = providerModelInventory(provider)
-    const nextCustomModels = (inventory.customModels ?? []).filter((model) => model.id !== modelId)
-    void handleWriteAppSettings({
-      providerModelCatalog: {
-        [provider]: { customModels: nextCustomModels },
-      } as AppSettingsPatch["providerModelCatalog"],
-    }).catch((error) => {
-      setAppSettingsError(error instanceof Error ? error.message : "Unable to remove custom model.")
-    })
+  function handleRemoveProviderModel(provider: AgentProvider, modelId: string) {
+    const current = normalizeEditableProviderModels(provider, modelCatalogDrafts[provider] ?? [])
+    if (current.length <= 1) return
+    const nextModels = current.filter((model) => model.id !== modelId)
+    persistProviderModelCatalog(provider, nextModels)
+    if (providerDefaults[provider].model === modelId && nextModels[0]) {
+      handleProviderDefaultModelChange(provider, nextModels[0].id)
+    }
   }
 
-  function handleCustomModelKeyDown(event: KeyboardEvent<HTMLInputElement>, provider: AgentProvider) {
-    if (event.key !== "Enter") return
-    handleAddCustomModel(provider)
+  function resetProviderModelCatalog(provider: AgentProvider) {
+    const fallbackModels = cloneProviderModelOptions(PROVIDERS.find((candidate) => candidate.id === provider)?.models ?? [])
+    persistProviderModelCatalog(provider, fallbackModels)
   }
 
   function handleProviderProxyModeChange(mode: ProviderProxyMode) {
@@ -2643,47 +2739,104 @@ export function SettingsPage() {
       })
   }
 
-  function renderCustomModelControls(provider: AgentProvider) {
+  function renderModelCatalogControls(provider: AgentProvider) {
     const providerConfig = providerCatalogEntry(provider)
     const inventory = providerModelInventory(provider)
-    const customModels = inventory.customModels ?? []
+    const models = modelCatalogDrafts[provider]?.length
+      ? modelCatalogDrafts[provider]
+      : cloneProviderModelOptions(providerConfig.models)
+    const newDraft = newModelCatalogDrafts[provider]
     return (
-      <div className="mt-3 flex w-full min-w-0 flex-col gap-2">
-        <div className="flex min-w-0 items-center gap-2">
+      <div className="mt-3 flex w-full min-w-0 flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <span>{dictionary.settings.modelCatalogModelCount(models.length)}</span>
+          <span>{dictionary.settings.discoveredModelsCount(inventory.discoveredModels?.length ?? 0)}</span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => resetProviderModelCatalog(provider)}
+            className="h-7 px-2 text-xs"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            {dictionary.settings.resetModelCatalog}
+          </Button>
+        </div>
+        <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_auto]">
           <Input
             type="text"
-            value={customModelDrafts[provider]}
-            onChange={(event) => handleCustomModelDraftChange(provider, event.target.value)}
-            onKeyDown={(event) => handleCustomModelKeyDown(event, provider)}
-            placeholder={dictionary.settings.customModelPlaceholder(providerConfig.label)}
-            className="h-8 min-w-0 flex-1 font-mono text-xs"
+            value={newDraft.id}
+            onChange={(event) => handleNewModelCatalogDraftChange(provider, "id", event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") handleAddProviderModel(provider)
+            }}
+            placeholder={dictionary.settings.modelIdPlaceholder(providerConfig.label)}
+            aria-label={dictionary.settings.modelCatalogId}
+            className="h-8 min-w-0 font-mono text-xs"
+            dir="ltr"
+          />
+          <Input
+            type="text"
+            value={newDraft.label}
+            onChange={(event) => handleNewModelCatalogDraftChange(provider, "label", event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") handleAddProviderModel(provider)
+            }}
+            placeholder={dictionary.settings.modelLabelPlaceholder}
+            aria-label={dictionary.settings.modelCatalogLabel}
+            className="h-8 min-w-0 text-xs"
           />
           <Button
             type="button"
             variant="outline"
             size="sm"
-            onClick={() => handleAddCustomModel(provider)}
-            disabled={!customModelDrafts[provider].trim()}
+            onClick={() => handleAddProviderModel(provider)}
+            disabled={!newDraft.id.trim()}
             className="h-8 shrink-0 gap-1.5"
           >
             <Plus className="h-3.5 w-3.5" />
             {dictionary.common.add}
           </Button>
         </div>
-        <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-          <span>{dictionary.settings.discoveredModelsCount(inventory.discoveredModels?.length ?? 0)}</span>
-          {customModels.map((model) => (
-            <span key={model.id} className="inline-flex max-w-full items-center gap-1 rounded-md border border-border bg-muted/40 px-2 py-1 font-mono text-[11px] text-foreground">
-              <span className="truncate">{model.id}</span>
-              <button
+        <div className="grid max-h-64 min-w-0 gap-1.5 overflow-y-auto rounded-md border border-border bg-muted/20 p-2">
+          <div className="hidden grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_2rem] gap-2 px-1 text-[11px] font-medium text-muted-foreground sm:grid">
+            <span>{dictionary.settings.modelCatalogId}</span>
+            <span>{dictionary.settings.modelCatalogLabel}</span>
+            <span />
+          </div>
+          {models.map((model, index) => (
+            <div key={`${provider}-${index}`} className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_2rem]">
+              <Input
+                type="text"
+                value={model.id}
+                onChange={(event) => handleModelCatalogDraftChange(provider, index, "id", event.target.value)}
+                onBlur={() => persistProviderModelCatalog(provider, modelCatalogDrafts[provider] ?? [])}
+                onKeyDown={handleModelCatalogInputKeyDown}
+                aria-label={dictionary.settings.modelCatalogId}
+                className="h-8 min-w-0 font-mono text-xs"
+                dir="ltr"
+              />
+              <Input
+                type="text"
+                value={model.label}
+                onChange={(event) => handleModelCatalogDraftChange(provider, index, "label", event.target.value)}
+                onBlur={() => persistProviderModelCatalog(provider, modelCatalogDrafts[provider] ?? [])}
+                onKeyDown={handleModelCatalogInputKeyDown}
+                aria-label={dictionary.settings.modelCatalogLabel}
+                className="h-8 min-w-0 text-xs"
+              />
+              <Button
                 type="button"
-                onClick={() => handleRemoveCustomModel(provider, model.id)}
-                className="shrink-0 text-muted-foreground hover:text-foreground"
-                aria-label={dictionary.settings.removeCustomModel(model.id)}
+                variant="ghost"
+                size="icon"
+                onClick={() => handleRemoveProviderModel(provider, model.id)}
+                disabled={models.length <= 1}
+                aria-label={dictionary.settings.removeModel(model.id)}
+                className="h-8 w-8 text-muted-foreground hover:text-destructive"
               >
-                <X className="h-3 w-3" />
-              </button>
-            </span>
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </div>
           ))}
         </div>
       </div>
@@ -3337,7 +3490,7 @@ export function SettingsPage() {
                           includePlanMode
                           className="justify-start flex-wrap"
                         />
-                        {renderCustomModelControls("claude")}
+                        {renderModelCatalogControls("claude")}
                       </div>
                     </SettingsRow>
 
@@ -3369,7 +3522,7 @@ export function SettingsPage() {
                           includePlanMode
                           className="justify-start flex-wrap"
                         />
-                        {renderCustomModelControls("codex")}
+                        {renderModelCatalogControls("codex")}
                       </div>
                     </SettingsRow>
 
@@ -3395,7 +3548,7 @@ export function SettingsPage() {
                           includePlanMode
                           className="justify-start flex-wrap"
                         />
-                        {renderCustomModelControls("gemini")}
+                        {renderModelCatalogControls("gemini")}
                       </div>
                     </SettingsRow>
 

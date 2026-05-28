@@ -49,6 +49,7 @@ type ProviderContextWindowOption struct {
 type ProviderModelInventoryByProvider map[string]ProviderModelInventory
 
 type ProviderModelInventory struct {
+	CatalogModels    []ProviderModelOption `json:"catalog_models"`
 	DiscoveredModels []ProviderModelOption `json:"discovered_models"`
 	CustomModels     []ProviderModelOption `json:"custom_models"`
 	LastRefreshAt    string                `json:"last_refresh_at,omitempty"`
@@ -603,10 +604,16 @@ var serverProviders = []ProviderCatalogEntry{
 		DefaultModel:     DefaultGeminiModel,
 		SupportsPlanMode: true,
 		Models: []ProviderModelOption{
-			{ID: "gemini-3-pro-preview", Label: "Gemini 3 Pro", SupportsEffort: false},
-			{ID: "gemini-3-flash-preview", Label: "Gemini 3 Flash", SupportsEffort: false},
+			{ID: "auto", Label: "Auto", SupportsEffort: false},
+			{ID: "gemini-3.1-pro-preview", Label: "Gemini 3.1 Pro Preview", SupportsEffort: false},
+			{ID: "gemini-3.1-flash-lite-preview", Label: "Gemini 3.1 Flash Lite Preview", SupportsEffort: false},
+			{ID: "gemini-3-pro-preview", Label: "Gemini 3 Pro Preview", SupportsEffort: false},
+			{ID: "gemini-3-flash-preview", Label: "Gemini 3 Flash Preview", SupportsEffort: false},
 			{ID: "gemini-2.5-pro", Label: "Gemini 2.5 Pro", SupportsEffort: false},
 			{ID: "gemini-2.5-flash", Label: "Gemini 2.5 Flash", SupportsEffort: false},
+			{ID: "gemini-2.5-flash-lite", Label: "Gemini 2.5 Flash Lite", SupportsEffort: false},
+			{ID: "gemma-4-31b-it", Label: "gemma-4-31b-it", SupportsEffort: false},
+			{ID: "gemma-4-26b-a4b-it", Label: "gemma-4-26b-a4b-it", SupportsEffort: false},
 		},
 		Efforts: []ProviderEffortOption{},
 	},
@@ -668,9 +675,12 @@ func NormalizeProviderModelOption(providerID string, model ProviderModelOption) 
 }
 
 func withModelInventory(provider ProviderCatalogEntry, inventory ProviderModelInventory) ProviderCatalogEntry {
+	catalogModels := normalizeProviderModelOptions(provider.ID, inventory.CatalogModels)
 	discovered := normalizeProviderModelOptions(provider.ID, inventory.DiscoveredModels)
 	custom := normalizeProviderModelOptions(provider.ID, inventory.CustomModels)
-	if len(discovered) > 0 {
+	if inventory.CatalogModels != nil {
+		provider.Models = catalogModels
+	} else if len(discovered) > 0 {
 		provider.Models = discovered
 	}
 	provider.Models = mergeProviderModelOptions(provider.Models, custom)

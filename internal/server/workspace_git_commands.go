@@ -45,6 +45,16 @@ func (c *workspaceProjectGitSnapshotCache) update(projectID string, snapshot git
 	return changed
 }
 
+func (c *workspaceProjectGitSnapshotCache) get(projectID string) (gitservice.Snapshot, bool) {
+	if strings.TrimSpace(projectID) == "" {
+		return gitservice.Snapshot{}, false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	snapshot, ok := c.snapshots[projectID]
+	return snapshot, ok
+}
+
 func workspaceProjectGitSnapshot(projectID string) any {
 	project, err := workspaceRuntimeProjectRequired(projectID)
 	if err != nil {
@@ -63,6 +73,9 @@ func workspaceProjectGitSubscriptionSnapshot(projectID string) any {
 	project, err := workspaceRuntimeProjectRequired(projectID)
 	if err != nil {
 		return workspaceProjectGitSnapshotWithCheckpoints("", gitservice.Snapshot{Status: gitservice.StatusUnknown})
+	}
+	if snapshot, ok := workspaceProjectGitSnapshots.get(project.ID); ok {
+		return workspaceProjectGitSnapshotWithCheckpoints(project.ID, snapshot)
 	}
 	return workspaceProjectGitSnapshotWithCheckpoints(project.ID, gitservice.Snapshot{Status: gitservice.StatusUnknown})
 }

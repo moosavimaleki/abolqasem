@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useShallow } from "zustand/react/shallow"
-import { PROVIDERS, type AgentProvider, type AppSettingsPatch, type AppSettingsSnapshot, type AskUserQuestionAnswerMap, type ChatAttachment, type ChatConversionPreview, type ChatDiffSnapshot, type ChatHistoryPage, type ChatProviderPreferences, type CheckpointRestoreMode, type CheckpointRestoreResult, type KeybindingsSnapshot, type LlmProviderSnapshot, type LlmProviderValidationResult, type ModelOptions, type ProviderCatalogEntry, type QueuedChatMessage, type StandaloneTranscriptExportCommandResult, type TranscriptEntry, type UpdateInstallResult, type UpdateSnapshot, type UserPromptEntry } from "../../shared/types"
+import { PROVIDERS, type AgentProvider, type AppSettingsPatch, type AppSettingsSnapshot, type AskUserQuestionAnswerMap, type ChatAttachment, type ChatConversionPreview, type ChatDiffSnapshot, type ChatHistoryPage, type ChatHistorySnapshot, type ChatProviderPreferences, type CheckpointRestoreMode, type CheckpointRestoreResult, type KeybindingsSnapshot, type LlmProviderSnapshot, type LlmProviderValidationResult, type ModelOptions, type ProviderCatalogEntry, type QueuedChatMessage, type StandaloneTranscriptExportCommandResult, type TranscriptEntry, type UpdateInstallResult, type UpdateSnapshot, type UserPromptEntry } from "../../shared/types"
 import { NEW_CHAT_COMPOSER_ID, type ComposerState, useChatPreferencesStore } from "../stores/chatPreferencesStore"
 import { useRightSidebarStore } from "../stores/rightSidebarStore"
 import { useTerminalLayoutStore } from "../stores/terminalLayoutStore"
@@ -380,6 +380,44 @@ export function reconcileOptimisticUserPrompts(
 
 const INITIAL_CHAT_RECENT_LIMIT = 200
 const CHAT_HISTORY_PAGE_SIZE = 500
+
+type RuntimeChatSnapshot = Omit<ChatSnapshot, "queuedMessages" | "messages" | "history" | "availableProviders"> & {
+  queuedMessages?: ChatSnapshot["queuedMessages"] | null
+  messages?: ChatSnapshot["messages"] | null
+  history?: ChatHistorySnapshot | null
+  availableProviders?: ChatSnapshot["availableProviders"] | null
+}
+
+export function normalizeChatSnapshot(snapshot: ChatSnapshot | null): ChatSnapshot | null {
+  if (!snapshot) return null
+
+  const runtimeSnapshot = snapshot as RuntimeChatSnapshot
+  const queuedMessages = Array.isArray(runtimeSnapshot.queuedMessages) ? runtimeSnapshot.queuedMessages : []
+  const messages = Array.isArray(runtimeSnapshot.messages) ? runtimeSnapshot.messages : []
+  const history = runtimeSnapshot.history ?? {
+    hasOlder: false,
+    olderCursor: null,
+    recentLimit: INITIAL_CHAT_RECENT_LIMIT,
+  }
+  const availableProviders = Array.isArray(runtimeSnapshot.availableProviders) ? runtimeSnapshot.availableProviders : []
+
+  if (
+    queuedMessages === runtimeSnapshot.queuedMessages
+    && messages === runtimeSnapshot.messages
+    && history === runtimeSnapshot.history
+    && availableProviders === runtimeSnapshot.availableProviders
+  ) {
+    return snapshot
+  }
+
+  return {
+    ...snapshot,
+    queuedMessages,
+    messages,
+    history,
+    availableProviders,
+  }
+}
 
 export function getNewestRemainingChatId(projectGroups: SidebarData["projectGroups"], activeChatId: string): string | null {
   const projectGroup = projectGroups.find((group) => group.chats.some((chat) => chat.chatId === activeChatId))
@@ -1155,35 +1193,36 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
     setChatSnapshot(null)
     setChatReady(false)
     const unsubscribe = socket.subscribe<ChatSnapshot | null>({ type: "chat", chatId: activeChatId, recentLimit: INITIAL_CHAT_RECENT_LIMIT }, (snapshot) => {
-      if (snapshot?.runtime.chatId) {
+      const normalizedSnapshot = normalizeChatSnapshot(snapshot)
+      if (normalizedSnapshot?.runtime.chatId) {
         const matchingTrace = [...sendToStartingProfilesRef.current.values()]
-          .filter((trace) => trace.serverChatId === snapshot.runtime.chatId)
+          .filter((trace) => trace.serverChatId === normalizedSnapshot.runtime.chatId)
           .sort((left, right) => right.startedAt - left.startedAt)[0]
         if (matchingTrace && matchingTrace.snapshotAt === undefined) {
           matchingTrace.snapshotAt = performance.now()
           logSendToStartingTrace(matchingTrace, "chat_snapshot_received", {
-            status: snapshot.runtime.status,
-            messageCount: snapshot.messages.length,
+            status: normalizedSnapshot.runtime.status,
+            messageCount: normalizedSnapshot.messages.length,
           })
         }
       }
       setChatSnapshot((current) => {
-        const reused = sameChatSnapshotCore(current, snapshot)
+        const reused = sameChatSnapshotCore(current, normalizedSnapshot)
         logAbolqasemState("chat snapshot received", {
           subscriptionId,
           activeChatId,
-          snapshotChatId: snapshot?.runtime.chatId ?? null,
-          snapshotProvider: snapshot?.runtime.provider ?? null,
-          snapshotStatus: snapshot?.runtime.status ?? null,
-          messageCount: snapshot?.messages.length ?? 0,
+          snapshotChatId: normalizedSnapshot?.runtime.chatId ?? null,
+          snapshotProvider: normalizedSnapshot?.runtime.provider ?? null,
+          snapshotStatus: normalizedSnapshot?.runtime.status ?? null,
+          messageCount: normalizedSnapshot?.messages.length ?? 0,
           diffStatus: null,
           diffFileCount: 0,
           reusedSnapshot: reused,
         })
-        return reused ? current : snapshot
+        return reused ? current : normalizedSnapshot
       })
-      setHistoryCursor(snapshot?.history.olderCursor ?? null)
-      setHasOlderHistory(snapshot?.history.hasOlder ?? false)
+      setHistoryCursor(normalizedSnapshot?.history.olderCursor ?? null)
+      setHasOlderHistory(normalizedSnapshot?.history.hasOlder ?? false)
       setChatReady(true)
       setCommandError(null)
     })
