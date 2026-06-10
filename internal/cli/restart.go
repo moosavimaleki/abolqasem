@@ -2,9 +2,7 @@ package cli
 
 import (
 	"ai-agent-manager/internal/appinfo"
-	"ai-agent-manager/internal/state"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -12,13 +10,14 @@ import (
 
 var restartCmd = &cobra.Command{
 	Use:   "restart",
-	Short: "Restart " + appinfo.DisplayName + " in the active startup mode",
-	Run: func(cmd *cobra.Command, args []string) {
+	Short: "Restart the " + appinfo.DisplayName + " service",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := restartActiveMode(); err != nil {
-			fmt.Printf("Restart failed: %v\n", err)
-			return
+			return fmt.Errorf("restart failed: %w", err)
 		}
 		fmt.Println("Successfully restarted")
+		return nil
 	},
 }
 
@@ -27,46 +26,14 @@ func init() {
 }
 
 func restartActiveMode() error {
-	if isServiceInstalled() {
-		return restartService()
+	if !isServiceInstalled() {
+		return fmt.Errorf("service is not installed; run %s install", appinfo.Name)
 	}
-	if err := stopHookServer(); err != nil {
+	if err := restartService(); err != nil {
 		return err
 	}
-	return ensureServerRunning(5 * time.Second)
-}
-
-func stopHookServer() error {
-	baseURL, info, ok := discoverRunningServerInfo()
-	if !ok {
-		return nil
+	if !waitForServer(10 * time.Second) {
+		return fmt.Errorf("service did not become healthy at %s", currentBaseURL())
 	}
-	pid := info.PID
-	if pid <= 0 {
-		pid = statePIDFallback()
-	}
-	if pid <= 0 {
-		return fmt.Errorf("server is running at %s but its process id is unknown", baseURL)
-	}
-
-	process, err := os.FindProcess(pid)
-	if err != nil {
-		return err
-	}
-	if err := terminateProcess(process); err != nil {
-		return err
-	}
-
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		if !serverHealthyAt(baseURL) {
-			return nil
-		}
-		time.Sleep(150 * time.Millisecond)
-	}
-	return fmt.Errorf("server at %s did not stop", baseURL)
-}
-
-func statePIDFallback() int {
-	return state.LoadServerPID()
+	return nil
 }

@@ -517,8 +517,7 @@ export interface AppSettingsSnapshot {
 
 export interface HookStatusSnapshot {
   agent: string
-  user_installed: boolean
-  project_installed: boolean
+  installed: boolean
   error?: string
 }
 
@@ -531,9 +530,8 @@ export interface AppManagementSnapshot {
     supportedModes: Array<"auto" | "notice" | "off">
     dangerousOperationsNeedConfirm: boolean
   }
-  startup: {
-    mode: "service" | "hook" | "manual"
-    serviceInstalled: boolean
+  service: {
+    installed: boolean
     platform: string
   }
   hooks: HookStatusSnapshot[]

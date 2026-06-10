@@ -91,6 +91,7 @@ jobs:
           "$RUNNER_TEMP/bin/abolqasem" --help >/dev/null
           "$RUNNER_TEMP/bin/abolqasem" status | tee "$RUNNER_TEMP/abolqasem-status.txt"
           grep -q "Server: running" "$RUNNER_TEMP/abolqasem-status.txt"
+          grep -q "Service: installed" "$RUNNER_TEMP/abolqasem-status.txt"
           grep -q "abolqasem" "$HOME/.codex/config.toml"
           grep -q "abolqasem" "$HOME/.claude/settings.json"
           grep -q "abolqasem" "$HOME/.gemini/settings.json"
@@ -119,6 +120,9 @@ jobs:
           Write-Host $Status
           if ($Status -notmatch "Server: running") {
             throw "server did not restart after source install"
+          }
+          if ($Status -notmatch "Service: installed") {
+            throw "service was not installed by source installer"
           }
           foreach ($Path in @(
             "$env:USERPROFILE\.codex\config.toml",
@@ -187,6 +191,7 @@ jobs:
           "$RUNNER_TEMP/release-bin/abolqasem" --help >/dev/null
           "$RUNNER_TEMP/release-bin/abolqasem" status | tee "$RUNNER_TEMP/abolqasem-release-status.txt"
           grep -q "Server: running" "$RUNNER_TEMP/abolqasem-release-status.txt"
+          grep -q "Service: installed" "$RUNNER_TEMP/abolqasem-release-status.txt"
           grep -q "abolqasem" "$HOME/.codex/config.toml"
           grep -q "abolqasem" "$HOME/.claude/settings.json"
           grep -q "abolqasem" "$HOME/.gemini/settings.json"
@@ -263,6 +268,9 @@ jobs:
           Write-Host $Status
           if ($Status -notmatch "Server: running") {
             throw "server did not restart after release install"
+          }
+          if ($Status -notmatch "Service: installed") {
+            throw "service was not installed by release installer"
           }
           foreach ($Path in @(
             "$env:USERPROFILE\.codex\config.toml",

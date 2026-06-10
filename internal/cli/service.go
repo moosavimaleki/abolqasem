@@ -183,7 +183,7 @@ func requireServiceInstalled() bool {
 	if isServiceInstalled() {
 		return true
 	}
-	fmt.Println("Startup mode is hook. Service commands are not needed.")
+	fmt.Printf("Service is not installed. Run %s install.\n", appinfo.Name)
 	return false
 }
 

@@ -1,79 +1,141 @@
 package cli
 
 import (
-	"ai-agent-manager/internal/adapters"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/spf13/cobra"
 )
 
-func TestRestartAfterInstallInvokesActiveMode(t *testing.T) {
-	original := installRestartActiveMode
-	t.Cleanup(func() {
-		installRestartActiveMode = original
-	})
+func TestInstallDesiredStateInstallsServiceAllHooksAndRestarts(t *testing.T) {
+	restoreInstallFunctions(t)
 
-	called := false
-	installRestartActiveMode = func() error {
-		called = true
+	var calls []string
+	installPersistentService = func() error {
+		calls = append(calls, "service")
+		return nil
+	}
+	installAgentHook = func(agent string) error {
+		calls = append(calls, "hook:"+agent)
+		return nil
+	}
+	restartInstalledService = func() error {
+		calls = append(calls, "restart")
+		return nil
+	}
+	waitForInstalledServer = func(timeout time.Duration) bool {
+		calls = append(calls, "health")
+		return true
+	}
+
+	successful, err := installDesiredState()
+	if err != nil {
+		t.Fatalf("installDesiredState() error = %v", err)
+	}
+	if !reflect.DeepEqual(successful, supportedInstallAgents) {
+		t.Fatalf("installDesiredState() agents = %v, want %v", successful, supportedInstallAgents)
+	}
+	wantCalls := []string{"service", "hook:codex", "hook:claude", "hook:gemini", "restart", "health"}
+	if !reflect.DeepEqual(calls, wantCalls) {
+		t.Fatalf("installDesiredState() calls = %v, want %v", calls, wantCalls)
+	}
+}
+
+func TestInstallDesiredStateReportsAnyHookFailure(t *testing.T) {
+	restoreInstallFunctions(t)
+
+	var calls []string
+	installPersistentService = func() error { return nil }
+	installAgentHook = func(agent string) error {
+		calls = append(calls, agent)
+		if agent == "claude" {
+			return errors.New("broken config")
+		}
+		return nil
+	}
+	restartInstalledService = func() error {
+		t.Fatal("service must not restart after a partial hook install")
 		return nil
 	}
 
-	if err := restartAfterInstall(); err != nil {
-		t.Fatalf("restartAfterInstall() error = %v", err)
+	successful, err := installDesiredState()
+	if err == nil || !strings.Contains(err.Error(), "install claude hook") {
+		t.Fatalf("installDesiredState() error = %v, want claude hook failure", err)
 	}
-	if !called {
-		t.Fatal("restartAfterInstall() did not restart the active startup mode")
+	if !reflect.DeepEqual(calls, supportedInstallAgents) {
+		t.Fatalf("installDesiredState() hook calls = %v, want %v", calls, supportedInstallAgents)
 	}
-}
-
-func TestRestartAfterInstallReturnsRestartError(t *testing.T) {
-	original := installRestartActiveMode
-	t.Cleanup(func() {
-		installRestartActiveMode = original
-	})
-
-	wantErr := errors.New("restart failed")
-	installRestartActiveMode = func() error {
-		return wantErr
-	}
-
-	if err := restartAfterInstall(); !errors.Is(err, wantErr) {
-		t.Fatalf("restartAfterInstall() error = %v, want %v", err, wantErr)
+	if !reflect.DeepEqual(successful, []string{"codex", "gemini"}) {
+		t.Fatalf("installDesiredState() successful = %v", successful)
 	}
 }
 
-func TestResolveInstallStartupAcceptsExplicitModes(t *testing.T) {
-	original := installStartup
-	t.Cleanup(func() {
-		installStartup = original
-	})
+func TestInstallDesiredStateRequiresHealthyService(t *testing.T) {
+	restoreInstallFunctions(t)
 
-	for _, mode := range []string{"hook", "service"} {
-		t.Run(mode, func(t *testing.T) {
-			installStartup = mode
+	installPersistentService = func() error { return nil }
+	installAgentHook = func(agent string) error { return nil }
+	restartInstalledService = func() error { return nil }
+	waitForInstalledServer = func(timeout time.Duration) bool { return false }
 
-			got, err := resolveInstallStartup(strings.NewReader(""), adapters.ScopeUser, []string{"codex"}, false)
-			if err != nil {
-				t.Fatalf("resolveInstallStartup() error = %v", err)
+	_, err := installDesiredState()
+	if err == nil || !strings.Contains(err.Error(), "did not become healthy") {
+		t.Fatalf("installDesiredState() error = %v, want health failure", err)
+	}
+}
+
+func TestUninstallDesiredStateRemovesAllHooksAndService(t *testing.T) {
+	restoreInstallFunctions(t)
+
+	var calls []string
+	uninstallAgentHook = func(agent string) error {
+		calls = append(calls, "hook:"+agent)
+		return nil
+	}
+	isPersistentServiceInstalled = func() bool { return true }
+	uninstallPersistentService = func() error {
+		calls = append(calls, "service")
+		return nil
+	}
+
+	if err := uninstallDesiredState(); err != nil {
+		t.Fatalf("uninstallDesiredState() error = %v", err)
+	}
+	wantCalls := []string{"hook:codex", "hook:claude", "hook:gemini", "service"}
+	if !reflect.DeepEqual(calls, wantCalls) {
+		t.Fatalf("uninstallDesiredState() calls = %v, want %v", calls, wantCalls)
+	}
+}
+
+func TestInstallCommandsDoNotExposeLegacySelectionFlags(t *testing.T) {
+	for _, command := range []*cobra.Command{installCmd, uninstallCmd} {
+		for _, flag := range []string{"agent", "all", "scope", "startup", "no-hooks"} {
+			if command.Flags().Lookup(flag) != nil {
+				t.Fatalf("%s unexpectedly exposes --%s", command.Name(), flag)
 			}
-			if got != mode {
-				t.Fatalf("resolveInstallStartup() = %q, want %q", got, mode)
-			}
-		})
+		}
 	}
 }
 
-func TestResolveInstallStartupRejectsInvalidExplicitMode(t *testing.T) {
-	original := installStartup
+func restoreInstallFunctions(t *testing.T) {
+	t.Helper()
+	originalInstallService := installPersistentService
+	originalInstallHook := installAgentHook
+	originalRestartService := restartInstalledService
+	originalWaitForServer := waitForInstalledServer
+	originalUninstallHook := uninstallAgentHook
+	originalServiceInstalled := isPersistentServiceInstalled
+	originalUninstallService := uninstallPersistentService
 	t.Cleanup(func() {
-		installStartup = original
+		installPersistentService = originalInstallService
+		installAgentHook = originalInstallHook
+		restartInstalledService = originalRestartService
+		waitForInstalledServer = originalWaitForServer
+		uninstallAgentHook = originalUninstallHook
+		isPersistentServiceInstalled = originalServiceInstalled
+		uninstallPersistentService = originalUninstallService
 	})
-
-	installStartup = "invalid"
-
-	_, err := resolveInstallStartup(strings.NewReader(""), adapters.ScopeUser, []string{"codex"}, false)
-	if err == nil {
-		t.Fatal("resolveInstallStartup() error = nil, want invalid startup error")
-	}
 }

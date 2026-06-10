@@ -4,14 +4,7 @@
 param(
     [string]$BinDir = "$env:LOCALAPPDATA\abolqasem\bin",
     [switch]$NoBuild,
-    [switch]$BuildAll,
-    [switch]$Hooks = $true,
-    [switch]$AllAgents,
-    [string]$Agent = "",
-    [ValidateSet("user", "project")]
-    [string]$Scope = "user",
-    [ValidateSet("hook", "service")]
-    [string]$Startup = "hook"
+    [switch]$BuildAll
 )
 
 $ErrorActionPreference = "Stop"
@@ -86,19 +79,7 @@ function Install-GoIfMissing {
     }
 }
 
-function Write-TrustNotice {
-    Write-Host ""
-    Write-Host "Next step:"
-    Write-Host "  Open Codex, Claude Code, and Gemini CLI once."
-    Write-Host "  If any of them asks you to trust or approve the installed hook command, accept it."
-    Write-Host "  No manual config editing should be needed."
-}
-
 Install-GoIfMissing
-
-if ($Agent -and @("codex", "claude", "gemini") -notcontains $Agent) {
-    throw "Unsupported agent: $Agent"
-}
 
 $Arch = Get-TargetArch
 $TargetBinary = Join-Path $Dist "$App-windows-$Arch.exe"
@@ -115,6 +96,9 @@ if (!(Test-Path $TargetBinary)) {
 
 New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
 $InstallPath = Join-Path $BinDir "$App.exe"
+if (Test-Path $InstallPath) {
+    & $InstallPath service stop *> $null
+}
 Copy-Item -Force $TargetBinary $InstallPath
 
 Write-Host "Installed $App to $InstallPath"
@@ -125,16 +109,8 @@ if ($PathParts -notcontains $BinDir) {
     Write-Host "  $BinDir"
 }
 
-$env:ABOLQASEM_SUPPRESS_TRUST_NOTICE = "1"
-$Agents = if ($Agent) { @($Agent) } else { @("codex", "claude", "gemini") }
-if ($Agents.Count -eq 3 -and @("codex", "claude", "gemini") -join "," -eq ($Agents -join ",")) {
-    & $InstallPath install --all --scope $Scope --startup $Startup
-} else {
-    foreach ($Name in $Agents) {
-        Write-Host "Installing $Name hook with scope=$Scope startup=$Startup"
-        & $InstallPath install --agent $Name --scope $Scope --startup $Startup
-    }
+Write-Host "Installing persistent service and all agent hooks"
+& $InstallPath install
+if ($LASTEXITCODE -ne 0) {
+    throw "$App install failed with exit code $LASTEXITCODE"
 }
-Remove-Item Env:ABOLQASEM_SUPPRESS_TRUST_NOTICE -ErrorAction SilentlyContinue
-
-Write-TrustNotice

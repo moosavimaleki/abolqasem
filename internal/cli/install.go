@@ -6,22 +6,38 @@ import (
 	"ai-agent-manager/internal/adapters/codex"
 	"ai-agent-manager/internal/adapters/gemini"
 	"ai-agent-manager/internal/appinfo"
-	"bufio"
+	"errors"
 	"fmt"
-	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 )
 
-var installAgent string
-var installScope string
-var installAll bool
-var installStartup string
-var installNoHooks bool
+var supportedInstallAgents = []string{"codex", "claude", "gemini"}
 
-var installRestartActiveMode = restartActiveMode
+var (
+	installPersistentService = installService
+	restartInstalledService  = restartService
+	waitForInstalledServer   = waitForServer
+	installAgentHook         = func(agent string) error {
+		adapter, err := getAdapter(agent)
+		if err != nil {
+			return err
+		}
+		return adapter.InstallHook(adapters.ScopeUser)
+	}
+	uninstallAgentHook = func(agent string) error {
+		adapter, err := getAdapter(agent)
+		if err != nil {
+			return err
+		}
+		return adapter.UninstallHook(adapters.ScopeUser)
+	}
+	isPersistentServiceInstalled = isServiceInstalled
+	uninstallPersistentService   = uninstallService
+)
 
 func getAdapter(agent string) (adapters.AgentAdapter, error) {
 	switch agent {
@@ -38,237 +54,92 @@ func getAdapter(agent string) (adapters.AgentAdapter, error) {
 
 var installCmd = &cobra.Command{
 	Use:   "install",
-	Short: "Install " + appinfo.DisplayName + " startup and hooks",
-	Run: func(cmd *cobra.Command, args []string) {
-		scope := adapters.InstallScope(installScope)
-		if scope != adapters.ScopeUser && scope != adapters.ScopeProject {
-			fmt.Println("Invalid scope. Use 'user' or 'project'")
-			return
-		}
-
-		agents := selectedInstallAgents()
-		if len(agents) == 0 && !installNoHooks {
-			fmt.Println("No agents selected")
-			return
-		}
-
-		serviceInstalled := isServiceInstalled()
-		startup, err := resolveInstallStartup(cmd.InOrStdin(), scope, agents, serviceInstalled)
+	Short: "Install " + appinfo.DisplayName + " service and agent hooks",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		successful, err := installDesiredState()
 		if err != nil {
-			fmt.Printf("Installation failed: %v\n", err)
-			return
+			return fmt.Errorf("installation failed: %w", err)
 		}
-		if startup == "" {
-			return
-		}
-
-		if startup == "service" {
-			if err := installService(); err != nil {
-				fmt.Printf("Service installation failed: %v\n", err)
-				return
-			}
-			fmt.Println("Successfully installed service")
-		} else if serviceInstalled {
-			if err := uninstallService(); err != nil {
-				fmt.Printf("Service removal failed: %v\n", err)
-				return
-			}
-			fmt.Println("Successfully removed service")
-		}
-
-		successful := []string{}
-		if installNoHooks {
-			if err := restartAfterInstall(); err != nil {
-				fmt.Printf("Restart failed: %v\n", err)
-				return
-			}
-			return
-		}
-
-		successful = installHooks(scope, agents)
-		if err := restartAfterInstall(); err != nil {
-			fmt.Printf("Restart failed: %v\n", err)
-			return
-		}
+		fmt.Println("Installation complete")
 		printTrustNotice(successful)
+		return nil
 	},
 }
 
 var uninstallCmd = &cobra.Command{
 	Use:   "uninstall",
-	Short: "Uninstall " + appinfo.DisplayName + " startup and hooks",
-	Run: func(cmd *cobra.Command, args []string) {
-		scope := adapters.InstallScope(installScope)
-		agents := selectedInstallAgents()
-		for _, agent := range agents {
-			adapter, _ := getAdapter(agent)
-			if err := adapter.UninstallHook(scope); err != nil {
-				if !strings.Contains(err.Error(), "hook not found") {
-					fmt.Printf("Failed to uninstall %s hook: %v\n", agent, err)
-				}
-			} else {
-				fmt.Printf("Successfully uninstalled %s hook\n", agent)
-			}
+	Short: "Uninstall " + appinfo.DisplayName + " service and agent hooks",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := uninstallDesiredState(); err != nil {
+			return fmt.Errorf("uninstallation failed: %w", err)
 		}
-
-		if isServiceInstalled() {
-			if err := uninstallService(); err != nil {
-				fmt.Printf("Service uninstallation failed: %v\n", err)
-				return
-			}
-			fmt.Println("Successfully uninstalled service")
-		}
+		fmt.Println("Uninstallation complete")
+		return nil
 	},
 }
 
 func init() {
-	installCmd.Flags().StringVar(&installAgent, "agent", "codex", "Agent type (codex, claude, gemini)")
-	installCmd.Flags().StringVar(&installScope, "scope", "user", "Installation scope (user, project)")
-	installCmd.Flags().BoolVar(&installAll, "all", false, "Install for all supported agents")
-	installCmd.Flags().StringVar(&installStartup, "startup", "", "Server startup mode: hook or service. Omit for interactive setup")
-	installCmd.Flags().BoolVar(&installNoHooks, "no-hooks", false, "Install startup only and do not change agent hooks")
-
-	uninstallCmd.Flags().StringVar(&installAgent, "agent", "codex", "Agent type (codex, claude, gemini)")
-	uninstallCmd.Flags().StringVar(&installScope, "scope", "user", "Installation scope (user, project)")
-	uninstallCmd.Flags().BoolVar(&installAll, "all", false, "Uninstall for all supported agents")
-
 	rootCmd.AddCommand(installCmd)
 	rootCmd.AddCommand(uninstallCmd)
 }
 
-func selectedInstallAgents() []string {
-	if installAll {
-		return []string{"codex", "claude", "gemini"}
+func installDesiredState() ([]string, error) {
+	fmt.Println("Installing persistent service...")
+	if err := installPersistentService(); err != nil {
+		return nil, fmt.Errorf("install service: %w", err)
 	}
-	if _, err := getAdapter(installAgent); err != nil {
-		return nil
-	}
-	return []string{installAgent}
-}
+	fmt.Println("Persistent service installed")
 
-func installHooks(scope adapters.InstallScope, agents []string) []string {
-	successful := []string{}
-	for _, agent := range agents {
-		adapter, _ := getAdapter(agent)
+	successful := make([]string, 0, len(supportedInstallAgents))
+	var hookErrors []error
+	for _, agent := range supportedInstallAgents {
 		fmt.Printf("Installing %s hook...\n", agent)
-		if err := adapter.InstallHook(scope); err != nil {
-			fmt.Printf("Failed for %s: %v\n", agent, err)
+		if err := installAgentHook(agent); err != nil {
+			hookErrors = append(hookErrors, fmt.Errorf("install %s hook: %w", agent, err))
 			continue
 		}
-		fmt.Printf("Successfully installed %s hook\n", agent)
+		fmt.Printf("%s hook installed\n", agent)
 		successful = append(successful, agent)
 	}
-	return successful
-}
-
-func restartAfterInstall() error {
-	if err := installRestartActiveMode(); err != nil {
-		return err
+	if len(hookErrors) > 0 {
+		return successful, errors.Join(hookErrors...)
 	}
-	fmt.Println("Successfully restarted")
-	return nil
+
+	fmt.Println("Restarting persistent service...")
+	if err := restartInstalledService(); err != nil {
+		return successful, fmt.Errorf("restart service: %w", err)
+	}
+	if !waitForInstalledServer(10 * time.Second) {
+		return successful, fmt.Errorf("service did not become healthy at %s", currentBaseURL())
+	}
+	fmt.Printf("Service is running at %s\n", currentBaseURL())
+	return successful, nil
 }
 
-func resolveInstallStartup(input io.Reader, scope adapters.InstallScope, agents []string, serviceInstalled bool) (string, error) {
-	if installStartup != "" {
-		if installStartup != "hook" && installStartup != "service" {
-			return "", fmt.Errorf("invalid startup. Use 'hook' or 'service'")
+func uninstallDesiredState() error {
+	var uninstallErrors []error
+	for _, agent := range supportedInstallAgents {
+		fmt.Printf("Removing %s hook...\n", agent)
+		if err := uninstallAgentHook(agent); err != nil {
+			if !strings.Contains(err.Error(), "hook not found") {
+				uninstallErrors = append(uninstallErrors, fmt.Errorf("remove %s hook: %w", agent, err))
+			}
+			continue
 		}
-		return installStartup, nil
-	}
-	if !isInteractiveInput(input) {
-		return "", fmt.Errorf("interactive install requires a terminal; pass --startup hook or --startup service")
+		fmt.Printf("%s hook removed\n", agent)
 	}
 
-	hooksInstalled := anyHookInstalled(scope, agents)
-	if serviceInstalled || hooksInstalled {
-		printInstallState(serviceInstalled, hooksInstalled)
-		ok, err := promptYesNo(input, "Change install mode? [y/N]: ", false)
-		if err != nil || !ok {
-			return "", err
-		}
-	}
-
-	fmt.Println("Choose startup mode:")
-	fmt.Println("  1) service - persistent background server")
-	fmt.Println("  2) hook    - start server idempotently from agent hooks")
-	return promptStartupMode(input)
-}
-
-func anyHookInstalled(scope adapters.InstallScope, agents []string) bool {
-	for _, agent := range agents {
-		adapter, _ := getAdapter(agent)
-		installed, err := adapter.IsHookInstalled(scope)
-		if err == nil && installed {
-			return true
+	if isPersistentServiceInstalled() {
+		fmt.Println("Removing persistent service...")
+		if err := uninstallPersistentService(); err != nil {
+			uninstallErrors = append(uninstallErrors, fmt.Errorf("remove service: %w", err))
+		} else {
+			fmt.Println("Persistent service removed")
 		}
 	}
-	return false
-}
-
-func describeInstallMode(serviceInstalled, hooksInstalled bool) string {
-	if serviceInstalled {
-		return "service"
-	}
-	if hooksInstalled {
-		return "hook"
-	}
-	return "not installed"
-}
-
-func printInstallState(serviceInstalled, hooksInstalled bool) {
-	fmt.Printf("Existing installation detected. Startup mode: %s\n", describeInstallMode(serviceInstalled, hooksInstalled))
-	if hooksInstalled {
-		fmt.Println("Agent hooks: installed")
-		fmt.Println("Note: hooks record sessions; they can be used together with service startup.")
-	} else {
-		fmt.Println("Agent hooks: not installed")
-	}
-}
-
-func promptStartupMode(input io.Reader) (string, error) {
-	reader := bufio.NewReader(input)
-	for {
-		fmt.Print("Select 1 or 2: ")
-		answer, err := reader.ReadString('\n')
-		if err != nil && len(answer) == 0 {
-			return "", err
-		}
-		switch strings.TrimSpace(strings.ToLower(answer)) {
-		case "1", "service", "s":
-			return "service", nil
-		case "2", "hook", "h":
-			return "hook", nil
-		default:
-			fmt.Println("Invalid choice.")
-		}
-	}
-}
-
-func promptYesNo(input io.Reader, prompt string, fallback bool) (bool, error) {
-	reader := bufio.NewReader(input)
-	fmt.Print(prompt)
-	answer, err := reader.ReadString('\n')
-	if err != nil && len(answer) == 0 {
-		return false, err
-	}
-	answer = strings.TrimSpace(strings.ToLower(answer))
-	if answer == "" {
-		return fallback, nil
-	}
-	return answer == "y" || answer == "yes", nil
-}
-
-func isInteractiveInput(input io.Reader) bool {
-	file, ok := input.(*os.File)
-	if !ok {
-		return false
-	}
-	stat, err := file.Stat()
-	if err != nil {
-		return false
-	}
-	return stat.Mode()&os.ModeCharDevice != 0
+	return errors.Join(uninstallErrors...)
 }
 
 func printTrustNotice(agents []string) {

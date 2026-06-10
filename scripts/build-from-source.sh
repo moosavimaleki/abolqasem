@@ -5,13 +5,9 @@ set -eu
 APP="abolqasem"
 PKG="./cmd/abolqasem"
 DIST="dist"
-SCOPE="user"
-HOOKS="1"
 BUILD="1"
 BUILD_ALL="0"
-AGENTS="codex claude gemini"
 BIN_DIR="${BIN_DIR:-}"
-STARTUP="hook"
 
 usage() {
   cat <<'EOF'
@@ -25,13 +21,6 @@ Options:
   --prefix DIR        Install binary into DIR/bin.
   --no-build          Install an existing dist binary for the current OS/arch.
   --build-all         Build release binaries for Linux, macOS, and Windows into dist/.
-  --hooks             Install hooks after installing the binary. Default: enabled.
-  --no-hooks          Do not install agent hooks.
-  --startup MODE      Server startup mode: hook or service. Default: hook.
-  --service           Same as --startup service.
-  --all-agents        Same as --hooks for codex, claude, and gemini.
-  --agent NAME        Install hook only for one agent: codex, claude, or gemini.
-  --scope SCOPE       Hook scope: user or project. Default: user.
   -h, --help          Show this help.
 
 Environment:
@@ -39,7 +28,6 @@ Environment:
 
 Examples:
   scripts/build-from-source.sh
-  scripts/build-from-source.sh --hooks
   scripts/build-from-source.sh --build-all
   scripts/build-from-source.sh --bin-dir "$HOME/.local/bin"
 EOF
@@ -85,35 +73,6 @@ while [ "$#" -gt 0 ]; do
     --build-all)
       BUILD_ALL="1"
       shift
-      ;;
-    --hooks|--all-agents)
-      HOOKS="1"
-      AGENTS="codex claude gemini"
-      shift
-      ;;
-    --no-hooks)
-      HOOKS="0"
-      shift
-      ;;
-    --startup)
-      [ "$#" -ge 2 ] || die "--startup requires a value"
-      STARTUP="$2"
-      shift 2
-      ;;
-    --service)
-      STARTUP="service"
-      shift
-      ;;
-    --agent)
-      [ "$#" -ge 2 ] || die "--agent requires a value"
-      HOOKS="1"
-      AGENTS="$2"
-      shift 2
-      ;;
-    --scope)
-      [ "$#" -ge 2 ] || die "--scope requires a value"
-      SCOPE="$2"
-      shift 2
       ;;
     -h|--help)
       usage
@@ -199,14 +158,6 @@ install_go_if_missing() {
   command -v go >/dev/null 2>&1 || die "Go installation finished but 'go' is still not available in PATH"
 }
 
-print_trust_notice() {
-  log ""
-  log "Next step:"
-  log "  Open Codex, Claude Code, and Gemini CLI once."
-  log "  If any of them asks you to trust or approve the installed hook command, accept it."
-  log "  No manual config editing should be needed."
-}
-
 build_target() {
   os="$1"
   arch="$2"
@@ -266,6 +217,10 @@ else
 fi
 
 [ -f "$TARGET_BIN" ] || die "expected binary not found: $TARGET_BIN"
+if [ -x "$INSTALL_PATH" ]; then
+  log "Stopping existing service"
+  "$INSTALL_PATH" service stop >/dev/null 2>&1 || true
+fi
 install_file "$TARGET_BIN" "$INSTALL_PATH"
 
 log "Installed $APP to $INSTALL_PATH"
@@ -278,22 +233,5 @@ case ":$PATH:" in
     ;;
 esac
 
-case "$STARTUP" in
-  hook|service) ;;
-  *) die "unsupported startup mode: $STARTUP" ;;
-esac
-
-if [ "$HOOKS" = "1" ]; then
-  if [ "$AGENTS" = "codex claude gemini" ]; then
-    ABOLQASEM_SUPPRESS_TRUST_NOTICE=1 "$INSTALL_PATH" install --all --scope "$SCOPE" --startup "$STARTUP"
-  else
-    for agent in $AGENTS; do
-      log "Installing $agent hook with scope=$SCOPE startup=$STARTUP"
-      ABOLQASEM_SUPPRESS_TRUST_NOTICE=1 "$INSTALL_PATH" install --agent "$agent" --scope "$SCOPE" --startup "$STARTUP"
-    done
-  fi
-
-  print_trust_notice
-elif [ "$STARTUP" = "service" ]; then
-  "$INSTALL_PATH" install --startup service --no-hooks
-fi
+log "Installing persistent service and all agent hooks"
+"$INSTALL_PATH" install

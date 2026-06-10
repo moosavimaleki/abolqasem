@@ -7,10 +7,6 @@ REPO="${ABOLQASEM_REPO:-${AI_AGENT_MANAGER_REPO:-moosavimaleki/abolqasem}}"
 VERSION="${ABOLQASEM_VERSION:-${AI_AGENT_MANAGER_VERSION:-latest}}"
 RELEASE_BASE_URL="${ABOLQASEM_RELEASE_BASE_URL:-${AI_AGENT_MANAGER_RELEASE_BASE_URL:-}}"
 BIN_DIR="${BIN_DIR:-}"
-INSTALL_HOOKS="${ABOLQASEM_INSTALL_HOOKS:-${AI_AGENT_MANAGER_INSTALL_HOOKS:-1}}"
-HOOK_SCOPE="${ABOLQASEM_HOOK_SCOPE:-${AI_AGENT_MANAGER_HOOK_SCOPE:-user}}"
-HOOK_AGENTS="${ABOLQASEM_AGENTS:-${AI_AGENT_MANAGER_AGENTS:-all}}"
-STARTUP="${ABOLQASEM_STARTUP:-${AI_AGENT_MANAGER_STARTUP:-hook}}"
 
 usage() {
   cat <<'EOF'
@@ -23,21 +19,11 @@ Options:
   --repo OWNER/REPO   GitHub repository. Default: moosavimaleki/abolqasem.
   --version TAG       Release tag. Default: latest.
   --bin-dir DIR       Install binary into DIR.
-  --hooks             Install hooks after installing the binary. Default: enabled.
-  --no-hooks          Do not install agent hooks.
-  --startup MODE      Server startup mode: hook or service. Default: hook.
-  --service           Same as --startup service.
-  --agent NAME        Install hook for one agent: codex, claude, or gemini.
-  --scope SCOPE       Hook scope: user or project. Default: user.
   -h, --help          Show this help.
 
 Environment:
   ABOLQASEM_REPO
   ABOLQASEM_VERSION
-  ABOLQASEM_INSTALL_HOOKS=1
-  ABOLQASEM_STARTUP=hook|service
-  ABOLQASEM_AGENTS=all|codex|claude|gemini
-  ABOLQASEM_HOOK_SCOPE=user|project
   BIN_DIR
 EOF
 }
@@ -66,34 +52,6 @@ while [ "$#" -gt 0 ]; do
     --bin-dir)
       [ "$#" -ge 2 ] || die "--bin-dir requires a value"
       BIN_DIR="$2"
-      shift 2
-      ;;
-    --hooks)
-      INSTALL_HOOKS="1"
-      shift
-      ;;
-    --no-hooks)
-      INSTALL_HOOKS="0"
-      shift
-      ;;
-    --startup)
-      [ "$#" -ge 2 ] || die "--startup requires a value"
-      STARTUP="$2"
-      shift 2
-      ;;
-    --service)
-      STARTUP="service"
-      shift
-      ;;
-    --agent)
-      [ "$#" -ge 2 ] || die "--agent requires a value"
-      INSTALL_HOOKS="1"
-      HOOK_AGENTS="$2"
-      shift 2
-      ;;
-    --scope)
-      [ "$#" -ge 2 ] || die "--scope requires a value"
-      HOOK_SCOPE="$2"
       shift 2
       ;;
     -h|--help)
@@ -169,14 +127,6 @@ install_file() {
   fi
 }
 
-print_trust_notice() {
-  log ""
-  log "Next step:"
-  log "  Open Codex, Claude Code, and Gemini CLI once."
-  log "  If any of them asks you to trust or approve the installed hook command, accept it."
-  log "  No manual config editing should be needed."
-}
-
 TARGET_OS="$(detect_os)"
 TARGET_ARCH="$(detect_arch)"
 TARGET_SUFFIX=""
@@ -223,6 +173,10 @@ BINARY="$(find "$EXTRACT_DIR" -type f -name "$APP$TARGET_SUFFIX" | head -n 1)"
 
 INSTALL_DIR="$(default_bin_dir)"
 INSTALL_PATH="$INSTALL_DIR/$APP$TARGET_SUFFIX"
+if [ -x "$INSTALL_PATH" ]; then
+  log "Stopping existing service"
+  "$INSTALL_PATH" service stop >/dev/null 2>&1 || true
+fi
 install_file "$BINARY" "$INSTALL_PATH"
 "$INSTALL_PATH" --help >/dev/null
 
@@ -235,20 +189,5 @@ case ":$PATH:" in
     ;;
 esac
 
-if [ "$INSTALL_HOOKS" = "1" ]; then
-  case "$STARTUP" in
-    hook|service) ;;
-    *) die "unsupported startup mode: $STARTUP" ;;
-  esac
-  if [ "$HOOK_AGENTS" = "all" ]; then
-    ABOLQASEM_SUPPRESS_TRUST_NOTICE=1 "$INSTALL_PATH" install --all --scope "$HOOK_SCOPE" --startup "$STARTUP"
-  else
-    for agent in $HOOK_AGENTS; do
-      ABOLQASEM_SUPPRESS_TRUST_NOTICE=1 "$INSTALL_PATH" install --agent "$agent" --scope "$HOOK_SCOPE" --startup "$STARTUP"
-    done
-  fi
-elif [ "$STARTUP" = "service" ]; then
-  "$INSTALL_PATH" install --startup service --no-hooks
-fi
-
-print_trust_notice
+log "Installing persistent service and all agent hooks"
+"$INSTALL_PATH" install

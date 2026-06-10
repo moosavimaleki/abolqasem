@@ -37,10 +37,9 @@ var (
 )
 
 type hookStatus struct {
-	Agent            string `json:"agent"`
-	UserInstalled    bool   `json:"user_installed"`
-	ProjectInstalled bool   `json:"project_installed"`
-	Error            string `json:"error,omitempty"`
+	Agent     string `json:"agent"`
+	Installed bool   `json:"installed"`
+	Error     string `json:"error,omitempty"`
 }
 
 type appManagementPatch struct {
@@ -53,7 +52,6 @@ type appManagementPatch struct {
 func workspaceManagementSnapshot() map[string]any {
 	settings, _ := state.LoadSettings()
 	settings = state.NormalizeSettings(settings)
-	hooks := workspaceHookStatuses()
 	return map[string]any{
 		"hookNotifications": map[string]any{
 			"enabled":                        settings.HookUpdates,
@@ -63,12 +61,11 @@ func workspaceManagementSnapshot() map[string]any {
 			"supportedModes":                 []string{state.HookFollowAuto, state.HookFollowNotice, state.HookFollowOff},
 			"dangerousOperationsNeedConfirm": true,
 		},
-		"startup": map[string]any{
-			"mode":             workspaceStartupMode(hooks),
-			"serviceInstalled": workspaceServiceInstalled(),
-			"platform":         runtime.GOOS,
+		"service": map[string]any{
+			"installed": workspaceServiceInstalled(),
+			"platform":  runtime.GOOS,
 		},
-		"hooks":  hooks,
+		"hooks":  workspaceHookStatuses(),
 		"update": workspaceUpdateSnapshot(),
 		"actions": map[string]any{
 			"reloadSessions": map[string]any{"available": true, "requiresConfirmation": false},
@@ -111,30 +108,14 @@ func workspaceHookStatuses() []hookStatus {
 	statuses := make([]hookStatus, 0, 3)
 	for _, adapter := range []adapters.AgentAdapter{codex.New(), claude.New(), gemini.New()} {
 		status := hookStatus{Agent: adapter.Name()}
-		userInstalled, userErr := adapter.IsHookInstalled(adapters.ScopeUser)
-		projectInstalled, projectErr := adapter.IsHookInstalled(adapters.ScopeProject)
-		status.UserInstalled = userInstalled
-		status.ProjectInstalled = projectInstalled
-		if userErr != nil {
-			status.Error = userErr.Error()
-		} else if projectErr != nil {
-			status.Error = projectErr.Error()
+		installed, err := adapter.IsHookInstalled(adapters.ScopeUser)
+		status.Installed = installed
+		if err != nil {
+			status.Error = err.Error()
 		}
 		statuses = append(statuses, status)
 	}
 	return statuses
-}
-
-func workspaceStartupMode(hooks []hookStatus) string {
-	if workspaceServiceInstalled() {
-		return "service"
-	}
-	for _, hook := range hooks {
-		if hook.UserInstalled || hook.ProjectInstalled {
-			return "hook"
-		}
-	}
-	return "manual"
 }
 
 func workspaceServiceInstalled() bool {

@@ -8,9 +8,6 @@ BIN_DIR="${BIN_DIR:-$HOME/.local/bin}"
 DIST_DIR="$ROOT_DIR/dist"
 OUT="$DIST_DIR/$APP"
 INSTALL_PATH="$BIN_DIR/$APP"
-STARTUP="${ABOLQASEM_DEV_STARTUP:-${AI_AGENT_MANAGER_DEV_STARTUP:-hook}}"
-HOOK_SCOPE="${ABOLQASEM_DEV_HOOK_SCOPE:-${AI_AGENT_MANAGER_DEV_HOOK_SCOPE:-user}}"
-INSTALL_HOOKS="${ABOLQASEM_DEV_INSTALL_HOOKS:-${AI_AGENT_MANAGER_DEV_INSTALL_HOOKS:-1}}"
 OPEN_AFTER_INSTALL="${ABOLQASEM_DEV_OPEN:-${AI_AGENT_MANAGER_DEV_OPEN:-1}}"
 DEV_PROXY="${ABOLQASEM_DEV_PROXY:-${AI_AGENT_MANAGER_DEV_PROXY:-}}"
 DEV_NO_PROXY="${ABOLQASEM_DEV_NO_PROXY:-${AI_AGENT_MANAGER_DEV_NO_PROXY:-${NO_PROXY:-${no_proxy:-}}}}"
@@ -53,14 +50,6 @@ command -v go >/dev/null 2>&1 || {
   exit 1
 }
 
-case "$STARTUP" in
-  hook|service) ;;
-  *)
-    printf 'Error: unsupported ABOLQASEM_DEV_STARTUP=%s (use hook or service)\n' "$STARTUP" >&2
-    exit 1
-    ;;
-esac
-
 if [ "${ABOLQASEM_DEV_SKIP_WEB_BUILD:-${AI_AGENT_MANAGER_DEV_SKIP_WEB_BUILD:-0}}" != "1" ]; then
   printf 'Building web assets...\n'
   ABOLQASEM_SKIP_NPM_CI="${ABOLQASEM_SKIP_NPM_CI:-${AI_AGENT_MANAGER_SKIP_NPM_CI:-1}}" "$ROOT_DIR/scripts/prepare-web-assets.sh"
@@ -72,6 +61,9 @@ CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X ai-agent-manager/internal/bu
 
 printf 'Installing to %s...\n' "$INSTALL_PATH"
 mkdir -p "$BIN_DIR"
+if [ -x "$INSTALL_PATH" ]; then
+  "$INSTALL_PATH" service stop >/dev/null 2>&1 || true
+fi
 if command -v install >/dev/null 2>&1; then
   install -m 0755 "$OUT" "$INSTALL_PATH"
 else
@@ -82,16 +74,8 @@ fi
 printf 'Verifying installed binary...\n'
 "$INSTALL_PATH" --help >/dev/null
 
-if [ "$INSTALL_HOOKS" = "1" ]; then
-  printf 'Installing local hooks with startup=%s scope=%s...\n' "$STARTUP" "$HOOK_SCOPE"
-  ABOLQASEM_SUPPRESS_TRUST_NOTICE=1 "$INSTALL_PATH" install --all --scope "$HOOK_SCOPE" --startup "$STARTUP"
-elif [ "$STARTUP" = "service" ]; then
-  printf 'Installing local service without hooks...\n'
-  "$INSTALL_PATH" install --startup service --no-hooks
-fi
-
-printf 'Restarting local server...\n'
-"$INSTALL_PATH" restart
+printf 'Installing local service and hooks...\n'
+"$INSTALL_PATH" install
 
 if [ "$OPEN_AFTER_INSTALL" = "1" ]; then
   printf 'Opening local UI...\n'

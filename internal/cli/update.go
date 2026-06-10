@@ -36,11 +36,6 @@ func init() {
 }
 
 func runUpdate() error {
-	startup := "hook"
-	if isServiceInstalled() {
-		startup = "service"
-	}
-
 	exe, err := os.Executable()
 	if err != nil {
 		return err
@@ -53,7 +48,7 @@ func runUpdate() error {
 	}
 	defer os.Remove(scriptPath)
 
-	if err := executeUpdateScript(scriptPath, startup, binDir); err != nil {
+	if err := executeUpdateScript(scriptPath, binDir); err != nil {
 		return err
 	}
 	return restartActiveMode()
@@ -97,12 +92,12 @@ func downloadUpdateScript() (string, error) {
 	return file.Name(), nil
 }
 
-func executeUpdateScript(scriptPath, startup, binDir string) error {
+func executeUpdateScript(scriptPath, binDir string) error {
 	var command *exec.Cmd
 	if runtime.GOOS == "windows" {
-		command = exec.Command("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPath, "-Startup", startup, "-BinDir", binDir)
+		command = exec.Command("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPath, "-BinDir", binDir)
 	} else {
-		command = exec.Command("sh", scriptPath, "--startup", startup, "--bin-dir", binDir)
+		command = exec.Command("sh", scriptPath, "--bin-dir", binDir)
 	}
 	command.Stdout = os.Stdout
 	command.Stderr = os.Stderr

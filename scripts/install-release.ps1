@@ -2,12 +2,7 @@ param(
     [string]$Repo = $(if ($env:ABOLQASEM_REPO) { $env:ABOLQASEM_REPO } else { $env:AI_AGENT_MANAGER_REPO }),
     [string]$Version = $(if ($env:ABOLQASEM_VERSION) { $env:ABOLQASEM_VERSION } else { $env:AI_AGENT_MANAGER_VERSION }),
     [string]$ReleaseBaseUrl = $(if ($env:ABOLQASEM_RELEASE_BASE_URL) { $env:ABOLQASEM_RELEASE_BASE_URL } else { $env:AI_AGENT_MANAGER_RELEASE_BASE_URL }),
-    [string]$BinDir = $env:BIN_DIR,
-    [string]$Scope = $(if ($env:ABOLQASEM_HOOK_SCOPE) { $env:ABOLQASEM_HOOK_SCOPE } else { $env:AI_AGENT_MANAGER_HOOK_SCOPE }),
-    [string]$Agents = $(if ($env:ABOLQASEM_AGENTS) { $env:ABOLQASEM_AGENTS } else { $env:AI_AGENT_MANAGER_AGENTS }),
-    [ValidateSet("hook", "service")]
-    [string]$Startup = $(if ($env:ABOLQASEM_STARTUP) { $env:ABOLQASEM_STARTUP } else { $env:AI_AGENT_MANAGER_STARTUP }),
-    [switch]$Hooks
+    [string]$BinDir = $env:BIN_DIR
 )
 
 $ErrorActionPreference = "Stop"
@@ -19,23 +14,6 @@ if ([string]::IsNullOrWhiteSpace($Repo)) {
 if ([string]::IsNullOrWhiteSpace($Version)) {
     $Version = "latest"
 }
-if ([string]::IsNullOrWhiteSpace($Scope)) {
-    $Scope = "user"
-}
-if ([string]::IsNullOrWhiteSpace($Agents)) {
-    $Agents = "all"
-}
-if ([string]::IsNullOrWhiteSpace($Startup)) {
-    $Startup = "hook"
-}
-$InstallHooksEnv = if ($env:ABOLQASEM_INSTALL_HOOKS) { $env:ABOLQASEM_INSTALL_HOOKS } else { $env:AI_AGENT_MANAGER_INSTALL_HOOKS }
-if ($InstallHooksEnv -ne "0") {
-    $Hooks = $true
-}
-if (-not $PSBoundParameters.ContainsKey("Hooks")) {
-    $Hooks = $true
-}
-
 $Arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
 switch ($Arch) {
     "x64" { $TargetArch = "amd64" }
@@ -80,6 +58,9 @@ try {
 
     New-Item -ItemType Directory -Path $BinDir -Force | Out-Null
     $InstallPath = Join-Path $BinDir "$App.exe"
+    if (Test-Path $InstallPath) {
+        & $InstallPath service stop *> $null
+    }
     Copy-Item -Path $Binary.FullName -Destination $InstallPath -Force
     & $InstallPath --help | Out-Null
 
@@ -89,26 +70,11 @@ try {
         Write-Host "  $BinDir"
     }
 
-    if ($Hooks) {
-        if ($Agents -eq "all") {
-            $env:ABOLQASEM_SUPPRESS_TRUST_NOTICE = "1"
-            & $InstallPath install --all --scope $Scope --startup $Startup
-        } else {
-            foreach ($Agent in ($Agents -split "[,\s]+" | Where-Object { $_ })) {
-                $env:ABOLQASEM_SUPPRESS_TRUST_NOTICE = "1"
-                & $InstallPath install --agent $Agent --scope $Scope --startup $Startup
-            }
-        }
-        Remove-Item Env:ABOLQASEM_SUPPRESS_TRUST_NOTICE -ErrorAction SilentlyContinue
-    } elseif ($Startup -eq "service") {
-        & $InstallPath install --startup service --no-hooks
+    Write-Host "Installing persistent service and all agent hooks"
+    & $InstallPath install
+    if ($LASTEXITCODE -ne 0) {
+        throw "$App install failed with exit code $LASTEXITCODE"
     }
-
-    Write-Host ""
-    Write-Host "Next step:"
-    Write-Host "  Open Codex, Claude Code, and Gemini CLI once."
-    Write-Host "  If any of them asks you to trust or approve the installed hook command, accept it."
-    Write-Host "  No manual config editing should be needed."
 }
 finally {
     Remove-Item -Path $TempDir -Recurse -Force -ErrorAction SilentlyContinue
