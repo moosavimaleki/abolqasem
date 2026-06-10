@@ -267,7 +267,6 @@ interface AbolqasemSidebarProps {
   creatingChatProjectId: string | null
   keybindings: KeybindingsSnapshot | null
   onRenameChat: (chat: SidebarChatRow) => void
-  onShareChat: (chatId: string) => void
   onArchiveChat: (chat: SidebarChatRow) => void
   onOpenArchivedChat: (chatId: string) => void
   onDeleteChat: (chat: SidebarChatRow) => void
@@ -342,7 +341,6 @@ function AbolqasemSidebarImpl({
   creatingChatProjectId,
   keybindings,
   onRenameChat,
-  onShareChat,
   onArchiveChat,
   onOpenArchivedChat,
   onDeleteChat,
@@ -465,7 +463,6 @@ function AbolqasemSidebarImpl({
           onClose()
         }}
         onRenameChat={() => onRenameChat(chat)}
-        onShareChat={() => onShareChat(chat.chatId)}
         onOpenInFinder={() => onOpenExternalPath("open_finder", chat.localPath)}
         onForkChat={() => onForkChat(chat)}
         onConvertChat={(_, provider) => onConvertChat(chat, provider)}
@@ -474,7 +471,7 @@ function AbolqasemSidebarImpl({
         isArchiving={pendingArchiveChatIds.has(chat.chatId)}
       />
     )
-  }, [activeChatId, navigate, nowMs, onArchiveChat, onClose, onConvertChat, onDeleteChat, onForkChat, onOpenExternalPath, onRenameChat, onShareChat, pendingArchiveChatIds, resolvedKeybindings, showNumberJumpHints, visibleIndexByChatId])
+  }, [activeChatId, navigate, nowMs, onArchiveChat, onClose, onConvertChat, onDeleteChat, onForkChat, onOpenExternalPath, onRenameChat, pendingArchiveChatIds, resolvedKeybindings, showNumberJumpHints, visibleIndexByChatId])
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -650,10 +647,10 @@ function AbolqasemSidebarImpl({
         data-sidebar="open"
         className={cn(
           "fixed inset-0 z-50 bg-background dark:bg-card flex flex-col h-[100dvh] select-none",
-          "md:relative md:inset-auto md:w-[var(--sidebar-width)] md:mr-0 md:h-[calc(100dvh-16px)] md:my-2 md:border md:border-border md:rounded-2xl",
+          "md:relative md:inset-auto md:h-full md:w-[var(--sidebar-width)] md:shrink-0 md:rounded-none",
           open ? "flex" : "hidden md:flex",
           collapsed && "md:hidden",
-          isRtl ? "md:mr-2" : "md:ml-2"
+          isRtl ? "md:border-l md:border-border" : "md:border-r md:border-border"
         )}
         style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}
       >
@@ -842,7 +839,7 @@ function AbolqasemSidebarImpl({
           tabIndex={0}
           title={t.sidebar.resizeSidebar}
           className={cn(
-            "hidden md:block absolute top-3 bottom-3 z-20 w-2 cursor-col-resize rounded-full",
+            "hidden md:block absolute top-0 bottom-0 z-20 w-2 cursor-col-resize",
             isRtl ? "-left-1" : "-right-1",
             "focus-visible:outline-none"
           )}

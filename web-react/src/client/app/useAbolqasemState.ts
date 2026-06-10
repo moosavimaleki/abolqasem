@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useShallow } from "zustand/react/shallow"
-import { PROVIDERS, type AgentProvider, type AppSettingsPatch, type AppSettingsSnapshot, type AskUserQuestionAnswerMap, type ChatAttachment, type ChatConversionPreview, type ChatDiffSnapshot, type ChatHistoryPage, type ChatHistorySnapshot, type ChatProviderPreferences, type CheckpointRestoreMode, type CheckpointRestoreResult, type KeybindingsSnapshot, type LlmProviderSnapshot, type LlmProviderValidationResult, type ModelOptions, type ProviderCatalogEntry, type QueuedChatMessage, type StandaloneTranscriptExportCommandResult, type TranscriptEntry, type UpdateInstallResult, type UpdateSnapshot, type UserPromptEntry } from "../../shared/types"
+import { PROVIDERS, type AgentProvider, type AppSettingsPatch, type AppSettingsSnapshot, type AskUserQuestionAnswerMap, type ChatAttachment, type ChatConversionPreview, type ChatDiffSnapshot, type ChatHistoryPage, type ChatHistorySnapshot, type ChatProviderPreferences, type CheckpointRestoreMode, type CheckpointRestoreResult, type KeybindingsSnapshot, type LlmProviderSnapshot, type LlmProviderValidationResult, type ModelOptions, type ProviderCatalogEntry, type QueuedChatMessage, type TranscriptEntry, type UpdateInstallResult, type UpdateSnapshot, type UserPromptEntry } from "../../shared/types"
 import { NEW_CHAT_COMPOSER_ID, type ComposerState, useChatPreferencesStore } from "../stores/chatPreferencesStore"
 import { useRightSidebarStore } from "../stores/rightSidebarStore"
 import { useTerminalLayoutStore } from "../stores/terminalLayoutStore"
@@ -13,7 +13,6 @@ import type { ChatSnapshot, LocalProjectsSnapshot, SidebarChatRow, SidebarData }
 import type { AskUserQuestionItem } from "../components/messages/types"
 import type { OpenLocalLinkTarget } from "../components/messages/shared"
 import { useAppDialog } from "../components/ui/app-dialog"
-import { useTheme } from "../hooks/useTheme"
 import { useI18n } from "../i18n/context"
 import { processTranscriptMessages } from "../lib/parseTranscript"
 import { generateUUID } from "../lib/utils"
@@ -680,19 +679,6 @@ export function getUiUpdateReadinessPath() {
   return "/auth/status"
 }
 
-function downloadTextFile(fileName: string, contents: string, contentType = "application/json") {
-  const blob = new Blob([contents], { type: `${contentType}; charset=utf-8` })
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement("a")
-  anchor.href = url
-  anchor.download = fileName
-  anchor.style.display = "none"
-  document.body.append(anchor)
-  anchor.click()
-  anchor.remove()
-  URL.revokeObjectURL(url)
-}
-
 async function isServerReady(fetchImpl: typeof fetch = fetch) {
   const response = await fetchImpl(getUiUpdateReadinessPath(), {
     method: "GET",
@@ -798,9 +784,6 @@ export interface AbolqasemState {
   isProcessing: boolean
   canCancel: boolean
   isDraining: boolean
-  isExportingStandalone: boolean
-  standaloneShareUrl: string | null
-  standaloneShareComplete: boolean
   navbarLocalPath?: string
   editorLabel: string
   hasSelectedProject: boolean
@@ -833,7 +816,6 @@ export interface AbolqasemState {
   handleStopDraining: () => Promise<void>
   handleRenameChat: (chat: SidebarChatRow) => Promise<void>
   handleRenameProject: (projectId: string, sidebarTitle: string | undefined, realTitle: string) => Promise<void>
-  handleShareChat: (chatId?: string | null) => Promise<void>
   handleArchiveChat: (chat: SidebarChatRow) => Promise<void>
   handleOpenArchivedChat: (chatId: string) => Promise<void>
   handleDeleteChat: (chat: SidebarChatRow) => Promise<void>
@@ -855,15 +837,11 @@ export interface AbolqasemState {
     clearContext?: boolean,
     message?: string
   ) => Promise<void>
-  handleExportStandalone: (chatId?: string | null) => Promise<StandaloneTranscriptExportCommandResult | null>
   handleRestoreCheckpoint: (
     checkpointId: string,
     mode: CheckpointRestoreMode,
     promptContent: string
   ) => Promise<CheckpointRestoreResult | null>
-  handleCloseStandaloneShareDialog: () => void
-  handleOpenStandaloneShareLink: () => void
-  handleCopyStandaloneShareLink: () => Promise<boolean>
 }
 
 export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
@@ -871,7 +849,6 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
   const socket = useAbolqasemSocket()
   const dialog = useAppDialog()
   const { locale, direction } = useI18n()
-  const { resolvedTheme } = useTheme()
 
   const [sidebarData, setSidebarData] = useState<SidebarData>({ projectGroups: [] })
   const [optimisticSidebarProjectOrder, setOptimisticSidebarProjectOrder] = useState<string[] | null>(null)
@@ -898,9 +875,6 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
   const [sessionForkOperation, setSessionForkOperation] = useState<SessionForkOperation | null>(null)
   const [creatingChatProjectId, setCreatingChatProjectId] = useState<string | null>(null)
   const [pendingArchiveChatIds, setPendingArchiveChatIds] = useState<Set<string>>(() => new Set())
-  const [isExportingStandalone, setIsExportingStandalone] = useState(false)
-  const [standaloneShareUrl, setStandaloneShareUrl] = useState<string | null>(null)
-  const [standaloneShareComplete, setStandaloneShareComplete] = useState(false)
   const [startingLocalPath, setStartingLocalPath] = useState<string | null>(null)
   const [pendingChatId, setPendingChatId] = useState<string | null>(null)
   const [optimisticUserPrompts, setOptimisticUserPrompts] = useState<OptimisticUserPrompt[]>([])
@@ -2145,57 +2119,6 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
     }
   }, [openExternal])
 
-  const handleExportStandalone = useCallback(async (chatId: string | null | undefined = activeChatId) => {
-    if (!chatId || isExportingStandalone) {
-      return null
-    }
-
-    setIsExportingStandalone(true)
-    try {
-      const result = await socket.command<StandaloneTranscriptExportCommandResult>({
-        type: "chat.exportStandalone",
-        chatId,
-        theme: resolvedTheme,
-        attachmentMode: "bundle",
-      })
-      setCommandError(null)
-      return result
-    } catch (error) {
-      setCommandError(error instanceof Error ? error.message : String(error))
-      return null
-    } finally {
-      setIsExportingStandalone(false)
-    }
-  }, [activeChatId, isExportingStandalone, resolvedTheme, socket])
-
-  const handleShareChat = useCallback(async (chatId: string | null | undefined = activeChatId) => {
-    if (!chatId || isExportingStandalone) {
-      return
-    }
-
-    setStandaloneShareComplete(false)
-    const result = await handleExportStandalone(chatId)
-    if (result?.ok && result.shareUrl) {
-      setStandaloneShareUrl(result.shareUrl)
-      setStandaloneShareComplete(true)
-      return
-    }
-
-    if (result && !result.ok) {
-      const shouldDownload = await dialog.confirm({
-        title: "Share failed",
-        description: result.error,
-        confirmLabel: "Download transcript JSON",
-        cancelLabel: "Close",
-        confirmVariant: "secondary",
-      })
-
-      if (shouldDownload) {
-        downloadTextFile(result.transcriptFileName, result.transcriptJson)
-      }
-    }
-  }, [activeChatId, dialog, handleExportStandalone, isExportingStandalone])
-
   const handleRestoreCheckpoint = useCallback(async (checkpointId: string, mode: CheckpointRestoreMode, promptContent: string) => {
     if (!activeChatId) {
       return null
@@ -2230,41 +2153,6 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
       return null
     }
   }, [activeChatId, dialog, socket])
-
-  const handleCloseStandaloneShareDialog = useCallback(() => {
-    setStandaloneShareUrl(null)
-    setStandaloneShareComplete(false)
-  }, [])
-
-  const handleCopyStandaloneShareLink = useCallback(async () => {
-    if (!standaloneShareUrl) {
-      return false
-    }
-
-    try {
-      if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) {
-        throw new Error("Clipboard is not available")
-      }
-      await navigator.clipboard.writeText(standaloneShareUrl)
-      return true
-    } catch (error) {
-      await dialog.alert({
-        title: "Copy failed",
-        description: error instanceof Error ? error.message : String(error),
-        closeLabel: "Close",
-      })
-      return false
-    }
-  }, [dialog, standaloneShareUrl])
-
-  const handleOpenStandaloneShareLink = useCallback(() => {
-    if (!standaloneShareUrl) {
-      return
-    }
-
-    window.open(standaloneShareUrl, "_blank", "noopener,noreferrer")
-    setStandaloneShareUrl(null)
-  }, [standaloneShareUrl])
 
   const handleCompose = useCallback(() => {
     const projectId = selectedProjectId ?? sidebarProjectGroups[0]?.groupKey ?? null
@@ -2362,9 +2250,6 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
     isProcessing,
     canCancel,
     isDraining,
-    isExportingStandalone,
-    standaloneShareUrl,
-    standaloneShareComplete,
     navbarLocalPath,
     editorLabel,
     hasSelectedProject,
@@ -2397,7 +2282,6 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
     handleStopDraining,
     handleRenameChat,
     handleRenameProject,
-    handleShareChat,
     handleArchiveChat,
     handleOpenArchivedChat,
     handleDeleteChat,
@@ -2410,10 +2294,6 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
     handleCompose,
     handleAskUserQuestion,
     handleExitPlanMode,
-    handleExportStandalone,
     handleRestoreCheckpoint,
-    handleCloseStandaloneShareDialog,
-    handleOpenStandaloneShareLink,
-    handleCopyStandaloneShareLink,
   }
 }

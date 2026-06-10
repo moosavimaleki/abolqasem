@@ -114,34 +114,6 @@ export interface StandaloneTranscriptBundle {
   messages: TranscriptEntry[]
 }
 
-export interface StandaloneTranscriptExportResult {
-  ok: true
-  outputDir: string
-  indexHtmlPath: string
-  transcriptJsonPath: string
-  attachmentMode: StandaloneTranscriptAttachmentMode
-  totalAttachmentCount: number
-  bundledAttachmentCount: number
-  shareSlug: string
-  shareUrl: string
-  uploadedFileCount: number
-}
-
-export interface StandaloneTranscriptExportFailureResult {
-  ok: false
-  error: string
-  outputDir: string
-  transcriptJsonPath: string
-  transcriptFileName: string
-  transcriptJson: string
-  shareSlug: string
-  shareUrl: string
-}
-
-export type StandaloneTranscriptExportCommandResult =
-  | StandaloneTranscriptExportResult
-  | StandaloneTranscriptExportFailureResult
-
 export interface ChatConversionPreview {
   sourceTitle: string
   sourceProvider: string

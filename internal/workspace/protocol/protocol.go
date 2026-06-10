@@ -110,7 +110,6 @@ const (
 	CommandChatRestoreCheckpoint           = "chat.restoreCheckpoint"
 	CommandChatCancel                      = "chat.cancel"
 	CommandChatStopDraining                = "chat.stopDraining"
-	CommandChatExportStandalone            = "chat.exportStandalone"
 	CommandChatReadTranscriptIndex         = "chat.readTranscriptIndex"
 	CommandChatLoadHistory                 = "chat.loadHistory"
 	CommandChatLoadHistoryAround           = "chat.loadHistoryAround"

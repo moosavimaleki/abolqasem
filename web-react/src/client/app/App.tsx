@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom"
-import { StandaloneShareDialog } from "../components/chat-ui/StandaloneShareDialog"
 import { AbolqasemLogo } from "../components/AbolqasemLogo"
 import { AbolqasemSplashLogo } from "../components/AbolqasemSplashLogo"
 import { AppDialogProvider } from "../components/ui/app-dialog"
@@ -8,7 +7,7 @@ import { Button } from "../components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card"
 import { Input } from "../components/ui/input"
 import { TooltipProvider } from "../components/ui/tooltip"
-import { Bell, Loader2, X } from "lucide-react"
+import { Bell, Loader2, Settings2, X } from "lucide-react"
 import { getAppearanceThemeClassName, useDocumentAppearanceTheme, useReaderAppearanceSettings } from "../components/appearance/ReaderAppearance"
 import { APP_NAME, SDK_CLIENT_APP } from "../../shared/branding"
 import { useChatSoundPreferencesStore } from "../stores/chatSoundPreferencesStore"
@@ -23,7 +22,7 @@ import { LocalProjectsPage } from "./LocalProjectsPage"
 import { SettingsPage } from "./SettingsPage"
 import { FileRoutePage } from "./FileRoutePage"
 import { useAbolqasemState, type SessionForkOperation } from "./useAbolqasemState"
-import { chatRoute, settingsRoute } from "./routes"
+import { chatRoute, hookNotificationSettingsRoute, settingsRoute } from "./routes"
 import type { AppSettingsSnapshot } from "../../shared/types"
 import { getDictionary, getLocaleDirection, LOCALE_STORAGE_KEY, normalizeLocale } from "../i18n"
 import { I18nProvider } from "../i18n/context"
@@ -134,16 +133,19 @@ function HookUpdateToast({
   toast,
   locale,
   onOpen,
+  onOpenSettings,
   onDismiss,
 }: {
   toast: HookUpdateToastState
   locale: "fa" | "en"
   onOpen: () => void
+  onOpenSettings: () => void
   onDismiss: () => void
 }) {
   const [progressActive, setProgressActive] = useState(false)
   const title = locale === "fa" ? "سشن به‌روزرسانی شد" : "Session updated"
   const dismissLabel = locale === "fa" ? "بستن" : "Dismiss"
+  const settingsLabel = locale === "fa" ? "تنظیمات" : "Settings"
   const isFollowMode = toast.mode === "follow"
   const primaryLabel = isFollowMode
     ? (locale === "fa" ? "رفتن" : "Open")
@@ -182,7 +184,7 @@ function HookUpdateToast({
           {toast.projectName ? (
             <div className="mt-0.5 truncate text-xs text-muted-foreground">{toast.projectName}</div>
           ) : null}
-          <div className="mt-3 flex items-center gap-2">
+          <div className="mt-3 flex flex-wrap items-center gap-2">
             <Button
               type="button"
               size="sm"
@@ -214,6 +216,10 @@ function HookUpdateToast({
               <span className="relative z-10">{primaryLabel}</span>
             </Button>
             <Button type="button" variant="ghost" size="sm" onClick={isFollowMode ? onDismiss : onOpen}>{secondaryLabel}</Button>
+            <Button type="button" variant="ghost" size="sm" onClick={onOpenSettings}>
+              <Settings2 className="me-1 h-4 w-4" />
+              {settingsLabel}
+            </Button>
           </div>
         </div>
         <button
@@ -549,9 +555,6 @@ function AbolqasemLayout() {
   const handleSidebarRenameProject = useCallback((projectId: string, sidebarTitle: string | undefined, realTitle: string) => {
     void state.handleRenameProject(projectId, sidebarTitle, realTitle)
   }, [state.handleRenameProject])
-  const handleSidebarShareChat = useCallback((chatId: string) => {
-    void state.handleShareChat(chatId)
-  }, [state.handleShareChat])
   const handleSidebarArchiveChat = useCallback((chat: Parameters<typeof state.handleArchiveChat>[0]) => {
     void state.handleArchiveChat(chat)
   }, [state.handleArchiveChat])
@@ -600,7 +603,6 @@ function AbolqasemLayout() {
       creatingChatProjectId={state.creatingChatProjectId}
       keybindings={state.keybindings}
       onRenameChat={handleSidebarRenameChat}
-      onShareChat={handleSidebarShareChat}
       onArchiveChat={handleSidebarArchiveChat}
       onOpenArchivedChat={handleOpenArchivedChat}
       onDeleteChat={handleSidebarDeleteChat}
@@ -627,7 +629,6 @@ function AbolqasemLayout() {
     handleSidebarOpenExternalPath,
     handleSidebarRenameProject,
     handleSidebarRenameChat,
-    handleSidebarShareChat,
     handleSidebarReorderProjectGroups,
     handleSidebarHideProject,
     showMobileOpenButton,
@@ -798,20 +799,13 @@ function AbolqasemLayout() {
               navigate(chatRoute(hookToast.chatId))
               setHookToast(null)
             }}
+            onOpenSettings={() => {
+              navigate(hookNotificationSettingsRoute())
+              setHookToast(null)
+            }}
             onDismiss={() => setHookToast(null)}
           />
         ) : null}
-        <StandaloneShareDialog
-          open={Boolean(state.standaloneShareUrl)}
-          shareUrl={state.standaloneShareUrl ?? ""}
-          onOpenChange={(open) => {
-            if (!open) {
-              state.handleCloseStandaloneShareDialog()
-            }
-          }}
-          onOpenLink={state.handleOpenStandaloneShareLink}
-          onCopyLink={state.handleCopyStandaloneShareLink}
-        />
         {state.sessionForkOperation ? (
           <SessionForkLockOverlay operation={state.sessionForkOperation} locale={locale} />
         ) : null}

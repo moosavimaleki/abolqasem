@@ -29,7 +29,6 @@ export const fa: TranslationDictionary = {
     open: "باز کردن",
     rename: "تغییر نام",
     retry: "تلاش دوباره",
-    share: "اشتراک‌گذاری",
     submit: "ثبت",
     unknown: "نامشخص",
     unknownDate: "تاریخ نامشخص",
@@ -131,9 +130,6 @@ export const fa: TranslationDictionary = {
     loadingMoreMessages: "در حال بارگذاری پیام‌های بیشتر...",
     moreActions: "اقدام‌های بیشتر",
     setupGit: "راه‌اندازی گیت",
-    shareChat: "اشتراک‌گذاری چت",
-    sharedLink: "لینک اشتراکی",
-    sharedLinkDescription: "لینک‌های اشتراکی یک snapshot از همان لحظه هستند و همه پیوست‌ها، tool callها و تاریخچه را شامل می‌شوند. مراقب اطلاعات حساس باشید.",
     toggleTerminal: "تغییر وضعیت ترمینال",
   },
   composer: {

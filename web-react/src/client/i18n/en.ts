@@ -28,7 +28,6 @@ export const en = {
     open: "Open",
     rename: "Rename",
     retry: "Retry",
-    share: "Share",
     submit: "Submit",
     unknown: "Unknown",
     unknownDate: "Unknown date",
@@ -130,9 +129,6 @@ export const en = {
     loadingMoreMessages: "Loading more messages...",
     moreActions: "More actions",
     setupGit: "Setup Git",
-    shareChat: "Share Chat",
-    sharedLink: "Shared Link",
-    sharedLinkDescription: "Shared links are snapshots in time and contain all attachments, tool calls and history. Be mindful of sensitive info.",
     toggleTerminal: "Toggle Terminal",
   },
   composer: {

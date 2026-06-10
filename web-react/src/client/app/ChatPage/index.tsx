@@ -1825,10 +1825,6 @@ export function ChatPage() {
           onOpenExternal={handleOpenExternal}
           activeChatId={state.activeChatId}
           onChatSearchResultSelect={state.activeChatId ? handleChatSearchResultSelect : undefined}
-          onExportTranscript={state.activeChatId ? () => void state.handleShareChat(state.activeChatId) : undefined}
-          canExportTranscript={Boolean(state.activeChatId) && !state.isExportingStandalone}
-          isExportingTranscript={state.isExportingStandalone}
-          exportTranscriptComplete={state.standaloneShareComplete}
           editorPreset={editorPreset}
           editorCommandTemplate={editorCommandTemplate}
           platform={state.localProjects?.machine.platform}

@@ -26,7 +26,7 @@ import {
 } from "lucide-react"
 import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-import { useNavigate, useOutletContext, useParams } from "react-router-dom"
+import { useLocation, useNavigate, useOutletContext, useParams } from "react-router-dom"
 import { getKeybindingsFilePathDisplay } from "../../shared/branding"
 import { ANALYTICS_STATIC_EVENT_NAMES, ANALYTICS_STATIC_PROPERTY_NAMES } from "../../shared/analytics"
 import {
@@ -98,7 +98,7 @@ import { CHAT_SOUND_OPTIONS, useChatSoundPreferencesStore, type ChatSoundId, typ
 import type { AbolqasemState } from "./useAbolqasemState"
 import { getDictionary, getLocaleDirection, LOCALE_OPTIONS, normalizeLocale } from "../i18n"
 import { useI18n } from "../i18n/context"
-import { settingsRoute } from "./routes"
+import { HOOK_NOTIFICATION_SETTINGS_HASH, settingsRoute } from "./routes"
 
 const sidebarItems = [
   {
@@ -2042,15 +2042,17 @@ function SettingsRow({
   children,
   bordered = true,
   alignStart = false,
+  anchorId,
 }: {
   title: string
   description: ReactNode
   children: ReactNode
   bordered?: boolean
   alignStart?: boolean
+  anchorId?: string
 }) {
   return (
-    <div className={bordered ? "border-t border-border" : undefined}>
+    <div id={anchorId} className={cn(anchorId ? "scroll-mt-24" : undefined, bordered ? "border-t border-border" : undefined)}>
       <div
         className={cn(
           "flex flex-col gap-4 py-5 md:flex-row md:justify-between md:gap-8",
@@ -2068,6 +2070,7 @@ function SettingsRow({
 }
 
 export function SettingsPage() {
+  const location = useLocation()
   const navigate = useNavigate()
   const { sectionId } = useParams<{ sectionId: string }>()
   const state = useOutletContext<AbolqasemState>()
@@ -2078,6 +2081,15 @@ export function SettingsPage() {
   const [releases, setReleases] = useState<GithubRelease[]>([])
   const [changelogError, setChangelogError] = useState<string | null>(null)
   const selectedPage = resolveSettingsSectionId(sectionId) ?? "general"
+  useEffect(() => {
+    if (selectedPage !== "general") return
+    const targetId = location.hash.replace(/^#/, "")
+    if (!targetId) return
+    const rafId = window.requestAnimationFrame(() => {
+      document.getElementById(targetId)?.scrollIntoView({ behavior: "smooth", block: "center" })
+    })
+    return () => window.cancelAnimationFrame(rafId)
+  }, [location.hash, selectedPage])
   const isConnecting = state.connectionStatus === "connecting" || !state.localProjectsReady
   const appSettings = state.appSettings
   const settingsAvailableProviders = appSettings?.availableProviders?.length ? appSettings.availableProviders : PROVIDERS
@@ -3157,6 +3169,7 @@ export function SettingsPage() {
                       </SettingsRow>
 
                       <SettingsRow
+                        anchorId={HOOK_NOTIFICATION_SETTINGS_HASH}
                         title={dictionary.settings.hookNotifications}
                         description={dictionary.settings.hookNotificationsDescription}
                       >
