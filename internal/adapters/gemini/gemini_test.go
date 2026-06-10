@@ -114,6 +114,31 @@ func TestInstallHookIsIdempotentAndRepairsExistingHooks(t *testing.T) {
 	}
 }
 
+func TestNormalizeHookInputDistinguishesAfterAgentFromSessionEnd(t *testing.T) {
+	afterAgent, err := (&GeminiAdapter{}).NormalizeHookInput([]byte(`{
+		"hook_event_name": "AfterAgent",
+		"session_id": "session-1",
+		"response": "done"
+	}`))
+	if err != nil {
+		t.Fatalf("NormalizeHookInput AfterAgent returned error: %v", err)
+	}
+	if afterAgent.HookEventName != "AfterAgent" {
+		t.Fatalf("AfterAgent hook name = %q", afterAgent.HookEventName)
+	}
+
+	sessionEnd, err := (&GeminiAdapter{}).NormalizeHookInput([]byte(`{
+		"hook_event_name": "SessionEnd",
+		"session_id": "session-1"
+	}`))
+	if err != nil {
+		t.Fatalf("NormalizeHookInput SessionEnd returned error: %v", err)
+	}
+	if sessionEnd.HookEventName != "SessionEnd" {
+		t.Fatalf("SessionEnd hook name = %q", sessionEnd.HookEventName)
+	}
+}
+
 func testHome(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()

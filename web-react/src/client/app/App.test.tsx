@@ -100,6 +100,8 @@ describe("shouldShowHookUpdateToast", () => {
     session_id: "session",
     chat_id: "chat-updated",
     session_name: "Updated Session",
+    hook_event_name: "Stop",
+    response_complete: true,
   }
   const noticeSettings = {
     management: {
@@ -128,6 +130,21 @@ describe("shouldShowHookUpdateToast", () => {
     expect(shouldShowHookUpdateToast(event, "chat-active", {
       management: { hookNotifications: { enabled: false, followMode: "notice" } },
     } as AppSettingsSnapshot)).toBe(false)
+  })
+
+  test("refreshes without a toast for prompt-submit and other intermediate hook events", () => {
+    expect(shouldShowHookUpdateToast({
+      ...event,
+      event_key: "codex:session:prompt",
+      hook_event_name: "UserPromptSubmit",
+      response_complete: false,
+    }, "chat-active", noticeSettings)).toBe(false)
+    expect(shouldShowHookUpdateToast({
+      ...event,
+      event_key: "gemini:session:end",
+      hook_event_name: "SessionEnd",
+      response_complete: false,
+    }, "chat-active", noticeSettings)).toBe(false)
   })
 })
 

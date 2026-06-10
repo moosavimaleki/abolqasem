@@ -51,6 +51,8 @@ export interface HookStreamEvent {
   chat_id?: string
   session_name?: string
   project_name?: string
+  hook_event_name?: string
+  response_complete?: boolean
   updated_at?: string
 }
 
@@ -76,6 +78,7 @@ export function shouldShowHookUpdateToast(
 ) {
   return Boolean(
     event?.source === "hook"
+      && event.response_complete === true
       && event.chat_id
       && event.chat_id !== activeChatId
       && getHookToastMode(appSettings)

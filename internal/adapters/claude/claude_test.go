@@ -103,6 +103,20 @@ func TestInstallHookIsIdempotentAndRepairsExistingHook(t *testing.T) {
 	}
 }
 
+func TestNormalizeHookInputCapturesCompletionEvent(t *testing.T) {
+	event, err := (&ClaudeAdapter{}).NormalizeHookInput([]byte(`{
+		"hook_event_name": "Stop",
+		"session_id": "session-1",
+		"last_assistant_message": "done"
+	}`))
+	if err != nil {
+		t.Fatalf("NormalizeHookInput returned error: %v", err)
+	}
+	if event.HookEventName != "Stop" || event.LastPreview != "done" {
+		t.Fatalf("unexpected hook event: %#v", event)
+	}
+}
+
 func testHome(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()

@@ -664,16 +664,18 @@ func handleAPIHook(w http.ResponseWriter, r *http.Request) {
 		broadcastChatID = workspaceLegacyBroadcastChatID(meta)
 	}
 
-	eventKey := meta.Key + ":" + meta.UpdatedAt.Format(time.RFC3339Nano)
+	eventKey := meta.Key + ":" + normalizedHookEventName(event.HookEventName) + ":" + meta.UpdatedAt.Format(time.RFC3339Nano)
 	EventBroker.Broadcast(SSEEvent{
-		Source:      "hook",
-		EventKey:    eventKey,
-		SessionKey:  meta.Key,
-		SessionID:   meta.SessionID,
-		ChatID:      broadcastChatID,
-		SessionName: state.ResolveSessionName(meta),
-		ProjectName: meta.ProjectName,
-		UpdatedAt:   meta.UpdatedAt.Format(time.RFC3339),
+		Source:           "hook",
+		EventKey:         eventKey,
+		SessionKey:       meta.Key,
+		SessionID:        meta.SessionID,
+		ChatID:           broadcastChatID,
+		SessionName:      state.ResolveSessionName(meta),
+		ProjectName:      meta.ProjectName,
+		HookEventName:    event.HookEventName,
+		ResponseComplete: isResponseCompleteHookEvent(event),
+		UpdatedAt:        meta.UpdatedAt.Format(time.RFC3339),
 	})
 	workspaceConnections.broadcast(broadcastChatID)
 

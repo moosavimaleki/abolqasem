@@ -148,9 +148,17 @@ func (a *ClaudeAdapter) NormalizeHookInput(input []byte) (state.HookEvent, error
 		return state.HookEvent{}, err
 	}
 
+	hookEventName := stringValue(raw["hook_event_name"])
+	if hookEventName == "" {
+		hookEventName = stringValue(raw["event_name"])
+	}
+	if hookEventName == "" {
+		hookEventName = "Stop"
+	}
 	event := state.HookEvent{
 		Agent:          "claude",
 		SessionID:      stringValue(raw["session_id"]),
+		HookEventName:  hookEventName,
 		TranscriptPath: stringValue(raw["transcript_path"]),
 		Cwd:            stringValue(raw["cwd"]),
 		LastPreview:    stringValue(raw["last_assistant_message"]),

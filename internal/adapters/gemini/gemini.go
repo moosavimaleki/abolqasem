@@ -116,9 +116,21 @@ func (a *GeminiAdapter) NormalizeHookInput(input []byte) (state.HookEvent, error
 		return state.HookEvent{}, err
 	}
 
+	hookEventName := stringValue(raw["hook_event_name"])
+	if hookEventName == "" {
+		hookEventName = stringValue(raw["event_name"])
+	}
+	if hookEventName == "" {
+		if stringValue(raw["response"]) != "" {
+			hookEventName = "AfterAgent"
+		} else {
+			hookEventName = "SessionEnd"
+		}
+	}
 	event := state.HookEvent{
 		Agent:          "gemini",
 		SessionID:      stringValue(raw["session_id"]),
+		HookEventName:  hookEventName,
 		TranscriptPath: stringValue(raw["transcript_path"]),
 		Cwd:            stringValue(raw["cwd"]),
 		LastPreview:    stringValue(raw["response"]),
