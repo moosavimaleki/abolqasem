@@ -69,11 +69,7 @@ func (a *Adapter) RunPrompt(ctx context.Context, request PromptRequest) ([]readm
 
 func (a *Adapter) RunPromptResult(ctx context.Context, request PromptRequest) (PromptResult, error) {
 	cmd := exec.CommandContext(ctx, a.Executable, a.BuildArgs(request)...)
-	if len(request.Env) > 0 {
-		cmd.Env = request.Env
-	} else {
-		cmd.Env = state.CurrentProviderProxyEnv()
-	}
+	cmd.Env = state.CurrentProviderProxyEnvWithOverrides(request.Env)
 	if request.CWD != "" {
 		cmd.Dir = request.CWD
 	}

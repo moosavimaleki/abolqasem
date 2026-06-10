@@ -358,11 +358,7 @@ func startWorkspaceGeminiTurn(parent context.Context, request agent.TurnRequest)
 			args = append(args, "--model", request.Model)
 		}
 		cmd := exec.CommandContext(ctx, "gemini", args...)
-		if len(request.Env) > 0 {
-			cmd.Env = request.Env
-		} else {
-			cmd.Env = state.CurrentProviderProxyEnv()
-		}
+		cmd.Env = state.CurrentProviderProxyEnvWithOverrides(request.Env)
 		if request.LocalPath != "" {
 			cmd.Dir = request.LocalPath
 		}
@@ -483,11 +479,7 @@ func startWorkspaceCodexProcess(ctx context.Context, cwd string, env []string) (
 	// Abolqasem keeps codex app-server alive across turns; turn cancellation is sent via turn/interrupt.
 	_ = ctx
 	cmd := exec.Command("codex", "app-server")
-	if len(env) > 0 {
-		cmd.Env = env
-	} else {
-		cmd.Env = state.CurrentProviderProxyEnv()
-	}
+	cmd.Env = state.CurrentProviderProxyEnvWithOverrides(env)
 	if cwd != "" {
 		cmd.Dir = cwd
 	}

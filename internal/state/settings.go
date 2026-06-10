@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -355,6 +356,40 @@ func CurrentProviderProxyEnv() []string {
 	return ApplyProviderProxyEnv(os.Environ(), settings)
 }
 
+func CurrentProviderProxyEnvWithOverrides(overrides []string) []string {
+	return MergeEnvOverrides(CurrentProviderProxyEnv(), overrides)
+}
+
+func MergeEnvOverrides(base []string, overrides []string) []string {
+	next := append([]string(nil), base...)
+	if len(overrides) == 0 {
+		return next
+	}
+
+	indexByKey := make(map[string]int, len(next))
+	for index, entry := range next {
+		key, _, ok := strings.Cut(entry, "=")
+		if !ok || key == "" {
+			continue
+		}
+		indexByKey[envLookupKey(key)] = index
+	}
+	for _, entry := range overrides {
+		key, _, ok := strings.Cut(entry, "=")
+		if !ok || key == "" {
+			continue
+		}
+		lookupKey := envLookupKey(key)
+		if index, ok := indexByKey[lookupKey]; ok {
+			next[index] = entry
+			continue
+		}
+		indexByKey[lookupKey] = len(next)
+		next = append(next, entry)
+	}
+	return next
+}
+
 func ApplyProviderProxyEnv(env []string, settings AppSettings) []string {
 	proxy := normalizeProviderProxySettings(settings.ProviderProxy)
 	withoutProxy := make([]string, 0, len(env)+8)
@@ -471,6 +506,13 @@ func isProviderProxyEnvKey(key string) bool {
 	default:
 		return false
 	}
+}
+
+func envLookupKey(key string) string {
+	if runtime.GOOS == "windows" {
+		return strings.ToUpper(key)
+	}
+	return key
 }
 
 func normalizeDefaultProvider(value string, fallback string) string {

@@ -215,7 +215,7 @@ func waitForLines(t *testing.T, path string) []string {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		if lines := readLinesIfReady(t, path); lines != nil {
+		if lines := readLinesIfReady(t, path); len(lines) > 0 {
 			return lines
 		}
 		if time.Now().After(deadline) {

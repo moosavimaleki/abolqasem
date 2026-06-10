@@ -198,6 +198,31 @@ func TestApplyProviderProxyEnvSetsCustomProxy(t *testing.T) {
 	}
 }
 
+func TestMergeEnvOverridesPreservesBaseEnvAndAppliesOverrides(t *testing.T) {
+	base := []string{
+		"PATH=/usr/bin",
+		"SystemRoot=C:\\Windows",
+		"CLAUDE_HOME=/home/original/.claude",
+	}
+	next := MergeEnvOverrides(base, []string{
+		"CLAUDE_HOME=/tmp/isolated/.claude",
+		"CLAUDE_CONFIG_DIR=/tmp/isolated/.claude",
+	})
+
+	if envTestValue(next, "PATH") != "/usr/bin" {
+		t.Fatalf("expected PATH to be preserved, got %#v", next)
+	}
+	if envTestValue(next, "SystemRoot") != "C:\\Windows" {
+		t.Fatalf("expected SystemRoot to be preserved, got %#v", next)
+	}
+	if envTestValue(next, "CLAUDE_HOME") != "/tmp/isolated/.claude" {
+		t.Fatalf("expected CLAUDE_HOME override, got %#v", next)
+	}
+	if envTestValue(next, "CLAUDE_CONFIG_DIR") != "/tmp/isolated/.claude" {
+		t.Fatalf("expected CLAUDE_CONFIG_DIR override, got %#v", next)
+	}
+}
+
 func TestNormalizeProviderProxySettingsKeepsCustomModeWithoutHttpProxy(t *testing.T) {
 	settings := normalizeProviderProxySettings(ProviderProxySettings{
 		Mode:    ProviderProxyModeCustom,
@@ -218,6 +243,16 @@ func containsEnv(env []string, expected string) bool {
 		}
 	}
 	return false
+}
+
+func envTestValue(env []string, key string) string {
+	prefix := key + "="
+	for _, entry := range env {
+		if strings.HasPrefix(entry, prefix) {
+			return strings.TrimPrefix(entry, prefix)
+		}
+	}
+	return ""
 }
 
 func containsEnvKey(env []string, key string) bool {
