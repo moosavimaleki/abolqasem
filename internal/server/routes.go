@@ -95,7 +95,7 @@ func rewriteAppIndexForRootRoute(data []byte) []byte {
 }
 
 func rewriteAppIndexForDocumentLocale(data []byte) []byte {
-	locale := "en"
+	locale := "fa"
 	if settings, err := state.LoadSettings(); err == nil {
 		normalized := state.NormalizeSettings(settings)
 		if normalized.Locale == "fa" || normalized.Locale == "en" {

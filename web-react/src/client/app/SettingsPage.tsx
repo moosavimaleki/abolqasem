@@ -7,8 +7,6 @@ import {
   Info,
   Loader2,
   Menu,
-  Monitor,
-  Moon,
   MessageSquareQuote,
   MoreHorizontal,
   Network,
@@ -18,7 +16,6 @@ import {
   Server,
   Settings2,
   SquarePen,
-  Sun,
   DownloadCloud,
   LogOut,
   Trash2,
@@ -28,7 +25,6 @@ import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { useLocation, useNavigate, useOutletContext, useParams } from "react-router-dom"
 import { getKeybindingsFilePathDisplay } from "../../shared/branding"
-import { ANALYTICS_STATIC_EVENT_NAMES, ANALYTICS_STATIC_PROPERTY_NAMES } from "../../shared/analytics"
 import {
   DEFAULT_KEYBINDINGS,
   DEFAULT_OPENAI_SDK_MODEL,
@@ -79,7 +75,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../components/ui/select"
-import { useTheme, type ThemePreference } from "../hooks/useTheme"
 import { KEYBINDING_ACTION_LABELS, formatKeybindingInput, getResolvedKeybindings, parseKeybindingInput } from "../lib/keybindings"
 import { playChatNotificationSound } from "../lib/chatSounds"
 import { cn } from "../lib/utils"
@@ -2074,7 +2069,6 @@ export function SettingsPage() {
   const navigate = useNavigate()
   const { sectionId } = useParams<{ sectionId: string }>()
   const state = useOutletContext<AbolqasemState>()
-  const { theme, setTheme } = useTheme()
   const [changelogStatus, setChangelogStatus] = useState<ChangelogStatus>("idle")
   const [signingOut, setSigningOut] = useState(false)
   const [authEnabled, setAuthEnabled] = useState(false)
@@ -2134,11 +2128,6 @@ export function SettingsPage() {
     } satisfies Record<SidebarPageId, { label: string; subtitle: string }>
     return { ...item, ...sections[item.id] }
   }), [dictionary])
-  const localizedThemeOptions = useMemo(() => [
-    { value: "light" as ThemePreference, label: dictionary.settings.options.light, icon: Sun },
-    { value: "dark" as ThemePreference, label: dictionary.settings.options.dark, icon: Moon },
-    { value: "system" as ThemePreference, label: dictionary.settings.options.system, icon: Monitor },
-  ], [dictionary])
   const localizedChatSoundPreferenceOptions = useMemo(() => [
     { value: "never" as ChatSoundPreference, label: dictionary.settings.options.never },
     { value: "unfocused" as ChatSoundPreference, label: dictionary.settings.options.unfocused },
@@ -2148,10 +2137,6 @@ export function SettingsPage() {
     ...option,
     label: dictionary.settings.chatSoundLabels[option.value],
   })), [dictionary])
-  const localizedAnalyticsOptions = useMemo(() => [
-    { value: "disabled" as const, label: dictionary.settings.options.off },
-    { value: "enabled" as const, label: dictionary.settings.options.on },
-  ], [dictionary])
   const localizedProviderProxyOptions = useMemo(() => [
     { value: "none" as ProviderProxyMode, label: dictionary.settings.providerProxyNone },
     { value: "custom" as ProviderProxyMode, label: dictionary.settings.providerProxyCustom },
@@ -2206,7 +2191,6 @@ export function SettingsPage() {
   const [modelRefreshStatus, setModelRefreshStatus] = useState<"idle" | "loading" | "success">("idle")
   const [modelCatalogDrafts, setModelCatalogDrafts] = useState<ModelCatalogDrafts>(() => emptyModelCatalogDrafts())
   const [newModelCatalogDrafts, setNewModelCatalogDrafts] = useState<NewModelCatalogDrafts>(() => emptyNewModelCatalogDrafts())
-  const [analyticsDialogOpen, setAnalyticsDialogOpen] = useState(false)
   const [llmProviderDraft, setLlmProviderDraft] = useState({
     provider: "openai" as LlmProviderKind,
     apiKey: "",
@@ -2401,13 +2385,6 @@ export function SettingsPage() {
     })
   }
 
-  function handleThemeChange(nextTheme: typeof theme) {
-    setTheme(nextTheme)
-    void handleWriteAppSettings({ theme: nextTheme }).catch((error) => {
-      setAppSettingsError(error instanceof Error ? error.message : "Unable to save theme settings.")
-    })
-  }
-
   function handleLocaleChange(nextLocale: AppLocale) {
     void handleWriteAppSettings({ locale: nextLocale }).catch((error) => {
       setAppSettingsError(error instanceof Error ? error.message : "Unable to save language settings.")
@@ -2449,15 +2426,6 @@ export function SettingsPage() {
       setAppSettingsError(error instanceof Error ? error.message : "Unable to save chat sound settings.")
     })
     void playChatNotificationSound(nextValue, 1).catch(() => undefined)
-  }
-
-  async function handleAnalyticsPreferenceChange(nextValue: "enabled" | "disabled") {
-    try {
-      setAppSettingsError(null)
-      await handleWriteAppSettings({ analyticsEnabled: nextValue === "enabled" })
-    } catch (error) {
-      setAppSettingsError(error instanceof Error ? error.message : "Unable to save analytics settings.")
-    }
   }
 
   async function handleManagementPreferenceChange(patch: {
@@ -2859,8 +2827,6 @@ export function SettingsPage() {
     .replaceAll("{path}", "/Users/jake/Projects/abolqasem/src/client/app/App.tsx")
     .replaceAll("{line}", "12")
     .replaceAll("{column}", "1")
-  const analyticsDisclosureEvents = ANALYTICS_STATIC_EVENT_NAMES
-  const analyticsSettingValue = appSettings?.analyticsEnabled === false ? "disabled" : "enabled"
   const providerProxy = appSettings?.providerProxy ?? { mode: "none" as ProviderProxyMode, httpProxy: "", noProxy: "" }
   const selectedSection = localizedSidebarItems.find((item) => item.id === selectedPage) ?? localizedSidebarItems[0]
   const selectedSectionSubtitle =
@@ -3088,18 +3054,6 @@ export function SettingsPage() {
                       </SettingsRow>
 
                       <SettingsRow
-                        title={dictionary.settings.theme}
-                        description={dictionary.settings.themeDescription}
-                      >
-                        <SegmentedControl
-                          value={theme}
-                          onValueChange={handleThemeChange}
-                          options={localizedThemeOptions}
-                          size="sm"
-                        />
-                      </SettingsRow>
-
-                      <SettingsRow
                         title={dictionary.settings.languageTitle}
                         description={dictionary.settings.languageDescription}
                       >
@@ -3324,39 +3278,6 @@ export function SettingsPage() {
                         </div>
                       </SettingsRow>
 
-                      <SettingsRow
-                        title={dictionary.settings.analytics}
-                        description={(
-                          <>
-                            <span>
-                              {dictionary.settings.analyticsDescription}
-                            </span>
-                            <span className="mt-1 block">
-                              {dictionary.settings.storedIn} {appSettings?.filePathDisplay ?? "~/.abolqasem/data/settings.json"}.
-                              {" "}
-                              <button
-                                type="button"
-                                onClick={() => setAnalyticsDialogOpen(true)}
-                                className="underline underline-offset-2 text-foreground hover:text-foreground/80"
-                              >
-                                {dictionary.settings.viewTrackedEvents}
-                              </button>
-                            </span>
-                            {appSettings?.warning ? (
-                              <span className="mt-1 block">{appSettings.warning}</span>
-                            ) : null}
-                          </>
-                        )}
-                      >
-                        <SegmentedControl
-                          value={analyticsSettingValue}
-                          onValueChange={(value) => {
-                            void handleAnalyticsPreferenceChange(value)
-                          }}
-                          options={localizedAnalyticsOptions}
-                          size="sm"
-                        />
-                      </SettingsRow>
                     </div>
                   </>
                 ) : selectedPage === "providers" ? (
@@ -3793,43 +3714,6 @@ export function SettingsPage() {
           </div>
         </div>
       ) : null}
-      <Dialog open={analyticsDialogOpen} onOpenChange={setAnalyticsDialogOpen}>
-        <DialogContent size="lg">
-          <DialogBody className="space-y-4">
-            <DialogTitle>{dictionary.settings.trackedEvents}</DialogTitle>
-            <div className="text-sm text-muted-foreground">
-              {dictionary.settings.trackedEventsDescription}
-            </div>
-            <div className="max-h-[60vh] overflow-auto rounded-lg border border-border bg-muted/40 p-3">
-              <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                {dictionary.settings.eventNames}
-              </div>
-              <ul className="mt-3 space-y-2 text-sm">
-                {analyticsDisclosureEvents.map((eventName) => (
-                  <li key={eventName} className="font-mono text-foreground">
-                    {eventName}
-                  </li>
-                ))}
-              </ul>
-              <div className="mt-6 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                {dictionary.settings.propertyKeys}
-              </div>
-              <ul className="mt-3 space-y-2 text-sm">
-                {ANALYTICS_STATIC_PROPERTY_NAMES.map((propertyName) => (
-                  <li key={propertyName} className="font-mono text-foreground">
-                    {propertyName}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </DialogBody>
-          <DialogFooter>
-            <Button variant="secondary" size="sm" onClick={() => setAnalyticsDialogOpen(false)}>
-              {dictionary.common.close}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
       <Dialog open={llmValidationDialogOpen} onOpenChange={setLlmValidationDialogOpen}>
         <DialogContent size="lg">
           <DialogBody className="space-y-4">

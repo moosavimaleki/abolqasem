@@ -486,7 +486,6 @@ export interface LocalProjectsSnapshot {
 }
 
 export interface AppSettingsSnapshot {
-  analyticsEnabled: boolean
   browserSettingsMigrated: boolean
   locale: AppLocale
   theme: AppThemePreference
@@ -544,7 +543,6 @@ export interface AppManagementSnapshot {
 }
 
 export interface AppSettingsPatch {
-  analyticsEnabled?: boolean
   browserSettingsMigrated?: boolean
   locale?: AppLocale
   theme?: AppThemePreference

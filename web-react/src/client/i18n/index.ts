@@ -2,7 +2,7 @@ import type { AppLocale } from "../../shared/types"
 import { en, type TranslationDictionary } from "./en"
 import { fa } from "./fa"
 
-export const DEFAULT_LOCALE: AppLocale = "en"
+export const DEFAULT_LOCALE: AppLocale = "fa"
 export const LOCALE_STORAGE_KEY = "abolqasem:locale"
 
 export const LOCALE_OPTIONS: Array<{ value: AppLocale; labelKey: "english" | "persian" }> = [

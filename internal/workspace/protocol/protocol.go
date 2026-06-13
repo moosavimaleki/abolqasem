@@ -63,7 +63,6 @@ const (
 	CommandSettingsReadKeybindings         = "settings.readKeybindings"
 	CommandSettingsWriteKeybindings        = "settings.writeKeybindings"
 	CommandSettingsReadAppSettings         = "settings.readAppSettings"
-	CommandSettingsWriteAppSettings        = "settings.writeAppSettings"
 	CommandSettingsWriteAppSettingsPatch   = "settings.writeAppSettingsPatch"
 	CommandSettingsRefreshProviderModels   = "settings.refreshProviderModels"
 	CommandSettingsReadLLMProvider         = "settings.readLlmProvider"

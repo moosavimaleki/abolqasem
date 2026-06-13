@@ -24,14 +24,12 @@ func TestApplySettingsPatchPersistsAbolqasemSettings(t *testing.T) {
 	noProxy := " localhost,127.0.0.1 "
 	fastMode := true
 	planMode := true
-	analytics := true
 	commitProvider := "gemini"
 	commitModel := "gemini-2.5-flash"
 	settings = ApplySettingsPatch(settings, AppSettingsPatch{
-		AnalyticsEnabled: &analytics,
-		Locale:           "fa",
-		Theme:            "dark",
-		ChatSoundID:      "chime",
+		Locale:      "fa",
+		Theme:       "dark",
+		ChatSoundID: "chime",
 		Terminal: &TerminalSettingsPatch{
 			ScrollbackLines: &scrollback,
 			MinColumnWidth:  &minColumnWidth,
@@ -68,7 +66,7 @@ func TestApplySettingsPatchPersistsAbolqasemSettings(t *testing.T) {
 		t.Fatalf("LoadSettings returned error: %v", err)
 	}
 
-	if loaded.Locale != "fa" || loaded.Theme != "dark" || !loaded.AnalyticsEnabled {
+	if loaded.Locale != "fa" || loaded.Theme != "dark" {
 		t.Fatalf("unexpected basic settings: %#v", loaded)
 	}
 	if loaded.Terminal.ScrollbackLines != 9000 || loaded.Terminal.MinColumnWidth != 12 {

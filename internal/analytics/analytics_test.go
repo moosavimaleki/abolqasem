@@ -17,8 +17,6 @@ func TestStaticAnalyticsNamesMatchAbolqasem(t *testing.T) {
 		"update_checked",
 		"update_installed",
 		"update_failed",
-		"analytics_enabled",
-		"analytics_disabled",
 	}
 	if !reflect.DeepEqual(StaticEventNames, expectedEvents) {
 		t.Fatalf("unexpected analytics events: %#v", StaticEventNames)

@@ -193,9 +193,9 @@ describe("SkillsSection", () => {
       />
     )
 
-    expect(html).toContain("Installed")
-    expect(html).toContain("Discover")
-    expect(html).toContain("Search skills")
+    expect(html).toContain("نصب شده")
+    expect(html).toContain("جست‌وجو")
+    expect(html).toContain("جست‌وجوی مهارت‌ها")
   })
 })
 
@@ -212,10 +212,10 @@ describe("McpSection", () => {
       />
     )
 
-    expect(html).toContain("Configured MCP Servers")
-    expect(html).toContain("Registry")
-    expect(html).toContain("Search MCP in registry")
-    expect(html).toContain("Search MCP registry")
+    expect(html).toContain("سرورهای MCP تنظیم‌شده")
+    expect(html).toContain("رجیستری")
+    expect(html).toContain("جست‌وجوی MCP در رجیستری")
+    expect(html).toContain("جست‌وجوی رجیستری MCP")
   })
 })
 
@@ -276,18 +276,17 @@ describe("ChangelogSection", () => {
       />
     )
 
-    expect(html).not.toContain("You are currently running this version of Abolqasem.")
-    expect(html).toContain("Current")
-    expect(html).toContain("Update")
-    expect(html).toContain("Update")
+    expect(html).not.toContain("شما در حال اجرای این نسخه از Abolqasem هستید.")
+    expect(html).toContain("نسخه فعلی")
+    expect(html).toContain("به‌روزرسانی")
     expect(html).toContain("v0.8.1")
     expect(html).toContain("Better cursor color")
-    expect(html).toContain('aria-label="View release on GitHub"')
+    expect(html).toContain('aria-label="مشاهده نسخه در GitHub"')
     expect(html).toContain("https://github.com/moosavimaleki/abolqasem/releases/tag/v0.8.1")
-    expect(html).toContain("Prerelease")
-    expect(html).toContain("No release notes were provided.")
+    expect(html).toContain("پیش‌انتشار")
+    expect(html).toContain("یادداشت انتشاری ارائه نشده است.")
     expect(html).toContain(formatPublishedDate("2026-03-19T16:53:08Z"))
-    expect(html).not.toContain("View on GitHub")
+    expect(html).not.toContain("مشاهده در GitHub")
   })
 
   test("renders an error state with retry action", () => {
@@ -304,9 +303,9 @@ describe("ChangelogSection", () => {
       />
     )
 
-    expect(html).toContain("Could not load changelog")
+    expect(html).toContain("بارگذاری تغییرات نسخه‌ها ممکن نبود")
     expect(html).toContain("GitHub said no")
-    expect(html).toContain("Retry")
+    expect(html).toContain("تلاش دوباره")
   })
 
   test("renders check-for-updates when no update is available", () => {
@@ -327,8 +326,8 @@ describe("ChangelogSection", () => {
       />
     )
 
-    expect(html).toContain("Check for updates")
-    expect(html).not.toContain(">Update<")
+    expect(html).toContain("بررسی به‌روزرسانی")
+    expect(html).not.toContain(">به‌روزرسانی<")
   })
 
   test("renders update action for dev-local from changelog releases when server check errored", () => {
@@ -350,8 +349,8 @@ describe("ChangelogSection", () => {
       />
     )
 
-    expect(html).toContain(">Update<")
-    expect(html).not.toContain("Check for updates")
+    expect(html).toContain("به‌روزرسانی")
+    expect(html).not.toContain("بررسی به‌روزرسانی")
   })
 
   test("disables the update action while updating", () => {
@@ -372,6 +371,6 @@ describe("ChangelogSection", () => {
     )
 
     expect(html).toContain("disabled")
-    expect(html).toContain("Updating")
+    expect(html).toContain("در حال به‌روزرسانی")
   })
 })

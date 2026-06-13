@@ -38,10 +38,10 @@ describe("applyDocumentLocale", () => {
     expect(stored["abolqasem:locale"]).toBe("fa")
   })
 
-  test("falls back to English LTR for unknown locale values", () => {
+  test("falls back to Persian RTL for unknown locale values", () => {
     const root = { lang: "", dir: "" }
-    expect(applyDocumentLocale("de", root, null)).toBe("en")
-    expect(root).toEqual({ lang: "en", dir: "ltr" })
+    expect(applyDocumentLocale("de", root, null)).toBe("fa")
+    expect(root).toEqual({ lang: "fa", dir: "rtl" })
   })
 })
 
@@ -51,9 +51,9 @@ describe("getDocumentBootstrapLocale", () => {
     expect(getDocumentBootstrapLocale({ lang: "en" })).toBe("en")
   })
 
-  test("falls back to English for an unknown document language", () => {
-    expect(getDocumentBootstrapLocale({ lang: "" })).toBe("en")
-    expect(getDocumentBootstrapLocale({ lang: "de" })).toBe("en")
+  test("falls back to Persian for an unknown document language", () => {
+    expect(getDocumentBootstrapLocale({ lang: "" })).toBe("fa")
+    expect(getDocumentBootstrapLocale({ lang: "de" })).toBe("fa")
   })
 })
 

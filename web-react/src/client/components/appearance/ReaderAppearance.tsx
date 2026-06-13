@@ -35,7 +35,7 @@ export const defaultReaderSettings: ReaderSettings = {
   font: "vazirmatn",
   fontSize: 18,
   lineHeight: 1.9,
-  width: "comfortable",
+  width: "wide",
   theme: "night",
 }
 
@@ -281,7 +281,7 @@ export function getAppearanceArticleClassName(settings: ReaderSettings) {
     "reader-article prose max-w-none px-5 py-10 md:px-8 md:py-14",
     settings.width === "focus" && "max-w-[680px]",
     settings.width === "comfortable" && "max-w-[820px]",
-    settings.width === "wide" && "max-w-[1040px]",
+    settings.width === "wide" && "max-w-[1280px]",
     isDarkAppearanceTheme(settings.theme) && "prose-invert",
   )
 }

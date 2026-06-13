@@ -27,7 +27,6 @@ type AppSettings struct {
 	FilesystemDiscovery             bool                                     `json:"filesystem_discovery"`
 	Locale                          string                                   `json:"locale"`
 	Theme                           string                                   `json:"theme"`
-	AnalyticsEnabled                bool                                     `json:"analytics_enabled"`
 	BrowserSettingsMigrated         bool                                     `json:"browser_settings_migrated"`
 	ChatSoundPreference             string                                   `json:"chat_sound_preference"`
 	ChatSoundID                     string                                   `json:"chat_sound_id"`
@@ -65,7 +64,6 @@ type ProviderPreference struct {
 }
 
 type AppSettingsPatch struct {
-	AnalyticsEnabled        *bool                                  `json:"analyticsEnabled"`
 	BrowserSettingsMigrated *bool                                  `json:"browserSettingsMigrated"`
 	Locale                  string                                 `json:"locale"`
 	Theme                   string                                 `json:"theme"`
@@ -123,9 +121,8 @@ func DefaultAppSettings() AppSettings {
 		HookFollowMode:                  HookFollowAuto,
 		IgnoreHookNavigationWhileTyping: true,
 		FilesystemDiscovery:             true,
-		Locale:                          "en",
+		Locale:                          "fa",
 		Theme:                           "system",
-		AnalyticsEnabled:                false,
 		BrowserSettingsMigrated:         true,
 		ChatSoundPreference:             "unfocused",
 		ChatSoundID:                     "pop",
@@ -248,9 +245,6 @@ func NormalizeSettings(settings AppSettings) AppSettings {
 }
 
 func ApplySettingsPatch(settings AppSettings, patch AppSettingsPatch) AppSettings {
-	if patch.AnalyticsEnabled != nil {
-		settings.AnalyticsEnabled = *patch.AnalyticsEnabled
-	}
 	if patch.BrowserSettingsMigrated != nil {
 		settings.BrowserSettingsMigrated = *patch.BrowserSettingsMigrated
 	}

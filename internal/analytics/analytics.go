@@ -3,18 +3,16 @@ package analytics
 const Endpoint = "https://abolqasem.sh/api/t"
 
 const (
-	EventAppLaunch         = "app_launch"
-	EventProjectOpened     = "project_opened"
-	EventProjectCreated    = "project_created"
-	EventProjectRemoved    = "project_removed"
-	EventChatCreated       = "chat_created"
-	EventChatDeleted       = "chat_deleted"
-	EventMessageSent       = "message_sent"
-	EventUpdateChecked     = "update_checked"
-	EventUpdateInstalled   = "update_installed"
-	EventUpdateFailed      = "update_failed"
-	EventAnalyticsEnabled  = "analytics_enabled"
-	EventAnalyticsDisabled = "analytics_disabled"
+	EventAppLaunch       = "app_launch"
+	EventProjectOpened   = "project_opened"
+	EventProjectCreated  = "project_created"
+	EventProjectRemoved  = "project_removed"
+	EventChatCreated     = "chat_created"
+	EventChatDeleted     = "chat_deleted"
+	EventMessageSent     = "message_sent"
+	EventUpdateChecked   = "update_checked"
+	EventUpdateInstalled = "update_installed"
+	EventUpdateFailed    = "update_failed"
 )
 
 var StaticEventNames = []string{
@@ -28,8 +26,6 @@ var StaticEventNames = []string{
 	EventUpdateChecked,
 	EventUpdateInstalled,
 	EventUpdateFailed,
-	EventAnalyticsEnabled,
-	EventAnalyticsDisabled,
 }
 
 var StaticPropertyNames = []string{
