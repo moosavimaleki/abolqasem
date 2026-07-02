@@ -8,9 +8,11 @@ import {
   useState,
   type ReactNode,
 } from "react"
+import { Bot, Code2, PencilLine, ShieldAlert, ShieldCheck, Sparkles, Terminal } from "lucide-react"
 import { Button } from "./button"
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "./dialog"
 import { Input } from "./input"
+import { cn } from "../../lib/utils"
 
 interface ConfirmDialogOptions {
   title: string
@@ -41,9 +43,28 @@ interface AlertDialogOptions {
   dir?: "ltr" | "rtl"
 }
 
+type ChoiceDialogIcon = "claude" | "codex" | "gemini" | "custom" | "danger" | "safe" | "terminal"
+
+interface ChoiceDialogOption {
+  value: string
+  label: string
+  description?: string
+  icon?: ChoiceDialogIcon | string
+}
+
+interface ChoiceDialogOptions {
+  title: string
+  description?: string
+  choices: ChoiceDialogOption[]
+  initialValue?: string
+  cancelLabel?: string
+  dir?: "ltr" | "rtl"
+}
+
 interface AppDialogContextValue {
   confirm: (options: ConfirmDialogOptions) => Promise<boolean>
   prompt: (options: PromptDialogOptions) => Promise<string | null>
+  choice: (options: ChoiceDialogOptions) => Promise<string | null>
   alert: (options: AlertDialogOptions) => Promise<void>
 }
 
@@ -63,8 +84,23 @@ type DialogState =
       options: AlertDialogOptions
       resolve: () => void
     }
+  | {
+      kind: "choice"
+      options: ChoiceDialogOptions
+      resolve: (value: string | null) => void
+    }
 
 const AppDialogContext = createContext<AppDialogContextValue | null>(null)
+
+const choiceIcons: Record<ChoiceDialogIcon, typeof Bot> = {
+  claude: Bot,
+  codex: Code2,
+  gemini: Sparkles,
+  custom: PencilLine,
+  danger: ShieldAlert,
+  safe: ShieldCheck,
+  terminal: Terminal,
+}
 
 function resolveDialogDirection(value: string | undefined, fallback: "ltr" | "rtl" = "ltr") {
   const text = value ?? ""
@@ -101,6 +137,8 @@ export function AppDialogProvider({ children }: { children: ReactNode }) {
       dialogState.resolve(false)
     } else if (dialogState.kind === "prompt") {
       dialogState.resolve(null)
+    } else if (dialogState.kind === "choice") {
+      dialogState.resolve(null)
     } else {
       dialogState.resolve()
     }
@@ -114,6 +152,8 @@ export function AppDialogProvider({ children }: { children: ReactNode }) {
     } else if (dialogState.kind === "prompt") {
       const trimmed = inputValue.trim()
       dialogState.resolve(trimmed || (dialogState.options.allowEmpty ? "" : null))
+    } else if (dialogState.kind === "choice") {
+      dialogState.resolve(dialogState.options.initialValue ?? null)
     } else {
       dialogState.resolve()
     }
@@ -132,13 +172,25 @@ export function AppDialogProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
+  const choice = useCallback((options: ChoiceDialogOptions) => {
+    return new Promise<string | null>((resolve) => {
+      setDialogState({ kind: "choice", options, resolve })
+    })
+  }, [])
+
   const alert = useCallback((options: AlertDialogOptions) => {
     return new Promise<void>((resolve) => {
       setDialogState({ kind: "alert", options, resolve })
     })
   }, [])
 
-  const value = useMemo<AppDialogContextValue>(() => ({ confirm, prompt, alert }), [alert, confirm, prompt])
+  const value = useMemo<AppDialogContextValue>(() => ({ confirm, prompt, choice, alert }), [alert, choice, confirm, prompt])
+
+  const resolveChoice = useCallback((choiceValue: string) => {
+    if (dialogState?.kind !== "choice") return
+    dialogState.resolve(choiceValue)
+    closeDialog()
+  }, [closeDialog, dialogState])
 
   const dialogDirection = dialogState?.options.dir
     ?? resolveDialogDirection(`${dialogState?.options.title ?? ""}
@@ -185,6 +237,41 @@ ${dialogState?.options.description ?? ""}`, (typeof document !== "undefined" && 
                     placeholder={dialogState.options.placeholder}
                   />
                 ) : null}
+                {dialogState.kind === "choice" ? (
+                  <div className="space-y-1">
+                    {dialogState.options.choices.map((choiceOption) => {
+                      const Icon = choiceOption.icon && choiceOption.icon in choiceIcons
+                        ? choiceIcons[choiceOption.icon as ChoiceDialogIcon]
+                        : null
+                      const selected = dialogState.options.initialValue === choiceOption.value
+                      return (
+                        <button
+                          key={choiceOption.value}
+                          type="button"
+                          className={cn(
+                            "flex w-full items-start gap-3 rounded-xl border p-3 text-start transition-colors",
+                            selected
+                              ? "border-primary/30 bg-primary/10 text-foreground"
+                              : "border-border/60 bg-background hover:border-border hover:bg-muted/70",
+                          )}
+                          onClick={() => resolveChoice(choiceOption.value)}
+                        >
+                          {Icon ? (
+                            <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                              <Icon className="size-4" />
+                            </span>
+                          ) : null}
+                          <span className="min-w-0">
+                            <span className="block text-sm font-medium">{choiceOption.label}</span>
+                            {choiceOption.description ? (
+                              <span className="mt-1 block text-xs leading-5 text-muted-foreground">{choiceOption.description}</span>
+                            ) : null}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                ) : null}
               </DialogBody>
               <DialogFooter>
                 {dialogState.kind === "prompt" && dialogState.options.resetLabel ? (
@@ -209,6 +296,7 @@ ${dialogState?.options.description ?? ""}`, (typeof document !== "undefined" && 
                   variant={dialogState.kind === "confirm" ? (dialogState.options.confirmVariant ?? "default") : "secondary"}
                   size="sm"
                   onClick={resolveConfirm}
+                  className={dialogState.kind === "choice" ? "hidden" : undefined}
                   disabled={dialogState.kind === "prompt" && !dialogState.options.allowEmpty && !inputValue.trim()}
                 >
                   {dialogState.kind === "alert"

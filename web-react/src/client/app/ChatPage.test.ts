@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import {
   getTerminalPanelDefaultSizes,
+  getNextChatViewMode,
+  getTranscriptTailVersion,
   getOrderedRightSidebarLayout,
   getRightSidebarPanelDefaultSizes,
   getRightSidebarSizePercent,
@@ -61,6 +63,15 @@ describe("shouldShowTranscriptUnreadIndicator", () => {
   })
 })
 
+describe("getTranscriptTailVersion", () => {
+  test("changes when the last tmux capture text changes without appending a row", () => {
+    const first = getTranscriptTailVersion([{ id: "tmux-capture-chat-1", kind: "assistant_text", text: "hello" }])
+    const second = getTranscriptTailVersion([{ id: "tmux-capture-chat-1", kind: "assistant_text", text: "hello\nnew output" }])
+
+    expect(second).not.toBe(first)
+  })
+})
+
 describe("shouldUseMobileRightSidebarOverlay", () => {
   test("enables the overlay below the mobile breakpoint", () => {
     expect(shouldUseMobileRightSidebarOverlay(767)).toBe(true)
@@ -79,6 +90,13 @@ describe("getTerminalPanelDefaultSizes", () => {
 
   test("collapses the terminal panel defaults while the terminal is hidden", () => {
     expect(getTerminalPanelDefaultSizes(false, [68, 32])).toEqual([100, 0])
+  })
+})
+
+describe("getNextChatViewMode", () => {
+  test("toggles between web and terminal chat modes", () => {
+    expect(getNextChatViewMode("web")).toBe("terminal")
+    expect(getNextChatViewMode("terminal")).toBe("web")
   })
 })
 

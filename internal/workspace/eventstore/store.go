@@ -232,6 +232,9 @@ func (s *Store) Compact(state readmodels.StoreState) error {
 	if err != nil {
 		return err
 	}
+	if _, _, err := s.archiveStreamLocked(events.StreamMessages, snapshot.GeneratedAt); err != nil {
+		return err
+	}
 	for _, stream := range events.Streams() {
 		if err := os.WriteFile(s.streamPath(stream), nil, eventLogFileMode); err != nil {
 			return err
@@ -243,6 +246,37 @@ func (s *Store) Compact(state readmodels.StoreState) error {
 		}
 	}
 	return nil
+}
+
+func (s *Store) archiveStreamLocked(stream string, timestamp int64) (string, bool, error) {
+	source := s.streamPath(stream)
+	info, err := os.Stat(source)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	if info.Size() == 0 {
+		return "", false, nil
+	}
+	archivePath := s.archiveStreamPathLocked(stream, timestamp)
+	if err := os.Rename(source, archivePath); err != nil {
+		return "", false, err
+	}
+	return archivePath, true, nil
+}
+
+func (s *Store) archiveStreamPathLocked(stream string, timestamp int64) string {
+	when := time.UnixMilli(timestamp).UTC().Format("20060102T150405.000Z")
+	base := filepath.Join(s.dir, stream+".jsonl.archived-"+when)
+	path := base
+	for index := 1; ; index++ {
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			return path
+		}
+		path = fmt.Sprintf("%s-%d", base, index)
+	}
 }
 
 func (s *Store) ShouldCompact() (bool, error) {
@@ -301,7 +335,7 @@ func (s *Store) snapshotPath() string {
 func (s *Store) compactedMessageEventsLocked(state readmodels.StoreState, fallbackTimestamp int64) ([]events.Event, error) {
 	chatIDs := make([]string, 0, len(state.ChatsByID))
 	for chatID, chat := range state.ChatsByID {
-		if chat.DeletedAt != 0 || !chat.HasMessages {
+		if chat.DeletedAt != 0 || !chat.HasMessages || strings.TrimSpace(chat.TmuxSession) != "" {
 			continue
 		}
 		chatIDs = append(chatIDs, chatID)

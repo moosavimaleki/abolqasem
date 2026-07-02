@@ -15,9 +15,12 @@ import {
   reconcileOptimisticUserPrompts,
   resolveComposeIntent,
   resolveProjectStartIntent,
+  shouldEnqueueUserPrompt,
   shouldHandleUiUpdateReloadRequest,
   shouldMarkActiveChatRead,
   shouldAutoFollowTranscript,
+  shouldRefreshActiveTmuxChat,
+  shouldRenderOptimisticWebPrompt,
 } from "./useAbolqasemState"
 import type { ChatAttachment, ChatProviderPreferences, ChatSnapshot, SidebarData, UserPromptEntry } from "../../shared/types"
 
@@ -408,6 +411,81 @@ describe("normalizeChatSnapshot", () => {
       recentLimit: 200,
     })
     expect(normalized?.availableProviders).toEqual([])
+  })
+
+  test("coerces nullable queued message attachments to empty arrays", () => {
+    const snapshot = {
+      runtime: {
+        chatId: "chat-1",
+        projectId: "project-1",
+        localPath: "/tmp/project-1",
+        title: "Chat 1",
+        status: "running",
+        isDraining: false,
+        provider: "codex",
+        planMode: false,
+        sessionToken: null,
+      },
+      queuedMessages: [{
+        id: "queued-1",
+        content: "follow up",
+        attachments: null,
+        createdAt: 1,
+      }],
+      messages: [],
+      history: {
+        hasOlder: false,
+        olderCursor: null,
+        recentLimit: 200,
+      },
+      availableProviders: [],
+    } as unknown as ChatSnapshot
+
+    const normalized = normalizeChatSnapshot(snapshot)
+
+    expect(normalized?.queuedMessages).toEqual([{
+      id: "queued-1",
+      content: "follow up",
+      attachments: [],
+      createdAt: 1,
+    }])
+  })
+})
+
+describe("shouldEnqueueUserPrompt", () => {
+  test("does not queue running tmux chats", () => {
+    expect(shouldEnqueueUserPrompt("chat-1", true, "abolqasem-chat-1")).toBe(false)
+  })
+
+  test("queues running non-tmux chats", () => {
+    expect(shouldEnqueueUserPrompt("chat-1", true, "")).toBe(true)
+  })
+
+  test("does not queue idle chats", () => {
+    expect(shouldEnqueueUserPrompt("chat-1", false, "")).toBe(false)
+  })
+})
+
+describe("shouldRenderOptimisticWebPrompt", () => {
+  test("does not render duplicate optimistic prompts for active tmux chats", () => {
+    expect(shouldRenderOptimisticWebPrompt("chat-1", "abolqasem-chat-1")).toBe(false)
+  })
+
+  test("keeps optimistic prompts for new or non-tmux chats", () => {
+    expect(shouldRenderOptimisticWebPrompt(null, null)).toBe(true)
+    expect(shouldRenderOptimisticWebPrompt("chat-1", "")).toBe(true)
+  })
+})
+
+describe("shouldRefreshActiveTmuxChat", () => {
+  test("refreshes active tmux chats when connected", () => {
+    expect(shouldRefreshActiveTmuxChat("chat-1", "abolqasem-chat-1", "connected")).toBe(true)
+  })
+
+  test("does not refresh without a chat, tmux session, or connection", () => {
+    expect(shouldRefreshActiveTmuxChat(null, "abolqasem-chat-1", "connected")).toBe(false)
+    expect(shouldRefreshActiveTmuxChat("chat-1", "", "connected")).toBe(false)
+    expect(shouldRefreshActiveTmuxChat("chat-1", "abolqasem-chat-1", "disconnected")).toBe(false)
   })
 })
 

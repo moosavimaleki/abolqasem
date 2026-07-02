@@ -26,6 +26,7 @@ func TestApplySettingsPatchPersistsAbolqasemSettings(t *testing.T) {
 	planMode := true
 	commitProvider := "gemini"
 	commitModel := "gemini-2.5-flash"
+	codexExecutable := " /home/user/.bun/bin/codex "
 	settings = ApplySettingsPatch(settings, AppSettingsPatch{
 		Locale:      "fa",
 		Theme:       "dark",
@@ -52,6 +53,14 @@ func TestApplySettingsPatchPersistsAbolqasemSettings(t *testing.T) {
 				},
 				PlanMode: &planMode,
 			},
+		},
+		TmuxCommands: map[string]string{
+			"Codex":   " codex --yolo ",
+			"invalid": "ignored",
+		},
+		ProviderExecutables: map[string]string{
+			"Codex":   codexExecutable,
+			"invalid": "ignored",
 		},
 		CommitMessageGenerator: &CommitMessageGeneratorPatch{
 			Provider: commitProvider,
@@ -87,6 +96,18 @@ func TestApplySettingsPatchPersistsAbolqasemSettings(t *testing.T) {
 	}
 	if loaded.CommitMessageGenerator.Provider != commitProvider || loaded.CommitMessageGenerator.Model != commitModel {
 		t.Fatalf("unexpected commit message generator: %#v", loaded.CommitMessageGenerator)
+	}
+	if loaded.TmuxCommands["codex"] != "codex --yolo" {
+		t.Fatalf("unexpected codex tmux command: %#v", loaded.TmuxCommands)
+	}
+	if loaded.ProviderExecutables["codex"] != "/home/user/.bun/bin/codex" {
+		t.Fatalf("unexpected codex executable: %#v", loaded.ProviderExecutables)
+	}
+	if _, ok := loaded.TmuxCommands["invalid"]; ok {
+		t.Fatalf("expected invalid tmux command provider to be ignored, got %#v", loaded.TmuxCommands)
+	}
+	if _, ok := loaded.ProviderExecutables["invalid"]; ok {
+		t.Fatalf("expected invalid executable provider to be ignored, got %#v", loaded.ProviderExecutables)
 	}
 }
 

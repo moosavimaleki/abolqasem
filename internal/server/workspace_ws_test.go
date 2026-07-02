@@ -204,7 +204,12 @@ func TestWorkspaceCommandRoutingForksGeminiChatIntoNativeSession(t *testing.T) {
 	t.Setenv("GEMINI_CLI_HOME", filepath.Join(homeDir, ".gemini"))
 
 	projectID := mustCreateWorkspaceProject(t, conn, projectDir)
-	chatID := mustCreateWorkspaceChat(t, conn, projectID)
+	chatID := "chat-gemini-legacy"
+	appendWorkspaceEvent(t, workspaceStore(), events.StreamChats, events.TypeChatCreated, 100, map[string]any{
+		"chatId":    chatID,
+		"projectId": projectID,
+		"title":     "Gemini legacy",
+	})
 	appendWorkspaceEvent(t, workspaceStore(), events.StreamChats, events.TypeChatProviderSet, 101, map[string]any{
 		"chatId":   chatID,
 		"provider": "gemini",

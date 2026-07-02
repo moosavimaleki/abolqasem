@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"path/filepath"
 	"strings"
 
@@ -9,6 +10,8 @@ import (
 	"ai-agent-manager/internal/workspace/eventstore"
 	"ai-agent-manager/internal/workspace/protocol"
 	"ai-agent-manager/internal/workspace/readmodels"
+	"ai-agent-manager/internal/workspace/tmuxruntime"
+	"ai-agent-manager/internal/workspace/transcript"
 )
 
 var workspaceDataDir = func() string {
@@ -17,6 +20,10 @@ var workspaceDataDir = func() string {
 
 func workspaceStore() *eventstore.Store {
 	return eventstore.New(workspaceDataDir())
+}
+
+func workspaceChatHasTmuxRuntime(chat readmodels.ChatRecord) bool {
+	return strings.TrimSpace(chat.TmuxSession) != ""
 }
 
 func workspaceSidebarSnapshot() any {
@@ -45,29 +52,91 @@ func workspaceChatSnapshot(chatID string, recentLimit int) any {
 		return nil
 	}
 	if chat, ok := storeState.ChatsByID[chatID]; ok && chat.DeletedAt == 0 {
-		if meta, ok := workspaceLegacySessionByChatID(chatID); ok && workspaceSyncLegacyForSnapshotIfNeeded(store, chatID, chat, meta) {
-			storeState, _ = store.LoadStateLight()
-		} else if meta, ok := workspaceLegacySessionByProviderToken(derefWorkspaceString(chat.Provider), derefWorkspaceString(chat.SessionToken)); ok && workspaceSyncLegacyForSnapshotIfNeeded(store, chatID, chat, meta) {
-			storeState, _ = store.LoadStateLight()
+		if !workspaceChatHasTmuxRuntime(chat) {
+			if meta, ok := workspaceLegacySessionByChatID(chatID); ok && workspaceSyncLegacyForSnapshotIfNeeded(store, chatID, chat, meta) {
+				storeState, _ = store.LoadStateLight()
+				if refreshedChat, ok := storeState.ChatsByID[chatID]; ok {
+					chat = refreshedChat
+				}
+			} else if meta, ok := workspaceLegacySessionByProviderToken(derefWorkspaceString(chat.Provider), derefWorkspaceString(chat.SessionToken)); ok && workspaceSyncLegacyForSnapshotIfNeeded(store, chatID, chat, meta) {
+				storeState, _ = store.LoadStateLight()
+				if refreshedChat, ok := storeState.ChatsByID[chatID]; ok {
+					chat = refreshedChat
+				}
+			}
 		}
-		transcript, err := workspaceChatTranscriptSnapshot(store, chatID, recentLimit)
-		if err != nil {
-			return nil
-		}
-		if refreshedState, refreshed := workspaceBackfillLegacySessionTokenForSnapshot(store, storeState, chatID, transcript.Messages); refreshed {
-			storeState = refreshedState
+		var transcript readmodels.ChatTranscriptSnapshot
+		if workspaceChatHasTmuxRuntime(chat) {
+			transcript = workspaceTmuxTranscriptSnapshot(chat, recentLimit)
+		} else {
+			transcript, err = workspaceChatTranscriptSnapshot(store, chatID, recentLimit)
+			if err != nil {
+				return nil
+			}
+			if refreshedState, refreshed := workspaceBackfillLegacySessionTokenForSnapshot(store, storeState, chatID, transcript.Messages); refreshed {
+				storeState = refreshedState
+			}
 		}
 		coordinator := workspaceAgentCoordinator()
 		snapshot := readmodels.DeriveChatSnapshot(storeState, coordinator.ActiveStatuses(), coordinator.DrainingChatIDs(), chatID, transcript)
 		if snapshot != nil {
 			snapshot.AvailableProviders = workspaceAvailableProviders()
+			applyTmuxRuntimeStatus(snapshot)
 		}
 		return snapshot
+	}
+	if _, ok := workspaceLegacySessionByChatID(chatID); ok {
+		if materializedChatID, err := workspaceMaterializeLegacyChat(chatID); err == nil && materializedChatID != "" {
+			return workspaceChatSnapshot(materializedChatID, recentLimit)
+		}
 	}
 	if snapshot := workspaceLegacyChatSnapshot(chatID, recentLimit); snapshot != nil {
 		return snapshot
 	}
 	return nil
+}
+
+func workspaceTmuxTranscriptSnapshot(chat readmodels.ChatRecord, recentLimit int) readmodels.ChatTranscriptSnapshot {
+	lines := recentLimit
+	if lines <= 0 {
+		lines = 1000
+	}
+	if firstNonEmpty(chat.NativeSessionID, derefWorkspaceString(chat.SessionToken), derefWorkspaceString(chat.PendingForkSessionToken)) != "" {
+		if projectPath, err := workspaceProjectLocalPathRequired(chat.ProjectID); err == nil {
+			_ = tmuxruntime.EnsureSession(context.Background(), chat.TmuxSession, projectPath, workspaceTmuxCommandForChat(chat, ""))
+		}
+	}
+	output, err := tmuxruntime.Capture(context.Background(), chat.TmuxSession, lines)
+	if err != nil || strings.TrimSpace(output) == "" {
+		return readmodels.ChatTranscriptSnapshot{History: readmodels.ChatHistorySnapshot{RecentLimit: recentLimit}}
+	}
+	return readmodels.ChatTranscriptSnapshot{
+		Messages: []readmodels.TranscriptEntry{
+			transcript.New(transcript.KindAssistantText, map[string]any{
+				"_id":  "tmux-capture-" + chat.ID,
+				"text": strings.TrimSpace(output),
+			}),
+		},
+		History: readmodels.ChatHistorySnapshot{RecentLimit: recentLimit},
+	}
+}
+
+func applyTmuxRuntimeStatus(snapshot *readmodels.ChatSnapshot) {
+	if snapshot == nil || strings.TrimSpace(snapshot.Runtime.TmuxSession) == "" {
+		return
+	}
+	status, err := tmuxruntime.ReadStatus(context.Background(), snapshot.Runtime.TmuxSession)
+	if err != nil {
+		return
+	}
+	switch status.State {
+	case "waiting":
+		snapshot.Runtime.Status = readmodels.StatusWaitingForUser
+	case "idle":
+		snapshot.Runtime.Status = readmodels.StatusIdle
+	case "running":
+		snapshot.Runtime.Status = readmodels.StatusRunning
+	}
 }
 
 func workspaceBackfillLegacySessionTokenForSnapshot(
@@ -106,7 +175,7 @@ func workspaceSyncLegacyForSnapshotIfNeeded(store *eventstore.Store, chatID stri
 		return false
 	}
 	if workspaceLegacyRestoreAlreadyCovers(store, chatID, meta) {
-		_ = workspaceMarkLegacyChatSynced(store, chatID, meta)
+		_ = workspaceSyncLegacyBackedChat(chatID, meta)
 		return true
 	}
 	_ = workspaceSyncLegacyBackedChat(chatID, meta)

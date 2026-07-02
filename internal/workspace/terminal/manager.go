@@ -1,6 +1,7 @@
 package terminal
 
 import (
+	"ai-agent-manager/internal/workspace/tmuxruntime"
 	"context"
 	"errors"
 	"io"
@@ -10,6 +11,11 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+)
+
+const (
+	defaultTerminalStateLimitBytes = 256 * 1024
+	maxTerminalStateLimitBytes     = 4 * 1024 * 1024
 )
 
 type Snapshot struct {
@@ -35,12 +41,16 @@ type Event struct {
 }
 
 type CreateRequest struct {
-	ProjectID  string
-	TerminalID string
-	CWD        string
-	Cols       int
-	Rows       int
-	Scrollback int
+	ProjectID   string
+	TerminalID  string
+	CWD         string
+	Mode        string
+	ChatID      string
+	TmuxSession string
+	Command     string
+	Cols        int
+	Rows        int
+	Scrollback  int
 }
 
 type Manager struct {
@@ -58,7 +68,7 @@ type session struct {
 	cols       int
 	rows       int
 	scrollback int
-	state      strings.Builder
+	state      terminalState
 	status     string
 	exitCode   *int
 	signal     *int
@@ -96,6 +106,7 @@ func (m *Manager) Create(ctx context.Context, request CreateRequest) (Snapshot, 
 		existing.cols = cols
 		existing.rows = rows
 		existing.scrollback = request.Scrollback
+		existing.state.setLimit(terminalStateLimit(request.Scrollback))
 		snapshot := existing.snapshotLocked()
 		m.mu.Unlock()
 		_ = existing.process.Resize(cols, rows)
@@ -104,7 +115,24 @@ func (m *Manager) Create(ctx context.Context, request CreateRequest) (Snapshot, 
 	m.mu.Unlock()
 
 	shell := defaultShell()
+	title := "Terminal"
 	cmd := exec.CommandContext(ctx, shell)
+	if request.Mode == "tmux" {
+		if runtime.GOOS == "windows" {
+			return Snapshot{}, errors.New("tmux terminal mode is not supported on Windows")
+		}
+		tmuxSession := tmuxruntime.NormalizeSessionName(request.TmuxSession)
+		if err := tmuxruntime.EnsureSession(ctx, tmuxSession, cwd, request.Command); err != nil {
+			return Snapshot{}, err
+		}
+		shell = "tmux"
+		title = "Tmux: " + tmuxSession
+		attachCommand, err := tmuxruntime.AttachCommand(ctx, tmuxSession)
+		if err != nil {
+			return Snapshot{}, err
+		}
+		cmd = attachCommand
+	}
 	cmd.Dir = cwd
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
 	proc, err := startProcess(cmd, cols, rows)
@@ -113,12 +141,13 @@ func (m *Manager) Create(ctx context.Context, request CreateRequest) (Snapshot, 
 	}
 	item := &session{
 		id:         request.TerminalID,
-		title:      "Terminal",
+		title:      title,
 		cwd:        cwd,
 		shell:      filepath.Base(shell),
 		cols:       cols,
 		rows:       rows,
 		scrollback: request.Scrollback,
+		state:      newTerminalState(terminalStateLimit(request.Scrollback)),
 		status:     "running",
 		process:    proc,
 	}
@@ -289,4 +318,51 @@ func defaultShell() string {
 		return shell
 	}
 	return "/bin/sh"
+}
+
+type terminalState struct {
+	data  string
+	limit int
+}
+
+func newTerminalState(limit int) terminalState {
+	return terminalState{limit: limit}
+}
+
+func (s *terminalState) setLimit(limit int) {
+	s.limit = limit
+	s.trim()
+}
+
+func (s *terminalState) WriteString(value string) {
+	s.data += value
+	s.trim()
+}
+
+func (s *terminalState) String() string {
+	return s.data
+}
+
+func (s *terminalState) trim() {
+	if s.limit <= 0 {
+		s.limit = defaultTerminalStateLimitBytes
+	}
+	if len(s.data) <= s.limit {
+		return
+	}
+	s.data = s.data[len(s.data)-s.limit:]
+}
+
+func terminalStateLimit(scrollback int) int {
+	if scrollback <= 0 {
+		return defaultTerminalStateLimitBytes
+	}
+	limit := scrollback * 200
+	if limit < defaultTerminalStateLimitBytes {
+		return defaultTerminalStateLimitBytes
+	}
+	if limit > maxTerminalStateLimitBytes {
+		return maxTerminalStateLimitBytes
+	}
+	return limit
 }

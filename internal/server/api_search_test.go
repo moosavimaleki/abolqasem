@@ -66,12 +66,14 @@ func TestHandleAPISearchSearchesCurrentWorkspaceChat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("workspaceOpenProject returned error: %v", err)
 	}
-	chat, err := workspaceCreateChat(project.ID)
-	if err != nil {
-		t.Fatalf("workspaceCreateChat returned error: %v", err)
-	}
+	chatID := "chat-workspace-search"
+	appendWorkspaceEvent(t, workspaceStore(), events.StreamChats, events.TypeChatCreated, 200, map[string]any{
+		"chatId":    chatID,
+		"projectId": project.ID,
+		"title":     "Legacy workspace chat",
+	})
 	appendWorkspaceEvent(t, workspaceStore(), events.StreamMessages, events.TypeMessageAppended, 300, map[string]any{
-		"chatId": chat.ID,
+		"chatId": chatID,
 		"entry": readmodels.TranscriptEntry{
 			"_id":       "m1",
 			"kind":      transcript.KindUserPrompt,
@@ -80,7 +82,7 @@ func TestHandleAPISearchSearchesCurrentWorkspaceChat(t *testing.T) {
 		},
 	})
 	appendWorkspaceEvent(t, workspaceStore(), events.StreamMessages, events.TypeMessageAppended, 400, map[string]any{
-		"chatId": chat.ID,
+		"chatId": chatID,
 		"entry": readmodels.TranscriptEntry{
 			"_id":       "m2",
 			"kind":      transcript.KindAssistantText,
@@ -89,7 +91,7 @@ func TestHandleAPISearchSearchesCurrentWorkspaceChat(t *testing.T) {
 		},
 	})
 
-	response := performSearchAPIRequest(t, "/api/search?chat_id="+url.QueryEscape(chat.ID)+"&q=needle&limit=10")
+	response := performSearchAPIRequest(t, "/api/search?chat_id="+url.QueryEscape(chatID)+"&q=needle&limit=10")
 	if response.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d: %s", response.Code, response.Body.String())
 	}
@@ -106,6 +108,115 @@ func TestHandleAPISearchSearchesCurrentWorkspaceChat(t *testing.T) {
 	}
 	if payload.Matches[0].EntryID != "m2" || payload.Matches[0].Role != "assistant" {
 		t.Fatalf("unexpected workspace match: %#v", payload.Matches[0])
+	}
+}
+
+func TestHandleAPISearchSearchesNativeWorkspaceChatWithoutStoredMessages(t *testing.T) {
+	withWorkspaceComposerStore(t)
+	nativePath := writeSearchAPITestTranscript(t, strings.Join([]string{
+		`{"type":"event_msg","payload":{"type":"user_message","message":"native prompt"}}`,
+		`{"type":"event_msg","payload":{"type":"agent_message","message":"native_search_needle answer"}}`,
+	}, "\n"))
+	project, err := workspaceOpenProject(t.TempDir(), "Project")
+	if err != nil {
+		t.Fatalf("workspaceOpenProject returned error: %v", err)
+	}
+	store := &workspaceEventStore{store: workspaceStore()}
+	chat, err := store.CreateChat(project.ID)
+	if err != nil {
+		t.Fatalf("CreateChat returned error: %v", err)
+	}
+	if err := store.SetChatProvider(chat.ID, "codex"); err != nil {
+		t.Fatalf("SetChatProvider returned error: %v", err)
+	}
+	appendWorkspaceEvent(t, workspaceStore(), events.StreamChats, events.TypeChatRuntimeSet, time.Now().UnixMilli(), map[string]any{
+		"chatId":               chat.ID,
+		"nativeSessionId":      "native-session",
+		"nativeTranscriptPath": nativePath,
+	})
+	if err := os.WriteFile(filepath.Join(workspaceDataDir(), events.StreamMessages+".jsonl"), []byte("{bad json\n"), 0o644); err != nil {
+		t.Fatalf("write bad messages stream: %v", err)
+	}
+
+	response := performSearchAPIRequest(t, "/api/search?chat_id="+url.QueryEscape(chat.ID)+"&q=native_search_needle&limit=10")
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", response.Code, response.Body.String())
+	}
+	var directPayload struct {
+		Matches []chatSearchMatch `json:"matches"`
+		Total   int               `json:"total"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &directPayload); err != nil {
+		t.Fatalf("unmarshal direct response: %v", err)
+	}
+	if directPayload.Total != 1 || directPayload.Matches[0].Role != "assistant" {
+		t.Fatalf("unexpected native direct search result: %#v", directPayload)
+	}
+
+	response = performSearchAPIRequest(t, "/api/search?q=native_search_needle&limit=10")
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected global status 200, got %d: %s", response.Code, response.Body.String())
+	}
+	var globalPayload struct {
+		Items []sessionSearchResult `json:"items"`
+		Total int                   `json:"total"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &globalPayload); err != nil {
+		t.Fatalf("unmarshal global response: %v", err)
+	}
+	if globalPayload.Total != 1 || globalPayload.Items[0].ChatID != chat.ID {
+		t.Fatalf("unexpected native global search result: %#v", globalPayload)
+	}
+}
+
+func TestHandleAPISearchSkipsStoredMessagesForTmuxChat(t *testing.T) {
+	withWorkspaceComposerStore(t)
+	project, err := workspaceOpenProject(t.TempDir(), "Project")
+	if err != nil {
+		t.Fatalf("workspaceOpenProject returned error: %v", err)
+	}
+	chat, err := workspaceCreateChat(project.ID)
+	if err != nil {
+		t.Fatalf("workspaceCreateChat returned error: %v", err)
+	}
+	appendWorkspaceEvent(t, workspaceStore(), events.StreamMessages, events.TypeMessageAppended, 500, map[string]any{
+		"chatId": chat.ID,
+		"entry": readmodels.TranscriptEntry{
+			"_id":       "stale-message",
+			"kind":      transcript.KindAssistantText,
+			"createdAt": float64(500),
+			"text":      "stale_tmux_search_needle answer",
+		},
+	})
+
+	response := performSearchAPIRequest(t, "/api/search?chat_id="+url.QueryEscape(chat.ID)+"&q=stale_tmux_search_needle&limit=10")
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", response.Code, response.Body.String())
+	}
+	var directPayload struct {
+		Matches []chatSearchMatch `json:"matches"`
+		Total   int               `json:"total"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &directPayload); err != nil {
+		t.Fatalf("unmarshal direct response: %v", err)
+	}
+	if directPayload.Total != 0 || len(directPayload.Matches) != 0 {
+		t.Fatalf("expected tmux direct search to ignore stored messages, got %#v", directPayload)
+	}
+
+	response = performSearchAPIRequest(t, "/api/search?q=stale_tmux_search_needle&limit=10")
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected global status 200, got %d: %s", response.Code, response.Body.String())
+	}
+	var globalPayload struct {
+		Items []sessionSearchResult `json:"items"`
+		Total int                   `json:"total"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &globalPayload); err != nil {
+		t.Fatalf("unmarshal global response: %v", err)
+	}
+	if globalPayload.Total != 0 || len(globalPayload.Items) != 0 {
+		t.Fatalf("expected tmux global search to ignore stored messages, got %#v", globalPayload)
 	}
 }
 
@@ -143,12 +254,14 @@ func TestHandleAPISearchGlobalIncludesWorkspaceChats(t *testing.T) {
 	if err != nil {
 		t.Fatalf("workspaceOpenProject returned error: %v", err)
 	}
-	chat, err := workspaceCreateChat(project.ID)
-	if err != nil {
-		t.Fatalf("workspaceCreateChat returned error: %v", err)
-	}
+	chatID := "chat-global-workspace-search"
+	appendWorkspaceEvent(t, workspaceStore(), events.StreamChats, events.TypeChatCreated, 200, map[string]any{
+		"chatId":    chatID,
+		"projectId": project.ID,
+		"title":     "Legacy workspace chat",
+	})
 	appendWorkspaceEvent(t, workspaceStore(), events.StreamMessages, events.TypeMessageAppended, 500, map[string]any{
-		"chatId": chat.ID,
+		"chatId": chatID,
 		"entry": readmodels.TranscriptEntry{
 			"_id":       "m1",
 			"kind":      transcript.KindAssistantText,
@@ -172,8 +285,53 @@ func TestHandleAPISearchGlobalIncludesWorkspaceChats(t *testing.T) {
 	if payload.Total != 1 || len(payload.Items) != 1 {
 		t.Fatalf("expected one global result, got %#v", payload)
 	}
-	if payload.Items[0].ChatID != chat.ID || payload.Items[0].SearchMatchCount != 1 {
+	if payload.Items[0].ChatID != chatID || payload.Items[0].SearchMatchCount != 1 {
 		t.Fatalf("unexpected global workspace result: %#v", payload.Items[0])
+	}
+}
+
+func TestHandleAPISearchGlobalKeepsStoredWorkspaceChatAfterCompaction(t *testing.T) {
+	withWorkspaceComposerStore(t)
+	project, err := workspaceOpenProject("/tmp/project", "Project")
+	if err != nil {
+		t.Fatalf("workspaceOpenProject returned error: %v", err)
+	}
+	chatID := "chat-restored-search"
+	appendWorkspaceEvent(t, workspaceStore(), events.StreamChats, events.TypeChatCreated, 100, map[string]any{
+		"chatId":    chatID,
+		"projectId": project.ID,
+		"title":     "Stored Chat",
+	})
+	appendWorkspaceEvent(t, workspaceStore(), events.StreamMessages, events.TypeMessageAppended, 500, map[string]any{
+		"chatId": chatID,
+		"entry": readmodels.TranscriptEntry{
+			"_id":       "m1",
+			"kind":      transcript.KindAssistantText,
+			"createdAt": float64(500),
+			"text":      "compacted_search_needle answer",
+		},
+	})
+	stateSnapshot, err := workspaceStore().LoadState()
+	if err != nil {
+		t.Fatalf("LoadState returned error: %v", err)
+	}
+	if err := workspaceStore().Compact(stateSnapshot); err != nil {
+		t.Fatalf("Compact returned error: %v", err)
+	}
+
+	response := performSearchAPIRequest(t, "/api/search?q=compacted_search_needle&limit=10")
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		Items []sessionSearchResult `json:"items"`
+		Total int                   `json:"total"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if payload.Total != 1 || payload.Items[0].ChatID != chatID {
+		t.Fatalf("unexpected compacted workspace result: %#v", payload)
 	}
 }
 

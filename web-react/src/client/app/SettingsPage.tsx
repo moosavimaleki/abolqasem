@@ -2185,6 +2185,7 @@ export function SettingsPage() {
   const [editorCommandDraft, setEditorCommandDraft] = useState(editorCommandTemplate)
   const [providerProxyHttpDraft, setProviderProxyHttpDraft] = useState("")
   const [providerProxyNoProxyDraft, setProviderProxyNoProxyDraft] = useState("")
+  const [providerExecutableDrafts, setProviderExecutableDrafts] = useState<Partial<Record<AgentProvider, string>>>({})
   const [keybindingDrafts, setKeybindingDrafts] = useState<Record<string, string>>({})
   const [keybindingsError, setKeybindingsError] = useState<string | null>(null)
   const [appSettingsError, setAppSettingsError] = useState<string | null>(null)
@@ -2245,6 +2246,18 @@ export function SettingsPage() {
     setProviderProxyHttpDraft(appSettings?.providerProxy.httpProxy ?? "")
     setProviderProxyNoProxyDraft(appSettings?.providerProxy.noProxy ?? "")
   }, [appSettings?.providerProxy.httpProxy, appSettings?.providerProxy.noProxy])
+
+  useEffect(() => {
+    setProviderExecutableDrafts({
+      claude: appSettings?.providerExecutables?.claude ?? "",
+      codex: appSettings?.providerExecutables?.codex ?? "",
+      gemini: appSettings?.providerExecutables?.gemini ?? "",
+    })
+  }, [
+    appSettings?.providerExecutables?.claude,
+    appSettings?.providerExecutables?.codex,
+    appSettings?.providerExecutables?.gemini,
+  ])
 
   useEffect(() => {
     setKeybindingDrafts(Object.fromEntries(
@@ -2507,6 +2520,18 @@ export function SettingsPage() {
     setProviderDefaultPlanMode(provider, planMode)
     void handleWriteAppSettings({ providerDefaults: { [provider]: { planMode } } }).catch((error) => {
       setAppSettingsError(error instanceof Error ? error.message : "Unable to save provider settings.")
+    })
+  }
+
+  function handleProviderExecutableDraftChange(provider: AgentProvider, executable: string) {
+    setProviderExecutableDrafts((drafts) => ({ ...drafts, [provider]: executable }))
+  }
+
+  function commitProviderExecutable(provider: AgentProvider) {
+    void handleWriteAppSettings({
+      providerExecutables: { [provider]: (providerExecutableDrafts[provider] ?? "").trim() },
+    }).catch((error) => {
+      setAppSettingsError(error instanceof Error ? error.message : "Unable to save provider executable.")
     })
   }
 
@@ -3424,6 +3449,16 @@ export function SettingsPage() {
                           includePlanMode
                           className="justify-start flex-wrap"
                         />
+                        <Input
+                          value={providerExecutableDrafts.claude ?? ""}
+                          onChange={(event) => handleProviderExecutableDraftChange("claude", event.target.value)}
+                          onBlur={() => commitProviderExecutable("claude")}
+                          onKeyDown={(event) => handleTextInputKeyDown(event, () => commitProviderExecutable("claude"))}
+                          placeholder={dictionary.settings.providerExecutablePlaceholder("claude")}
+                          aria-label={dictionary.settings.providerExecutable("Claude")}
+                          className="mt-3 w-full font-mono text-xs"
+                          dir="ltr"
+                        />
                         {renderModelCatalogControls("claude")}
                       </div>
                     </SettingsRow>
@@ -3456,6 +3491,16 @@ export function SettingsPage() {
                           includePlanMode
                           className="justify-start flex-wrap"
                         />
+                        <Input
+                          value={providerExecutableDrafts.codex ?? ""}
+                          onChange={(event) => handleProviderExecutableDraftChange("codex", event.target.value)}
+                          onBlur={() => commitProviderExecutable("codex")}
+                          onKeyDown={(event) => handleTextInputKeyDown(event, () => commitProviderExecutable("codex"))}
+                          placeholder={dictionary.settings.providerExecutablePlaceholder("codex")}
+                          aria-label={dictionary.settings.providerExecutable("Codex")}
+                          className="mt-3 w-full font-mono text-xs"
+                          dir="ltr"
+                        />
                         {renderModelCatalogControls("codex")}
                       </div>
                     </SettingsRow>
@@ -3481,6 +3526,16 @@ export function SettingsPage() {
                           onPlanModeChange={(planMode) => handleProviderDefaultPlanModeChange("gemini", planMode)}
                           includePlanMode
                           className="justify-start flex-wrap"
+                        />
+                        <Input
+                          value={providerExecutableDrafts.gemini ?? ""}
+                          onChange={(event) => handleProviderExecutableDraftChange("gemini", event.target.value)}
+                          onBlur={() => commitProviderExecutable("gemini")}
+                          onKeyDown={(event) => handleTextInputKeyDown(event, () => commitProviderExecutable("gemini"))}
+                          placeholder={dictionary.settings.providerExecutablePlaceholder("gemini")}
+                          aria-label={dictionary.settings.providerExecutable("Gemini")}
+                          className="mt-3 w-full font-mono text-xs"
+                          dir="ltr"
                         />
                         {renderModelCatalogControls("gemini")}
                       </div>

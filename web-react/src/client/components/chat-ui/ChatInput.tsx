@@ -124,6 +124,7 @@ interface Props {
   inputElementRef?: React.Ref<HTMLTextAreaElement>
   activeProvider: AgentProvider | null
   availableProviders: ProviderCatalogEntry[]
+  showPreferenceControls?: boolean
   contextWindowSnapshot?: ContextWindowSnapshot | null
   previousPrompt?: string | null
   onJumpToPreviousUserPrompt?: () => void | Promise<void>
@@ -196,6 +197,7 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
   inputElementRef,
   activeProvider,
   availableProviders,
+  showPreferenceControls = true,
   contextWindowSnapshot = null,
   previousPrompt = null,
   onJumpToPreviousUserPrompt,
@@ -870,71 +872,73 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
         ) : null}
       </div>
 
-      <div className={cn("relative py-3 max-w-[840px] mx-auto", isStandalone && "p-5 pt-3")}>
-        <div className="overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden flex flex-row">
-          <div className="min-w-3" />
-          <ChatPreferenceControls
-            availableProviders={availableProviders}
-            selectedProvider={selectedProvider}
-            providerLocked={providerLocked}
-            showCodexCliRequirementHints
-            model={providerPrefs.model}
-            modelOptions={providerPrefs.modelOptions}
-            onProviderChange={(provider) => {
-              if (providerLocked) return
-              resetChatComposerFromProvider(composerChatId, provider)
-            }}
-            onModelChange={(_, model) => {
-              if (providerLocked) {
-                updateComposerState((state) => withNormalizedContextWindow(state, model))
-                return
-              }
-              setChatComposerModel(composerChatId, model)
-            }}
-            onModelOptionChange={(change) => {
-              switch (change.type) {
-                case "claudeReasoningEffort":
-                  setReasoningEffort(change.effort)
-                  break
-                case "codexReasoningEffort":
-                  setReasoningEffort(change.effort)
-                  break
-                case "contextWindow":
-                  setClaudeContextWindow(change.contextWindow)
-                  break
-                case "fastMode":
-                  updateComposerState(
-                    (state) => state.provider !== "codex"
-                      ? state
-                      : { ...state, modelOptions: { ...state.modelOptions, fastMode: change.fastMode } }
-                  )
-                  break
-              }
-            }}
-            planMode={providerPrefs.planMode}
-            onPlanModeChange={setEffectivePlanMode}
-            includePlanMode={showPlanMode}
-            className="max-w-[840px] mx-auto"
-          />
+      {showPreferenceControls ? (
+        <div className={cn("relative py-3 max-w-[840px] mx-auto", isStandalone && "p-5 pt-3")}>
+          <div className="overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden flex flex-row">
+            <div className="min-w-3" />
+            <ChatPreferenceControls
+              availableProviders={availableProviders}
+              selectedProvider={selectedProvider}
+              providerLocked={providerLocked}
+              showCodexCliRequirementHints
+              model={providerPrefs.model}
+              modelOptions={providerPrefs.modelOptions}
+              onProviderChange={(provider) => {
+                if (providerLocked) return
+                resetChatComposerFromProvider(composerChatId, provider)
+              }}
+              onModelChange={(_, model) => {
+                if (providerLocked) {
+                  updateComposerState((state) => withNormalizedContextWindow(state, model))
+                  return
+                }
+                setChatComposerModel(composerChatId, model)
+              }}
+              onModelOptionChange={(change) => {
+                switch (change.type) {
+                  case "claudeReasoningEffort":
+                    setReasoningEffort(change.effort)
+                    break
+                  case "codexReasoningEffort":
+                    setReasoningEffort(change.effort)
+                    break
+                  case "contextWindow":
+                    setClaudeContextWindow(change.contextWindow)
+                    break
+                  case "fastMode":
+                    updateComposerState(
+                      (state) => state.provider !== "codex"
+                        ? state
+                        : { ...state, modelOptions: { ...state.modelOptions, fastMode: change.fastMode } }
+                    )
+                    break
+                }
+              }}
+              planMode={providerPrefs.planMode}
+              onPlanModeChange={setEffectivePlanMode}
+              includePlanMode={showPlanMode}
+              className="max-w-[840px] mx-auto"
+            />
+            {activeContextWindow ? (
+              <div className="flex items-center md:hidden mx-[13px]">
+                <ContextWindowMeter usage={activeContextWindow} />
+              </div>
+            ) : null}
+            <div className="min-w-3" />
+          </div>
+
           {activeContextWindow ? (
-            <div className="flex items-center md:hidden mx-[13px]">
+            <div
+              className={cn(
+                "absolute top-1/2 -translate-y-1/2 hidden md:block",
+                isRtl ? "left-[29px] -translate-x-1/2" : "right-[29px] translate-x-1/2"
+              )}
+            >
               <ContextWindowMeter usage={activeContextWindow} />
             </div>
           ) : null}
-          <div className="min-w-3" />
         </div>
-
-        {activeContextWindow ? (
-          <div
-            className={cn(
-              "absolute top-1/2 -translate-y-1/2 hidden md:block",
-              isRtl ? "left-[29px] -translate-x-1/2" : "right-[29px] translate-x-1/2"
-            )}
-          >
-            <ContextWindowMeter usage={activeContextWindow} />
-          </div>
-        ) : null}
-      </div>
+      ) : null}
 
       <AttachmentPreviewModal attachment={selectedAttachment} onOpenChange={(open) => !open && setSelectedAttachmentId(null)} />
     </div>

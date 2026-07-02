@@ -21,6 +21,7 @@ import (
 	codexprovider "ai-agent-manager/internal/providers/codex"
 	codexprotocol "ai-agent-manager/internal/providers/codex/protocol"
 	codexrpc "ai-agent-manager/internal/providers/codex/rpc"
+	"ai-agent-manager/internal/providers/providerexec"
 	"ai-agent-manager/internal/state"
 	"ai-agent-manager/internal/workspace/agent"
 	"ai-agent-manager/internal/workspace/eventstore"
@@ -478,7 +479,10 @@ type workspaceCodexTransport struct {
 func startWorkspaceCodexProcess(ctx context.Context, cwd string, env []string) (*workspaceCodexProcess, error) {
 	// Abolqasem keeps codex app-server alive across turns; turn cancellation is sent via turn/interrupt.
 	_ = ctx
-	cmd := exec.Command("codex", "app-server")
+	if settings, err := state.LoadSettings(); err == nil {
+		providerexec.SetConfiguredExecutables(settings.ProviderExecutables)
+	}
+	cmd := exec.Command(providerexec.ExecutableOrName("codex"), "app-server")
 	cmd.Env = state.CurrentProviderProxyEnvWithOverrides(env)
 	if cwd != "" {
 		cmd.Dir = cwd

@@ -1,6 +1,8 @@
 package server
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -95,6 +97,61 @@ func TestWorkspaceChatSnapshotIncludesRecentTranscript(t *testing.T) {
 	}
 	if !snapshot.History.HasOlder || snapshot.History.OlderCursor == nil || *snapshot.History.OlderCursor != "m1" {
 		t.Fatalf("expected older history cursor m1, got %#v", snapshot.History)
+	}
+}
+
+func TestWorkspaceChatSnapshotSkipsMessageReplayForEmptyTmuxChat(t *testing.T) {
+	store := withWorkspaceSnapshotStore(t)
+	appendWorkspaceEvent(t, store, events.StreamProjects, events.TypeProjectOpened, 100, map[string]any{
+		"projectId": "project-1",
+		"localPath": "/tmp/project",
+		"title":     "Project",
+	})
+	appendWorkspaceEvent(t, store, events.StreamChats, events.TypeChatCreated, 200, map[string]any{
+		"chatId":      "chat-1",
+		"projectId":   "project-1",
+		"title":       "Chat",
+		"tmuxSession": "abolqasem-chat-1",
+	})
+	if err := os.WriteFile(filepath.Join(workspaceDataDir(), "messages.jsonl"), []byte("{bad json\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+
+	snapshot, ok := workspaceChatSnapshot("chat-1", 200).(*readmodels.ChatSnapshot)
+	if !ok || snapshot == nil {
+		t.Fatalf("expected tmux chat snapshot despite malformed messages stream, got %#v", snapshot)
+	}
+	if snapshot.Runtime.TmuxSession != "abolqasem-chat-1" {
+		t.Fatalf("expected tmux runtime metadata, got %#v", snapshot.Runtime)
+	}
+}
+
+func TestWorkspaceChatSnapshotIgnoresStoredMessagesForTmuxChat(t *testing.T) {
+	store := withWorkspaceSnapshotStore(t)
+	appendWorkspaceEvent(t, store, events.StreamProjects, events.TypeProjectOpened, 100, map[string]any{
+		"projectId": "project-1",
+		"localPath": "/tmp/project",
+		"title":     "Project",
+	})
+	appendWorkspaceEvent(t, store, events.StreamChats, events.TypeChatCreated, 200, map[string]any{
+		"chatId":      "chat-1",
+		"projectId":   "project-1",
+		"title":       "Chat",
+		"tmuxSession": "abolqasem-chat-1",
+	})
+	appendWorkspaceEvent(t, store, events.StreamMessages, events.TypeMessageAppended, 300, map[string]any{
+		"chatId": "chat-1",
+		"entry": readmodels.TranscriptEntry{
+			"_id":       "old-message",
+			"kind":      transcript.KindAssistantText,
+			"createdAt": float64(300),
+			"text":      "old eventstore text",
+		},
+	})
+
+	snapshot := workspaceChatSnapshot("chat-1", 200).(*readmodels.ChatSnapshot)
+	if len(snapshot.Messages) != 0 {
+		t.Fatalf("expected tmux snapshot to ignore stored messages, got %#v", snapshot.Messages)
 	}
 }
 

@@ -445,6 +445,7 @@ export interface SidebarChatRow {
   localPath: string
   provider: AgentProvider | null
   lastMessageAt?: number
+  preview?: string
   hasAutomation: boolean
   canFork?: boolean
   readOnly?: boolean
@@ -504,6 +505,8 @@ export interface AppSettingsSnapshot {
     httpProxy: string
     noProxy: string
   }
+  providerExecutables: Partial<Record<AgentProvider, string>>
+  tmuxCommands: Partial<Record<AgentProvider, string>>
   defaultProvider: DefaultProviderPreference
   providerDefaults: ChatProviderPreferences
   providerModelCatalog: ProviderModelCatalog
@@ -551,6 +554,7 @@ export interface AppSettingsPatch {
   terminal?: Partial<AppSettingsSnapshot["terminal"]>
   editor?: Partial<AppSettingsSnapshot["editor"]>
   providerProxy?: Partial<AppSettingsSnapshot["providerProxy"]>
+  providerExecutables?: Partial<Record<AgentProvider, string>>
   defaultProvider?: DefaultProviderPreference
   providerDefaults?: {
     claude?: Partial<ProviderPreference<ClaudeModelOptions>>
@@ -561,6 +565,7 @@ export interface AppSettingsPatch {
     catalogModels?: ProviderModelOption[]
     customModels?: ProviderModelOption[]
   }>>
+  tmuxCommands?: Partial<Record<AgentProvider, string>>
   commitMessageGenerator?: Partial<CommitMessageGeneratorSettings>
 }
 
@@ -1273,6 +1278,12 @@ export interface ChatRuntime {
   pendingForkSessionToken?: string | null
   readOnly?: boolean
   legacySessionKey?: string
+  tmuxSession?: string
+  tmuxCommand?: string
+  nativeSessionId?: string
+  nativeTranscriptPath?: string
+  parentChatId?: string
+  lastSummary?: string
 }
 
 export type TranscriptIndexRole = "user" | "assistant" | "system" | "tool"

@@ -25,9 +25,10 @@ describe("buildPositionedItems", () => {
     expect(positioned[1]?.loaded).toBe(false)
   })
 
-  test("uses even spacing instead of message-height weighting", () => {
+  test("uses equal spacing for every user mark", () => {
     const positioned = buildPositionedItems([
       item("user-short", 3, "user"),
+      item("assistant-long", 0, "assistant"),
       item("user-long", 1, "user"),
       item("user-middle", 2, "user"),
     ])

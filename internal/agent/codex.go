@@ -17,6 +17,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"ai-agent-manager/internal/providers/providerexec"
 )
 
 const (
@@ -90,8 +92,7 @@ type ModelInfo struct {
 }
 
 func CodexAvailable() bool {
-	_, err := exec.LookPath("codex")
-	return err == nil
+	return providerexec.Executable("codex") != ""
 }
 
 func ListCodexModels(ctx context.Context) ([]ModelInfo, error) {
@@ -217,7 +218,7 @@ type codexClient struct {
 }
 
 func startCodexClient(ctx context.Context) (*codexClient, error) {
-	cmd := exec.CommandContext(ctx, "codex", "app-server")
+	cmd := exec.CommandContext(ctx, providerexec.ExecutableOrName("codex"), "app-server")
 	cmd.Env = state.CurrentProviderProxyEnv()
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

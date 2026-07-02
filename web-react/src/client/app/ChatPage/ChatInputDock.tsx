@@ -18,6 +18,7 @@ interface ChatInputDockProps {
   projectId: string | null
   activeProvider: AgentProvider | null
   availableProviders: AbolqasemState["availableProviders"]
+  hasTmuxRuntime: boolean
   contextWindowSnapshot: ContextWindowSnapshot | null
   onSubmit: AbolqasemState["handleSend"]
   onCancel: () => void
@@ -37,6 +38,7 @@ export const ChatInputDock = memo(function ChatInputDock({
   projectId,
   activeProvider,
   availableProviders,
+  hasTmuxRuntime,
   contextWindowSnapshot,
   onSubmit,
   onCancel,
@@ -57,6 +59,7 @@ export const ChatInputDock = memo(function ChatInputDock({
           projectId={projectId}
           activeProvider={activeProvider}
           availableProviders={availableProviders}
+          showPreferenceControls={!hasTmuxRuntime}
           contextWindowSnapshot={contextWindowSnapshot}
           previousPrompt={previousPrompt}
           onJumpToPreviousUserPrompt={onJumpToPreviousUserPrompt}

@@ -2,7 +2,6 @@ package server
 
 import (
 	"ai-agent-manager/internal/appinfo"
-	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"ai-agent-manager/internal/workspace/events"
 	"ai-agent-manager/internal/workspace/gitservice"
 	"ai-agent-manager/internal/workspace/readmodels"
 )
@@ -93,30 +91,21 @@ func workspaceCreateCheckpoint(args workspaceCreateCheckpointArgs) (workspaceChe
 	if err != nil {
 		return workspaceCheckpointRecord{}, err
 	}
-	messages, err := workspaceChatMessages(chat.ID)
-	if err != nil {
-		return workspaceCheckpointRecord{}, err
-	}
-
 	id := "checkpoint-" + randomID()
 	createdAt := time.Now().UnixMilli()
 	record := workspaceCheckpointRecord{
-		Version:          workspaceCheckpointVersion,
-		ID:               id,
-		ChatID:           chat.ID,
-		ProjectID:        project.ID,
-		LocalPath:        project.LocalPath,
-		Title:            checkpointTitle(args.Trigger, args.PromptPreview, createdAt),
-		CreatedAt:        createdAt,
-		Trigger:          firstNonEmpty(args.Trigger, workspaceCheckpointTriggerPrompt),
-		PromptPreview:    trimPromptPreview(args.PromptPreview),
-		RestoreOf:        strings.TrimSpace(args.RestoreOf),
-		ChatMessageIDs:   transcriptEntryIDs(messages),
-		ChatMessageCount: len(messages),
-		ChatSnapshotPath: workspaceCheckpointMessagesFile,
-		FileModes:        map[string]uint32{},
+		Version:       workspaceCheckpointVersion,
+		ID:            id,
+		ChatID:        chat.ID,
+		ProjectID:     project.ID,
+		LocalPath:     project.LocalPath,
+		Title:         checkpointTitle(args.Trigger, args.PromptPreview, createdAt),
+		CreatedAt:     createdAt,
+		Trigger:       firstNonEmpty(args.Trigger, workspaceCheckpointTriggerPrompt),
+		PromptPreview: trimPromptPreview(args.PromptPreview),
+		RestoreOf:     strings.TrimSpace(args.RestoreOf),
+		FileModes:     map[string]uint32{},
 	}
-
 	code, err := gitservice.CreateCodeCheckpoint(context.Background(), project.LocalPath, id, record.Title)
 	if err != nil {
 		code = gitservice.CodeCheckpoint{
@@ -136,9 +125,6 @@ func workspaceCreateCheckpoint(args workspaceCreateCheckpointArgs) (workspaceChe
 	}
 	record.Code = code
 
-	if err := workspaceWriteCheckpointMessagesSnapshot(record.ID, messages); err != nil {
-		return workspaceCheckpointRecord{}, err
-	}
 	if err := workspaceWriteCheckpointRecord(record); err != nil {
 		return workspaceCheckpointRecord{}, err
 	}
@@ -246,10 +232,11 @@ func workspaceRestoreCheckpoint(raw json.RawMessage) (workspaceCheckpointRestore
 	}
 	chatRestored := false
 	if mode == workspaceCheckpointModeChat || mode == workspaceCheckpointModeBoth {
-		if err := workspaceRestoreCheckpointChat(record); err != nil {
+		restored, err := workspaceRestoreCheckpointChat(record)
+		if err != nil {
 			return workspaceCheckpointRestoreResult{}, "", err
 		}
-		chatRestored = true
+		chatRestored = restored
 	}
 
 	return workspaceCheckpointRestoreResult{
@@ -278,20 +265,8 @@ func workspaceRestoreCheckpointCode(record workspaceCheckpointRecord) (gitservic
 	}
 }
 
-func workspaceRestoreCheckpointChat(record workspaceCheckpointRecord) error {
-	messages, err := workspaceCheckpointMessages(record)
-	if err != nil {
-		return err
-	}
-	event, err := events.New(events.TypeChatRestoredToCheckpoint, map[string]any{
-		"chatId":       record.ChatID,
-		"checkpointId": record.ID,
-		"messages":     messages,
-	})
-	if err != nil {
-		return err
-	}
-	return workspaceStore().Append(events.StreamMessages, event)
+func workspaceRestoreCheckpointChat(record workspaceCheckpointRecord) (bool, error) {
+	return false, nil
 }
 
 func workspaceCheckpointSummaryFromRecord(record workspaceCheckpointRecord) workspaceCheckpointSummary {
@@ -356,74 +331,6 @@ func workspaceWriteCheckpointRecord(record workspaceCheckpointRecord) error {
 
 func workspaceCheckpointMessagesPath(checkpointID string) string {
 	return filepath.Join(workspaceCheckpointDir(checkpointID), workspaceCheckpointMessagesFile)
-}
-
-func workspaceWriteCheckpointMessagesSnapshot(checkpointID string, messages []readmodels.TranscriptEntry) error {
-	if checkpointID == "" {
-		return errors.New("checkpoint id is required")
-	}
-	dir := workspaceCheckpointDir(checkpointID)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	tmp := workspaceCheckpointMessagesPath(checkpointID) + ".tmp"
-	file, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
-	if err != nil {
-		return err
-	}
-	gzipWriter := gzip.NewWriter(file)
-	encoder := json.NewEncoder(gzipWriter)
-	for _, message := range messages {
-		if err := encoder.Encode(message); err != nil {
-			_ = gzipWriter.Close()
-			_ = file.Close()
-			_ = os.Remove(tmp)
-			return err
-		}
-	}
-	if err := gzipWriter.Close(); err != nil {
-		_ = file.Close()
-		_ = os.Remove(tmp)
-		return err
-	}
-	if err := file.Close(); err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
-	return os.Rename(tmp, workspaceCheckpointMessagesPath(checkpointID))
-}
-
-func workspaceCheckpointMessages(record workspaceCheckpointRecord) ([]readmodels.TranscriptEntry, error) {
-	if len(record.Messages) > 0 || strings.TrimSpace(record.ChatSnapshotPath) == "" {
-		return append([]readmodels.TranscriptEntry(nil), record.Messages...), nil
-	}
-	file, err := os.Open(workspaceCheckpointMessagesPath(record.ID))
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, errors.New("checkpoint chat snapshot not found")
-		}
-		return nil, err
-	}
-	defer file.Close()
-	gzipReader, err := gzip.NewReader(file)
-	if err != nil {
-		return nil, err
-	}
-	defer gzipReader.Close()
-
-	decoder := json.NewDecoder(gzipReader)
-	messages := make([]readmodels.TranscriptEntry, 0, record.ChatMessageCount)
-	for {
-		var entry readmodels.TranscriptEntry
-		if err := decoder.Decode(&entry); err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			return nil, err
-		}
-		messages = append(messages, entry)
-	}
-	return messages, nil
 }
 
 func workspaceCheckpointMessageCount(record workspaceCheckpointRecord) int {
@@ -670,7 +577,7 @@ func workspaceRestoreFilesystemCodeCheckpoint(record workspaceCheckpointRecord) 
 func shouldSkipFilesystemCheckpointDir(rel string) bool {
 	name := filepath.Base(filepath.FromSlash(rel))
 	switch name {
-	case ".git", ".abolqasem", "node_modules", "vendor", "dist", "build", ".next", ".turbo", ".cache", "coverage", "target":
+	case ".git", ".abolqasem", ".antigravity", ".venv", "venv", ".idea", ".vscode", "node_modules", "vendor", "dist", "build", ".next", ".turbo", ".cache", "coverage", "target":
 		return true
 	default:
 		return false

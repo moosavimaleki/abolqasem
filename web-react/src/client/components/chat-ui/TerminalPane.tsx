@@ -6,6 +6,8 @@ import type { TerminalSnapshot } from "../../../shared/protocol"
 import type { AbolqasemSocket, SocketStatus } from "../../app/socket"
 import { useTheme } from "../../hooks/useTheme"
 
+export type TerminalDirectionMode = "normal" | "rtl" | "smart"
+
 interface Props {
   projectId: string
   terminalId: string
@@ -15,6 +17,12 @@ interface Props {
   clearVersion?: number
   focusRequestVersion?: number
   initialCommand?: string
+  mode?: "shell" | "tmux"
+  chatId?: string
+  tmuxSession?: string
+  command?: string
+  closeOnUnmount?: boolean
+  directionMode?: TerminalDirectionMode
   onPathChange?: (path: string | null) => void
   onCommandSent?: () => void
   onInitialCommandSent?: (terminalId: string) => void
@@ -120,6 +128,40 @@ function getMeasuredTerminalSize(terminal: Terminal, container: HTMLElement) {
 
 function refreshTerminal(terminal: Terminal) {
   terminal.refresh(0, Math.max(0, terminal.rows - 1))
+}
+
+export function filterTerminalInputForTmux(data: string) {
+  return data.replace(/\x1b\[(?:[>?])?[0-9;]*c/g, "")
+}
+
+function hasRtlText(value: string) {
+  return /[\u0590-\u05ff\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff]/.test(value)
+}
+
+function isTerminalCodeLike(value: string) {
+  const text = value.trim()
+  if (!text) return false
+  return /^(?:[$>#]\s*)?(?:npm|pnpm|bun|yarn|go|git|curl|docker|kubectl|python|node|php|composer)\b/.test(text)
+    || /[{}[\]();=<>|]/.test(text)
+    || /^\s*(?:const|let|var|function|class|import|export|return|if|for|while|foreach|namespace|use)\b/.test(text)
+}
+
+export function getTerminalRowDirection(text: string, mode: TerminalDirectionMode) {
+  if (mode === "normal") return "ltr"
+  if (mode === "rtl") return "rtl"
+  return hasRtlText(text) && !isTerminalCodeLike(text) ? "rtl" : "ltr"
+}
+
+function applyTerminalDirectionMode(container: HTMLElement | null, mode: TerminalDirectionMode) {
+  if (!container) return
+  container.dataset.terminalDirectionMode = mode
+  const rows = container.querySelectorAll<HTMLElement>(".xterm-rows > div")
+  rows.forEach((row) => {
+    const direction = getTerminalRowDirection(row.textContent ?? "", mode)
+    row.dir = direction
+    row.style.textAlign = direction === "rtl" ? "right" : "left"
+    row.style.unicodeBidi = direction === "rtl" ? "plaintext" : "normal"
+  })
 }
 
 function sameTerminalMetadata(
@@ -238,6 +280,12 @@ export function TerminalPane({
   clearVersion = 0,
   focusRequestVersion = 0,
   initialCommand,
+  mode = "shell",
+  chatId,
+  tmuxSession,
+  command,
+  closeOnUnmount = false,
+  directionMode = "normal",
   onPathChange,
   onCommandSent,
   onInitialCommandSent,
@@ -256,6 +304,10 @@ export function TerminalPane({
   const [error, setError] = useState<string | null>(null)
   const terminalTheme = resolvedTheme === "dark" ? TERMINAL_THEME_DARK : TERMINAL_THEME_LIGHT
   const sendInput = (data: string) => {
+    if (mode === "tmux") {
+      data = filterTerminalInputForTmux(data)
+      if (!data) return
+    }
     void socket.command({
       type: "terminal.input",
       terminalId,
@@ -292,6 +344,15 @@ export function TerminalPane({
   useEffect(() => {
     onCommandSentRef.current = onCommandSent
   }, [onCommandSent])
+
+  useEffect(() => {
+    const element = containerRef.current
+    applyTerminalDirectionMode(element, directionMode)
+    if (!element) return
+    const observer = new MutationObserver(() => applyTerminalDirectionMode(element, directionMode))
+    observer.observe(element, { childList: true, subtree: true, characterData: true })
+    return () => observer.disconnect()
+  }, [directionMode])
 
   useEffect(() => {
     sentInitialCommandRef.current = null
@@ -364,10 +425,16 @@ export function TerminalPane({
       resizeDisposable.dispose()
       dataDisposable.dispose()
       replayStateRef.current = serializeAddon.serialize()
+      if (closeOnUnmount) {
+        void socket.command({
+          type: "terminal.close",
+          terminalId,
+        }).catch(() => {})
+      }
       terminal.dispose()
       terminalRef.current = null
     }
-  }, [scrollback, socket, terminalId, terminalTheme])
+  }, [closeOnUnmount, scrollback, socket, terminalId, terminalTheme])
 
   useEffect(() => {
     const terminal = terminalRef.current
@@ -467,6 +534,10 @@ export function TerminalPane({
         type: "terminal.create",
         projectId,
         terminalId,
+        mode,
+        chatId,
+        tmuxSession,
+        command,
         cols: size.cols,
         rows: size.rows,
         scrollback,
@@ -545,12 +616,12 @@ export function TerminalPane({
         }
       },
     })
-  }, [connectionStatus, initialCommand, onInitialCommandSent, projectId, scrollback, socket, terminalId])
+  }, [chatId, command, connectionStatus, initialCommand, mode, onInitialCommandSent, projectId, scrollback, socket, terminalId, tmuxSession])
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pb-4">
       <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden px-3 py-1">
-        <div ref={containerRef} className="abolqasem-terminal min-h-0 min-w-0 flex-1 overflow-hidden w-full" />
+        <div ref={containerRef} data-terminal-direction-mode={directionMode} className="abolqasem-terminal min-h-0 min-w-0 flex-1 overflow-hidden w-full" />
       </div>
       {error ? <div className="px-3 py-1 text-xs text-destructive">Terminal error: {error}</div> : null}
     </div>

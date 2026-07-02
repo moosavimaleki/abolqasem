@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { getMacOptionInputSequence, getTerminalOptions } from "./TerminalPane"
+import { filterTerminalInputForTmux, getMacOptionInputSequence, getTerminalOptions, getTerminalRowDirection } from "./TerminalPane"
 
 describe("getTerminalOptions", () => {
   test("treats Option as Meta on macOS", () => {
@@ -90,5 +90,32 @@ describe("getMacOptionInputSequence", () => {
       ctrlKey: true,
       metaKey: false,
     }, "MacIntel")).toBeNull()
+  })
+})
+
+describe("filterTerminalInputForTmux", () => {
+  test("removes terminal device-attribute responses before forwarding input to tmux", () => {
+    expect(filterTerminalInputForTmux("\x1b[>0;276;0c")).toBe("")
+    expect(filterTerminalInputForTmux("سلام\x1b[?1;2c\r")).toBe("سلام\r")
+  })
+
+  test("keeps ordinary terminal key sequences", () => {
+    expect(filterTerminalInputForTmux("\x1b[A\r")).toBe("\x1b[A\r")
+  })
+})
+
+describe("getTerminalRowDirection", () => {
+  test("keeps normal mode left-to-right", () => {
+    expect(getTerminalRowDirection("سلام", "normal")).toBe("ltr")
+  })
+
+  test("forces rtl mode for every row", () => {
+    expect(getTerminalRowDirection("npm test", "rtl")).toBe("rtl")
+  })
+
+  test("uses rtl in smart mode only for prose-like rtl rows", () => {
+    expect(getTerminalRowDirection("سلام آماده‌ام", "smart")).toBe("rtl")
+    expect(getTerminalRowDirection("const value = 'سلام'", "smart")).toBe("ltr")
+    expect(getTerminalRowDirection("npm test", "smart")).toBe("ltr")
   })
 })

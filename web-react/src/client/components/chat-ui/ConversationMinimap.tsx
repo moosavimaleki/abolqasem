@@ -13,7 +13,6 @@ export interface ConversationMinimapProps {
   items: readonly MessageIndexItem[]
   loading?: boolean
   onScrollToMessage: (item: MessageIndexItem) => void | Promise<void>
-  onLoadMessage?: (item: MessageIndexItem) => Promise<void>
   side?: "left" | "right"
   className?: string
   topOffsetPx?: number
@@ -26,23 +25,16 @@ interface PositionedItem extends MessageIndexItem {
   topPercent: number
 }
 
-interface RenderedMark {
-  item: PositionedItem
-  topPercent: number
-}
-
 export function buildPositionedItems(items: readonly MessageIndexItem[]): PositionedItem[] {
-  const ordered = [...items]
+  const users = [...items]
     .filter((item) => item.role === "user")
     .sort((left, right) => left.sequence - right.sequence)
-  const count = ordered.length || 1
+  const count = Math.max(1, users.length)
 
-  return ordered.map((item, index) => {
-    return {
-      ...item,
-      topPercent: ((index + 0.5) / count) * 100,
-    }
-  })
+  return users.map((item, index) => ({
+    ...item,
+    topPercent: ((index + 0.5) / count) * 100,
+  }))
 }
 
 function buildPositionedItemMap(items: readonly PositionedItem[]) {
@@ -54,20 +46,13 @@ function buildPositionedItemMap(items: readonly PositionedItem[]) {
 }
 
 function minimapItemLabel(item: MessageIndexItem) {
-  return item.loaded
-    ? `User message ${item.sequence + 1}`
-    : `Load user message ${item.sequence + 1}`
-}
-
-function buildRenderedMarks(items: readonly PositionedItem[]): RenderedMark[] {
-  return items.map((item) => ({ item, topPercent: item.topPercent }))
+  return `User message ${item.sequence + 1}`
 }
 
 export const ConversationMinimap = memo(function ConversationMinimap({
   items,
   loading = false,
   onScrollToMessage,
-  onLoadMessage,
   side = "right",
   className,
   topOffsetPx = 0,
@@ -82,10 +67,6 @@ export const ConversationMinimap = memo(function ConversationMinimap({
 
   const positionedItems = useMemo(() => buildPositionedItems(items), [items])
   const itemMap = useMemo(() => buildPositionedItemMap(positionedItems), [positionedItems])
-  const renderedMarks = useMemo(
-    () => buildRenderedMarks(positionedItems),
-    [positionedItems],
-  )
   const previewItem = previewMessageId ? itemMap.get(previewMessageId) ?? null : null
 
   useEffect(() => {
@@ -143,13 +124,8 @@ export const ConversationMinimap = memo(function ConversationMinimap({
   }
 
   async function handleMessageSelect(item: MessageIndexItem) {
-    const shouldLoad = !item.loaded && onLoadMessage
     setPendingMessageId(item.id)
-
     try {
-      if (shouldLoad) {
-        await onLoadMessage(item)
-      }
       await onScrollToMessage(item)
       setFlashedMessageId(item.id)
     } finally {
@@ -170,15 +146,20 @@ export const ConversationMinimap = memo(function ConversationMinimap({
       data-side={side}
     >
       <div className="pointer-events-auto relative h-full w-11 rounded-[22px] bg-black/18 shadow-[0_18px_44px_rgba(3,8,20,0.28)] backdrop-blur-md">
-        <div className="absolute inset-y-3 left-1/2 flex w-[24px] -translate-x-1/2 flex-col justify-evenly">
-          {renderedMarks.map(({ item }) => {
-            const isLoading = item.id === pendingMessageId
+        <div className="absolute inset-y-3 left-1/2 w-[24px] -translate-x-1/2">
+          {positionedItems.map((item) => {
+            const isPending = item.id === pendingMessageId
+            const isFlashed = item.id === flashedMessageId
 
             return (
               <button
                 key={item.id}
                 type="button"
-                className="flex h-3 w-[26px] items-center justify-center rounded-full bg-transparent p-0 outline-none"
+                className="absolute flex h-3 w-[26px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-transparent p-0 outline-none"
+                style={{
+                  left: "50%",
+                  top: `${item.topPercent}%`,
+                }}
                 aria-label={minimapItemLabel(item)}
                 onClick={() => void handleMessageSelect(item)}
                 onMouseEnter={() => setHoveredMessageId(item.id)}
@@ -187,28 +168,14 @@ export const ConversationMinimap = memo(function ConversationMinimap({
                   setPreviewMessageId((current) => current === item.id ? null : current)
                 }}
               >
-                {item.loaded ? (
-                  <span
-                    className={cn(
-                      "block h-[2px] w-[20px] rounded-full bg-white/48",
-                      isLoading && "animate-pulse",
-                      item.id === flashedMessageId && "shadow-[0_0_10px_rgba(255,255,255,0.26)]",
-                    )}
-                    aria-hidden="true"
-                  />
-                ) : (
-                  <span
-                    className={cn(
-                      "flex h-[2px] w-[20px] items-center justify-center gap-[2px] rounded-full",
-                      isLoading && "animate-pulse",
-                    )}
-                    aria-hidden="true"
-                  >
-                    <span className="block h-[2px] w-[2px] rounded-full bg-white/48" />
-                    <span className="block h-[2px] w-[2px] rounded-full bg-white/48" />
-                    <span className="block h-[2px] w-[2px] rounded-full bg-white/48" />
-                  </span>
-                )}
+                <span
+                  className={cn(
+                    "block h-[2px] w-[20px] rounded-full bg-white/48",
+                    isPending && "animate-pulse",
+                    isFlashed && "shadow-[0_0_10px_rgba(255,255,255,0.26)]",
+                  )}
+                  aria-hidden="true"
+                />
               </button>
             )
           })}

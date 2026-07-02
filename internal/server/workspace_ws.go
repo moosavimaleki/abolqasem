@@ -1,6 +1,7 @@
 package server
 
 import (
+	"ai-agent-manager/internal/providers/providerexec"
 	"ai-agent-manager/internal/state"
 	"ai-agent-manager/internal/workspace/protocol"
 	"ai-agent-manager/internal/workspace/terminal"
@@ -398,13 +399,15 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 		return &response
 	case protocol.CommandChatCreate:
 		var payload struct {
-			ProjectID string `json:"projectId"`
+			ProjectID   string `json:"projectId"`
+			Provider    string `json:"provider"`
+			TmuxCommand string `json:"tmuxCommand"`
 		}
 		if err := json.Unmarshal(envelope.Command, &payload); err != nil {
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
 		}
-		chat, err := workspaceCreateChat(payload.ProjectID)
+		chat, err := workspaceCreateChatWithOptions(payload.ProjectID, payload.Provider, payload.TmuxCommand)
 		if err != nil {
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
@@ -436,6 +439,28 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 			return &response
 		}
 		workspaceConnections.broadcast(chatID)
+		response := protocol.AckEnvelope(envelope.ID, result)
+		return &response
+	case protocol.CommandChatExportTranscript:
+		result, err := workspaceExportChatTranscript(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		response := protocol.AckEnvelope(envelope.ID, result)
+		return &response
+	case protocol.CommandChatMigrateToTmux:
+		result, err := workspaceMigrateChatsToTmux(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		for _, chat := range result.Chats {
+			workspaceConnections.broadcast(chat.ChatID)
+		}
+		if len(result.Chats) == 0 {
+			workspaceConnections.broadcast("")
+		}
 		response := protocol.AckEnvelope(envelope.ID, result)
 		return &response
 	case protocol.CommandChatRename:
@@ -491,6 +516,15 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 			}
 			command.ChatID = chatID
 		}
+		if result, handled, err := workspaceSendTmuxChat(command); handled {
+			if err != nil {
+				response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+				return &response
+			}
+			workspaceConnections.broadcast(result.ChatID)
+			response := protocol.AckEnvelope(envelope.ID, result)
+			return &response
+		}
 		result, err := workspaceAgentCoordinator().Send(context.Background(), command)
 		if err != nil {
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
@@ -545,9 +579,14 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
 		}
-		if err := workspaceAgentCoordinator().Cancel(chatID); err != nil {
+		if handled, err := workspaceCancelTmuxChat(chatID); err != nil {
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
+		} else if !handled {
+			if err := workspaceAgentCoordinator().Cancel(chatID); err != nil {
+				response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+				return &response
+			}
 		}
 		workspaceConnections.broadcast(chatID)
 		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
@@ -572,6 +611,28 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 			return &response
 		}
 		if err := workspaceMarkChatRead(chatID); err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		workspaceConnections.broadcast(chatID)
+		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
+		return &response
+	case protocol.CommandChatRefresh:
+		chatID, err := decodeChatID(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		workspaceConnections.broadcast(chatID)
+		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
+		return &response
+	case protocol.CommandChatRestartTmux:
+		chatID, err := decodeChatID(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		if err := workspaceRestartTmuxChat(chatID); err != nil {
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
 		}
@@ -1048,11 +1109,15 @@ func (h *workspaceTerminalHub) create(raw json.RawMessage) (terminal.Snapshot, e
 
 func workspaceTerminalCreateRequest(raw json.RawMessage) (terminal.CreateRequest, error) {
 	var payload struct {
-		ProjectID  string `json:"projectId"`
-		TerminalID string `json:"terminalId"`
-		Cols       int    `json:"cols"`
-		Rows       int    `json:"rows"`
-		Scrollback int    `json:"scrollback"`
+		ProjectID   string `json:"projectId"`
+		TerminalID  string `json:"terminalId"`
+		Mode        string `json:"mode"`
+		ChatID      string `json:"chatId"`
+		TmuxSession string `json:"tmuxSession"`
+		Command     string `json:"command"`
+		Cols        int    `json:"cols"`
+		Rows        int    `json:"rows"`
+		Scrollback  int    `json:"scrollback"`
 	}
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return terminal.CreateRequest{}, err
@@ -1061,13 +1126,33 @@ func workspaceTerminalCreateRequest(raw json.RawMessage) (terminal.CreateRequest
 	if err != nil {
 		return terminal.CreateRequest{}, err
 	}
+	mode := strings.TrimSpace(payload.Mode)
+	tmuxSession := strings.TrimSpace(payload.TmuxSession)
+	command := strings.TrimSpace(payload.Command)
+	if mode == "tmux" && tmuxSession == "" {
+		tmuxSession = workspaceChatTmuxSession(payload.ChatID)
+	}
+	if mode == "tmux" && strings.TrimSpace(payload.ChatID) != "" {
+		if chat, _, err := workspaceChatProjectRequired(payload.ChatID); err == nil {
+			if strings.TrimSpace(chat.TmuxSession) != "" {
+				tmuxSession = chat.TmuxSession
+			}
+			if command == "" {
+				command = workspaceTmuxCommandForChat(chat, "")
+			}
+		}
+	}
 	return terminal.CreateRequest{
-		ProjectID:  payload.ProjectID,
-		TerminalID: payload.TerminalID,
-		CWD:        projectPath,
-		Cols:       payload.Cols,
-		Rows:       payload.Rows,
-		Scrollback: payload.Scrollback,
+		ProjectID:   payload.ProjectID,
+		TerminalID:  payload.TerminalID,
+		CWD:         projectPath,
+		Mode:        mode,
+		ChatID:      payload.ChatID,
+		TmuxSession: tmuxSession,
+		Command:     command,
+		Cols:        payload.Cols,
+		Rows:        payload.Rows,
+		Scrollback:  payload.Scrollback,
 	}, nil
 }
 
@@ -1110,6 +1195,7 @@ func workspaceAppSettingsSnapshot() map[string]any {
 		settings, _ = state.LoadSettings()
 	}
 	settings = state.NormalizeSettings(settings)
+	providerexec.SetConfiguredExecutables(settings.ProviderExecutables)
 	return map[string]any{
 		"browserSettingsMigrated": settings.BrowserSettingsMigrated,
 		"locale":                  settings.Locale,
@@ -1129,6 +1215,8 @@ func workspaceAppSettingsSnapshot() map[string]any {
 			"httpProxy": settings.ProviderProxy.HTTPProxy,
 			"noProxy":   settings.ProviderProxy.NoProxy,
 		},
+		"providerExecutables":  providerExecutableSnapshot(settings.ProviderExecutables),
+		"tmuxCommands":         settings.TmuxCommands,
 		"defaultProvider":      settings.DefaultProvider,
 		"providerDefaults":     providerDefaultsSnapshot(settings.ProviderDefaults),
 		"providerModelCatalog": providerModelCatalogSnapshot(settings.ProviderModelCatalog),
@@ -1141,6 +1229,20 @@ func workspaceAppSettingsSnapshot() map[string]any {
 		"warning":            nil,
 		"filePathDisplay":    state.GetSettingsFilePath(),
 	}
+}
+
+func providerExecutableSnapshot(configured map[string]string) map[string]string {
+	out := map[string]string{}
+	for _, provider := range []string{"claude", "codex", "gemini"} {
+		if executable := strings.TrimSpace(configured[provider]); executable != "" {
+			out[provider] = executable
+			continue
+		}
+		if executable := providerexec.DetectExecutable(provider); executable != "" {
+			out[provider] = executable
+		}
+	}
+	return out
 }
 
 func providerDefaultsSnapshot(defaults map[string]state.ProviderPreference) map[string]any {

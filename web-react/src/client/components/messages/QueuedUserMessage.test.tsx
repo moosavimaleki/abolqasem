@@ -16,7 +16,6 @@ describe("QueuedUserMessage", () => {
       <QueuedUserMessage
         message={message}
         onRemove={() => undefined}
-        onSendNow={() => undefined}
       />
     )
 

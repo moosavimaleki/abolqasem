@@ -418,6 +418,8 @@ export const fa: TranslationDictionary = {
     defaultEditorDescription: "برای باز کردن لینک‌های transcript یا فایل‌ها از منوی diff گیت استفاده می‌شود",
     defaultProvider: "ارائه‌دهنده پیش‌فرض",
     defaultProviderDescription: "اجراکننده پیش‌فرض برای چت‌های جدید، تا وقتی یک نشست موجود ارائه‌دهنده را قفل نکرده باشد.",
+    providerExecutable: (provider: string) => `فایل اجرایی ${provider}`,
+    providerExecutablePlaceholder: (provider: string) => `مسیر اجرای ${provider}`,
     defaultSuffix: "پیش‌فرض",
     discover: "جست‌وجو",
     general: "عمومی",

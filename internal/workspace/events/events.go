@@ -38,6 +38,7 @@ const (
 	TypeChatProviderSet  = "chat_provider_set"
 	TypeChatPlanModeSet  = "chat_plan_mode_set"
 	TypeChatReadStateSet = "chat_read_state_set"
+	TypeChatRuntimeSet   = "chat_runtime_set"
 
 	TypeMessageAppended          = "message_appended"
 	TypeChatRestoredToCheckpoint = "chat_restored_to_checkpoint"

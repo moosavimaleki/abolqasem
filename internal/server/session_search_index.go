@@ -16,7 +16,6 @@ import (
 
 	"ai-agent-manager/internal/parser"
 	"ai-agent-manager/internal/state"
-	"ai-agent-manager/internal/workspace/events"
 	"ai-agent-manager/internal/workspace/legacyimport"
 	"ai-agent-manager/internal/workspace/readmodels"
 	"ai-agent-manager/internal/workspace/transcript"
@@ -271,52 +270,65 @@ func (index *sessionSearchIndexState) rebuild(ctx context.Context, appState *sta
 
 func indexWorkspaceSessions(ctx context.Context, addDoc func(*bluge.Document, string) error) error {
 	store := workspaceStore()
-	storeState, err := store.LoadState()
+	storeState, err := store.LoadStateLight()
 	if err != nil {
 		return nil
 	}
-	messageEvents, err := store.Replay(events.StreamMessages)
-	if err != nil {
-		return nil
-	}
-	toolCallIDByToolID := map[string]string{}
-	indexByChat := map[string]int{}
-	for _, event := range messageEvents {
+	for _, chat := range storeState.ChatsByID {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if event.Type != events.TypeMessageAppended {
-			continue
-		}
-		var data struct {
-			ChatID string                     `json:"chatId"`
-			Entry  readmodels.TranscriptEntry `json:"entry"`
-		}
-		if event.DecodeData(&data) != nil || strings.TrimSpace(data.ChatID) == "" {
-			continue
-		}
-		chat, ok := storeState.ChatsByID[data.ChatID]
-		if !ok || chat.DeletedAt != 0 {
+		if chat.DeletedAt != 0 {
 			continue
 		}
 		project, ok := storeState.ProjectsByID[chat.ProjectID]
 		if !ok || project.DeletedAt != 0 {
 			continue
 		}
-		if transcript.Kind(data.Entry) == transcript.KindToolCall {
-			if toolID := workspaceEntryToolID(data.Entry); toolID != "" {
-				toolCallIDByToolID[chat.ID+"\x00"+toolID] = workspaceEntryString(data.Entry, "_id")
+		if meta, ok := workspaceNativeTranscriptMetaForChatRecord(chat, project); ok {
+			var addErr error
+			index := 0
+			streamErr := parser.StreamSearchableMessages(meta.Agent, meta.SessionID, meta.TranscriptPath, func(message parser.SearchableMessage) bool {
+				if strings.TrimSpace(message.Text) == "" {
+					return true
+				}
+				index++
+				if addErr = addDoc(newWorkspaceNativeSessionSearchDocument(chat, project, meta, message, index), "workspace:"+chat.ID); addErr != nil {
+					return false
+				}
+				return true
+			})
+			if addErr != nil {
+				return addErr
 			}
-		}
-		kind, role, text := workspaceEntrySearchText(data.Entry)
-		if strings.TrimSpace(text) == "" {
+			if streamErr != nil && !errors.Is(streamErr, parser.ErrTranscriptUnavailable) {
+				return streamErr
+			}
 			continue
 		}
-		indexByChat[chat.ID]++
-		messageID := workspaceIndexedMessageID(chat.ID, data.Entry, toolCallIDByToolID)
-		doc := newWorkspaceSessionSearchDocument(chat, project, data.Entry, kind, role, text, messageID, indexByChat[chat.ID])
-		if err := addDoc(doc, "workspace:"+chat.ID); err != nil {
-			return err
+		if workspaceChatHasTmuxRuntime(chat) {
+			continue
+		}
+		entries, err := store.ReplayTranscriptEntriesForChat(chat.ID, 0)
+		if err != nil {
+			continue
+		}
+		toolCallIDByToolID := map[string]string{}
+		for index, entry := range entries {
+			if transcript.Kind(entry) == transcript.KindToolCall {
+				if toolID := workspaceEntryToolID(entry); toolID != "" {
+					toolCallIDByToolID[chat.ID+"\x00"+toolID] = workspaceEntryString(entry, "_id")
+				}
+			}
+			kind, role, text := workspaceEntrySearchText(entry)
+			if strings.TrimSpace(text) == "" {
+				continue
+			}
+			messageID := workspaceIndexedMessageID(chat.ID, entry, toolCallIDByToolID)
+			doc := newWorkspaceSessionSearchDocument(chat, project, entry, kind, role, text, messageID, index+1)
+			if err := addDoc(doc, "workspace:"+chat.ID); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -384,6 +396,36 @@ func newWorkspaceSessionSearchDocument(chat readmodels.ChatRecord, project readm
 		AddField(blugeStoredField("message_created_at", formatSearchIndexTimePtr(createdAt)))
 }
 
+func newWorkspaceNativeSessionSearchDocument(chat readmodels.ChatRecord, project readmodels.ProjectRecord, meta state.SessionMeta, message parser.SearchableMessage, index int) *bluge.Document {
+	updatedAt := time.UnixMilli(max(chat.UpdatedAt, chat.LastMessageAt, chat.CreatedAt))
+	key := "workspace:" + chat.ID
+	messageID := workspaceSearchableCursor(message)
+	docID := "workspace-native:" + shortSessionSearchHash(chat.ID+"\x00"+messageID+"\x00"+strconv.Itoa(index))
+	return bluge.NewDocument(docID).
+		AddField(bluge.NewTextField("body", message.Text)).
+		AddField(blugeStoredField("key", key)).
+		AddField(blugeStoredField("chat_id", chat.ID)).
+		AddField(blugeStoredField("agent", meta.Agent)).
+		AddField(blugeStoredField("session_id", meta.SessionID)).
+		AddField(blugeStoredField("session_name", chat.Title)).
+		AddField(blugeStoredField("transcript_path", meta.TranscriptPath)).
+		AddField(blugeStoredField("cwd", project.LocalPath)).
+		AddField(blugeStoredField("project_name", project.Title)).
+		AddField(blugeStoredField("model", "")).
+		AddField(blugeStoredField("updated_at", formatSearchIndexTime(updatedAt))).
+		AddField(blugeStoredField("first_preview", "")).
+		AddField(blugeStoredField("last_preview", trimSearchIndexStoredText(message.Text))).
+		AddField(blugeStoredField("message_count", "0")).
+		AddField(blugeStoredField("metadata_only", "false")).
+		AddField(blugeStoredField("invalid_reason", "")).
+		AddField(blugeStoredField("message_id", messageID)).
+		AddField(blugeStoredField("message_role", message.Role)).
+		AddField(blugeStoredField("message_index", strconv.Itoa(message.Index))).
+		AddField(blugeStoredField("message_kind", message.Kind)).
+		AddField(blugeStoredField("message_text", trimSearchIndexStoredText(message.Text))).
+		AddField(blugeStoredField("message_created_at", formatSearchIndexTimePtr(message.CreatedAt)))
+}
+
 func sessionSearchResultFromFields(fields map[string]string) sessionSearchResult {
 	messageCount, _ := strconv.Atoi(fields["message_count"])
 	metadataOnly, _ := strconv.ParseBool(fields["metadata_only"])
@@ -449,6 +491,19 @@ func sessionSearchSignature(appState *state.AppState) string {
 		maxUpdated := int64(0)
 		for _, chat := range storeState.ChatsByID {
 			maxUpdated = max(maxUpdated, chat.UpdatedAt, chat.LastMessageAt, chat.CreatedAt, chat.DeletedAt)
+			if path := strings.TrimSpace(chat.NativeTranscriptPath); path != "" {
+				if info, err := os.Stat(path); err == nil {
+					parts = append(parts, strings.Join([]string{
+						"native",
+						chat.ID,
+						path,
+						strconv.FormatInt(info.Size(), 10),
+						info.ModTime().UTC().Format(time.RFC3339Nano),
+					}, "\x00"))
+				} else {
+					parts = append(parts, strings.Join([]string{"native", chat.ID, path, "missing"}, "\x00"))
+				}
+			}
 		}
 		for _, project := range storeState.ProjectsByID {
 			maxUpdated = max(maxUpdated, project.UpdatedAt, project.CreatedAt, project.DeletedAt)

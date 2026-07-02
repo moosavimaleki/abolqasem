@@ -417,6 +417,8 @@ export const en = {
     defaultEditorDescription: "Used when opening transcript links or files from the git diff menu",
     defaultProvider: "Default Provider",
     defaultProviderDescription: "The default harness used for new chats before a provider is locked by an existing session.",
+    providerExecutable: (provider: string) => `${provider} executable`,
+    providerExecutablePlaceholder: (provider: string) => `Path to ${provider}`,
     defaultSuffix: "default",
     discover: "Discover",
     general: "General",

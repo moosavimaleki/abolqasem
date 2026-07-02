@@ -134,16 +134,20 @@ export type ClientCommand =
       column?: number
       editor?: EditorOpenSettings
     }
-  | { type: "chat.create"; projectId: string }
+  | { type: "chat.create"; projectId: string; provider?: AgentProvider; tmuxCommand?: string }
   | { type: "chat.fork"; chatId: string }
   | { type: "chat.convertPreview"; chatId: string; targetProvider: AgentProvider; targetProjectId?: string }
   | { type: "chat.convert"; chatId: string; targetProvider: AgentProvider; targetProjectId?: string }
+  | { type: "chat.exportTranscript"; chatId: string; targetProvider?: AgentProvider; targetProjectId?: string }
+  | { type: "chat.migrateToTmux"; chatIds?: string[]; dryRun?: boolean; compact?: boolean }
   | { type: "chat.rename"; chatId: string; title: string }
   | { type: "chat.archive"; chatId: string }
   | { type: "chat.unarchive"; chatId: string }
   | { type: "chat.delete"; chatId: string }
   | { type: "chat.setDraftProtection"; chatIds: string[] }
   | { type: "chat.markRead"; chatId: string }
+  | { type: "chat.refresh"; chatId: string }
+  | { type: "chat.restartTmux"; chatId: string }
   | {
       type: "chat.send"
       chatId?: string
@@ -253,7 +257,18 @@ export type ClientCommand =
       chatId: string
       queuedMessageId: string
     }
-  | { type: "terminal.create"; projectId: string; terminalId: string; cols: number; rows: number; scrollback: number }
+  | {
+      type: "terminal.create"
+      projectId: string
+      terminalId: string
+      cols: number
+      rows: number
+      scrollback: number
+      mode?: "shell" | "tmux"
+      chatId?: string
+      tmuxSession?: string
+      command?: string
+    }
   | { type: "terminal.input"; terminalId: string; data: string }
   | { type: "terminal.resize"; terminalId: string; cols: number; rows: number }
   | { type: "terminal.close"; terminalId: string }

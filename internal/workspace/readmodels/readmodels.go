@@ -2,6 +2,7 @@ package readmodels
 
 import (
 	"sort"
+	"strings"
 	"time"
 
 	"ai-agent-manager/internal/providers/catalog"
@@ -37,6 +38,12 @@ type ChatRecord struct {
 	HasMessages             bool    `json:"hasMessages,omitempty"`
 	LastMessageAt           int64   `json:"lastMessageAt,omitempty"`
 	LastTurnOutcome         *string `json:"lastTurnOutcome"`
+	TmuxSession             string  `json:"tmuxSession,omitempty"`
+	TmuxCommand             string  `json:"tmuxCommand,omitempty"`
+	NativeSessionID         string  `json:"nativeSessionId,omitempty"`
+	NativeTranscriptPath    string  `json:"nativeTranscriptPath,omitempty"`
+	ParentChatID            string  `json:"parentChatId,omitempty"`
+	LastSummary             string  `json:"lastSummary,omitempty"`
 }
 
 type StoreState struct {
@@ -94,6 +101,12 @@ type ChatRuntime struct {
 	PendingForkSessionToken *string         `json:"pendingForkSessionToken,omitempty"`
 	ReadOnly                bool            `json:"readOnly,omitempty"`
 	LegacySessionKey        string          `json:"legacySessionKey,omitempty"`
+	TmuxSession             string          `json:"tmuxSession,omitempty"`
+	TmuxCommand             string          `json:"tmuxCommand,omitempty"`
+	NativeSessionID         string          `json:"nativeSessionId,omitempty"`
+	NativeTranscriptPath    string          `json:"nativeTranscriptPath,omitempty"`
+	ParentChatID            string          `json:"parentChatId,omitempty"`
+	LastSummary             string          `json:"lastSummary,omitempty"`
 }
 
 type ChatHistorySnapshot struct {
@@ -167,6 +180,7 @@ type SidebarChatRow struct {
 	LocalPath        string  `json:"localPath"`
 	Provider         *string `json:"provider"`
 	LastMessageAt    *int64  `json:"lastMessageAt,omitempty"`
+	Preview          string  `json:"preview,omitempty"`
 	HasAutomation    bool    `json:"hasAutomation"`
 	CanFork          bool    `json:"canFork,omitempty"`
 	ReadOnly         bool    `json:"readOnly,omitempty"`
@@ -231,9 +245,16 @@ func Apply(state StoreState, event events.Event) StoreState {
 		state.ProjectsByID[data.ProjectID] = record
 	case events.TypeChatCreated:
 		var data struct {
-			ChatID    string `json:"chatId"`
-			ProjectID string `json:"projectId"`
-			Title     string `json:"title"`
+			ChatID               string `json:"chatId"`
+			ProjectID            string `json:"projectId"`
+			Title                string `json:"title"`
+			Provider             string `json:"provider"`
+			TmuxSession          string `json:"tmuxSession"`
+			TmuxCommand          string `json:"tmuxCommand"`
+			NativeSessionID      string `json:"nativeSessionId"`
+			NativeTranscriptPath string `json:"nativeTranscriptPath"`
+			ParentChatID         string `json:"parentChatId"`
+			LastSummary          string `json:"lastSummary"`
 		}
 		if event.DecodeData(&data) != nil || data.ChatID == "" {
 			return state
@@ -245,6 +266,15 @@ func Apply(state StoreState, event events.Event) StoreState {
 		record.ID = data.ChatID
 		record.ProjectID = data.ProjectID
 		record.Title = data.Title
+		if strings.TrimSpace(data.Provider) != "" {
+			record.Provider = &data.Provider
+		}
+		record.TmuxSession = data.TmuxSession
+		record.TmuxCommand = data.TmuxCommand
+		record.NativeSessionID = data.NativeSessionID
+		record.NativeTranscriptPath = data.NativeTranscriptPath
+		record.ParentChatID = data.ParentChatID
+		record.LastSummary = data.LastSummary
 		record.UpdatedAt = event.Timestamp
 		record.Unread = false
 		state.ChatsByID[record.ID] = record
@@ -304,6 +334,41 @@ func Apply(state StoreState, event events.Event) StoreState {
 		}
 		record := state.ChatsByID[data.ChatID]
 		record.Unread = data.Unread
+		record.UpdatedAt = event.Timestamp
+		state.ChatsByID[data.ChatID] = record
+		state = touchProjectTimestampForChat(state, record, event.Timestamp)
+	case events.TypeChatRuntimeSet:
+		var data struct {
+			ChatID               string `json:"chatId"`
+			TmuxSession          string `json:"tmuxSession"`
+			TmuxCommand          string `json:"tmuxCommand"`
+			NativeSessionID      string `json:"nativeSessionId"`
+			NativeTranscriptPath string `json:"nativeTranscriptPath"`
+			ParentChatID         string `json:"parentChatId"`
+			LastSummary          string `json:"lastSummary"`
+		}
+		if event.DecodeData(&data) != nil || data.ChatID == "" {
+			return state
+		}
+		record := state.ChatsByID[data.ChatID]
+		if data.TmuxSession != "" {
+			record.TmuxSession = data.TmuxSession
+		}
+		if data.TmuxCommand != "" {
+			record.TmuxCommand = data.TmuxCommand
+		}
+		if data.NativeSessionID != "" {
+			record.NativeSessionID = data.NativeSessionID
+		}
+		if data.NativeTranscriptPath != "" {
+			record.NativeTranscriptPath = data.NativeTranscriptPath
+		}
+		if data.ParentChatID != "" {
+			record.ParentChatID = data.ParentChatID
+		}
+		if data.LastSummary != "" {
+			record.LastSummary = data.LastSummary
+		}
 		record.UpdatedAt = event.Timestamp
 		state.ChatsByID[data.ChatID] = record
 		state = touchProjectTimestampForChat(state, record, event.Timestamp)
@@ -571,6 +636,11 @@ func DeriveChatSnapshot(
 			PlanMode:                chat.PlanMode,
 			SessionToken:            chat.SessionToken,
 			PendingForkSessionToken: chat.PendingForkSessionToken,
+			TmuxSession:             chat.TmuxSession,
+			NativeSessionID:         chat.NativeSessionID,
+			NativeTranscriptPath:    chat.NativeTranscriptPath,
+			ParentChatID:            chat.ParentChatID,
+			LastSummary:             chat.LastSummary,
 		},
 		QueuedMessages:     clonedQueued,
 		Messages:           transcript.Messages,
@@ -700,6 +770,7 @@ func sidebarRow(project ProjectRecord, chat ChatRecord, activeStatus AbolqasemSt
 		LocalPath:     project.LocalPath,
 		Provider:      chat.Provider,
 		LastMessageAt: lastMessageAt,
+		Preview:       chat.LastSummary,
 		HasAutomation: false,
 		CanFork:       chat.Provider != nil,
 	}
@@ -776,7 +847,7 @@ func transcriptEntryTimestamp(entry TranscriptEntry) int64 {
 
 func cloneQueuedMessage(message QueuedChatMessage) QueuedChatMessage {
 	cloned := message
-	cloned.Attachments = append([]ChatAttachment(nil), message.Attachments...)
+	cloned.Attachments = append(make([]ChatAttachment, 0, len(message.Attachments)), message.Attachments...)
 	return cloned
 }
 

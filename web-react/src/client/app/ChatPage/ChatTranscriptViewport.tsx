@@ -98,6 +98,21 @@ function buildPromptCheckpointMap(
   return result
 }
 
+function buildLiveMinimapItems(messages: HydratedTranscriptMessage[]): MessageIndexItem[] {
+  return messages
+    .map((message, sequence): MessageIndexItem | null => {
+      if (message.kind !== "user_prompt") return null
+      return {
+        id: message.id,
+        sequence,
+        role: "user",
+        loaded: true,
+        preview: message.content.trim().slice(0, CHECKPOINT_PROMPT_PREVIEW_MAX),
+      }
+    })
+    .filter((item): item is MessageIndexItem => Boolean(item))
+}
+
 type TranscriptViewportRow = ResolvedTranscriptRow & {
   promptCheckpoint?: ChatCheckpointSummary
 }
@@ -115,12 +130,12 @@ interface ChatTranscriptViewportProps {
   isHistoryLoading: boolean
   hasOlderHistory: boolean
   isProcessing: boolean
+  hasTmuxRuntime?: boolean
   runtimeStatus: string | null
   isDraining: boolean
   commandError: string | null
   loadOlderHistory: () => Promise<void>
   onStopDraining: () => void
-  onSteerQueuedMessage: (queuedMessageId: string) => Promise<void>
   onRemoveQueuedMessage: (queuedMessageId: string) => Promise<void>
   onOpenLocalLink: AbolqasemState["handleOpenLocalLink"]
   onAskUserQuestionSubmit: AbolqasemState["handleAskUserQuestion"]
@@ -141,7 +156,6 @@ interface ChatTranscriptViewportProps {
   platform?: NodeJS.Platform
   headerOffsetPx?: number
   onMinimapScrollToMessage?: (item: MessageIndexItem) => Promise<void>
-  onMinimapLoadMessage?: (item: MessageIndexItem) => Promise<void>
 }
 
 export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
@@ -157,12 +171,12 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
   isHistoryLoading,
   hasOlderHistory,
   isProcessing,
+  hasTmuxRuntime = false,
   runtimeStatus,
   isDraining,
   commandError,
   loadOlderHistory,
   onStopDraining,
-  onSteerQueuedMessage,
   onRemoveQueuedMessage,
   onOpenLocalLink,
   onAskUserQuestionSubmit,
@@ -183,7 +197,6 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
   platform = "darwin",
   headerOffsetPx = CHAT_NAVBAR_OFFSET_PX,
   onMinimapScrollToMessage,
-  onMinimapLoadMessage,
 }: ChatTranscriptViewportProps) {
   const { t, direction } = useI18n()
   const [appearanceSettings] = useReaderAppearanceSettings()
@@ -242,13 +255,16 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
   )
   const loadedMessageIds = useMemo(() => new Set(messages.map((message) => message.id)), [messages])
   const minimapItems = useMemo<MessageIndexItem[]>(() => {
+    if (hasTmuxRuntime) {
+      return buildLiveMinimapItems(messages)
+    }
     return conversationIndex
       .filter((item) => item.role === "user")
       .map((item) => ({
         ...item,
         loaded: loadedMessageIds.has(item.id),
       }))
-  }, [conversationIndex, loadedMessageIds])
+  }, [conversationIndex, hasTmuxRuntime, loadedMessageIds, messages])
 
   useEffect(() => {
     setToolGroupExpanded({})
@@ -498,13 +514,12 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
 
   const listFooter = (
     <div className={cn("mx-auto w-full max-w-[800px]", transcriptAppearanceClassName)} dir={direction} style={transcriptAppearanceStyle}>
-      {isProcessing ? <ProcessingMessage status={runtimeStatus ?? undefined} /> : null}
+      {isProcessing && !hasTmuxRuntime ? <ProcessingMessage status={runtimeStatus ?? undefined} /> : null}
       {queuedMessages.map((message) => (
         <QueuedUserMessage
           key={message.id}
           message={message}
           onRemove={() => void onRemoveQueuedMessage(message.id)}
-          onSendNow={() => void onSteerQueuedMessage(message.id)}
         />
       ))}
       {!isProcessing && isDraining ? (
@@ -551,7 +566,6 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
                 items={minimapItems}
                 loading={conversationIndexLoading}
                 onScrollToMessage={onMinimapScrollToMessage}
-                onLoadMessage={onMinimapLoadMessage}
                 side={direction === "rtl" ? "left" : "right"}
                 topOffsetPx={headerOffsetPx + 10}
                 bottomOffsetPx={Math.max(12, transcriptPaddingBottom + 10)}

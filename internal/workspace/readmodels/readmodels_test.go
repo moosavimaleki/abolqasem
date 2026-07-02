@@ -46,6 +46,42 @@ func TestDeriveSidebarData(t *testing.T) {
 	}
 }
 
+func TestChatRuntimeMetadataFlowsToSnapshot(t *testing.T) {
+	projectEvent, _ := events.NewAt(events.TypeProjectOpened, 100, map[string]any{
+		"projectId": "project-1",
+		"localPath": "/tmp/project",
+		"title":     "project",
+	})
+	chatEvent, _ := events.NewAt(events.TypeChatCreated, 200, map[string]any{
+		"chatId":      "chat-1",
+		"projectId":   "project-1",
+		"title":       "first chat",
+		"tmuxSession": "abolqasem-chat-1",
+	})
+	runtimeEvent, _ := events.NewAt(events.TypeChatRuntimeSet, 300, map[string]any{
+		"chatId":               "chat-1",
+		"nativeSessionId":      "thread-1",
+		"nativeTranscriptPath": "/tmp/thread.jsonl",
+		"parentChatId":         "chat-parent",
+		"lastSummary":          "latest state",
+	})
+
+	snapshot := DeriveChatSnapshot(
+		Replay([]events.Event{projectEvent, chatEvent, runtimeEvent}),
+		nil,
+		nil,
+		"chat-1",
+		ChatTranscriptSnapshot{},
+	)
+	if snapshot == nil {
+		t.Fatal("expected chat snapshot")
+	}
+	runtime := snapshot.Runtime
+	if runtime.TmuxSession != "abolqasem-chat-1" || runtime.NativeSessionID != "thread-1" || runtime.NativeTranscriptPath != "/tmp/thread.jsonl" || runtime.ParentChatID != "chat-parent" || runtime.LastSummary != "latest state" {
+		t.Fatalf("unexpected runtime metadata: %#v", runtime)
+	}
+}
+
 func TestDeriveSidebarDataSkipsDeletedProject(t *testing.T) {
 	opened, err := events.NewAt(events.TypeProjectOpened, 100, map[string]any{
 		"projectId": "project-1",
@@ -301,6 +337,9 @@ func TestDeriveChatSnapshotIncludesProviders(t *testing.T) {
 	}
 	if len(chat.QueuedMessages) != 1 || chat.QueuedMessages[0].Content != "follow up" {
 		t.Fatalf("unexpected queued messages: %#v", chat.QueuedMessages)
+	}
+	if chat.QueuedMessages[0].Attachments == nil {
+		t.Fatal("expected queued message attachments to serialize as an empty array")
 	}
 	if chat.History.RecentLimit != 200 {
 		t.Fatalf("expected recent limit 200, got %d", chat.History.RecentLimit)

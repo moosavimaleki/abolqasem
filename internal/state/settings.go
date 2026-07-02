@@ -36,6 +36,8 @@ type AppSettings struct {
 	DefaultProvider                 string                                   `json:"default_provider"`
 	ProviderDefaults                map[string]ProviderPreference            `json:"provider_defaults"`
 	ProviderModelCatalog            catalog.ProviderModelInventoryByProvider `json:"provider_model_catalog"`
+	ProviderExecutables             map[string]string                        `json:"provider_executables"`
+	TmuxCommands                    map[string]string                        `json:"tmux_commands"`
 	CommitMessageGenerator          CommitMessageGeneratorSettings           `json:"commit_message_generator"`
 	DefaultAgent                    string                                   `json:"default_agent"`
 	AgentModels                     map[string]string                        `json:"agent_models"`
@@ -75,6 +77,8 @@ type AppSettingsPatch struct {
 	DefaultProvider         string                                 `json:"defaultProvider"`
 	ProviderDefaults        map[string]ProviderPreferencePatch     `json:"providerDefaults"`
 	ProviderModelCatalog    map[string]ProviderModelInventoryPatch `json:"providerModelCatalog"`
+	ProviderExecutables     map[string]string                      `json:"providerExecutables"`
+	TmuxCommands            map[string]string                      `json:"tmuxCommands"`
 	CommitMessageGenerator  *CommitMessageGeneratorPatch           `json:"commitMessageGenerator"`
 }
 
@@ -160,6 +164,8 @@ func DefaultAppSettings() AppSettings {
 			},
 		},
 		ProviderModelCatalog: catalog.ProviderModelInventoryByProvider{},
+		ProviderExecutables:  map[string]string{},
+		TmuxCommands:         map[string]string{},
 		CommitMessageGenerator: CommitMessageGeneratorSettings{
 			Provider: "codex",
 			Model:    catalog.CodexRuntimeDefaultModel(),
@@ -238,6 +244,8 @@ func NormalizeSettings(settings AppSettings) AppSettings {
 	settings.ProviderProxy = normalizeProviderProxySettings(settings.ProviderProxy)
 	settings.DefaultProvider = normalizeDefaultProvider(settings.DefaultProvider, defaults.DefaultProvider)
 	settings.ProviderModelCatalog = normalizeProviderModelCatalog(settings.ProviderModelCatalog)
+	settings.ProviderExecutables = normalizeProviderExecutables(settings.ProviderExecutables)
+	settings.TmuxCommands = normalizeTmuxCommands(settings.TmuxCommands)
 	settings.CommitMessageGenerator = normalizeCommitMessageGenerator(settings.CommitMessageGenerator, settings.ProviderModelCatalog)
 	settings.ProviderDefaults = normalizeProviderDefaults(settings.ProviderDefaults, defaults.ProviderDefaults, settings.ProviderModelCatalog)
 	settings.AgentModels = normalizeAgentModels(settings.AgentModels)
@@ -329,6 +337,30 @@ func ApplySettingsPatch(settings AppSettings, patch AppSettingsPatch) AppSetting
 				current.CustomModels = append([]catalog.ProviderModelOption(nil), (*modelPatch.CustomModels)...)
 			}
 			settings.ProviderModelCatalog[provider] = current
+		}
+	}
+	if len(patch.ProviderExecutables) > 0 {
+		if settings.ProviderExecutables == nil {
+			settings.ProviderExecutables = map[string]string{}
+		}
+		for provider, executable := range patch.ProviderExecutables {
+			provider = normalizeWorkspaceProvider(provider)
+			if provider == "" {
+				continue
+			}
+			settings.ProviderExecutables[provider] = strings.TrimSpace(executable)
+		}
+	}
+	if len(patch.TmuxCommands) > 0 {
+		if settings.TmuxCommands == nil {
+			settings.TmuxCommands = map[string]string{}
+		}
+		for provider, command := range patch.TmuxCommands {
+			provider = normalizeWorkspaceProvider(provider)
+			if provider == "" {
+				continue
+			}
+			settings.TmuxCommands[provider] = strings.TrimSpace(command)
 		}
 	}
 	if patch.CommitMessageGenerator != nil {
@@ -523,6 +555,30 @@ func normalizeWorkspaceProvider(value string) string {
 		return value
 	}
 	return ""
+}
+
+func normalizeTmuxCommands(commands map[string]string) map[string]string {
+	normalized := map[string]string{}
+	for provider, command := range commands {
+		provider = normalizeWorkspaceProvider(provider)
+		command = strings.TrimSpace(command)
+		if provider != "" && command != "" {
+			normalized[provider] = command
+		}
+	}
+	return normalized
+}
+
+func normalizeProviderExecutables(executables map[string]string) map[string]string {
+	normalized := map[string]string{}
+	for provider, executable := range executables {
+		provider = normalizeWorkspaceProvider(provider)
+		executable = strings.TrimSpace(executable)
+		if provider != "" && executable != "" {
+			normalized[provider] = executable
+		}
+	}
+	return normalized
 }
 
 func normalizeProviderDefaults(settings map[string]ProviderPreference, defaults map[string]ProviderPreference, modelCatalog catalog.ProviderModelInventoryByProvider) map[string]ProviderPreference {

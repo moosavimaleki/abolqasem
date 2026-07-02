@@ -2,6 +2,7 @@ package server
 
 import (
 	"ai-agent-manager/internal/providers/catalog"
+	"ai-agent-manager/internal/providers/providerexec"
 	"ai-agent-manager/internal/state"
 	"context"
 	"strings"
@@ -20,6 +21,7 @@ func workspaceAvailableProviders() []catalog.ProviderCatalogEntry {
 
 func workspaceAvailableProvidersForSettings(settings state.AppSettings) []catalog.ProviderCatalogEntry {
 	settings = state.NormalizeSettings(settings)
+	providerexec.SetConfiguredExecutables(settings.ProviderExecutables)
 	return catalog.ServerProvidersWithInventory(settings.ProviderModelCatalog)
 }
 

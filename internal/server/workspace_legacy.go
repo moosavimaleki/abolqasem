@@ -158,33 +158,36 @@ func workspaceLegacyChatSnapshot(chatID string, recentLimit int) any {
 	if !ok {
 		return nil
 	}
-	limit := recentLimit
-	if limit <= 0 {
-		limit = legacyDefaultRecentLimit
+	meta = workspaceEnrichLegacySessionMeta(meta)
+	imported := legacyimport.ImportSession(meta, nil, legacyimport.ImportOptions{})
+	provider := strings.TrimSpace(meta.Agent)
+	sessionToken := strings.TrimSpace(meta.SessionID)
+	if provider == "" || provider == "unknown" {
+		provider = "codex"
 	}
-
-	imported, err := workspaceImportedLegacySession(meta)
-	if err != nil && !workspaceLegacyTranscriptUnavailable(err) {
-		return nil
-	}
-	messages, history := workspaceRecentTranscriptEntries(imported.Transcript.Messages, limit)
+	providerValue := provider
+	sessionTokenValue := sessionToken
 	return &readmodels.ChatSnapshot{
 		Runtime: readmodels.ChatRuntime{
-			ChatID:           imported.Chat.ID,
-			ProjectID:        imported.Project.ID,
-			LocalPath:        imported.Project.LocalPath,
-			Title:            imported.Chat.Title,
-			Status:           readmodels.StatusIdle,
-			IsDraining:       false,
-			Provider:         imported.Chat.Provider,
-			PlanMode:         false,
-			SessionToken:     imported.Chat.SessionToken,
-			ReadOnly:         false,
-			LegacySessionKey: "",
+			ChatID:               imported.Chat.ID,
+			ProjectID:            imported.Project.ID,
+			LocalPath:            imported.Project.LocalPath,
+			Title:                imported.Chat.Title,
+			Status:               readmodels.StatusIdle,
+			IsDraining:           false,
+			Provider:             &providerValue,
+			PlanMode:             false,
+			SessionToken:         &sessionTokenValue,
+			ReadOnly:             false,
+			LegacySessionKey:     "",
+			TmuxSession:          workspaceChatTmuxSession(imported.Chat.ID),
+			NativeSessionID:      sessionToken,
+			NativeTranscriptPath: strings.TrimSpace(meta.TranscriptPath),
+			LastSummary:          firstNonEmpty(meta.LastPreview, meta.FirstPreview),
 		},
 		QueuedMessages:     []readmodels.QueuedChatMessage{},
-		Messages:           messages,
-		History:            history,
+		Messages:           []readmodels.TranscriptEntry{},
+		History:            readmodels.ChatHistorySnapshot{RecentLimit: recentLimit},
 		AvailableProviders: workspaceAvailableProviders(),
 	}
 }
@@ -205,16 +208,16 @@ func workspaceMaterializeLegacyChat(importedChatID string) (string, error) {
 		return "", err
 	}
 	if linkedChatID := workspaceStoredChatIDForLegacyMeta(stateSnapshot, meta); linkedChatID != "" {
+		_ = workspaceSyncLegacyBackedChat(linkedChatID, meta)
 		return linkedChatID, nil
 	}
 	if chat, ok := stateSnapshot.ChatsByID[chatID]; ok && chat.DeletedAt == 0 {
+		_ = workspaceSyncLegacyBackedChat(chatID, meta)
 		return chatID, nil
 	}
 
-	imported, err := workspaceImportedLegacySession(meta)
-	if err != nil && !workspaceLegacyTranscriptUnavailable(err) {
-		return "", err
-	}
+	meta = workspaceEnrichLegacySessionMeta(meta)
+	imported := legacyimport.ImportSession(meta, nil, legacyimport.ImportOptions{})
 
 	project, err := workspaceOpenProject(imported.Project.LocalPath, imported.Project.Title)
 	if err != nil {
@@ -225,10 +228,16 @@ func workspaceMaterializeLegacyChat(importedChatID string) (string, error) {
 	if createdAt == 0 {
 		createdAt = time.Now().UnixMilli()
 	}
+	tmuxSession := workspaceChatTmuxSession(chatID)
+	lastSummary := firstNonEmpty(meta.LastPreview, meta.FirstPreview)
 	if err := appendWorkspaceStoreEvent(store, events.StreamChats, events.TypeChatCreated, createdAt, map[string]any{
-		"chatId":    chatID,
-		"projectId": project.ID,
-		"title":     imported.Chat.Title,
+		"chatId":               chatID,
+		"projectId":            project.ID,
+		"title":                imported.Chat.Title,
+		"tmuxSession":          tmuxSession,
+		"nativeSessionId":      strings.TrimSpace(meta.SessionID),
+		"nativeTranscriptPath": strings.TrimSpace(meta.TranscriptPath),
+		"lastSummary":          lastSummary,
 	}); err != nil {
 		return "", err
 	}
@@ -247,19 +256,6 @@ func workspaceMaterializeLegacyChat(importedChatID string) (string, error) {
 		if err := appendWorkspaceStoreEvent(store, events.StreamTurns, events.TypeSessionTokenSet, createdAt, map[string]any{
 			"chatId":       chatID,
 			"sessionToken": &sessionToken,
-		}); err != nil {
-			return "", err
-		}
-	}
-
-	for _, entry := range imported.Transcript.Messages {
-		timestamp := createdAt
-		if createdAtValue, ok := entry["createdAt"].(int64); ok && createdAtValue > 0 {
-			timestamp = createdAtValue
-		}
-		if err := appendWorkspaceStoreEvent(store, events.StreamMessages, events.TypeMessageAppended, timestamp, map[string]any{
-			"chatId": chatID,
-			"entry":  entry,
 		}); err != nil {
 			return "", err
 		}
@@ -508,9 +504,7 @@ func workspaceRecordHookPromptCheckpoint(meta state.SessionMeta, event state.Hoo
 	if err != nil {
 		return workspaceCheckpointRecord{}, err
 	}
-	if err := workspaceSyncMaterializedLegacyChat(meta); err != nil {
-		return workspaceCheckpointRecord{}, err
-	}
+	_ = workspaceSyncMaterializedLegacyChat(meta)
 	promptPreview := firstNonEmpty(event.PromptPreview, meta.FirstPreview, meta.LastPreview)
 	if workspaceHasRecentPromptCheckpoint(materializedChatID, promptPreview, 10*time.Second) {
 		return workspaceCheckpointRecord{}, nil
@@ -584,31 +578,32 @@ func workspaceSyncLegacyBackedChat(chatID string, meta state.SessionMeta) error 
 	if !ok || chat.DeletedAt != 0 {
 		return nil
 	}
-	imported, err := workspaceImportedLegacySession(meta)
-	if err != nil {
-		if workspaceLegacyTranscriptUnavailable(err) {
-			return nil
+	imported := legacyimport.ImportSession(meta, nil, legacyimport.ImportOptions{})
+	if provider := strings.TrimSpace(meta.Agent); provider != "" && provider != "unknown" && strings.TrimSpace(derefWorkspaceString(chat.Provider)) == "" {
+		if err := appendWorkspaceStoreEvent(store, events.StreamChats, events.TypeChatProviderSet, time.Now().UnixMilli(), map[string]any{
+			"chatId":   chatID,
+			"provider": provider,
+		}); err != nil {
+			return err
 		}
-		return err
+		chat.Provider = &provider
 	}
-	if len(imported.Transcript.Messages) == 0 && strings.TrimSpace(meta.TranscriptPath) == "" {
-		return nil
+	if sessionToken := strings.TrimSpace(meta.SessionID); sessionToken != "" && strings.TrimSpace(derefWorkspaceString(chat.SessionToken)) == "" {
+		if err := (&workspaceEventStore{store: store}).SetSessionToken(chatID, sessionToken); err != nil {
+			return err
+		}
+		chat.SessionToken = &sessionToken
 	}
 	if err := workspaceRenameLegacyChatIfGenerated(chatID, meta, imported.Chat.Title); err != nil {
 		return err
 	}
-	existingMessages, err := workspaceChatMessages(chatID)
-	if err != nil {
-		return err
-	}
-	mergedMessages, changed := workspaceReconcileLegacyMaterializedMessages(meta, existingMessages, imported.Transcript.Messages)
-	if !changed {
-		return workspaceMarkLegacyChatSynced(store, chatID, meta)
-	}
 	syncTimestamp := workspaceMaxInt64(time.Now().UnixMilli(), imported.Chat.UpdatedAt, meta.UpdatedAt.UnixMilli())
-	if err := appendWorkspaceStoreEvent(store, events.StreamMessages, events.TypeChatRestoredToCheckpoint, syncTimestamp, map[string]any{
-		"chatId":   chatID,
-		"messages": mergedMessages,
+	if err := appendWorkspaceStoreEvent(store, events.StreamChats, events.TypeChatRuntimeSet, syncTimestamp, map[string]any{
+		"chatId":               chatID,
+		"tmuxSession":          firstNonEmpty(chat.TmuxSession, workspaceChatTmuxSession(chatID)),
+		"nativeSessionId":      strings.TrimSpace(meta.SessionID),
+		"nativeTranscriptPath": strings.TrimSpace(meta.TranscriptPath),
+		"lastSummary":          firstNonEmpty(meta.LastPreview, meta.FirstPreview, chat.LastSummary),
 	}); err != nil {
 		return err
 	}
@@ -1159,6 +1154,9 @@ func workspaceStoredChatIDForLegacyMeta(stateSnapshot readmodels.StoreState, met
 		}
 		if !strings.EqualFold(strings.TrimSpace(derefWorkspaceString(chat.Provider)), provider) {
 			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(chat.NativeSessionID), sessionToken) {
+			return chatID
 		}
 		if !strings.EqualFold(strings.TrimSpace(derefWorkspaceString(chat.SessionToken)), sessionToken) {
 			if pendingForkChatID == "" && strings.EqualFold(strings.TrimSpace(derefWorkspaceString(chat.PendingForkSessionToken)), sessionToken) {

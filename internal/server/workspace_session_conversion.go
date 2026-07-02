@@ -20,6 +20,15 @@ type workspaceSessionConversionResult struct {
 	PendingFork          bool   `json:"pendingFork"`
 }
 
+type workspaceTranscriptExportResult struct {
+	ChatID               string `json:"chatId"`
+	ProjectID            string `json:"projectId"`
+	Provider             string `json:"provider"`
+	SessionToken         string `json:"sessionToken"`
+	TranscriptPath       string `json:"transcriptPath"`
+	ImportedMessageCount int    `json:"importedMessageCount"`
+}
+
 type workspaceSessionConversionPreview struct {
 	SourceTitle          string `json:"sourceTitle"`
 	SourceProvider       string `json:"sourceProvider"`
@@ -130,16 +139,19 @@ func workspaceConvertChat(raw json.RawMessage) (workspaceSessionConversionResult
 	if err != nil {
 		return workspaceSessionConversionResult{}, "", err
 	}
-	for _, entry := range entries {
-		if err := store.AppendTranscriptEntry(fork.ID, entry); err != nil {
-			return workspaceSessionConversionResult{}, "", err
-		}
-	}
 	pendingFork := false
 	if exportResult.SessionToken != "" {
 		if err := store.SetSessionToken(fork.ID, exportResult.SessionToken); err != nil {
 			return workspaceSessionConversionResult{}, "", err
 		}
+	}
+	if err := appendWorkspaceStoreEvent(workspaceStore(), events.StreamChats, events.TypeChatRuntimeSet, time.Now().UnixMilli(), map[string]any{
+		"chatId":               fork.ID,
+		"nativeSessionId":      exportResult.SessionToken,
+		"nativeTranscriptPath": exportResult.TranscriptPath,
+		"lastSummary":          workspaceConversionLastSummary(entries),
+	}); err != nil {
+		return workspaceSessionConversionResult{}, "", err
 	}
 	return workspaceSessionConversionResult{
 		ChatID:               fork.ID,
@@ -148,6 +160,58 @@ func workspaceConvertChat(raw json.RawMessage) (workspaceSessionConversionResult
 		ImportedMessageCount: len(entries),
 		PendingFork:          pendingFork,
 	}, fork.ID, nil
+}
+
+func workspaceConversionLastSummary(entries []readmodels.TranscriptEntry) string {
+	for index := len(entries) - 1; index >= 0; index-- {
+		if text, _ := workspaceTranscriptEntryPreview(entries[index]); strings.TrimSpace(text) != "" {
+			return workspacePromptPreview(text)
+		}
+	}
+	return ""
+}
+
+func workspaceExportChatTranscript(raw json.RawMessage) (workspaceTranscriptExportResult, error) {
+	var payload struct {
+		ChatID          string `json:"chatId"`
+		TargetProvider  string `json:"targetProvider"`
+		TargetProjectID string `json:"targetProjectId"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return workspaceTranscriptExportResult{}, err
+	}
+	source, err := workspaceConversionSource(payload.ChatID)
+	if err != nil {
+		return workspaceTranscriptExportResult{}, err
+	}
+	targetProvider := strings.TrimSpace(payload.TargetProvider)
+	if targetProvider == "" {
+		targetProvider = firstNonEmpty(source.Provider, "codex")
+	}
+	targetProject, err := workspaceConversionTargetProject(source, payload.TargetProjectID)
+	if err != nil {
+		return workspaceTranscriptExportResult{}, err
+	}
+	entries := workspaceConvertedTranscriptEntries(source.Entries)
+	exportResult, err := sessioninterop.ExportNativeSession(sessioninterop.ExportArgs{
+		Provider:           targetProvider,
+		LocalPath:          targetProject.LocalPath,
+		Title:              source.Title,
+		SourceSessionToken: source.SessionToken,
+		Entries:            entries,
+		PreferFork:         false,
+	})
+	if err != nil {
+		return workspaceTranscriptExportResult{}, err
+	}
+	return workspaceTranscriptExportResult{
+		ChatID:               strings.TrimSpace(payload.ChatID),
+		ProjectID:            targetProject.ID,
+		Provider:             targetProvider,
+		SessionToken:         exportResult.SessionToken,
+		TranscriptPath:       exportResult.TranscriptPath,
+		ImportedMessageCount: len(entries),
+	}, nil
 }
 
 type workspaceConversionSourceSnapshot struct {
@@ -161,6 +225,20 @@ type workspaceConversionSourceSnapshot struct {
 
 func workspaceConversionSource(chatID string) (workspaceConversionSourceSnapshot, error) {
 	if chat, project, err := workspaceChatProjectRequired(chatID); err == nil {
+		if meta, ok := workspaceNativeTranscriptMetaForChatRecord(chat, project); ok {
+			imported, err := sessioninterop.ImportLegacySession(meta)
+			if err != nil {
+				return workspaceConversionSourceSnapshot{}, err
+			}
+			return workspaceConversionSourceSnapshot{
+				Title:        chat.Title,
+				Provider:     firstNonEmpty(imported.Provider, meta.Agent),
+				SessionToken: firstNonEmpty(imported.SessionToken, meta.SessionID),
+				LocalPath:    firstNonEmpty(imported.LocalPath, project.LocalPath),
+				ProjectTitle: firstNonEmpty(imported.ProjectName, project.Title),
+				Entries:      imported.Entries,
+			}, nil
+		}
 		entries, err := workspaceChatMessages(chat.ID)
 		if err != nil {
 			return workspaceConversionSourceSnapshot{}, err

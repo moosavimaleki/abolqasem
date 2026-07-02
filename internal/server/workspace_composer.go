@@ -15,7 +15,7 @@ import (
 	"ai-agent-manager/internal/workspace/eventstore"
 	"ai-agent-manager/internal/workspace/protocol"
 	"ai-agent-manager/internal/workspace/readmodels"
-	"ai-agent-manager/internal/workspace/transcript"
+	"ai-agent-manager/internal/workspace/tmuxruntime"
 )
 
 const (
@@ -208,6 +208,10 @@ func workspaceAgentCoordinator() *agent.Coordinator {
 }
 
 func (s *workspaceEventStore) CreateChat(projectID string) (readmodels.ChatRecord, error) {
+	return s.CreateChatWithOptions(projectID, "", "")
+}
+
+func (s *workspaceEventStore) CreateChatWithOptions(projectID string, provider string, tmuxCommand string) (readmodels.ChatRecord, error) {
 	project, err := s.requireProject(projectID)
 	if err != nil {
 		return readmodels.ChatRecord{}, err
@@ -215,11 +219,20 @@ func (s *workspaceEventStore) CreateChat(projectID string) (readmodels.ChatRecor
 	now := time.Now().UnixMilli()
 	chatID := "chat-" + randomID()
 	title := "New Chat"
-	event, err := events.NewAt(events.TypeChatCreated, now, map[string]any{
-		"chatId":    chatID,
-		"projectId": project.ID,
-		"title":     title,
-	})
+	tmuxSession := workspaceChatTmuxSession(chatID)
+	data := map[string]any{
+		"chatId":      chatID,
+		"projectId":   project.ID,
+		"title":       title,
+		"tmuxSession": tmuxSession,
+	}
+	if provider = strings.TrimSpace(provider); provider != "" {
+		data["provider"] = provider
+	}
+	if tmuxCommand = strings.TrimSpace(tmuxCommand); tmuxCommand != "" {
+		data["tmuxCommand"] = tmuxCommand
+	}
+	event, err := events.NewAt(events.TypeChatCreated, now, data)
 	if err != nil {
 		return readmodels.ChatRecord{}, err
 	}
@@ -227,11 +240,14 @@ func (s *workspaceEventStore) CreateChat(projectID string) (readmodels.ChatRecor
 		return readmodels.ChatRecord{}, err
 	}
 	return readmodels.ChatRecord{
-		ID:        chatID,
-		ProjectID: project.ID,
-		Title:     title,
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:          chatID,
+		ProjectID:   project.ID,
+		Title:       title,
+		Provider:    optionalString(provider),
+		TmuxSession: tmuxSession,
+		TmuxCommand: tmuxCommand,
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}, nil
 }
 
@@ -279,96 +295,11 @@ func (s *workspaceEventStore) SetSessionToken(chatID string, sessionToken string
 }
 
 func (s *workspaceEventStore) EnsureSystemInit(chatID string, provider string, model string) error {
-	hasSystemInit, err := s.chatHasSystemInit(chatID)
-	if err != nil {
-		return err
-	}
-	if hasSystemInit {
-		return nil
-	}
-	return s.AppendTranscriptEntry(chatID, transcript.New(transcript.KindSystemInit, workspaceSystemInitFields(provider, model)))
-}
-
-func (s *workspaceEventStore) chatHasSystemInit(chatID string) (bool, error) {
-	messageEvents, err := s.store.Replay(events.StreamMessages)
-	if err != nil {
-		return false, err
-	}
-	for _, event := range messageEvents {
-		if event.Type != events.TypeMessageAppended {
-			continue
-		}
-		var data struct {
-			ChatID string                     `json:"chatId"`
-			Entry  readmodels.TranscriptEntry `json:"entry"`
-		}
-		if event.DecodeData(&data) != nil || data.ChatID != chatID {
-			continue
-		}
-		if transcript.Kind(data.Entry) == transcript.KindSystemInit {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
-func workspaceSystemInitFields(provider string, model string) map[string]any {
-	provider = strings.TrimSpace(provider)
-	if provider == "" {
-		provider = "codex"
-	}
-	model = strings.TrimSpace(model)
-	if model == "" {
-		model = catalog.GetOrDefault(provider).DefaultModel
-	}
-	return map[string]any{
-		"provider":      provider,
-		"model":         model,
-		"tools":         workspaceSystemTools(provider),
-		"agents":        workspaceSystemAgents(provider),
-		"slashCommands": []string{},
-		"mcpServers":    []map[string]any{},
-	}
-}
-
-func workspaceSystemTools(provider string) []string {
-	if provider == "claude" {
-		return []string{
-			"Skill",
-			"WebFetch",
-			"WebSearch",
-			"Task",
-			"TaskOutput",
-			"Bash",
-			"Glob",
-			"Grep",
-			"Read",
-			"Edit",
-			"Write",
-			"TodoWrite",
-			"KillShell",
-			"AskUserQuestion",
-			"EnterPlanMode",
-			"ExitPlanMode",
-		}
-	}
-	return []string{"Bash", "Write", "Edit", "WebSearch", "TodoWrite", "AskUserQuestion", "ExitPlanMode"}
-}
-
-func workspaceSystemAgents(provider string) []string {
-	if provider == "codex" {
-		return []string{"spawnAgent", "sendInput", "resumeAgent", "wait", "closeAgent"}
-	}
-	return []string{}
+	return nil
 }
 
 func (s *workspaceEventStore) AppendUserPrompt(chatID string, content string, attachments []readmodels.ChatAttachment, steered bool) error {
-	entry := transcript.New(transcript.KindUserPrompt, map[string]any{
-		"content":     content,
-		"attachments": attachments,
-		"steered":     steered,
-	})
-	return s.AppendTranscriptEntry(chatID, entry)
+	return nil
 }
 
 func (s *workspaceEventStore) RecordCheckpointBeforeUserPrompt(chatID string, content string, attachments []readmodels.ChatAttachment, steered bool) error {
@@ -385,39 +316,15 @@ func (s *workspaceEventStore) RecordCheckpointBeforeUserPrompt(chatID string, co
 }
 
 func (s *workspaceEventStore) AppendTranscriptEntry(chatID string, entry readmodels.TranscriptEntry) error {
-	event, err := events.New(events.TypeMessageAppended, map[string]any{"chatId": chatID, "entry": entry})
-	if err != nil {
-		return err
-	}
-	return s.store.Append(events.StreamMessages, event)
+	return nil
 }
 
 func (s *workspaceEventStore) RecordToolCall(chatID string, request agent.PendingToolRequest) error {
-	toolName := request.ToolName
-	if toolName == "" {
-		toolName = workspaceToolName(request.ToolKind)
-	}
-	input := request.Input
-	if input == nil {
-		input = workspaceToolDefaultInput(request.ToolKind)
-	}
-	return s.AppendTranscriptEntry(chatID, transcript.New(transcript.KindToolCall, map[string]any{
-		"tool": map[string]any{
-			"kind":     "tool",
-			"toolKind": request.ToolKind,
-			"toolName": toolName,
-			"toolId":   request.ToolUseID,
-			"input":    input,
-		},
-	}))
+	return nil
 }
 
 func (s *workspaceEventStore) RecordToolResult(chatID string, toolUseID string, result any) error {
-	return s.AppendTranscriptEntry(chatID, transcript.New(transcript.KindToolResult, map[string]any{
-		"toolId":   toolUseID,
-		"content":  result,
-		"debugRaw": mustJSONString(map[string]any{"tool_use_result": result}),
-	}))
+	return nil
 }
 
 func (s *workspaceEventStore) RecordTurnStarted(chatID string) error {
@@ -441,7 +348,7 @@ func (s *workspaceEventStore) EnqueueMessage(chatID string, message agent.QueueM
 	queued := readmodels.QueuedChatMessage{
 		ID:           "queued-" + randomID(),
 		Content:      message.Content,
-		Attachments:  append([]readmodels.ChatAttachment(nil), message.Attachments...),
+		Attachments:  append(make([]readmodels.ChatAttachment, 0, len(message.Attachments)), message.Attachments...),
 		CreatedAt:    now,
 		Model:        message.Model,
 		ModelOptions: message.ModelOptions,
@@ -553,6 +460,22 @@ func workspaceCreateChat(projectID string) (readmodels.ChatRecord, error) {
 	return (&workspaceEventStore{store: workspaceStore()}).CreateChat(projectID)
 }
 
+func workspaceCreateChatWithOptions(projectID string, provider string, tmuxCommand string) (readmodels.ChatRecord, error) {
+	return (&workspaceEventStore{store: workspaceStore()}).CreateChatWithOptions(projectID, provider, tmuxCommand)
+}
+
+func optionalString(value string) *string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
+func workspaceChatTmuxSession(chatID string) string {
+	return tmuxruntime.NormalizeSessionName("abolqasem-" + strings.TrimSpace(chatID))
+}
+
 func workspaceMarkChatRead(chatID string) error {
 	chatID = strings.TrimSpace(chatID)
 	if chatID == "" {
@@ -606,11 +529,6 @@ func workspaceAppendAssistantText(chatID string, text string) error {
 	}
 	if strings.TrimSpace(text) == "" {
 		return nil
-	}
-	if err := (&workspaceEventStore{store: workspaceStore()}).AppendTranscriptEntry(chatID, transcript.New(transcript.KindAssistantText, map[string]any{
-		"text": text,
-	})); err != nil {
-		return err
 	}
 	workspaceConnections.broadcast(chatID)
 	return nil
@@ -719,32 +637,4 @@ func decodeToolResponseCommand(raw json.RawMessage) (agent.ToolResponseCommand, 
 		ToolUseID: payload.ToolUseID,
 		Result:    payload.Result,
 	}, nil
-}
-
-func workspaceToolName(toolKind string) string {
-	switch toolKind {
-	case "ask_user_question":
-		return "AskUserQuestion"
-	case "exit_plan_mode":
-		return "ExitPlanMode"
-	default:
-		return toolKind
-	}
-}
-
-func workspaceToolDefaultInput(toolKind string) any {
-	switch toolKind {
-	case "ask_user_question":
-		return map[string]any{"questions": []any{}}
-	default:
-		return map[string]any{}
-	}
-}
-
-func mustJSONString(value any) string {
-	data, err := json.Marshal(value)
-	if err != nil {
-		return "{}"
-	}
-	return string(data)
 }

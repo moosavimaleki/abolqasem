@@ -18,6 +18,9 @@ import (
 
 func withLegacyState(t *testing.T, appState *state.AppState) {
 	t.Helper()
+	t.Setenv("ABOLQASEM_TMUX_CODEX_COMMAND", "true")
+	t.Setenv("ABOLQASEM_TMUX_CLAUDE_COMMAND", "true")
+	t.Setenv("ABOLQASEM_TMUX_GEMINI_COMMAND", "true")
 	previousLoad := workspaceLoadLegacyState
 	previousSave := workspaceSaveLegacyState
 	workspaceLoadLegacyState = func() (*state.AppState, error) {
@@ -378,11 +381,11 @@ func TestWorkspaceLegacyChatSnapshotImportsTranscript(t *testing.T) {
 	if !strings.HasPrefix(snapshot.Runtime.ChatID, "chat-") || strings.HasPrefix(snapshot.Runtime.ChatID, "legacy-") {
 		t.Fatalf("expected normal chat id, got %q", snapshot.Runtime.ChatID)
 	}
-	if len(snapshot.Messages) != 2 {
-		t.Fatalf("expected imported transcript messages, got %#v", snapshot.Messages)
+	if snapshot.Runtime.TmuxSession == "" || snapshot.Runtime.NativeSessionID != meta.SessionID || snapshot.Runtime.NativeTranscriptPath != transcriptPath {
+		t.Fatalf("expected legacy snapshot to expose native runtime metadata, got %#v", snapshot.Runtime)
 	}
-	if transcript.Kind(snapshot.Messages[0]) != transcript.KindUserPrompt {
-		t.Fatalf("expected user prompt first, got %#v", snapshot.Messages[0])
+	if len(snapshot.Messages) != 0 {
+		t.Fatalf("expected legacy snapshot to avoid imported transcript messages, got %#v", snapshot.Messages)
 	}
 }
 
@@ -419,18 +422,11 @@ func TestWorkspaceLoadChatHistorySupportsLegacyChats(t *testing.T) {
 		t.Fatalf("workspaceLoadChatHistory returned error: %v", err)
 	}
 	messages, ok := page["messages"].([]readmodels.TranscriptEntry)
-	if !ok || len(messages) != 1 {
-		t.Fatalf("expected one legacy history entry, got %#v", page["messages"])
+	if !ok || len(messages) != 0 {
+		t.Fatalf("expected no legacy history entries, got %#v", page["messages"])
 	}
-	if transcript.Kind(messages[0]) != transcript.KindAssistantText || messages[0]["text"] != "second" {
-		t.Fatalf("expected second assistant message, got %#v", messages[0])
-	}
-	if page["hasOlder"] != true {
-		t.Fatalf("expected older history, got %#v", page)
-	}
-	olderCursor, ok := page["olderCursor"].(*string)
-	if !ok || olderCursor == nil || *olderCursor != "2" {
-		t.Fatalf("expected older cursor 2, got %#v", page["olderCursor"])
+	if page["hasOlder"] != false || page["olderCursor"] != nil {
+		t.Fatalf("expected empty legacy history, got %#v", page)
 	}
 }
 
@@ -467,14 +463,11 @@ func TestWorkspaceLoadChatHistoryAroundSupportsLegacyChats(t *testing.T) {
 		t.Fatalf("workspaceLoadChatHistoryAround returned error: %v", err)
 	}
 	messages, ok := page["messages"].([]readmodels.TranscriptEntry)
-	if !ok || len(messages) != 1 {
-		t.Fatalf("expected one legacy history entry, got %#v", page["messages"])
+	if !ok || len(messages) != 0 {
+		t.Fatalf("expected no legacy history entries, got %#v", page["messages"])
 	}
-	if transcript.Kind(messages[0]) != transcript.KindAssistantText || messages[0]["text"] != "second" {
-		t.Fatalf("expected target assistant message, got %#v", messages[0])
-	}
-	if page["targetFound"] != true {
-		t.Fatalf("expected targetFound=true, got %#v", page)
+	if page["targetFound"] != false {
+		t.Fatalf("expected targetFound=false, got %#v", page)
 	}
 }
 
@@ -582,13 +575,23 @@ func TestWorkspaceMaterializeLegacyChatCreatesWritableChat(t *testing.T) {
 	if chat.Provider == nil || *chat.Provider != "codex" {
 		t.Fatalf("expected codex provider, got %#v", chat.Provider)
 	}
+	if chat.TmuxSession != workspaceChatTmuxSession(chatID) || chat.NativeSessionID != meta.SessionID || chat.NativeTranscriptPath != transcriptPath {
+		t.Fatalf("expected tmux/native runtime metadata, got %#v", chat)
+	}
+	messageEvents, err := workspaceStore().Replay(events.StreamMessages)
+	if err != nil {
+		t.Fatalf("Replay messages returned error: %v", err)
+	}
+	if len(messageEvents) != 0 {
+		t.Fatalf("expected materialize to avoid message events, got %#v", messageEvents)
+	}
 
 	snapshot := workspaceChatSnapshot(chatID, 10).(*readmodels.ChatSnapshot)
 	if snapshot.Runtime.ReadOnly {
 		t.Fatalf("materialized chat should be writable: %#v", snapshot.Runtime)
 	}
-	if len(snapshot.Messages) != 2 {
-		t.Fatalf("expected imported transcript messages, got %#v", snapshot.Messages)
+	if len(snapshot.Messages) != 0 {
+		t.Fatalf("expected materialized native chat to avoid stored transcript messages, got %#v", snapshot.Messages)
 	}
 }
 
@@ -645,15 +648,8 @@ func TestWorkspaceRecordHookPromptCheckpointMaterializesTUIChat(t *testing.T) {
 	if record.PromptPreview != "new prompt" {
 		t.Fatalf("expected prompt preview, got %q", record.PromptPreview)
 	}
-	if len(record.Messages) != 0 || record.ChatMessageCount != 2 || record.ChatSnapshotPath == "" {
-		t.Fatalf("expected v2 checkpoint to store chat snapshot outside metadata, got %#v", record)
-	}
-	messages, err := workspaceCheckpointMessages(record)
-	if err != nil {
-		t.Fatalf("workspaceCheckpointMessages returned error: %v", err)
-	}
-	if len(messages) != 2 {
-		t.Fatalf("expected checkpoint snapshot to capture previous transcript messages, got %#v", messages)
+	if len(record.Messages) != 0 || record.ChatMessageCount != 0 || record.ChatSnapshotPath != "" {
+		t.Fatalf("expected checkpoint to skip chat transcript storage, got %#v", record)
 	}
 
 	storeState, err := workspaceStore().LoadState()
@@ -663,6 +659,9 @@ func TestWorkspaceRecordHookPromptCheckpointMaterializesTUIChat(t *testing.T) {
 	chat := storeState.ChatsByID[legacyimport.ImportedChatID(meta)]
 	if chat.Title != "old prompt" {
 		t.Fatalf("expected materialized chat title from first prompt, got %q", chat.Title)
+	}
+	if chat.TmuxSession == "" || chat.NativeSessionID != meta.SessionID {
+		t.Fatalf("expected materialized hook chat to keep native runtime, got %#v", chat)
 	}
 }
 
@@ -950,7 +949,7 @@ func TestWorkspaceRecordHookPromptCheckpointReusesStoredChatByPendingForkSession
 	}
 }
 
-func TestWorkspaceMaterializeLegacyClaudeChatPreservesToolEntries(t *testing.T) {
+func TestWorkspaceMaterializeLegacyClaudeChatKeepsNativeRuntime(t *testing.T) {
 	dir := t.TempDir()
 	previousDataDir := workspaceDataDir
 	previousCoordinator := workspaceCoordinator
@@ -993,27 +992,14 @@ func TestWorkspaceMaterializeLegacyClaudeChatPreservesToolEntries(t *testing.T) 
 		t.Fatalf("workspaceMaterializeLegacyChat returned error: %v", err)
 	}
 	snapshot := workspaceChatSnapshot(chatID, 20).(*readmodels.ChatSnapshot)
-	if len(snapshot.Messages) != 5 {
-		t.Fatalf("expected 5 structured messages, got %#v", snapshot.Messages)
+	if snapshot.Runtime.Provider == nil || *snapshot.Runtime.Provider != "claude" {
+		t.Fatalf("expected claude runtime, got %#v", snapshot.Runtime)
 	}
-	if transcript.Kind(snapshot.Messages[0]) != transcript.KindUserPrompt {
-		t.Fatalf("expected user prompt first, got %#v", snapshot.Messages[0])
+	if snapshot.Runtime.TmuxSession != workspaceChatTmuxSession(chatID) || snapshot.Runtime.NativeSessionID != meta.SessionID || snapshot.Runtime.NativeTranscriptPath != transcriptPath {
+		t.Fatalf("expected native tmux runtime metadata, got %#v", snapshot.Runtime)
 	}
-	if transcript.Kind(snapshot.Messages[1]) != transcript.KindAssistantText {
-		t.Fatalf("expected assistant text second, got %#v", snapshot.Messages[1])
-	}
-	if transcript.Kind(snapshot.Messages[2]) != transcript.KindToolCall {
-		t.Fatalf("expected tool call third, got %#v", snapshot.Messages[2])
-	}
-	if transcript.Kind(snapshot.Messages[3]) != transcript.KindToolResult {
-		t.Fatalf("expected tool result fourth, got %#v", snapshot.Messages[3])
-	}
-	if transcript.Kind(snapshot.Messages[4]) != transcript.KindAssistantText {
-		t.Fatalf("expected assistant text fifth, got %#v", snapshot.Messages[4])
-	}
-	tool, _ := snapshot.Messages[2]["tool"].(map[string]any)
-	if tool["toolName"] != "TaskCreate" {
-		t.Fatalf("expected TaskCreate tool name, got %#v", tool)
+	if len(snapshot.Messages) != 0 {
+		t.Fatalf("expected claude materialize to avoid stored transcript messages, got %#v", snapshot.Messages)
 	}
 }
 
@@ -1117,7 +1103,7 @@ func TestWorkspaceMarkChatReadClearsLegacyUnreadState(t *testing.T) {
 	}
 }
 
-func TestWorkspaceChatSnapshotRepairsMalformedMaterializedClaudeImport(t *testing.T) {
+func TestWorkspaceChatSnapshotLinksMalformedMaterializedClaudeImportToNativeRuntime(t *testing.T) {
 	dir := t.TempDir()
 	previousDataDir := workspaceDataDir
 	previousCoordinator := workspaceCoordinator
@@ -1197,25 +1183,24 @@ func TestWorkspaceChatSnapshotRepairsMalformedMaterializedClaudeImport(t *testin
 		},
 	})
 
-	snapshot := workspaceChatSnapshot(imported.Chat.ID, 20).(*readmodels.ChatSnapshot)
-	if len(snapshot.Messages) != 4 {
-		t.Fatalf("expected repaired structured messages, got %#v", snapshot.Messages)
-	}
-	if transcript.Kind(snapshot.Messages[2]) != transcript.KindToolCall {
-		t.Fatalf("expected repaired tool call, got %#v", snapshot.Messages[2])
-	}
-	if transcript.Kind(snapshot.Messages[3]) != transcript.KindToolResult {
-		t.Fatalf("expected repaired tool result, got %#v", snapshot.Messages[3])
+	beforeMessages, err := store.Replay(events.StreamMessages)
+	if err != nil {
+		t.Fatalf("Replay before returned error: %v", err)
 	}
 
-	messages, err := workspaceChatMessages(imported.Chat.ID)
-	if err != nil {
-		t.Fatalf("workspaceChatMessages returned error: %v", err)
+	snapshot := workspaceChatSnapshot(imported.Chat.ID, 20).(*readmodels.ChatSnapshot)
+	if len(snapshot.Messages) != 0 {
+		t.Fatalf("expected native runtime snapshot to ignore malformed stored messages, got %#v", snapshot.Messages)
 	}
-	for _, entry := range messages {
-		if transcript.Kind(entry) == transcript.KindUserPrompt && strings.Contains(workspaceEntryString(entry, "content"), "Task #1 created successfully") {
-			t.Fatalf("expected malformed imported user prompt to be removed, got %#v", entry)
-		}
+	if snapshot.Runtime.TmuxSession == "" || snapshot.Runtime.NativeSessionID != meta.SessionID || snapshot.Runtime.NativeTranscriptPath != transcriptPath {
+		t.Fatalf("expected native runtime metadata, got %#v", snapshot.Runtime)
+	}
+	afterMessages, err := store.Replay(events.StreamMessages)
+	if err != nil {
+		t.Fatalf("Replay after returned error: %v", err)
+	}
+	if len(afterMessages) != len(beforeMessages) {
+		t.Fatalf("expected snapshot to avoid rewriting messages, before=%d after=%d", len(beforeMessages), len(afterMessages))
 	}
 }
 
@@ -1288,8 +1273,11 @@ func TestWorkspaceChatSnapshotMarksPreviouslyRestoredLegacyChatSynced(t *testing
 	}
 
 	snapshot := workspaceChatSnapshot(imported.Chat.ID, 20).(*readmodels.ChatSnapshot)
-	if len(snapshot.Messages) != 1 || snapshot.Messages[0]["_id"] != "already-restored" {
-		t.Fatalf("expected stored restored transcript without resync, got %#v", snapshot.Messages)
+	if len(snapshot.Messages) != 0 {
+		t.Fatalf("expected native runtime snapshot to ignore restored message stream, got %#v", snapshot.Messages)
+	}
+	if snapshot.Runtime.TmuxSession == "" || snapshot.Runtime.NativeSessionID != meta.SessionID {
+		t.Fatalf("expected restored legacy chat to link native runtime, got %#v", snapshot.Runtime)
 	}
 
 	afterMessages, err := store.Replay(events.StreamMessages)
@@ -1310,7 +1298,7 @@ func TestWorkspaceChatSnapshotMarksPreviouslyRestoredLegacyChatSynced(t *testing
 	}
 }
 
-func TestWorkspaceChatSnapshotRepairsForkedClaudeLegacyChatBySessionToken(t *testing.T) {
+func TestWorkspaceChatSnapshotLinksForkedClaudeLegacyChatBySessionToken(t *testing.T) {
 	dir := t.TempDir()
 	previousDataDir := workspaceDataDir
 	previousCoordinator := workspaceCoordinator
@@ -1390,13 +1378,10 @@ func TestWorkspaceChatSnapshotRepairsForkedClaudeLegacyChatBySessionToken(t *tes
 	})
 
 	snapshot := workspaceChatSnapshot(chatID, 20).(*readmodels.ChatSnapshot)
-	if len(snapshot.Messages) != 4 {
-		t.Fatalf("expected repaired forked chat messages, got %#v", snapshot.Messages)
+	if len(snapshot.Messages) != 0 {
+		t.Fatalf("expected forked native runtime to ignore stored messages, got %#v", snapshot.Messages)
 	}
-	if transcript.Kind(snapshot.Messages[2]) != transcript.KindToolCall {
-		t.Fatalf("expected repaired tool call in forked chat, got %#v", snapshot.Messages[2])
-	}
-	if transcript.Kind(snapshot.Messages[3]) != transcript.KindToolResult {
-		t.Fatalf("expected repaired tool result in forked chat, got %#v", snapshot.Messages[3])
+	if snapshot.Runtime.TmuxSession == "" || snapshot.Runtime.NativeSessionID != meta.SessionID || snapshot.Runtime.NativeTranscriptPath != transcriptPath {
+		t.Fatalf("expected forked chat native runtime metadata, got %#v", snapshot.Runtime)
 	}
 }

@@ -11,10 +11,18 @@ interface Props {
 
 export function TextMessage({ message }: Props) {
   const { t, direction } = useI18n()
+  const isTmuxMessage = message.id.startsWith("tmux-capture-")
 
   return (
     // <VerticalLineContainer className="w-full">
-      <div className="group/message relative text-pretty prose prose-sm dark:prose-invert px-0.5 w-full max-w-full space-y-4">
+      <div
+        className={cn(
+          "group/message relative w-full max-w-full space-y-4",
+          isTmuxMessage
+            ? "rounded-lg border border-cyan-400/10 bg-slate-950/35 px-4 py-3 text-[0.9rem] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] prose prose-sm dark:prose-invert [&_.code-frame]:border-cyan-400/15 [&_.code-frame]:bg-slate-950/80 [&_.code-frame_pre]:text-[12px]"
+            : "text-pretty prose prose-sm dark:prose-invert px-0.5"
+        )}
+      >
         <MessageCopyButton
           text={message.text}
           label={t.common.copyMessage}

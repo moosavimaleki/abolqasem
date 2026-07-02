@@ -35,6 +35,8 @@ function sameRuntime(left: ChatSnapshot["runtime"] | null | undefined, right: Ch
     && left.planMode === right.planMode
     && left.sessionToken === right.sessionToken
     && left.pendingForkSessionToken === right.pendingForkSessionToken
+    && left.tmuxSession === right.tmuxSession
+    && left.tmuxCommand === right.tmuxCommand
     && left.readOnly === right.readOnly
     && left.legacySessionKey === right.legacySessionKey
 }
@@ -43,7 +45,17 @@ function sameTranscriptEntries(left: ChatSnapshot["messages"] | null | undefined
   if (left === right) return true
   if (!left || !right) return false
   if (left.length !== right.length) return false
-  return left.every((entry, index) => entry._id === right[index]?._id)
+  return left.every((entry, index) => {
+    const other = right[index]
+    if (!other || entry._id !== other._id) return false
+    if (entry._id.startsWith("tmux-capture-") || other._id.startsWith("tmux-capture-")) {
+      return entry.kind === other.kind
+        && entry.kind === "assistant_text"
+        && other.kind === "assistant_text"
+        && entry.text === other.text
+    }
+    return true
+  })
 }
 
 function sameProviders(left: ProviderCatalogEntry[] | null | undefined, right: ProviderCatalogEntry[] | null | undefined) {
@@ -379,6 +391,7 @@ export function reconcileOptimisticUserPrompts(
 
 const INITIAL_CHAT_RECENT_LIMIT = 200
 const CHAT_HISTORY_PAGE_SIZE = 500
+const LIVE_TMUX_CHAT_REFRESH_INTERVAL_MS = 1000
 
 type RuntimeChatSnapshot = Omit<ChatSnapshot, "queuedMessages" | "messages" | "history" | "availableProviders"> & {
   queuedMessages?: ChatSnapshot["queuedMessages"] | null
@@ -387,11 +400,34 @@ type RuntimeChatSnapshot = Omit<ChatSnapshot, "queuedMessages" | "messages" | "h
   availableProviders?: ChatSnapshot["availableProviders"] | null
 }
 
+type RuntimeQueuedChatMessage = Omit<QueuedChatMessage, "attachments"> & {
+  attachments?: QueuedChatMessage["attachments"] | null
+}
+
+function normalizeQueuedMessages(value: ChatSnapshot["queuedMessages"] | null | undefined): QueuedChatMessage[] {
+  if (!Array.isArray(value)) return []
+
+  let changed = false
+  const normalized = value.map((message) => {
+    const runtimeMessage = message as RuntimeQueuedChatMessage
+    if (Array.isArray(runtimeMessage.attachments)) {
+      return message
+    }
+    changed = true
+    return {
+      ...message,
+      attachments: [],
+    }
+  })
+
+  return changed ? normalized : value
+}
+
 export function normalizeChatSnapshot(snapshot: ChatSnapshot | null): ChatSnapshot | null {
   if (!snapshot) return null
 
   const runtimeSnapshot = snapshot as RuntimeChatSnapshot
-  const queuedMessages = Array.isArray(runtimeSnapshot.queuedMessages) ? runtimeSnapshot.queuedMessages : []
+  const queuedMessages = normalizeQueuedMessages(runtimeSnapshot.queuedMessages)
   const messages = Array.isArray(runtimeSnapshot.messages) ? runtimeSnapshot.messages : []
   const history = runtimeSnapshot.history ?? {
     hasOlder: false,
@@ -416,6 +452,18 @@ export function normalizeChatSnapshot(snapshot: ChatSnapshot | null): ChatSnapsh
     history,
     availableProviders,
   }
+}
+
+export function shouldEnqueueUserPrompt(activeChatId: string | null, isProcessing: boolean, tmuxSession?: string | null) {
+  return Boolean(activeChatId && isProcessing && !tmuxSession?.trim())
+}
+
+export function shouldRenderOptimisticWebPrompt(activeChatId: string | null, tmuxSession?: string | null) {
+  return !activeChatId || !tmuxSession?.trim()
+}
+
+export function shouldRefreshActiveTmuxChat(activeChatId: string | null, tmuxSession: string | null | undefined, connectionStatus: SocketStatus) {
+  return Boolean(activeChatId && tmuxSession?.trim() && connectionStatus === "connected")
 }
 
 export function getNewestRemainingChatId(projectGroups: SidebarData["projectGroups"], activeChatId: string): string | null {
@@ -620,6 +668,147 @@ function getProjectIdForChat(projectGroups: SidebarData["projectGroups"], chatId
   return projectGroups.find((group) => group.chats.some((chat) => chat.chatId === chatId))?.groupKey ?? null
 }
 
+function normalizeLaunchProvider(value: string | null): AgentProvider | null {
+  const normalized = (value ?? "").trim().toLowerCase()
+  return normalized === "codex" || normalized === "claude" || normalized === "gemini"
+    ? normalized
+    : null
+}
+
+function getDefaultLaunchProvider(
+  activeProvider: AgentProvider | null | undefined,
+  settingsDefaultProvider: AppSettingsSnapshot["defaultProvider"] | undefined,
+  composerProvider: AgentProvider,
+) {
+  if (activeProvider) return activeProvider
+  if (settingsDefaultProvider && settingsDefaultProvider !== "last_used") return settingsDefaultProvider
+  return composerProvider
+}
+
+function getDefaultTmuxCommand(provider: AgentProvider, settings: AppSettingsSnapshot | null) {
+  const configured = settings?.tmuxCommands?.[provider]?.trim()
+  if (configured) return configured
+  return settings?.providerExecutables?.[provider]?.trim() || provider
+}
+
+function getProviderLabel(availableProviders: readonly ProviderCatalogEntry[], provider: AgentProvider) {
+  return availableProviders.find((candidate) => candidate.id === provider)?.label ?? provider
+}
+
+function getLaunchProviderChoices(availableProviders: readonly ProviderCatalogEntry[]) {
+  return availableProviders.map((provider) => ({
+    value: provider.id,
+    label: provider.label,
+    description: `Start a new ${provider.label} tmux session for this project.`,
+    icon: provider.id,
+  }))
+}
+
+function getLaunchModeChoices(provider: AgentProvider, baseCommand: string) {
+  if (provider === "codex") {
+    return [
+      {
+        value: baseCommand,
+        label: "Normal",
+        description: baseCommand,
+        icon: "terminal",
+      },
+      {
+        value: `${baseCommand} --sandbox workspace-write --ask-for-approval on-request`,
+        label: "Workspace write",
+        description: "Workspace-write sandbox with approval prompts.",
+        icon: "safe",
+      },
+      {
+        value: `${baseCommand} --dangerously-bypass-approvals-and-sandbox`,
+        label: "Danger",
+        description: "No sandbox and no approval prompts.",
+        icon: "danger",
+      },
+      {
+        value: "custom",
+        label: "Custom command",
+        description: "Edit the full Codex launch command.",
+        icon: "custom",
+      },
+    ]
+  }
+
+  if (provider === "gemini") {
+    return [
+      {
+        value: baseCommand,
+        label: "Normal",
+        description: baseCommand,
+        icon: "terminal",
+      },
+      {
+        value: `${baseCommand} --skip-trust`,
+        label: "Skip trust",
+        description: "Trust this workspace for the session.",
+        icon: "safe",
+      },
+      {
+        value: `${baseCommand} --approval-mode auto_edit`,
+        label: "Auto edit",
+        description: "Auto-approve edit tools.",
+        icon: "safe",
+      },
+      {
+        value: `${baseCommand} --approval-mode plan`,
+        label: "Plan",
+        description: "Read-only planning mode.",
+        icon: "safe",
+      },
+      {
+        value: `${baseCommand} --yolo`,
+        label: "YOLO",
+        description: "Auto-approve all tools.",
+        icon: "danger",
+      },
+      {
+        value: "custom",
+        label: "Custom command",
+        description: "Edit the full Gemini launch command.",
+        icon: "custom",
+      },
+    ]
+  }
+
+  return [
+    {
+      value: baseCommand,
+      label: "Normal",
+      description: baseCommand,
+      icon: "terminal",
+    },
+    {
+      value: `${baseCommand} --permission-mode acceptEdits`,
+      label: "Accept edits",
+      description: "Accept file edits with safer command approvals.",
+      icon: "safe",
+    },
+    {
+      value: `${baseCommand} --permission-mode plan`,
+      label: "Plan",
+      description: "Read-only planning mode.",
+      icon: "safe",
+    },
+    {
+      value: `${baseCommand} --dangerously-skip-permissions`,
+      label: "Bypass permissions",
+      description: "Skip Claude permission checks.",
+      icon: "danger",
+    },
+    {
+      value: "custom",
+      label: "Custom command",
+      description: "Edit the full Claude launch command.",
+      icon: "custom",
+    },
+  ]
+}
+
 export function shouldAutoFollowTranscript(distanceFromBottom: number) {
   return distanceFromBottom < 24
 }
@@ -809,7 +998,7 @@ export interface AbolqasemState {
   handleWriteLlmProvider: (value: Pick<LlmProviderSnapshot, "provider" | "apiKey" | "model" | "baseUrl">) => Promise<void>
   handleValidateLlmProvider: (value: Pick<LlmProviderSnapshot, "provider" | "apiKey" | "model" | "baseUrl">) => Promise<LlmProviderValidationResult>
   handleSignOut: () => Promise<void>
-  handleSend: (content: string, options?: { provider?: AgentProvider; model?: string; modelOptions?: ModelOptions; planMode?: boolean }) => Promise<void>
+  handleSend: (content: string, options?: { provider?: AgentProvider; model?: string; modelOptions?: ModelOptions; planMode?: boolean; attachments?: ChatAttachment[] }) => Promise<void>
   handleSteerQueuedMessage: (queuedMessageId: string) => Promise<void>
   handleRemoveQueuedMessage: (queuedMessageId: string) => Promise<void>
   handleCancel: () => Promise<void>
@@ -1328,11 +1517,19 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
     [activeChatSnapshot?.messages, olderHistoryEntries]
   )
   const optimisticScopeId = activeChatId ?? NEW_CHAT_OPTIMISTIC_SCOPE
+  const runtime = activeChatSnapshot?.runtime ?? null
+  const queuedMessages = activeChatSnapshot?.queuedMessages ?? []
+  const shouldShowOptimisticWebPrompts = shouldRenderOptimisticWebPrompt(activeChatId, runtime?.tmuxSession)
   const optimisticTranscriptEntries = useMemo(
-    () => optimisticUserPrompts
-      .filter((prompt) => prompt.scopeId === optimisticScopeId)
-      .map((prompt) => prompt.entry),
-    [optimisticScopeId, optimisticUserPrompts]
+    () => {
+      if (!shouldShowOptimisticWebPrompts) {
+        return []
+      }
+      return optimisticUserPrompts
+        .filter((prompt) => prompt.scopeId === optimisticScopeId)
+        .map((prompt) => prompt.entry)
+    },
+    [optimisticScopeId, optimisticUserPrompts, shouldShowOptimisticWebPrompts]
   )
   const transcriptEntries = useMemo(
     () => [...serverTranscriptEntries, ...optimisticTranscriptEntries],
@@ -1341,9 +1538,7 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
   const messages = useMemo(() => processTranscriptMessages(transcriptEntries), [transcriptEntries])
   const previousPrompt = useMemo(() => getPreviousPrompt(messages), [messages])
   const latestToolIds = useMemo(() => getLatestToolIds(messages), [messages])
-  const runtime = activeChatSnapshot?.runtime ?? null
-  const queuedMessages = activeChatSnapshot?.queuedMessages ?? []
-  const optimisticRuntimeStatus = optimisticProcessing?.scopeId === optimisticScopeId && (!runtime || runtime.status === "idle")
+  const optimisticRuntimeStatus = shouldShowOptimisticWebPrompts && optimisticProcessing?.scopeId === optimisticScopeId && (!runtime || runtime.status === "idle")
     ? "starting"
     : null
   const effectiveRuntimeStatus = optimisticRuntimeStatus ?? runtime?.status ?? null
@@ -1388,6 +1583,32 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
     }, 300)
     return () => window.clearTimeout(timeoutId)
   }, [optimisticProcessing, optimisticScopeId, runtime?.status])
+
+  useEffect(() => {
+    if (!shouldRefreshActiveTmuxChat(activeChatId, runtime?.tmuxSession, connectionStatus)) {
+      return
+    }
+
+    const refreshChatId = activeChatId
+    if (!refreshChatId) return
+
+    let inFlight = false
+    const refresh = () => {
+      if (document.visibilityState !== "visible" || inFlight) {
+        return
+      }
+      inFlight = true
+      void socket.command({ type: "chat.refresh", chatId: refreshChatId })
+        .catch(() => undefined)
+        .finally(() => {
+          inFlight = false
+        })
+    }
+
+    refresh()
+    const intervalId = window.setInterval(refresh, LIVE_TMUX_CHAT_REFRESH_INTERVAL_MS)
+    return () => window.clearInterval(intervalId)
+  }, [activeChatId, connectionStatus, runtime?.tmuxSession, socket])
 
   useEffect(() => {
     if (!activeChatId || runtime?.status !== "starting") {
@@ -1533,8 +1754,49 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
         activeChatId ? runtime?.provider ?? null : null,
         chatPreferences.providerDefaults
       )
-      const result = await socket.command<{ chatId: string }>({ type: "chat.create", projectId })
-      chatPreferences.initializeComposerForChat(result.chatId, { sourceState: sourceComposerState })
+      const settings = useAppSettingsStore.getState().settings
+      const defaultProvider = getDefaultLaunchProvider(runtime?.provider, settings?.defaultProvider, sourceComposerState.provider)
+      const providerChoices = getLaunchProviderChoices(availableProviders.length ? availableProviders : PROVIDERS)
+      const providerInput = await dialog.choice({
+        title: "Launch agent",
+        description: "Proxy and executable settings are applied automatically.",
+        choices: providerChoices,
+        initialValue: defaultProvider,
+        dir: "ltr",
+      })
+      if (providerInput === null) return
+      const provider = normalizeLaunchProvider(providerInput)
+      if (!provider) {
+        await dialog.alert({
+          title: "Invalid provider",
+          description: "Use one of: codex, claude, gemini.",
+          dir: "ltr",
+        })
+        return
+      }
+      const baseCommand = getDefaultTmuxCommand(provider, settings)
+      const launchModeChoices = getLaunchModeChoices(provider, baseCommand)
+      const modeInput = await dialog.choice({
+        title: `Launch ${getProviderLabel(availableProviders, provider)}`,
+        description: "Choose how this agent should run in tmux.",
+        choices: launchModeChoices,
+        initialValue: baseCommand,
+        dir: "ltr",
+      })
+      if (modeInput === null) return
+      const customCommand = modeInput === "custom"
+        ? await dialog.prompt({
+          title: "Custom launch command",
+          description: "Full command with any provider-specific flags.",
+          initialValue: baseCommand,
+          dir: "ltr",
+        })
+        : modeInput
+      if (customCommand === null) return
+      const tmuxCommand = customCommand.trim() || baseCommand
+      const result = await socket.command<{ chatId: string }>({ type: "chat.create", projectId, provider, tmuxCommand })
+      const providerComposerState = getComposerStateForActiveProvider(sourceComposerState, provider, chatPreferences.providerDefaults)
+      chatPreferences.initializeComposerForChat(result.chatId, { sourceState: providerComposerState })
       setSelectedProjectId(projectId)
       setPendingChatId(result.chatId)
       navigate(chatRoute(result.chatId))
@@ -1544,7 +1806,7 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
       creatingChatProjectIdRef.current = null
       setCreatingChatProjectId(null)
     }
-  }, [activeChatId, navigate, runtime?.provider, socket])
+  }, [activeChatId, availableProviders, dialog, navigate, runtime?.provider, socket])
 
   const resolveProjectIdForStartChat = useCallback(async (intent: StartChatIntent): Promise<{ projectId: string; localPath?: string }> => {
     if (intent.kind === "project_id") {
@@ -1746,14 +2008,16 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
 
   const handleSend = useCallback(async (
     content: string,
-    options?: { provider?: AgentProvider; model?: string; modelOptions?: ModelOptions; planMode?: boolean; attachments?: import("../../shared/types").ChatAttachment[] }
+    options?: { provider?: AgentProvider; model?: string; modelOptions?: ModelOptions; planMode?: boolean; attachments?: ChatAttachment[] }
   ) => {
     const attachments = options?.attachments ?? []
-    if (activeChatId && isProcessing) {
+    if (shouldEnqueueUserPrompt(activeChatId, isProcessing, runtime?.tmuxSession)) {
+      const queueChatId = activeChatId
+      if (!queueChatId) return
       try {
         await socket.command<{ queuedMessageId: string }>({
           type: "message.enqueue",
-          chatId: activeChatId,
+          chatId: queueChatId,
           content,
           attachments,
           provider: options?.provider,
@@ -1773,10 +2037,13 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
     const clientTraceId = generateUUID()
     const signature = getUserPromptSignature(content, attachments)
     const optimisticScopeId = activeChatId ?? NEW_CHAT_OPTIMISTIC_SCOPE
-    setOptimisticProcessing({
-      scopeId: optimisticScopeId,
-      ackedAt: null,
-    })
+    const shouldUseOptimisticWebPrompt = shouldRenderOptimisticWebPrompt(activeChatId, runtime?.tmuxSession)
+    if (shouldUseOptimisticWebPrompt) {
+      setOptimisticProcessing({
+        scopeId: optimisticScopeId,
+        ackedAt: null,
+      })
+    }
     const sendTrace: SendToStartingTrace = {
       traceId: clientTraceId,
       optimisticId,
@@ -1785,34 +2052,39 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
       routeChatIdAtSend: activeChatId,
       contentPreview: content.slice(0, 80),
     }
-    sendToStartingProfilesRef.current.set(clientTraceId, sendTrace)
+    if (shouldUseOptimisticWebPrompt) {
+      sendToStartingProfilesRef.current.set(clientTraceId, sendTrace)
+    }
     logSendToStartingTrace(sendTrace, "handle_send_called", {
       optimisticScopeId,
       attachments: attachments.length,
       contentLength: content.length,
       contentPreview: sendTrace.contentPreview,
+      tmuxSession: runtime?.tmuxSession ?? null,
     })
-    const requiredMatchCount = countMatchingUserPrompts(serverTranscriptEntries, signature)
-      + optimisticUserPrompts.filter((prompt) => prompt.scopeId === optimisticScopeId && prompt.signature === signature).length
-      + 1
+    if (shouldUseOptimisticWebPrompt) {
+      const requiredMatchCount = countMatchingUserPrompts(serverTranscriptEntries, signature)
+        + optimisticUserPrompts.filter((prompt) => prompt.scopeId === optimisticScopeId && prompt.signature === signature).length
+        + 1
 
-    setOptimisticUserPrompts((current) => [...current, {
-      id: optimisticId,
-      scopeId: optimisticScopeId,
-      signature,
-      requiredMatchCount,
-      entry: {
-        _id: `optimistic:${optimisticId}`,
-        kind: "user_prompt",
-        content,
-        attachments,
-        createdAt: Date.now(),
-      },
-    }])
-    logSendToStartingTrace(sendTrace, "optimistic_prompt_added", {
-      optimisticId,
-      optimisticScopeId,
-    })
+      setOptimisticUserPrompts((current) => [...current, {
+        id: optimisticId,
+        scopeId: optimisticScopeId,
+        signature,
+        requiredMatchCount,
+        entry: {
+          _id: `optimistic:${optimisticId}`,
+          kind: "user_prompt",
+          content,
+          attachments,
+          createdAt: Date.now(),
+        },
+      }])
+      logSendToStartingTrace(sendTrace, "optimistic_prompt_added", {
+        optimisticId,
+        optimisticScopeId,
+      })
+    }
 
     try {
       let projectId = activeChatId ? null : selectedProjectId ?? sidebarProjectGroups[0]?.groupKey ?? null
@@ -1846,19 +2118,21 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
       })
       sendTrace.ackAt = performance.now()
       sendTrace.serverChatId = result.chatId ?? sendTrace.serverChatId
-      setOptimisticProcessing((current) => {
-        if (!current) return current
-        const nextScopeId = result.chatId && result.chatId !== current.scopeId ? result.chatId : current.scopeId
-        return {
-          scopeId: nextScopeId,
-          ackedAt: performance.now(),
-        }
-      })
+      if (shouldUseOptimisticWebPrompt) {
+        setOptimisticProcessing((current) => {
+          if (!current) return current
+          const nextScopeId = result.chatId && result.chatId !== current.scopeId ? result.chatId : current.scopeId
+          return {
+            scopeId: nextScopeId,
+            ackedAt: performance.now(),
+          }
+        })
+      }
       logSendToStartingTrace(sendTrace, "chat_send_ack_received", {
         resultChatId: result.chatId ?? null,
       })
 
-      if (result.chatId && result.chatId !== optimisticScopeId) {
+      if (shouldUseOptimisticWebPrompt && result.chatId && result.chatId !== optimisticScopeId) {
         setOptimisticUserPrompts((current) => current.map((prompt) => (
           prompt.id === optimisticId ? { ...prompt, scopeId: result.chatId! } : prompt
         )))
@@ -1875,8 +2149,10 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
       }
       setCommandError(null)
     } catch (error) {
-      setOptimisticUserPrompts((current) => current.filter((prompt) => prompt.id !== optimisticId))
-      setOptimisticProcessing(null)
+      if (shouldUseOptimisticWebPrompt) {
+        setOptimisticUserPrompts((current) => current.filter((prompt) => prompt.id !== optimisticId))
+        setOptimisticProcessing(null)
+      }
       logSendToStartingTrace(sendTrace, "handle_send_failed", {
         error: error instanceof Error ? error.message : String(error),
       })
@@ -1884,7 +2160,7 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
       setCommandError(error instanceof Error ? error.message : String(error))
       throw error
     }
-  }, [activeChatId, fallbackLocalProjectPath, isProcessing, navigate, optimisticUserPrompts, selectedProjectId, serverTranscriptEntries, sidebarProjectGroups, socket])
+  }, [activeChatId, fallbackLocalProjectPath, isProcessing, navigate, optimisticUserPrompts, runtime?.tmuxSession, selectedProjectId, serverTranscriptEntries, sidebarProjectGroups, socket])
 
   const handleSteerQueuedMessage = useCallback(async (queuedMessageId: string) => {
     if (!activeChatId) return

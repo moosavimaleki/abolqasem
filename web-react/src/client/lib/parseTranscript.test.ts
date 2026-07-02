@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { processTranscriptMessages } from "./parseTranscript"
+import { processTranscriptMessages, tmuxCaptureToReadableText, tmuxCaptureToTranscriptMessages } from "./parseTranscript"
 import { getLatestToolIds } from "../app/derived"
 import type { TranscriptEntry } from "../../shared/types"
 
@@ -12,6 +12,50 @@ function entry(partial: Omit<TranscriptEntry, "_id" | "createdAt">): TranscriptE
 }
 
 describe("processTranscriptMessages", () => {
+  test("splits tmux capture entries into readable chat messages", () => {
+    const messages = processTranscriptMessages([
+      {
+        _id: "tmux-capture-chat-1",
+        createdAt: Date.now(),
+        kind: "assistant_text",
+        text: "\u001b[32m╭────╮\u001b[0m\n│ سلام از tmux │\n│ npm test │\n╰────╯\n\n› دوباره تست کن\n\n• انجام شد\n\n",
+      },
+    ])
+
+    expect(messages).toHaveLength(3)
+    expect(messages[0]?.kind).toBe("assistant_text")
+    expect(messages[1]?.kind).toBe("user_prompt")
+    expect(messages[2]?.kind).toBe("assistant_text")
+    if (messages[0]?.kind !== "assistant_text" || messages[1]?.kind !== "user_prompt" || messages[2]?.kind !== "assistant_text") {
+      throw new Error("unexpected message")
+    }
+    expect(messages[0].text).toBe("سلام از tmux\n\n```shell\nnpm test\n```")
+    expect(messages[1].content).toBe("دوباره تست کن")
+    expect(messages[2].text).toBe("انجام شد")
+  })
+
+  test("splits Claude and Gemini tmux prompts without Codex-only assumptions", () => {
+    const messages = processTranscriptMessages([
+      {
+        _id: "tmux-capture-chat-2",
+        createdAt: Date.now(),
+        kind: "assistant_text",
+        text: [
+          "Claude Sonnet - /tmp/project - tokens 120k",
+          "> review this file",
+          "I'll review it now.",
+          "Gemini 3 Pro - /tmp/project - model ready",
+          "❯ summarize the diff",
+          "Summary is ready.",
+        ].join("\n"),
+      },
+    ])
+
+    expect(messages.map((message) => message.kind)).toEqual(["user_prompt", "assistant_text", "user_prompt", "assistant_text"])
+    expect(messages[0]?.kind === "user_prompt" ? messages[0].content : "").toBe("review this file")
+    expect(messages[2]?.kind === "user_prompt" ? messages[2].content : "").toBe("summarize the diff")
+  })
+
   test("hydrates tool results onto prior tool calls", () => {
     const messages = processTranscriptMessages([
       entry({
@@ -187,6 +231,214 @@ describe("processTranscriptMessages", () => {
     expect(messages[0]?.kind).toBe("tool")
     if (messages[0]?.kind !== "tool") throw new Error("unexpected message")
     expect(messages[0].result).toEqual({ answers: { "Provider?": ["Codex"] } })
+  })
+})
+
+describe("tmuxCaptureToReadableText", () => {
+  test("strips ansi control sequences and repeated blank lines", () => {
+    expect(tmuxCaptureToReadableText("one\u001b[31m\n\n\n\u001b[0mtwo")).toBe("one\n\ntwo")
+  })
+
+  test("does not turn CLI help option rows into code blocks", () => {
+    const text = tmuxCaptureToReadableText([
+      "Options:",
+      "  --model <model>                  Model for the current session",
+      "  --permission-mode <mode>         Permission mode to use for the session",
+      "Commands:",
+      "  mcp                              Configure and manage MCP servers",
+    ].join("\n"))
+
+    expect(text).toContain("--model <model>")
+    expect(text).not.toContain("```")
+  })
+
+  test("keeps multiline shell commands in one shell block", () => {
+    const text = tmuxCaptureToReadableText([
+      'curl -sS "http://154.59.156.39:36631/get_model_info" \\',
+      '  -H "Authorization: Bearer YOUR_API_KEY" \\',
+      '  -H "Content-Type: application/json" | jq .',
+    ].join("\n"))
+
+    expect(text).toBe([
+      "```shell",
+      'curl -sS "http://154.59.156.39:36631/get_model_info" \\',
+      '  -H "Authorization: Bearer YOUR_API_KEY" \\',
+      '  -H "Content-Type: application/json" | jq .',
+      "```",
+    ].join("\n"))
+  })
+
+  test("does not merge prose after a completed shell command", () => {
+    const text = tmuxCaptureToReadableText([
+      'curl -sS "http://example.test"',
+      "توضیح بعد از فرمان",
+    ].join("\n"))
+
+    expect(text).toBe([
+      "```shell",
+      'curl -sS "http://example.test"',
+      "```",
+      "",
+      "توضیح بعد از فرمان",
+    ].join("\n"))
+  })
+})
+
+describe("tmuxCaptureToTranscriptMessages", () => {
+  test("keeps terminal warnings in a highlighted code block", () => {
+    const messages = tmuxCaptureToTranscriptMessages({
+      _id: "tmux-capture-chat-1",
+      createdAt: Date.now(),
+      kind: "assistant_text",
+      text: "⚠ MCP startup incomplete\n\n› سلام\n",
+    })
+
+    expect(messages[0]?.kind).toBe("assistant_text")
+    if (messages[0]?.kind !== "assistant_text") throw new Error("unexpected message")
+    expect(messages[0].text).toBe("```text\n⚠ MCP startup incomplete\n```")
+  })
+
+  test("ignores the active trailing composer prompt", () => {
+    const messages = tmuxCaptureToTranscriptMessages({
+      _id: "tmux-capture-chat-2",
+      createdAt: Date.now(),
+      kind: "assistant_text",
+      text: [
+        "• قبلی انجام شد.",
+        "",
+        "› Run /review on my current changes",
+      ].join("\n"),
+    })
+
+    expect(messages).toHaveLength(1)
+    expect(messages[0]?.kind).toBe("assistant_text")
+    if (messages[0]?.kind !== "assistant_text") throw new Error("unexpected message")
+    expect(messages[0].text).toBe("قبلی انجام شد.")
+  })
+
+  test("keeps prompts that are followed by real assistant output", () => {
+    const messages = tmuxCaptureToTranscriptMessages({
+      _id: "tmux-capture-chat-3",
+      createdAt: Date.now(),
+      kind: "assistant_text",
+      text: [
+        "› review this diff",
+        "I am reviewing it now.",
+      ].join("\n"),
+    })
+
+    expect(messages.map((message) => message.kind)).toEqual(["user_prompt", "assistant_text"])
+    expect(messages[0]?.kind === "user_prompt" ? messages[0].content : "").toBe("review this diff")
+  })
+
+  test("keeps multiline tmux prompts as user messages", () => {
+    const messages = tmuxCaptureToTranscriptMessages({
+      _id: "tmux-capture-chat-4",
+      createdAt: Date.now(),
+      kind: "assistant_text",
+      text: [
+        "› خط اول پیام من",
+        "بببب",
+        "ادامه پیام",
+        "Working (2s • esc to interrupt)",
+        "• پاسخ آماده شد.",
+      ].join("\n"),
+    })
+
+    expect(messages.map((message) => message.kind)).toEqual(["user_prompt", "assistant_text"])
+    expect(messages[0]?.kind === "user_prompt" ? messages[0].content : "").toBe("خط اول پیام من\nبببب\nادامه پیام")
+    expect(messages[1]?.kind === "assistant_text" ? messages[1].text : "").toBe("پاسخ آماده شد.")
+  })
+
+  test("filters tmux working status from assistant text", () => {
+    const messages = tmuxCaptureToTranscriptMessages({
+      _id: "tmux-capture-chat-5",
+      createdAt: Date.now(),
+      kind: "assistant_text",
+      text: [
+        "Working (43s • esc to interrupt)",
+        "• انجام شد.",
+      ].join("\n"),
+    })
+
+    expect(messages).toHaveLength(1)
+    expect(messages[0]?.kind === "assistant_text" ? messages[0].text : "").toBe("انجام شد.")
+  })
+
+  test("preserves mermaid tmux blocks for diagram rendering", () => {
+    const messages = tmuxCaptureToTranscriptMessages({
+      _id: "tmux-capture-chat-6",
+      createdAt: Date.now(),
+      kind: "assistant_text",
+      text: [
+        "• نمودار:",
+        "graph TD",
+        "    A[Web] --> B[tmux]",
+        "    B --> C[Agent]",
+      ].join("\n"),
+    })
+
+    expect(messages[0]?.kind).toBe("assistant_text")
+    if (messages[0]?.kind !== "assistant_text") throw new Error("unexpected message")
+    expect(messages[0].text).toContain("```mermaid\ngraph TD")
+  })
+
+  test("keeps RTL mermaid labels inside the diagram block", () => {
+    const messages = tmuxCaptureToTranscriptMessages({
+      _id: "tmux-capture-chat-6-rtl-mermaid",
+      createdAt: Date.now(),
+      kind: "assistant_text",
+      text: [
+        "• flowchart TD",
+        "  A[شروع] --> B{ورودی معتبر است؟}",
+        "  B -- بله --> C[پردازش داده]",
+        "  B -- خیر --> D[نمایش خطا]",
+      ].join("\n"),
+    })
+
+    expect(messages[0]?.kind).toBe("assistant_text")
+    if (messages[0]?.kind !== "assistant_text") throw new Error("unexpected message")
+    expect(messages[0].text).toContain("```mermaid\nflowchart TD")
+    expect(messages[0].text).toContain("B -- خیر --> D[نمایش خطا]\n```")
+    expect(messages[0].text).not.toContain("```text")
+  })
+
+  test("does not render a lone mermaid start line as an empty diagram", () => {
+    const messages = tmuxCaptureToTranscriptMessages({
+      _id: "tmux-capture-chat-6-empty-mermaid",
+      createdAt: Date.now(),
+      kind: "assistant_text",
+      text: "• flowchart TD",
+    })
+
+    expect(messages[0]?.kind).toBe("assistant_text")
+    if (messages[0]?.kind !== "assistant_text") throw new Error("unexpected message")
+    expect(messages[0].text).toBe("flowchart TD")
+  })
+
+  test("preserves tmux code blocks for syntax highlighting", () => {
+    const messages = tmuxCaptureToTranscriptMessages({
+      _id: "tmux-capture-chat-7",
+      createdAt: Date.now(),
+      kind: "assistant_text",
+      text: [
+        "• این بخش کد PHP است:",
+        "Timer::tick(5000, function () {",
+        "    // every 5 seconds",
+        "});",
+        "",
+        "$this->workerTickers = [",
+        "    new \\EitaaView\\Worker\\PoolStatsTicker($this),",
+        "    new \\EitaaView\\Worker\\RedisTopologyTicker($this),",
+        "];",
+      ].join("\n"),
+    })
+
+    expect(messages).toHaveLength(1)
+    expect(messages[0]?.kind).toBe("assistant_text")
+    if (messages[0]?.kind !== "assistant_text") throw new Error("unexpected message")
+    expect(messages[0].text).toContain("```php\nTimer::tick")
+    expect(messages[0].text).toContain("```php\n$this->workerTickers")
   })
 })
 

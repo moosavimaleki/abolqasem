@@ -147,6 +147,68 @@ func TestCompactWritesSnapshotAndClearsLogs(t *testing.T) {
 	}
 }
 
+func TestCompactSkipsFullTranscriptForTmuxChats(t *testing.T) {
+	store := New(t.TempDir())
+	state := readmodels.EmptyState()
+	state.ProjectsByID["project-1"] = readmodels.ProjectRecord{
+		ID:        "project-1",
+		LocalPath: "/tmp/project",
+		Title:     "project",
+		CreatedAt: 100,
+		UpdatedAt: 200,
+	}
+	state.ChatsByID["chat-1"] = readmodels.ChatRecord{
+		ID:            "chat-1",
+		ProjectID:     "project-1",
+		Title:         "Tmux Chat",
+		TmuxSession:   "abolqasem-chat-1",
+		HasMessages:   true,
+		LastMessageAt: 300,
+		CreatedAt:     101,
+		UpdatedAt:     300,
+	}
+	messageAppended, err := events.NewAt(events.TypeMessageAppended, 300, map[string]any{
+		"chatId": "chat-1",
+		"entry": readmodels.TranscriptEntry{
+			"_id":       "msg-1",
+			"kind":      "user_prompt",
+			"content":   "this should stay out of compacted events",
+			"createdAt": int64(300),
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewAt returned error: %v", err)
+	}
+	if err := store.Append(events.StreamMessages, messageAppended); err != nil {
+		t.Fatalf("Append message returned error: %v", err)
+	}
+
+	if err := store.Compact(state); err != nil {
+		t.Fatalf("Compact returned error: %v", err)
+	}
+	replayed, err := store.Replay(events.StreamMessages)
+	if err != nil {
+		t.Fatalf("Replay messages returned error: %v", err)
+	}
+	if len(replayed) != 0 {
+		t.Fatalf("expected compacted tmux chat to omit transcript events, got %#v", replayed)
+	}
+	archives, err := filepath.Glob(filepath.Join(store.Dir(), events.StreamMessages+".jsonl.archived-*"))
+	if err != nil {
+		t.Fatalf("Glob archives returned error: %v", err)
+	}
+	if len(archives) != 1 {
+		t.Fatalf("expected one archived messages stream, got %#v", archives)
+	}
+	archived, err := os.ReadFile(archives[0])
+	if err != nil {
+		t.Fatalf("ReadFile archive returned error: %v", err)
+	}
+	if !strings.Contains(string(archived), "this should stay out of compacted events") {
+		t.Fatalf("expected archive to preserve original messages stream, got %s", string(archived))
+	}
+}
+
 func TestLoadStateAppliesSnapshotThenEvents(t *testing.T) {
 	store := New(t.TempDir())
 	state := readmodels.EmptyState()

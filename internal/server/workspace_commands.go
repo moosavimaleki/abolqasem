@@ -3,14 +3,17 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
 
+	"ai-agent-manager/internal/parser"
 	"ai-agent-manager/internal/sessioninterop"
 	"ai-agent-manager/internal/state"
 	"ai-agent-manager/internal/workspace/events"
 	"ai-agent-manager/internal/workspace/readmodels"
+	"ai-agent-manager/internal/workspace/transcript"
 )
 
 func workspaceCreateProject(raw json.RawMessage) (readmodels.ProjectRecord, error) {
@@ -161,43 +164,56 @@ func workspaceForkChat(raw json.RawMessage) (map[string]any, string, error) {
 			return nil, "", err
 		}
 	}
-	entries, err := workspaceChatMessages(payload.ChatID)
-	if err != nil {
-		return nil, "", err
-	}
 	provider := strings.TrimSpace(derefWorkspaceString(chat.Provider))
+	forkToken := firstNonEmpty(chat.NativeSessionID, derefWorkspaceString(chat.PendingForkSessionToken), derefWorkspaceString(chat.SessionToken))
 	if provider == "gemini" && strings.TrimSpace(project.LocalPath) != "" {
-		exportResult, err := sessioninterop.ExportNativeSession(sessioninterop.ExportArgs{
-			Provider:           provider,
-			LocalPath:          project.LocalPath,
-			Title:              title,
-			SourceSessionToken: derefWorkspaceString(chat.SessionToken),
-			Entries:            entries,
-			PreferFork:         true,
-		})
+		entries, err := workspaceChatMessages(payload.ChatID)
 		if err != nil {
 			return nil, "", err
 		}
-		if exportResult.SessionToken != "" {
-			store := &workspaceEventStore{store: workspaceStore()}
-			if err := store.SetSessionToken(fork.ID, exportResult.SessionToken); err != nil {
+		if len(entries) > 0 {
+			exportResult, err := sessioninterop.ExportNativeSession(sessioninterop.ExportArgs{
+				Provider:           provider,
+				LocalPath:          project.LocalPath,
+				Title:              title,
+				SourceSessionToken: derefWorkspaceString(chat.SessionToken),
+				Entries:            workspaceConvertedTranscriptEntries(entries),
+				PreferFork:         true,
+			})
+			if err != nil {
+				return nil, "", err
+			}
+			if exportResult.SessionToken != "" {
+				store := &workspaceEventStore{store: workspaceStore()}
+				if err := store.SetSessionToken(fork.ID, exportResult.SessionToken); err != nil {
+					return nil, "", err
+				}
+			}
+			if err := appendWorkspaceStoreEvent(workspaceStore(), events.StreamChats, events.TypeChatRuntimeSet, time.Now().UnixMilli(), map[string]any{
+				"chatId":               fork.ID,
+				"nativeSessionId":      exportResult.SessionToken,
+				"nativeTranscriptPath": exportResult.TranscriptPath,
+				"lastSummary":          workspaceConversionLastSummary(entries),
+			}); err != nil {
 				return nil, "", err
 			}
 		}
-	} else if token := firstNonEmpty(derefWorkspaceString(chat.PendingForkSessionToken), derefWorkspaceString(chat.SessionToken)); token != "" {
+	}
+	if forkToken != "" {
 		if err := appendWorkspaceStoreEvent(workspaceStore(), events.StreamTurns, events.TypePendingForkSessionTokenSet, time.Now().UnixMilli(), map[string]any{
 			"chatId":                  fork.ID,
-			"pendingForkSessionToken": &token,
+			"pendingForkSessionToken": &forkToken,
 		}); err != nil {
 			return nil, "", err
 		}
 	}
-	for _, entry := range entries {
-		event, err := events.New(events.TypeMessageAppended, map[string]any{"chatId": fork.ID, "entry": entry})
-		if err != nil {
-			return nil, "", err
-		}
-		if err := workspaceStore().Append(events.StreamMessages, event); err != nil {
+	if chat.NativeSessionID != "" || chat.NativeTranscriptPath != "" || chat.LastSummary != "" {
+		if err := appendWorkspaceStoreEvent(workspaceStore(), events.StreamChats, events.TypeChatRuntimeSet, time.Now().UnixMilli(), map[string]any{
+			"chatId":               fork.ID,
+			"nativeSessionId":      chat.NativeSessionID,
+			"nativeTranscriptPath": chat.NativeTranscriptPath,
+			"lastSummary":          chat.LastSummary,
+		}); err != nil {
 			return nil, "", err
 		}
 	}
@@ -322,6 +338,18 @@ func workspaceReadChatTranscriptIndex(raw json.RawMessage) (map[string]any, erro
 	if _, _, err := workspaceChatProjectRequired(chatID); err != nil {
 		return nil, err
 	}
+	if meta, ok, err := workspaceNativeTranscriptMetaForChat(chatID); err != nil {
+		return nil, err
+	} else if ok {
+		items, err := workspaceNativeTranscriptIndex(meta)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{
+			"chatId": chatID,
+			"items":  items,
+		}, nil
+	}
 
 	entries, err := workspaceChatMessages(chatID)
 	if err != nil {
@@ -364,6 +392,56 @@ func buildWorkspaceTranscriptIndex(entries []readmodels.TranscriptEntry) []works
 	}
 
 	return items
+}
+
+func workspaceNativeTranscriptIndex(meta state.SessionMeta) ([]workspaceTranscriptIndexItem, error) {
+	items := []workspaceTranscriptIndexItem{}
+	err := parser.StreamSearchableMessages(meta.Agent, meta.SessionID, meta.TranscriptPath, func(message parser.SearchableMessage) bool {
+		item, ok := workspaceTranscriptIndexItemFromSearchable(message, len(items))
+		if ok {
+			items = append(items, item)
+		}
+		return true
+	})
+	if err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+func workspaceTranscriptIndexItemFromSearchable(message parser.SearchableMessage, sequence int) (workspaceTranscriptIndexItem, bool) {
+	role := workspaceSearchableTranscriptRole(message)
+	if role == "" {
+		return workspaceTranscriptIndexItem{}, false
+	}
+	text := strings.TrimSpace(message.Text)
+	hasCode := workspaceTranscriptHasCode(message.Kind, text)
+	return workspaceTranscriptIndexItem{
+		ID:              workspaceSearchableCursor(message),
+		Sequence:        sequence,
+		Role:            role,
+		EstimatedHeight: workspaceTranscriptEstimatedHeight(role, text, hasCode),
+		HasCode:         hasCode,
+		Preview:         workspaceTranscriptPreviewText(text),
+	}, true
+}
+
+func workspaceSearchableTranscriptRole(message parser.SearchableMessage) string {
+	switch strings.ToLower(strings.TrimSpace(message.Role)) {
+	case "user":
+		return "user"
+	case "assistant", "model":
+		return "assistant"
+	case "tool":
+		return "tool"
+	case "system":
+		return "system"
+	default:
+		if strings.EqualFold(strings.TrimSpace(message.Kind), "tool") {
+			return "tool"
+		}
+		return ""
+	}
 }
 
 func workspaceTranscriptIndexItemFromEntry(entry readmodels.TranscriptEntry, sequence int) (workspaceTranscriptIndexItem, bool) {
@@ -519,8 +597,21 @@ func workspaceAnyString(value any) string {
 }
 
 func workspaceLoadStoredChatHistory(chatID string, beforeCursor string, limit int) (map[string]any, error) {
-	if _, _, err := workspaceChatProjectRequired(chatID); err != nil {
+	chat, _, err := workspaceChatProjectRequired(chatID)
+	if err != nil {
 		return nil, err
+	}
+	if meta, ok, err := workspaceNativeTranscriptMetaForChat(chatID); err != nil {
+		return nil, err
+	} else if ok {
+		return workspaceLoadNativeChatHistory(meta, beforeCursor, limit)
+	}
+	if workspaceChatHasTmuxRuntime(chat) {
+		return map[string]any{
+			"messages":    []readmodels.TranscriptEntry{},
+			"hasOlder":    false,
+			"olderCursor": nil,
+		}, nil
 	}
 	entries, err := workspaceChatMessages(chatID)
 	if err != nil {
@@ -553,8 +644,22 @@ func workspaceLoadStoredChatHistory(chatID string, beforeCursor string, limit in
 }
 
 func workspaceLoadStoredChatHistoryAround(chatID string, targetCursor string, limit int) (map[string]any, error) {
-	if _, _, err := workspaceChatProjectRequired(chatID); err != nil {
+	chat, _, err := workspaceChatProjectRequired(chatID)
+	if err != nil {
 		return nil, err
+	}
+	if meta, ok, err := workspaceNativeTranscriptMetaForChat(chatID); err != nil {
+		return nil, err
+	} else if ok {
+		return workspaceLoadNativeChatHistoryAround(meta, targetCursor, limit)
+	}
+	if workspaceChatHasTmuxRuntime(chat) {
+		return map[string]any{
+			"messages":    []readmodels.TranscriptEntry{},
+			"hasOlder":    false,
+			"olderCursor": nil,
+			"targetFound": false,
+		}, nil
 	}
 	entries, err := workspaceChatMessages(chatID)
 	if err != nil {
@@ -567,6 +672,173 @@ func workspaceLoadStoredChatHistoryAround(chatID string, targetCursor string, li
 		"olderCursor": olderCursor,
 		"targetFound": targetFound,
 	}, nil
+}
+
+func workspaceNativeTranscriptMetaForChat(chatID string) (state.SessionMeta, bool, error) {
+	stateSnapshot, err := workspaceStore().LoadStateLight()
+	if err != nil {
+		return state.SessionMeta{}, false, err
+	}
+	chat, ok := stateSnapshot.ChatsByID[strings.TrimSpace(chatID)]
+	if !ok || chat.DeletedAt != 0 || strings.TrimSpace(chat.NativeTranscriptPath) == "" {
+		return state.SessionMeta{}, false, nil
+	}
+	project, ok := stateSnapshot.ProjectsByID[chat.ProjectID]
+	if !ok || project.DeletedAt != 0 {
+		return state.SessionMeta{}, false, errors.New("project not found")
+	}
+	return state.SessionMeta{
+		Agent:          firstNonEmpty(derefWorkspaceString(chat.Provider), "codex"),
+		SessionID:      firstNonEmpty(chat.NativeSessionID, derefWorkspaceString(chat.SessionToken), chat.ID),
+		TranscriptPath: chat.NativeTranscriptPath,
+		Cwd:            project.LocalPath,
+		ProjectName:    project.Title,
+	}, true, nil
+}
+
+func workspaceNativeTranscriptMetaForChatRecord(chat readmodels.ChatRecord, project readmodels.ProjectRecord) (state.SessionMeta, bool) {
+	if chat.DeletedAt != 0 || project.DeletedAt != 0 || strings.TrimSpace(chat.NativeTranscriptPath) == "" {
+		return state.SessionMeta{}, false
+	}
+	return state.SessionMeta{
+		Agent:          firstNonEmpty(derefWorkspaceString(chat.Provider), "codex"),
+		SessionID:      firstNonEmpty(chat.NativeSessionID, derefWorkspaceString(chat.SessionToken), chat.ID),
+		TranscriptPath: chat.NativeTranscriptPath,
+		Cwd:            project.LocalPath,
+		ProjectName:    project.Title,
+	}, true
+}
+
+func workspaceLoadNativeChatHistory(meta state.SessionMeta, beforeCursor string, limit int) (map[string]any, error) {
+	if limit <= 0 {
+		limit = legacyDefaultRecentLimit
+	}
+	window := []readmodels.TranscriptEntry{}
+	hasOlder := false
+	var olderCursor *string
+	cursor := strings.TrimSpace(beforeCursor)
+	err := parser.StreamSearchableMessages(meta.Agent, meta.SessionID, meta.TranscriptPath, func(message parser.SearchableMessage) bool {
+		if cursor != "" && workspaceSearchableMatchesCursor(message, cursor) {
+			return false
+		}
+		if len(window) >= limit {
+			hasOlder = true
+			dropped := workspaceTranscriptCursor(window[0])
+			olderCursor = &dropped
+			window = window[1:]
+		}
+		window = append(window, workspaceTranscriptEntryFromSearchable(message))
+		return true
+	})
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"messages":    window,
+		"hasOlder":    hasOlder,
+		"olderCursor": olderCursor,
+	}, nil
+}
+
+func workspaceLoadNativeChatHistoryAround(meta state.SessionMeta, targetCursor string, limit int) (map[string]any, error) {
+	if limit <= 0 {
+		limit = legacyDefaultRecentLimit
+	}
+	beforeLimit := limit / 2
+	before := []readmodels.TranscriptEntry{}
+	messages := []readmodels.TranscriptEntry{}
+	targetFound := false
+	hasOlder := false
+	var olderCursor *string
+	err := parser.StreamSearchableMessages(meta.Agent, meta.SessionID, meta.TranscriptPath, func(message parser.SearchableMessage) bool {
+		entry := workspaceTranscriptEntryFromSearchable(message)
+		if targetFound {
+			if len(messages) >= limit {
+				return false
+			}
+			messages = append(messages, entry)
+			return len(messages) < limit
+		}
+		if workspaceSearchableMatchesCursor(message, targetCursor) {
+			targetFound = true
+			messages = append(append([]readmodels.TranscriptEntry(nil), before...), entry)
+			return len(messages) < limit
+		}
+		if len(before) >= beforeLimit {
+			hasOlder = true
+			dropped := workspaceTranscriptCursor(before[0])
+			olderCursor = &dropped
+			before = before[1:]
+		}
+		before = append(before, entry)
+		return true
+	})
+	if err != nil {
+		return nil, err
+	}
+	if !targetFound {
+		return map[string]any{
+			"messages":    []readmodels.TranscriptEntry{},
+			"hasOlder":    false,
+			"olderCursor": nil,
+			"targetFound": false,
+		}, nil
+	}
+	return map[string]any{
+		"messages":    messages,
+		"hasOlder":    hasOlder,
+		"olderCursor": olderCursor,
+		"targetFound": true,
+	}, nil
+}
+
+func workspaceTranscriptEntryFromSearchable(message parser.SearchableMessage) readmodels.TranscriptEntry {
+	entry := readmodels.TranscriptEntry{
+		"_id":       workspaceSearchableCursor(message),
+		"messageId": message.ID,
+	}
+	if message.CreatedAt != nil {
+		entry["createdAt"] = float64(message.CreatedAt.UnixMilli())
+	}
+	text := strings.TrimSpace(message.Text)
+	switch workspaceSearchableTranscriptRole(message) {
+	case "user":
+		entry["kind"] = transcript.KindUserPrompt
+		entry["content"] = text
+	case "assistant":
+		entry["kind"] = transcript.KindAssistantText
+		entry["text"] = text
+	case "tool":
+		entry["kind"] = transcript.KindToolCall
+		entry["tool"] = map[string]any{
+			"kind":     "tool",
+			"toolKind": "native",
+			"toolName": "native transcript",
+			"toolId":   workspaceSearchableCursor(message),
+			"input": map[string]any{
+				"summary": text,
+			},
+		}
+	default:
+		entry["kind"] = transcript.KindStatus
+		entry["status"] = text
+	}
+	return entry
+}
+
+func workspaceSearchableCursor(message parser.SearchableMessage) string {
+	if strings.TrimSpace(message.ID) != "" {
+		return strings.TrimSpace(message.ID)
+	}
+	return strconv.Itoa(message.Index)
+}
+
+func workspaceSearchableMatchesCursor(message parser.SearchableMessage, cursor string) bool {
+	cursor = strings.TrimSpace(cursor)
+	if cursor == "" {
+		return false
+	}
+	return cursor == workspaceSearchableCursor(message) || cursor == strconv.Itoa(message.Index)
 }
 
 func workspaceMaterializeImportedChatIfNeeded(chatID string) (string, error) {
@@ -590,40 +862,30 @@ func workspaceStoredChatExists(chatID string) bool {
 }
 
 func workspaceLoadLegacyChatHistory(meta state.SessionMeta, beforeCursor string, limit int) (map[string]any, error) {
-	imported, err := workspaceImportedLegacySession(meta)
-	if err != nil && !workspaceLegacyTranscriptUnavailable(err) {
-		return nil, err
-	}
-	if len(imported.Transcript.Messages) == 0 {
-		return map[string]any{
-			"messages":    []readmodels.TranscriptEntry{},
-			"hasOlder":    false,
-			"olderCursor": nil,
-		}, nil
-	}
-	messages, hasOlder, olderCursor := workspaceSliceTranscriptEntriesBefore(imported.Transcript.Messages, beforeCursor, limit)
 	return map[string]any{
-		"messages":    messages,
-		"hasOlder":    hasOlder,
-		"olderCursor": olderCursor,
+		"messages":    []readmodels.TranscriptEntry{},
+		"hasOlder":    false,
+		"olderCursor": nil,
 	}, nil
 }
 
 func workspaceLoadLegacyChatHistoryAround(meta state.SessionMeta, targetCursor string, limit int) (map[string]any, error) {
-	imported, err := workspaceImportedLegacySession(meta)
-	if err != nil && !workspaceLegacyTranscriptUnavailable(err) {
-		return nil, err
-	}
-	messages, hasOlder, olderCursor, targetFound := workspaceSliceTranscriptEntriesAround(imported.Transcript.Messages, targetCursor, limit)
 	return map[string]any{
-		"messages":    messages,
-		"hasOlder":    hasOlder,
-		"olderCursor": olderCursor,
-		"targetFound": targetFound,
+		"messages":    []readmodels.TranscriptEntry{},
+		"hasOlder":    false,
+		"olderCursor": nil,
+		"targetFound": false,
 	}, nil
 }
 
 func workspaceChatMessages(chatID string) ([]readmodels.TranscriptEntry, error) {
+	chat, _, err := workspaceChatProjectRequired(chatID)
+	if err != nil {
+		return nil, err
+	}
+	if workspaceChatHasTmuxRuntime(chat) {
+		return []readmodels.TranscriptEntry{}, nil
+	}
 	return workspaceStore().ReplayTranscriptEntriesForChat(chatID, 0)
 }
 

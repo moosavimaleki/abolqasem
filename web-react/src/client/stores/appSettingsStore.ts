@@ -30,6 +30,14 @@ export function mergeAppSettingsPatch(
       ...settings.providerProxy,
       ...patch.providerProxy,
     },
+    providerExecutables: {
+      ...settings.providerExecutables,
+      ...(patch.providerExecutables ?? {}),
+    },
+    tmuxCommands: {
+      ...settings.tmuxCommands,
+      ...(patch.tmuxCommands ?? {}),
+    },
     commitMessageGenerator: {
       ...settings.commitMessageGenerator,
       ...patch.commitMessageGenerator,

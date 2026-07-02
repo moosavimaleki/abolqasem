@@ -15,6 +15,7 @@ import (
 
 	codexprotocol "ai-agent-manager/internal/providers/codex/protocol"
 	codexrpc "ai-agent-manager/internal/providers/codex/rpc"
+	"ai-agent-manager/internal/providers/providerexec"
 )
 
 type ProviderCatalogEntry struct {
@@ -207,7 +208,7 @@ func DetectCodexRuntime() CodexRuntimeInfo {
 }
 
 func probeCodexRuntime(ctx context.Context) CodexRuntimeInfo {
-	cmd := exec.CommandContext(ctx, "codex", "app-server")
+	cmd := exec.CommandContext(ctx, providerexec.ExecutableOrName("codex"), "app-server")
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return CodexRuntimeInfo{Error: strings.TrimSpace(err.Error())}

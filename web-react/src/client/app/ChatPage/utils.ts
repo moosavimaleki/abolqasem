@@ -38,6 +38,23 @@ export function shouldShowTranscriptUnreadIndicator(
   return (nextMessages.at(-1)?.id ?? null) !== previousLastMessageId
 }
 
+export function getTranscriptTailVersion(
+  messages: Array<{ id: string; kind: string; text?: string; content?: string; status?: string }>
+) {
+  const lastMessage = messages.at(-1)
+  if (!lastMessage) {
+    return "empty"
+  }
+  const text = typeof lastMessage.text === "string"
+    ? lastMessage.text
+    : typeof lastMessage.content === "string"
+      ? lastMessage.content
+      : typeof lastMessage.status === "string"
+        ? lastMessage.status
+        : ""
+  return `${messages.length}:${lastMessage.id}:${lastMessage.kind}:${text.length}:${text.slice(-120)}`
+}
+
 export function serializeBranchSelection(branch: ChatBranchListEntry) {
   return branch.kind === "local"
     ? { kind: "local" as const, name: branch.name }

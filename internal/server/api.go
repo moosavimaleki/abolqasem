@@ -13,7 +13,6 @@ import (
 
 	"ai-agent-manager/internal/parser"
 	"ai-agent-manager/internal/state"
-	"ai-agent-manager/internal/workspace/events"
 	"ai-agent-manager/internal/workspace/legacyimport"
 	"ai-agent-manager/internal/workspace/readmodels"
 	"ai-agent-manager/internal/workspace/transcript"
@@ -249,14 +248,44 @@ func searchLegacyChatTranscript(meta state.SessionMeta, query string, limit int)
 }
 
 func searchWorkspaceChatTranscript(chatID string, query string, limit int) ([]chatSearchMatch, error) {
-	if _, _, err := workspaceChatProjectRequired(chatID); err != nil {
+	chat, _, err := workspaceChatProjectRequired(chatID)
+	if err != nil {
 		return nil, err
+	}
+	if meta, ok, err := workspaceNativeTranscriptMetaForChat(chatID); err != nil {
+		return nil, err
+	} else if ok {
+		return searchNativeChatTranscript(meta, query, limit)
+	}
+	if workspaceChatHasTmuxRuntime(chat) {
+		return []chatSearchMatch{}, nil
 	}
 	entries, err := workspaceChatMessages(chatID)
 	if err != nil {
 		return nil, err
 	}
 	return searchWorkspaceEntries(entries, query, limit), nil
+}
+
+func searchNativeChatTranscript(meta state.SessionMeta, query string, limit int) ([]chatSearchMatch, error) {
+	queryLower := strings.ToLower(strings.TrimSpace(query))
+	matches := []chatSearchMatch{}
+	err := parser.StreamSearchableMessages(meta.Agent, meta.SessionID, meta.TranscriptPath, func(message parser.SearchableMessage) bool {
+		text := strings.TrimSpace(message.Text)
+		if text == "" || !strings.Contains(strings.ToLower(text), queryLower) {
+			return true
+		}
+		matches = append(matches, chatSearchMatch{
+			MessageID: message.ID,
+			Role:      message.Role,
+			Kind:      message.Kind,
+			Index:     message.Index,
+			Snippet:   serverSearchSnippet(text, queryLower, searchMaxSnippetRunes),
+			CreatedAt: message.CreatedAt,
+		})
+		return len(matches) < limit
+	})
+	return matches, err
 }
 
 func searchWorkspaceEntries(entries []readmodels.TranscriptEntry, query string, limit int) []chatSearchMatch {
@@ -310,7 +339,7 @@ func workspaceSearchDisplayMessageID(entry readmodels.TranscriptEntry, toolCallI
 }
 
 func workspaceStoredChatSet() map[string]struct{} {
-	state, err := workspaceStore().LoadState()
+	state, err := workspaceStore().LoadStateLight()
 	if err != nil {
 		return map[string]struct{}{}
 	}
@@ -326,27 +355,9 @@ func workspaceStoredChatSet() map[string]struct{} {
 
 func searchWorkspaceSessions(query string, perChatLimit int) ([]sessionSearchResult, int) {
 	store := workspaceStore()
-	storeState, err := store.LoadState()
+	storeState, err := store.LoadStateLight()
 	if err != nil {
 		return nil, 0
-	}
-	messageEvents, err := store.Replay(events.StreamMessages)
-	if err != nil {
-		return nil, 0
-	}
-	entriesByChatID := map[string][]readmodels.TranscriptEntry{}
-	for _, event := range messageEvents {
-		if event.Type != events.TypeMessageAppended {
-			continue
-		}
-		var data struct {
-			ChatID string                     `json:"chatId"`
-			Entry  readmodels.TranscriptEntry `json:"entry"`
-		}
-		if event.DecodeData(&data) != nil || strings.TrimSpace(data.ChatID) == "" {
-			continue
-		}
-		entriesByChatID[data.ChatID] = append(entriesByChatID[data.ChatID], data.Entry)
 	}
 
 	items := []sessionSearchResult{}
@@ -360,7 +371,14 @@ func searchWorkspaceSessions(query string, perChatLimit int) ([]sessionSearchRes
 			continue
 		}
 		scanned++
-		matches := searchWorkspaceEntries(entriesByChatID[chat.ID], query, perChatLimit)
+		var matches []chatSearchMatch
+		if meta, ok := workspaceNativeTranscriptMetaForChatRecord(chat, project); ok {
+			matches, _ = searchNativeChatTranscript(meta, query, perChatLimit)
+		} else if workspaceChatHasTmuxRuntime(chat) {
+			matches = []chatSearchMatch{}
+		} else if entries, err := store.ReplayTranscriptEntriesForChat(chat.ID, 0); err == nil {
+			matches = searchWorkspaceEntries(entries, query, perChatLimit)
+		}
 		if len(matches) == 0 {
 			continue
 		}
@@ -652,7 +670,9 @@ func handleAPIHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	broadcastChatID := ""
-	if isPromptSubmitHookEvent(event) {
+	if chatID, synced, _ := workspaceSyncTmuxRuntimeFromHook(meta, event); synced {
+		broadcastChatID = chatID
+	} else if isPromptSubmitHookEvent(event) {
 		if record, err := workspaceRecordHookPromptCheckpoint(meta, event); err == nil && record.ProjectID != "" {
 			workspaceConnections.broadcastProjectGit(record.ProjectID)
 			broadcastChatID = record.ChatID
