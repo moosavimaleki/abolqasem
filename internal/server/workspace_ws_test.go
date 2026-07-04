@@ -116,6 +116,36 @@ func TestWorkspaceCommandRoutingSendsStoredChatWhenLegacyAliasAlsoExists(t *test
 	assertWorkspaceAck(t, response, "chat-send")
 }
 
+func TestWorkspaceMaterializeImportedChatIfNeededPrefersStoredChat(t *testing.T) {
+	withWorkspaceComposerStore(t)
+
+	meta := state.SessionMeta{
+		Key:       "codex:shared-materialize",
+		Agent:     "codex",
+		SessionID: "shared-materialize",
+	}
+	withLegacyState(t, &state.AppState{Sessions: map[string]state.SessionMeta{meta.Key: meta}})
+	imported := legacyimport.ImportSession(meta, nil, legacyimport.ImportOptions{})
+
+	conn := newTestWorkspaceConnection(nil)
+	projectID := mustCreateWorkspaceProject(t, conn, t.TempDir())
+	if err := appendWorkspaceStoreEvent(workspaceStore(), events.StreamChats, events.TypeChatCreated, 100, map[string]any{
+		"chatId":    imported.Chat.ID,
+		"projectId": projectID,
+		"title":     "Stored Chat",
+	}); err != nil {
+		t.Fatalf("append chat event failed: %v", err)
+	}
+
+	chatID, err := workspaceMaterializeImportedChatIfNeeded(imported.Chat.ID)
+	if err != nil {
+		t.Fatalf("workspaceMaterializeImportedChatIfNeeded returned error: %v", err)
+	}
+	if chatID != imported.Chat.ID {
+		t.Fatalf("expected stored chat id %q, got %q", imported.Chat.ID, chatID)
+	}
+}
+
 func TestWorkspaceCommandRoutingHandlesProjectAndChatMutations(t *testing.T) {
 	withWorkspaceComposerStore(t)
 	conn := newTestWorkspaceConnection(nil)
