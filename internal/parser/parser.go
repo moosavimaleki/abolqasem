@@ -40,6 +40,7 @@ type SearchableMessage struct {
 	Text      string
 	Index     int
 	CreatedAt *time.Time
+	Source    string
 }
 
 type ParseResult struct {
@@ -294,6 +295,7 @@ func StreamSearchableMessages(agent, sessionID, transcriptPath string, visit fun
 	reader := bufio.NewReader(file)
 	lineIndex := 0
 	emitted := 0
+	var previous *SearchableMessage
 	for {
 		line, readErr := reader.ReadBytes('\n')
 		if len(line) > 0 {
@@ -301,8 +303,13 @@ func StreamSearchableMessages(agent, sessionID, transcriptPath string, visit fun
 			raw := map[string]any{}
 			if decodeErr := json.Unmarshal(bytesTrimSpace(line), &raw); decodeErr == nil {
 				if msg := extractSearchableMessage(agent, raw, sessionID, lineIndex); msg != nil {
+					if shouldDropSearchableDuplicate(agent, previous, msg) {
+						continue
+					}
+					accepted := *msg
+					previous = &accepted
 					emitted++
-					if !visit(*msg) {
+					if !visit(accepted) {
 						return nil
 					}
 				}
@@ -397,14 +404,20 @@ func loadMessages(agent, sessionID, transcriptPath string) ([]Message, error) {
 	reader := bufio.NewReader(file)
 	messages := make([]Message, 0, 64)
 	lineIndex := 0
+	var previous *SearchableMessage
 	for {
 		line, err := reader.ReadBytes('\n')
 		if len(line) > 0 {
 			lineIndex++
 			raw := map[string]any{}
 			if decodeErr := json.Unmarshal(bytesTrimSpace(line), &raw); decodeErr == nil {
-				if msg := extractMessage(agent, raw, sessionID, lineIndex); msg != nil {
-					messages = append(messages, *msg)
+				if msg := extractSearchableMessage(agent, raw, sessionID, lineIndex); msg != nil {
+					if shouldDropSearchableDuplicate(agent, previous, msg) {
+						continue
+					}
+					accepted := *msg
+					previous = &accepted
+					messages = append(messages, *searchableToMessage(accepted))
 				}
 			}
 		}
@@ -776,38 +789,95 @@ func extractSearchableMessage(agent string, raw map[string]any, sessionID string
 
 func extractCodexMessage(raw map[string]any, sessionID string, index int) *SearchableMessage {
 	payload := asMap(raw["payload"])
+	recordType := stringValue(raw["type"])
 	eventType := stringValue(payload["type"])
 	if eventType == "" {
-		eventType = stringValue(raw["type"])
+		eventType = recordType
 	}
+	source := codexMessageSource(recordType, eventType)
 
 	switch eventType {
 	case "user_message":
-		return newSearchableMessage(sessionID, index, "user", "message", firstNonEmpty(
+		return newCodexSearchableMessage(sessionID, index, "user", "message", firstNonEmpty(
 			flattenText(payload["message"]),
 			flattenText(payload["text"]),
 			flattenText(raw["message"]),
-		), extractTimestamp(raw, payload))
+		), extractTimestamp(raw, payload), source)
 	case "agent_message":
-		return newSearchableMessage(sessionID, index, "assistant", "message", firstNonEmpty(
+		return newCodexSearchableMessage(sessionID, index, "assistant", "message", firstNonEmpty(
 			flattenText(payload["message"]),
 			flattenText(payload["text"]),
 			flattenText(payload["content"]),
-		), extractTimestamp(raw, payload))
+		), extractTimestamp(raw, payload), source)
 	case "tool_call", "command_output", "tool_result":
-		return newSearchableMessage(sessionID, index, "tool", "tool", firstNonEmpty(
+		return newCodexSearchableMessage(sessionID, index, "tool", "tool", firstNonEmpty(
 			flattenText(payload["output"]),
 			flattenText(payload["message"]),
 			flattenText(raw["output"]),
 			flattenText(raw["message"]),
-		), extractTimestamp(raw, payload))
+		), extractTimestamp(raw, payload), source)
 	}
 
 	if text := firstNonEmpty(flattenText(payload["message"]), flattenText(payload["content"]), flattenText(raw["message"]), flattenText(raw["text"]), flattenText(raw["content"])); text != "" {
 		role := firstNonEmpty(stringValue(payload["role"]), stringValue(raw["role"]), "assistant")
-		return newSearchableMessage(sessionID, index, normalizeRole(role), "message", text, extractTimestamp(raw, payload))
+		return newCodexSearchableMessage(sessionID, index, normalizeRole(role), "message", text, extractTimestamp(raw, payload), source)
 	}
 	return nil
+}
+
+func codexMessageSource(recordType string, eventType string) string {
+	recordType = strings.TrimSpace(recordType)
+	eventType = strings.TrimSpace(eventType)
+	if recordType == "" {
+		return ""
+	}
+	if eventType == "" || eventType == recordType {
+		return "codex:" + recordType
+	}
+	return "codex:" + recordType + ":" + eventType
+}
+
+func newCodexSearchableMessage(sessionID string, index int, role, kind, text string, createdAt *time.Time, source string) *SearchableMessage {
+	msg := newSearchableMessage(sessionID, index, role, kind, text, createdAt)
+	if msg != nil {
+		msg.Source = source
+	}
+	return msg
+}
+
+func shouldDropSearchableDuplicate(agent string, previous *SearchableMessage, current *SearchableMessage) bool {
+	if !strings.EqualFold(strings.TrimSpace(agent), "codex") || previous == nil || current == nil {
+		return false
+	}
+	if previous.Role != current.Role || previous.Kind != current.Kind {
+		return false
+	}
+	if strings.TrimSpace(previous.Text) == "" || strings.TrimSpace(previous.Text) != strings.TrimSpace(current.Text) {
+		return false
+	}
+	if !isCodexResponseEventPair(previous.Source, current.Source) {
+		return false
+	}
+	return transcriptTimesMatch(previous.CreatedAt, current.CreatedAt)
+}
+
+func isCodexResponseEventPair(left string, right string) bool {
+	leftIsResponse := strings.HasPrefix(left, "codex:response_item:message")
+	rightIsResponse := strings.HasPrefix(right, "codex:response_item:message")
+	leftIsEvent := strings.HasPrefix(left, "codex:event_msg:")
+	rightIsEvent := strings.HasPrefix(right, "codex:event_msg:")
+	return (leftIsResponse && rightIsEvent) || (leftIsEvent && rightIsResponse)
+}
+
+func transcriptTimesMatch(left *time.Time, right *time.Time) bool {
+	if left == nil || right == nil {
+		return true
+	}
+	delta := left.Sub(*right)
+	if delta < 0 {
+		delta = -delta
+	}
+	return delta <= 2*time.Second
 }
 
 func extractClaudeMessage(raw map[string]any, sessionID string, index int) *SearchableMessage {

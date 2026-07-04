@@ -270,7 +270,7 @@ func workspaceResolveTmuxProviderCommand(provider string, command string) string
 }
 
 func workspaceTmuxCommandForChat(chat readmodels.ChatRecord, providerOverride string) string {
-	provider := normalizeWorkspaceTmuxProvider(firstNonEmpty(providerOverride, derefWorkspaceString(chat.Provider)))
+	provider := workspaceTmuxProviderForChat(chat, providerOverride)
 	if settings, err := state.LoadSettings(); err == nil {
 		providerexec.SetConfiguredExecutables(settings.ProviderExecutables)
 	}
@@ -290,6 +290,45 @@ func workspaceTmuxCommandForChat(chat readmodels.ChatRecord, providerOverride st
 	default:
 		return strings.TrimSpace(base + " resume " + shellQuote(token))
 	}
+}
+
+func workspaceTmuxProviderForChat(chat readmodels.ChatRecord, providerOverride string) string {
+	if provider := normalizeWorkspaceTmuxProvider(firstNonEmpty(providerOverride, derefWorkspaceString(chat.Provider))); provider != "" {
+		return provider
+	}
+	if provider := workspaceTmuxProviderFromNativeTranscriptPath(chat.NativeTranscriptPath); provider != "" {
+		return provider
+	}
+	if provider := workspaceTmuxProviderFromCommand(chat.TmuxCommand); provider != "" {
+		return provider
+	}
+	return "codex"
+}
+
+func workspaceTmuxProviderFromNativeTranscriptPath(path string) string {
+	path = strings.ReplaceAll(strings.TrimSpace(path), "\\", "/")
+	if path == "" {
+		return ""
+	}
+	for _, part := range strings.Split(path, "/") {
+		switch strings.ToLower(strings.TrimSpace(part)) {
+		case ".codex":
+			return "codex"
+		case ".claude":
+			return "claude"
+		case ".gemini":
+			return "gemini"
+		}
+	}
+	return ""
+}
+
+func workspaceTmuxProviderFromCommand(command string) string {
+	fields := strings.Fields(command)
+	if len(fields) == 0 {
+		return ""
+	}
+	return normalizeWorkspaceTmuxProvider(filepath.Base(fields[0]))
 }
 
 func workspaceTmuxCommandSupportsResume(command string, provider string) bool {

@@ -15,6 +15,7 @@ import (
 	"ai-agent-manager/internal/workspace/agent"
 	"ai-agent-manager/internal/workspace/events"
 	"ai-agent-manager/internal/workspace/legacyimport"
+	"ai-agent-manager/internal/workspace/readmodels"
 	"ai-agent-manager/internal/workspace/tmuxruntime"
 	"ai-agent-manager/internal/workspace/transcript"
 )
@@ -123,6 +124,66 @@ func TestWorkspaceResolveTmuxProviderCommandUsesWorkingLocalClaude(t *testing.T)
 	command := workspaceResolveTmuxProviderCommand("claude", "claude")
 	if command != localClaudePath {
 		t.Fatalf("expected local claude command, got %q", command)
+	}
+}
+
+func TestWorkspaceTmuxCommandForChatDefaultsCodexProviderAndResumes(t *testing.T) {
+	providerexec.SetConfiguredExecutables(nil)
+	t.Cleanup(func() { providerexec.SetConfiguredExecutables(nil) })
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	codexPath := filepath.Join(home, ".bun", "bin", "codex")
+	writeWorkspaceExecutable(t, codexPath, "#!/bin/sh\nexit 0\n")
+	providerexec.SetConfiguredExecutables(map[string]string{"codex": codexPath})
+	t.Setenv("ABOLQASEM_TMUX_CODEX_COMMAND", "codex --sandbox workspace-write")
+
+	command := workspaceTmuxCommandForChat(readmodels.ChatRecord{
+		NativeSessionID:      "codex-session-1",
+		NativeTranscriptPath: filepath.Join(home, ".codex", "sessions", "2026", "07", "04", "rollout.jsonl"),
+	}, "")
+
+	if !strings.HasSuffix(command, " --sandbox workspace-write resume 'codex-session-1'") {
+		t.Fatalf("expected codex resume command, got %q", command)
+	}
+}
+
+func TestWorkspaceTmuxCommandForChatInfersClaudeProviderFromTranscriptPath(t *testing.T) {
+	providerexec.SetConfiguredExecutables(nil)
+	t.Cleanup(func() { providerexec.SetConfiguredExecutables(nil) })
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	claudePath := filepath.Join(home, ".local", "bin", "claude")
+	writeWorkspaceExecutable(t, claudePath, "#!/bin/sh\nexit 0\n")
+	providerexec.SetConfiguredExecutables(map[string]string{"claude": claudePath})
+	t.Setenv("ABOLQASEM_TMUX_CLAUDE_COMMAND", "claude --permission-mode auto")
+
+	command := workspaceTmuxCommandForChat(readmodels.ChatRecord{
+		NativeSessionID:      "claude-session-1",
+		NativeTranscriptPath: filepath.Join(home, ".claude", "projects", "project", "session.jsonl"),
+	}, "")
+
+	if !strings.HasSuffix(command, " --permission-mode auto --resume 'claude-session-1'") {
+		t.Fatalf("expected claude resume command, got %q", command)
+	}
+}
+
+func TestWorkspaceTmuxCommandForChatInfersGeminiProviderFromTranscriptPath(t *testing.T) {
+	providerexec.SetConfiguredExecutables(nil)
+	t.Cleanup(func() { providerexec.SetConfiguredExecutables(nil) })
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	geminiPath := filepath.Join(home, ".bun", "bin", "gemini")
+	writeWorkspaceExecutable(t, geminiPath, "#!/bin/sh\nexit 0\n")
+	providerexec.SetConfiguredExecutables(map[string]string{"gemini": geminiPath})
+	t.Setenv("ABOLQASEM_TMUX_GEMINI_COMMAND", "gemini --model gemini-3-pro")
+
+	command := workspaceTmuxCommandForChat(readmodels.ChatRecord{
+		NativeSessionID:      "gemini-session-1",
+		NativeTranscriptPath: filepath.Join(home, ".gemini", "tmp", "session.json"),
+	}, "")
+
+	if !strings.HasSuffix(command, " --model gemini-3-pro --resume 'gemini-session-1'") {
+		t.Fatalf("expected gemini resume command, got %q", command)
 	}
 }
 

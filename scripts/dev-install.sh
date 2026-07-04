@@ -9,6 +9,7 @@ DIST_DIR="$ROOT_DIR/dist"
 OUT="$DIST_DIR/$APP"
 INSTALL_PATH="$BIN_DIR/$APP"
 OPEN_AFTER_INSTALL="${ABOLQASEM_DEV_OPEN:-${AI_AGENT_MANAGER_DEV_OPEN:-1}}"
+DEV_PORT="${ABOLQASEM_DEV_PORT:-${AI_AGENT_MANAGER_DEV_PORT:-}}"
 DEV_PROXY="${ABOLQASEM_DEV_PROXY:-${AI_AGENT_MANAGER_DEV_PROXY:-}}"
 DEV_NO_PROXY="${ABOLQASEM_DEV_NO_PROXY:-${AI_AGENT_MANAGER_DEV_NO_PROXY:-${NO_PROXY:-${no_proxy:-}}}}"
 
@@ -74,7 +75,13 @@ fi
 printf 'Verifying installed binary...\n'
 "$INSTALL_PATH" --help >/dev/null
 
-printf 'Installing local service and hooks...\n'
+if [ "$DEV_PORT" != "" ]; then
+  export ABOLQASEM_SERVICE_PORT="$DEV_PORT"
+  export AI_AGENT_MANAGER_SERVICE_PORT="$DEV_PORT"
+  printf 'Installing local service on port %s and hooks...\n' "$DEV_PORT"
+else
+  printf 'Installing local service and hooks...\n'
+fi
 "$INSTALL_PATH" install
 
 if [ "$OPEN_AFTER_INSTALL" = "1" ]; then

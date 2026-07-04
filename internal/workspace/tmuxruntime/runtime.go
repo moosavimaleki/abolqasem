@@ -14,8 +14,13 @@ import (
 )
 
 const literalSendChunkSize = 16000
+const textSubmitDelay = 350 * time.Millisecond
 
 var ansiPattern = regexp.MustCompile(`\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])`)
+var runTmuxCommand = func(ctx context.Context, args ...string) error {
+	return exec.CommandContext(ctx, "tmux", args...).Run()
+}
+var requireTmux = RequireTmux
 
 type Status struct {
 	State    string `json:"state"`
@@ -93,7 +98,7 @@ func AttachCommand(ctx context.Context, sessionName string) (*exec.Cmd, error) {
 }
 
 func Send(ctx context.Context, sessionName string, text string, enter bool) error {
-	if err := RequireTmux(); err != nil {
+	if err := requireTmux(); err != nil {
 		return err
 	}
 	sessionName = NormalizeSessionName(sessionName)
@@ -101,10 +106,14 @@ func Send(ctx context.Context, sessionName string, text string, enter bool) erro
 		return err
 	}
 	if enter {
-		if err := exec.CommandContext(ctx, "tmux", "send-keys", "-t", sessionName, "Enter").Run(); err != nil {
-			return err
+		if delay := tmuxSubmitDelay(text); delay > 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(delay):
+			}
 		}
-		return retryPendingPromptSubmit(ctx, sessionName, text)
+		return runTmuxCommand(ctx, "send-keys", "-t", sessionName, "Enter")
 	}
 	return nil
 }
@@ -113,25 +122,19 @@ func sendText(ctx context.Context, sessionName string, text string) error {
 	if text == "" {
 		return nil
 	}
-	if strings.ContainsAny(text, "\r\n") {
-		return pasteText(ctx, sessionName, text)
-	}
 	for _, chunk := range chunkLiteralText(text) {
-		if err := exec.CommandContext(ctx, "tmux", "send-keys", "-t", sessionName, "-l", chunk).Run(); err != nil {
+		if err := runTmuxCommand(ctx, "send-keys", "-t", sessionName, "-l", chunk); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func pasteText(ctx context.Context, sessionName string, text string) error {
-	bufferName := fmt.Sprintf("abolqasem-paste-%d", time.Now().UnixNano())
-	loadCommand := exec.CommandContext(ctx, "tmux", "load-buffer", "-b", bufferName, "-")
-	loadCommand.Stdin = strings.NewReader(text)
-	if err := loadCommand.Run(); err != nil {
-		return err
+func tmuxSubmitDelay(text string) time.Duration {
+	if text == "" {
+		return 0
 	}
-	return exec.CommandContext(ctx, "tmux", "paste-buffer", "-d", "-p", "-b", bufferName, "-t", sessionName).Run()
+	return textSubmitDelay
 }
 
 func Interrupt(ctx context.Context, sessionName string) error {
@@ -321,86 +324,4 @@ func isAgentStatusLine(line string) bool {
 
 func stripANSI(value string) string {
 	return ansiPattern.ReplaceAllString(value, "")
-}
-
-func retryPendingPromptSubmit(ctx context.Context, sessionName string, text string) error {
-	lastSubmittedLine := lastSubmittedPromptLine(text)
-	if lastSubmittedLine == "" {
-		return nil
-	}
-
-	for attempt := 0; attempt < 2; attempt += 1 {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(140 * time.Millisecond):
-		}
-
-		output, err := Capture(ctx, sessionName, 120)
-		if err != nil {
-			return nil
-		}
-		lines := meaningfulLines(output)
-		if statusStateFromLines(lines) != "waiting" || !tailPromptStillContainsText(lines, lastSubmittedLine) {
-			return nil
-		}
-		if err := exec.CommandContext(ctx, "tmux", "send-keys", "-t", sessionName, "Enter").Run(); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func lastSubmittedPromptLine(text string) string {
-	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
-	for index := len(lines) - 1; index >= 0; index -= 1 {
-		line := strings.TrimSpace(lines[index])
-		if line != "" {
-			return line
-		}
-	}
-	return ""
-}
-
-func tailPromptStillContainsText(lines []string, submitted string) bool {
-	submitted = strings.TrimSpace(submitted)
-	if submitted == "" {
-		return false
-	}
-	tail := tailLines(lines, 16)
-	hasPromptTail := false
-	for _, line := range tail {
-		if isPromptLine(line) {
-			hasPromptTail = true
-		}
-		if promptStillContainsText(line, submitted) {
-			return true
-		}
-	}
-	if !hasPromptTail {
-		return false
-	}
-	normalizedSubmitted := strings.ToLower(strings.Join(strings.Fields(submitted), " "))
-	for _, line := range tail {
-		normalizedLine := strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(stripANSI(line))), " "))
-		if normalizedLine != "" && strings.Contains(normalizedLine, normalizedSubmitted) {
-			return true
-		}
-	}
-	return false
-}
-
-func promptStillContainsText(line string, submitted string) bool {
-	line = strings.TrimSpace(stripANSI(line))
-	submitted = strings.TrimSpace(submitted)
-	if line == "" || submitted == "" {
-		return false
-	}
-	if !(strings.HasPrefix(line, "›") || strings.HasPrefix(line, ">") || strings.HasPrefix(line, "❯") || strings.HasPrefix(line, "$") || strings.HasPrefix(line, "#")) {
-		return false
-	}
-	normalizedLine := strings.ToLower(strings.Join(strings.Fields(line), " "))
-	normalizedSubmitted := strings.ToLower(strings.Join(strings.Fields(submitted), " "))
-	return strings.Contains(normalizedLine, normalizedSubmitted)
 }

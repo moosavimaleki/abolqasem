@@ -1173,8 +1173,14 @@ export function ChatPage() {
     const chatId = state.activeChatId
     void state.socket.command({ type: "chat.restartTmux", chatId })
       .then(() => state.socket.command({ type: "chat.refresh", chatId }))
-      .catch(() => {})
-  }, [state.activeChatId, state.runtime?.tmuxSession, state.socket])
+      .catch((error: unknown) => {
+        void dialog.alert({
+          title: "Restart tmux failed",
+          description: error instanceof Error ? error.message : String(error),
+          closeLabel: t.common.ok,
+        })
+      })
+  }, [dialog, state.activeChatId, state.runtime?.tmuxSession, state.socket, t])
 
   const handleTerminalResize = useCallback((layout: Record<string, number>) => {
     if (!projectId || !showTerminalPane || isTerminalAnimating.current) {

@@ -1,6 +1,6 @@
 export const APP_NAME = "Abolqasem"
 export const CLI_COMMAND = "abolqasem"
-export const LOCAL_UI_URL = "http://127.0.0.1:9091/"
+export const LOCAL_UI_URL = "http://127.0.0.1:9092/"
 export const DATA_ROOT_NAME = ".abolqasem"
 export const DEV_DATA_ROOT_NAME = ".abolqasem-dev"
 export const PACKAGE_NAME = "abolqasem-code"

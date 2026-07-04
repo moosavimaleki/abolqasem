@@ -6,6 +6,7 @@ import (
 	"ai-agent-manager/internal/adapters/codex"
 	"ai-agent-manager/internal/adapters/gemini"
 	"ai-agent-manager/internal/appinfo"
+	"ai-agent-manager/internal/state"
 	"errors"
 	"fmt"
 	"os"
@@ -107,14 +108,22 @@ func installDesiredState() ([]string, error) {
 		return successful, errors.Join(hookErrors...)
 	}
 
+	targetBaseURL := currentBaseURL()
+	if port, ok := configuredServiceInstallPort(); ok {
+		targetBaseURL = state.DefaultBaseURL(port)
+		if err := state.SaveServerBaseURL(targetBaseURL); err != nil {
+			return successful, fmt.Errorf("save service base URL: %w", err)
+		}
+	}
+
 	fmt.Println("Restarting persistent service...")
 	if err := restartInstalledService(); err != nil {
 		return successful, fmt.Errorf("restart service: %w", err)
 	}
 	if !waitForInstalledServer(10 * time.Second) {
-		return successful, fmt.Errorf("service did not become healthy at %s", currentBaseURL())
+		return successful, fmt.Errorf("service did not become healthy at %s", targetBaseURL)
 	}
-	fmt.Printf("Service is running at %s\n", currentBaseURL())
+	fmt.Printf("Service is running at %s\n", targetBaseURL)
 	return successful, nil
 }
 

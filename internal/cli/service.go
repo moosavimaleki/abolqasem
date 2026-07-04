@@ -8,15 +8,46 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 )
 
 const (
-	serviceName       = appinfo.Name
-	launchAgentLabel  = appinfo.LaunchAgentLabel
-	windowsTaskName   = appinfo.WindowsTaskName
-	serviceCommandUse = "__server --auto-port"
+	serviceName      = appinfo.Name
+	launchAgentLabel = appinfo.LaunchAgentLabel
+	windowsTaskName  = appinfo.WindowsTaskName
 )
+
+func serviceCommandArgs() []string {
+	if port, ok := configuredServiceInstallPort(); ok {
+		return []string{"__server", "--port", strconv.Itoa(port)}
+	}
+	return []string{"__server", "--auto-port"}
+}
+
+func serviceCommandUse() string {
+	return strings.Join(serviceCommandArgs(), " ")
+}
+
+func configuredServiceInstallPort() (int, bool) {
+	for _, key := range []string{
+		"ABOLQASEM_SERVICE_PORT",
+		"ABOLQASEM_DEV_PORT",
+		"AI_AGENT_MANAGER_SERVICE_PORT",
+		"AI_AGENT_MANAGER_DEV_PORT",
+	} {
+		value := strings.TrimSpace(os.Getenv(key))
+		if value == "" {
+			continue
+		}
+		port, err := strconv.Atoi(value)
+		if err != nil || port <= 0 || port > 65535 {
+			return 0, false
+		}
+		return port, true
+	}
+	return 0, false
+}
 
 func installService() error {
 	exe, err := os.Executable()
@@ -287,13 +318,13 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=%s __server --auto-port
+ExecStart=%s %s
 Restart=on-failure
 RestartSec=3
 
 [Install]
 WantedBy=default.target
-`, systemdQuote(exe))
+`, systemdQuote(exe), serviceCommandUse())
 	if err := os.WriteFile(unitPath, []byte(unit), 0o644); err != nil {
 		return err
 	}
@@ -347,6 +378,7 @@ func installLaunchAgent(exe string) error {
 	}
 	outLog, errLog := serviceLogPaths()
 	plistPath := filepath.Join(agentDir, launchAgentLabel+".plist")
+	programArguments := launchAgentProgramArguments(exe)
 	plist := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -355,9 +387,7 @@ func installLaunchAgent(exe string) error {
   <string>%s</string>
   <key>ProgramArguments</key>
   <array>
-    <string>%s</string>
-    <string>__server</string>
-    <string>--auto-port</string>
+%s
   </array>
   <key>RunAtLoad</key>
   <true/>
@@ -369,7 +399,7 @@ func installLaunchAgent(exe string) error {
   <string>%s</string>
 </dict>
 </plist>
-`, launchAgentLabel, xmlEscape(exe), xmlEscape(outLog), xmlEscape(errLog))
+`, launchAgentLabel, programArguments, xmlEscape(outLog), xmlEscape(errLog))
 	if err := os.WriteFile(plistPath, []byte(plist), 0o644); err != nil {
 		return err
 	}
@@ -400,7 +430,7 @@ func uninstallLaunchAgentByLabel(label string) error {
 
 func installScheduledTask(exe string) error {
 	outLog, errLog := serviceLogPaths()
-	taskCommand := fmt.Sprintf(`cmd /c ""%s" %s >> "%s" 2>> "%s""`, exe, serviceCommandUse, outLog, errLog)
+	taskCommand := fmt.Sprintf(`cmd /c ""%s" %s >> "%s" 2>> "%s""`, exe, serviceCommandUse(), outLog, errLog)
 	if err := runCommand("schtasks", "/Create", "/TN", windowsTaskName, "/SC", "ONLOGON", "/TR", taskCommand, "/F"); err != nil {
 		return err
 	}
@@ -437,6 +467,15 @@ func commandOutput(name string, args ...string) (string, error) {
 
 func systemdQuote(value string) string {
 	return `"` + strings.ReplaceAll(value, `"`, `\"`) + `"`
+}
+
+func launchAgentProgramArguments(exe string) string {
+	args := append([]string{exe}, serviceCommandArgs()...)
+	lines := make([]string, 0, len(args))
+	for _, arg := range args {
+		lines = append(lines, "    <string>"+xmlEscape(arg)+"</string>")
+	}
+	return strings.Join(lines, "\n")
 }
 
 func xmlEscape(value string) string {

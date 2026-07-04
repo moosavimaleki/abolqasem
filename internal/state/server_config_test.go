@@ -7,7 +7,7 @@ import (
 )
 
 func TestLoadServerBaseURLRejectsRemoteEnvOverride(t *testing.T) {
-	t.Setenv(BaseURLEnvName, "http://example.com:9091")
+	t.Setenv(BaseURLEnvName, "http://example.com:9092")
 
 	if got := LoadServerBaseURL(); got != DefaultBaseURL(DefaultPort) {
 		t.Fatalf("expected remote env override to be rejected, got %q", got)
@@ -27,7 +27,7 @@ func TestLoadServerBaseURLRejectsRemoteSavedConfig(t *testing.T) {
 	stateDir = t.TempDir()
 	t.Cleanup(func() { stateDir = original })
 
-	data, err := json.Marshal(ServerConfig{BaseURL: "http://192.168.1.25:9091", PID: 99})
+	data, err := json.Marshal(ServerConfig{BaseURL: "http://192.168.1.25:9092", PID: 99})
 	if err != nil {
 		t.Fatalf("marshal config: %v", err)
 	}

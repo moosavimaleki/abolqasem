@@ -7,7 +7,7 @@ import (
 )
 
 func TestLocalServerAddressBindsLoopbackOnly(t *testing.T) {
-	if got := localServerAddress(9091); got != "127.0.0.1:9091" {
+	if got := localServerAddress(9092); got != "127.0.0.1:9092" {
 		t.Fatalf("expected loopback server address, got %q", got)
 	}
 }
@@ -19,13 +19,13 @@ func TestWorkspaceWSOriginAllowedOnlyForLoopbackHTTP(t *testing.T) {
 		allowed bool
 	}{
 		{name: "empty non-browser origin", origin: "", allowed: true},
-		{name: "localhost", origin: "http://localhost:9091", allowed: true},
-		{name: "loopback", origin: "http://127.0.0.1:9091", allowed: true},
-		{name: "remote host", origin: "http://example.com:9091", allowed: false},
-		{name: "localhost subdomain", origin: "http://localhost.example.com:9091", allowed: false},
-		{name: "credentials", origin: "http://localhost:9091@evil.example", allowed: false},
-		{name: "https remote exposure", origin: "https://localhost:9091", allowed: false},
-		{name: "pathful origin", origin: "http://localhost:9091/app", allowed: false},
+		{name: "localhost", origin: "http://localhost:9092", allowed: true},
+		{name: "loopback", origin: "http://127.0.0.1:9092", allowed: true},
+		{name: "remote host", origin: "http://example.com:9092", allowed: false},
+		{name: "localhost subdomain", origin: "http://localhost.example.com:9092", allowed: false},
+		{name: "credentials", origin: "http://localhost:9092@evil.example", allowed: false},
+		{name: "https remote exposure", origin: "https://localhost:9092", allowed: false},
+		{name: "pathful origin", origin: "http://localhost:9092/app", allowed: false},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

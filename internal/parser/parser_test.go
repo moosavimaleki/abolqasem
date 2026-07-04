@@ -32,6 +32,52 @@ func TestParseMessagesCodex(t *testing.T) {
 	}
 }
 
+func TestParseMessagesCodexDedupesResponseItemEventPairs(t *testing.T) {
+	path := writeTranscript(t, strings.Join([]string{
+		`{"timestamp":"2026-07-04T10:39:08.589Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"سلام خوبی؟"}]}}`,
+		`{"timestamp":"2026-07-04T10:39:08.589Z","type":"event_msg","payload":{"type":"user_message","message":"سلام خوبی؟","images":[]}}`,
+		`{"timestamp":"2026-07-04T10:39:09.100Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"سلام، خوبم."}]}}`,
+		`{"timestamp":"2026-07-04T10:39:09.100Z","type":"event_msg","payload":{"type":"agent_message","message":"سلام، خوبم."}}`,
+	}, "\n"))
+
+	result, err := ParseMessages("codex", "session-1", path, ParseOptions{Limit: 10})
+	if err != nil {
+		t.Fatalf("ParseMessages returned error: %v", err)
+	}
+	if len(result.Items) != 2 {
+		t.Fatalf("expected 2 deduped messages, got %d: %#v", len(result.Items), result.Items)
+	}
+	if result.Items[0].Role != "user" || result.Items[0].Text != "سلام خوبی؟" {
+		t.Fatalf("unexpected user message: %#v", result.Items[0])
+	}
+	if result.Items[1].Role != "assistant" || result.Items[1].Text != "سلام، خوبم." {
+		t.Fatalf("unexpected assistant message: %#v", result.Items[1])
+	}
+
+	search, err := SearchMessages("codex", "session-1", path, SearchOptions{Query: "سلام", Limit: 10})
+	if err != nil {
+		t.Fatalf("SearchMessages returned error: %v", err)
+	}
+	if len(search.Matches) != 2 {
+		t.Fatalf("expected search to see deduped messages, got %d: %#v", len(search.Matches), search.Matches)
+	}
+}
+
+func TestParseMessagesCodexKeepsRealRepeatedUserPrompts(t *testing.T) {
+	path := writeTranscript(t, strings.Join([]string{
+		`{"timestamp":"2026-07-04T10:39:08.589Z","type":"event_msg","payload":{"type":"user_message","message":"سلام خوبی؟"}}`,
+		`{"timestamp":"2026-07-04T10:39:21.864Z","type":"event_msg","payload":{"type":"user_message","message":"سلام خوبی؟"}}`,
+	}, "\n"))
+
+	result, err := ParseMessages("codex", "session-1", path, ParseOptions{Limit: 10})
+	if err != nil {
+		t.Fatalf("ParseMessages returned error: %v", err)
+	}
+	if len(result.Items) != 2 {
+		t.Fatalf("expected repeated real prompts to remain, got %d: %#v", len(result.Items), result.Items)
+	}
+}
+
 func TestParseMessagesClaudeArrayContent(t *testing.T) {
 	path := writeTranscript(t, strings.Join([]string{
 		`{"message":{"role":"user","content":[{"type":"text","text":"hello"}]}}`,

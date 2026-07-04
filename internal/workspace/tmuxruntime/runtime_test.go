@@ -44,6 +44,45 @@ func TestChunkLiteralTextKeepsUtf8Runes(t *testing.T) {
 	}
 }
 
+func TestSendSubmitsWithNamedEnterKeyAfterLiteralText(t *testing.T) {
+	restoreTmuxRuntimeCommands(t)
+
+	requireTmux = func() error { return nil }
+	commands := [][]string{}
+	runTmuxCommand = func(_ context.Context, args ...string) error {
+		commands = append(commands, append([]string(nil), args...))
+		return nil
+	}
+
+	if err := Send(context.Background(), "Chat:1", "hello", true); err != nil {
+		t.Fatalf("Send returned error: %v", err)
+	}
+
+	expected := [][]string{
+		{"send-keys", "-t", "chat-1", "-l", "hello"},
+		{"send-keys", "-t", "chat-1", "Enter"},
+	}
+	if strings.Join(flattenCommands(commands), "\x00") != strings.Join(flattenCommands(expected), "\x00") {
+		t.Fatalf("unexpected tmux command sequence: %#v", commands)
+	}
+	for _, command := range commands {
+		for _, arg := range command {
+			if arg == "paste-buffer" || arg == "load-buffer" || arg == "\r" || arg == "\n" {
+				t.Fatalf("submit must use a named Enter key, got command %#v", command)
+			}
+		}
+	}
+}
+
+func TestTmuxSubmitDelayProtectsTuiComposerBeforeEnter(t *testing.T) {
+	if got := tmuxSubmitDelay(""); got != 0 {
+		t.Fatalf("empty submit delay = %s, want 0", got)
+	}
+	if got := tmuxSubmitDelay("hello"); got < 350*time.Millisecond {
+		t.Fatalf("text submit delay = %s, want at least 350ms", got)
+	}
+}
+
 func TestEnsureSessionSkipsWhenTmuxMissing(t *testing.T) {
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Skip("tmux is not installed")
@@ -95,6 +134,36 @@ func TestSendMultilinePastesIntoTmuxPane(t *testing.T) {
 	}
 	data, _ := os.ReadFile(outputPath)
 	t.Fatalf("unexpected pasted content %q", string(data))
+}
+
+func TestSendSingleLineSubmitsIntoTmuxPane(t *testing.T) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux is not installed")
+	}
+	session := fmt.Sprintf("abolqasem-runtime-send-test-%d", time.Now().UnixNano())
+	outputPath := filepath.Join(t.TempDir(), "input.txt")
+	if err := EnsureSession(context.Background(), session, t.TempDir(), "cat > "+shellQuote(outputPath)); err != nil {
+		t.Fatalf("EnsureSession returned error: %v", err)
+	}
+	defer exec.Command("tmux", "kill-session", "-t", session).Run()
+
+	if err := Send(context.Background(), session, "hello", true); err != nil {
+		t.Fatalf("Send returned error: %v", err)
+	}
+	if err := exec.Command("tmux", "send-keys", "-t", session, "C-d").Run(); err != nil {
+		t.Fatalf("send C-d: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		data, err := os.ReadFile(outputPath)
+		if err == nil && string(data) == "hello\n" {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	data, _ := os.ReadFile(outputPath)
+	t.Fatalf("unexpected submitted content %q", string(data))
 }
 
 func TestStatusClassifiesPromptTail(t *testing.T) {
@@ -164,36 +233,6 @@ func TestStatusClassifiesWorkingTail(t *testing.T) {
 	}
 }
 
-func TestPromptStillContainsText(t *testing.T) {
-	if !promptStillContainsText("› Run /review on my current changes", "Run /review on my current changes") {
-		t.Fatal("expected trailing prompt match")
-	}
-	if promptStillContainsText("• سلام", "سلام") {
-		t.Fatal("assistant output must not look like a pending prompt")
-	}
-}
-
-func TestTailPromptStillContainsTextChecksFooterTail(t *testing.T) {
-	lines := []string{
-		"previous answer",
-		"› first line",
-		"second line",
-		"gpt-5.5 medium - ~/project - Context 3% used",
-	}
-	if !tailPromptStillContainsText(lines, "second line") {
-		t.Fatal("expected multiline prompt match before footer")
-	}
-	if tailPromptStillContainsText([]string{"• second line", "gpt-5.5 medium - ~/project - Context 3% used"}, "second line") {
-		t.Fatal("assistant output without a prompt must not trigger retry")
-	}
-}
-
-func TestLastSubmittedPromptLine(t *testing.T) {
-	if got := lastSubmittedPromptLine("first line\n\nsecond line\n"); got != "second line" {
-		t.Fatalf("unexpected last submitted line %q", got)
-	}
-}
-
 func statusFromOutput(output string) (Status, error) {
 	lines := meaningfulLines(output)
 	lastLine := ""
@@ -218,4 +257,23 @@ func TestAttachCommandBuildsTmuxAttach(t *testing.T) {
 
 func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
+}
+
+func restoreTmuxRuntimeCommands(t *testing.T) {
+	t.Helper()
+	originalRequireTmux := requireTmux
+	originalRunTmuxCommand := runTmuxCommand
+	t.Cleanup(func() {
+		requireTmux = originalRequireTmux
+		runTmuxCommand = originalRunTmuxCommand
+	})
+}
+
+func flattenCommands(commands [][]string) []string {
+	flat := []string{}
+	for _, command := range commands {
+		flat = append(flat, command...)
+		flat = append(flat, "|")
+	}
+	return flat
 }
