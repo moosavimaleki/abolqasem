@@ -417,6 +417,9 @@ func workspaceChatProjectFromRaw(raw json.RawMessage) (string, readmodels.Projec
 }
 
 func workspaceGitChatProjectRequired(chatID string) (readmodels.ChatRecord, readmodels.ProjectRecord, error) {
+	if chat, project, err := workspaceChatProjectRequired(chatID); err == nil {
+		return chat, project, nil
+	}
 	if chat, project, ok := workspaceLegacyChatProjectByID(chatID); ok && strings.TrimSpace(project.LocalPath) != "" {
 		return chat, project, nil
 	}

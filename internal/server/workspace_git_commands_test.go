@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"ai-agent-manager/internal/state"
+	"ai-agent-manager/internal/workspace/events"
 	"ai-agent-manager/internal/workspace/gitservice"
 	"ai-agent-manager/internal/workspace/legacyimport"
 )
@@ -41,6 +42,42 @@ func TestWorkspaceListBranchesResolvesLegacyChatProject(t *testing.T) {
 	}
 	if result.Recent == nil || result.Local == nil || result.Remote == nil || result.PullRequests == nil {
 		t.Fatalf("expected initialized branch lists, got %#v", result)
+	}
+}
+
+func TestWorkspaceGitChatProjectPrefersStoredChatOverLegacy(t *testing.T) {
+	withWorkspaceComposerStore(t)
+
+	legacyDir := t.TempDir()
+	storedDir := t.TempDir()
+	meta := state.SessionMeta{
+		Key:            "codex:shared-git",
+		Agent:          "codex",
+		SessionID:      "shared-git",
+		TranscriptPath: filepath.Join(legacyDir, "rollout.jsonl"),
+		Cwd:            legacyDir,
+		ProjectName:    "Legacy Git",
+		UpdatedAt:      time.Unix(1700000000, 0),
+	}
+	withLegacyState(t, &state.AppState{Sessions: map[string]state.SessionMeta{meta.Key: meta}})
+	imported := legacyimport.ImportSession(meta, nil, legacyimport.ImportOptions{})
+
+	conn := newTestWorkspaceConnection(nil)
+	storedProjectID := mustCreateWorkspaceProject(t, conn, storedDir)
+	if err := appendWorkspaceStoreEvent(workspaceStore(), events.StreamChats, events.TypeChatCreated, time.Now().UnixMilli(), map[string]any{
+		"chatId":    imported.Chat.ID,
+		"projectId": storedProjectID,
+		"title":     "Stored Chat",
+	}); err != nil {
+		t.Fatalf("append chat event failed: %v", err)
+	}
+
+	_, project, err := workspaceGitChatProjectRequired(imported.Chat.ID)
+	if err != nil {
+		t.Fatalf("workspaceGitChatProjectRequired returned error: %v", err)
+	}
+	if project.ID != storedProjectID || project.LocalPath != storedDir {
+		t.Fatalf("expected stored project %q/%q, got %#v", storedProjectID, storedDir, project)
 	}
 }
 
