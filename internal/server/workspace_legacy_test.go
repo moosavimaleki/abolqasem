@@ -590,8 +590,12 @@ func TestWorkspaceMaterializeLegacyChatCreatesWritableChat(t *testing.T) {
 	if snapshot.Runtime.ReadOnly {
 		t.Fatalf("materialized chat should be writable: %#v", snapshot.Runtime)
 	}
-	if len(snapshot.Messages) != 0 {
-		t.Fatalf("expected materialized native chat to avoid stored transcript messages, got %#v", snapshot.Messages)
+	if len(snapshot.Messages) != 2 ||
+		transcript.Kind(snapshot.Messages[0]) != transcript.KindUserPrompt ||
+		transcript.Kind(snapshot.Messages[1]) != transcript.KindAssistantText ||
+		snapshot.Messages[0]["content"] != "hello" ||
+		snapshot.Messages[1]["text"] != "hi" {
+		t.Fatalf("expected materialized native chat to read native transcript without storing messages, got %#v", snapshot.Messages)
 	}
 }
 
@@ -998,8 +1002,11 @@ func TestWorkspaceMaterializeLegacyClaudeChatKeepsNativeRuntime(t *testing.T) {
 	if snapshot.Runtime.TmuxSession != workspaceChatTmuxSession(chatID) || snapshot.Runtime.NativeSessionID != meta.SessionID || snapshot.Runtime.NativeTranscriptPath != transcriptPath {
 		t.Fatalf("expected native tmux runtime metadata, got %#v", snapshot.Runtime)
 	}
-	if len(snapshot.Messages) != 0 {
-		t.Fatalf("expected claude materialize to avoid stored transcript messages, got %#v", snapshot.Messages)
+	if len(snapshot.Messages) != 4 ||
+		transcript.Kind(snapshot.Messages[0]) != transcript.KindUserPrompt ||
+		transcript.Kind(snapshot.Messages[1]) != transcript.KindAssistantText ||
+		transcript.Kind(snapshot.Messages[3]) != transcript.KindAssistantText {
+		t.Fatalf("expected claude materialize to read native transcript without storing messages, got %#v", snapshot.Messages)
 	}
 }
 
@@ -1189,8 +1196,16 @@ func TestWorkspaceChatSnapshotLinksMalformedMaterializedClaudeImportToNativeRunt
 	}
 
 	snapshot := workspaceChatSnapshot(imported.Chat.ID, 20).(*readmodels.ChatSnapshot)
-	if len(snapshot.Messages) != 0 {
-		t.Fatalf("expected native runtime snapshot to ignore malformed stored messages, got %#v", snapshot.Messages)
+	if len(snapshot.Messages) != 3 {
+		t.Fatalf("expected native runtime snapshot to read native transcript, got %#v", snapshot.Messages)
+	}
+	for _, message := range snapshot.Messages {
+		if id, _ := message["_id"].(string); strings.HasPrefix(id, "bad-") {
+			t.Fatalf("expected native runtime snapshot to ignore malformed stored messages, got %#v", snapshot.Messages)
+		}
+	}
+	if transcript.Kind(snapshot.Messages[0]) != transcript.KindUserPrompt || transcript.Kind(snapshot.Messages[1]) != transcript.KindAssistantText {
+		t.Fatalf("expected native transcript user/assistant entries, got %#v", snapshot.Messages)
 	}
 	if snapshot.Runtime.TmuxSession == "" || snapshot.Runtime.NativeSessionID != meta.SessionID || snapshot.Runtime.NativeTranscriptPath != transcriptPath {
 		t.Fatalf("expected native runtime metadata, got %#v", snapshot.Runtime)
@@ -1273,8 +1288,8 @@ func TestWorkspaceChatSnapshotMarksPreviouslyRestoredLegacyChatSynced(t *testing
 	}
 
 	snapshot := workspaceChatSnapshot(imported.Chat.ID, 20).(*readmodels.ChatSnapshot)
-	if len(snapshot.Messages) != 0 {
-		t.Fatalf("expected native runtime snapshot to ignore restored message stream, got %#v", snapshot.Messages)
+	if len(snapshot.Messages) != 1 || transcript.Kind(snapshot.Messages[0]) != transcript.KindUserPrompt || snapshot.Messages[0]["content"] != "new from legacy" {
+		t.Fatalf("expected native runtime snapshot to read native transcript and ignore restored stream, got %#v", snapshot.Messages)
 	}
 	if snapshot.Runtime.TmuxSession == "" || snapshot.Runtime.NativeSessionID != meta.SessionID {
 		t.Fatalf("expected restored legacy chat to link native runtime, got %#v", snapshot.Runtime)
@@ -1378,8 +1393,13 @@ func TestWorkspaceChatSnapshotLinksForkedClaudeLegacyChatBySessionToken(t *testi
 	})
 
 	snapshot := workspaceChatSnapshot(chatID, 20).(*readmodels.ChatSnapshot)
-	if len(snapshot.Messages) != 0 {
-		t.Fatalf("expected forked native runtime to ignore stored messages, got %#v", snapshot.Messages)
+	if len(snapshot.Messages) != 3 {
+		t.Fatalf("expected forked native runtime to read native transcript, got %#v", snapshot.Messages)
+	}
+	for _, message := range snapshot.Messages {
+		if id, _ := message["_id"].(string); strings.HasPrefix(id, "bad-") {
+			t.Fatalf("expected forked native runtime to ignore stored messages, got %#v", snapshot.Messages)
+		}
 	}
 	if snapshot.Runtime.TmuxSession == "" || snapshot.Runtime.NativeSessionID != meta.SessionID || snapshot.Runtime.NativeTranscriptPath != transcriptPath {
 		t.Fatalf("expected forked chat native runtime metadata, got %#v", snapshot.Runtime)

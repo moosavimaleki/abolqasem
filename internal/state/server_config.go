@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	DefaultPort    = 9090
+	DefaultPort    = 9091
 	BaseURLEnvName = appinfo.EnvPrefix + "_BASE_URL"
 )
 

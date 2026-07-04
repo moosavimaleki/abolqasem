@@ -97,6 +97,10 @@ func workspaceChatSnapshot(chatID string, recentLimit int) any {
 }
 
 func workspaceTmuxTranscriptSnapshot(chat readmodels.ChatRecord, recentLimit int) readmodels.ChatTranscriptSnapshot {
+	if snapshot, ok := workspaceNativeTranscriptSnapshotForTmuxChat(chat, recentLimit); ok {
+		return snapshot
+	}
+
 	lines := recentLimit
 	if lines <= 0 {
 		lines = 1000
@@ -119,6 +123,47 @@ func workspaceTmuxTranscriptSnapshot(chat readmodels.ChatRecord, recentLimit int
 		},
 		History: readmodels.ChatHistorySnapshot{RecentLimit: recentLimit},
 	}
+}
+
+func workspaceNativeTranscriptSnapshotForTmuxChat(chat readmodels.ChatRecord, recentLimit int) (readmodels.ChatTranscriptSnapshot, bool) {
+	if strings.TrimSpace(chat.NativeTranscriptPath) == "" {
+		return readmodels.ChatTranscriptSnapshot{}, false
+	}
+	stateSnapshot, err := workspaceStore().LoadStateLight()
+	if err != nil {
+		return readmodels.ChatTranscriptSnapshot{}, false
+	}
+	project, ok := stateSnapshot.ProjectsByID[chat.ProjectID]
+	if !ok || project.DeletedAt != 0 {
+		return readmodels.ChatTranscriptSnapshot{}, false
+	}
+	meta, ok := workspaceNativeTranscriptMetaForChatRecord(chat, project)
+	if !ok {
+		return readmodels.ChatTranscriptSnapshot{}, false
+	}
+	page, err := workspaceLoadNativeChatHistory(meta, "", recentLimit)
+	if err != nil {
+		return readmodels.ChatTranscriptSnapshot{}, false
+	}
+	messages, _ := page["messages"].([]readmodels.TranscriptEntry)
+	hasOlder, _ := page["hasOlder"].(bool)
+	var olderCursor *string
+	switch cursor := page["olderCursor"].(type) {
+	case *string:
+		olderCursor = cursor
+	case string:
+		if cursor != "" {
+			olderCursor = &cursor
+		}
+	}
+	return readmodels.ChatTranscriptSnapshot{
+		Messages: workspaceTrimTranscriptSnapshotPayload(messages),
+		History: readmodels.ChatHistorySnapshot{
+			HasOlder:    hasOlder,
+			OlderCursor: olderCursor,
+			RecentLimit: recentLimit,
+		},
+	}, true
 }
 
 func applyTmuxRuntimeStatus(snapshot *readmodels.ChatSnapshot) {

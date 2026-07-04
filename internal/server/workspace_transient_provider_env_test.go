@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"ai-agent-manager/internal/state"
 	"ai-agent-manager/internal/workspace/agent"
 )
 
@@ -109,6 +110,13 @@ func TestStartWorkspaceTurnUsesTransientEnv(t *testing.T) {
 	binDir := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	previousLoadSettings := workspaceLoadProviderSettings
+	workspaceLoadProviderSettings = func() (state.AppSettings, error) {
+		settings := state.DefaultAppSettings()
+		settings.ProviderExecutables = map[string]string{"codex": filepath.Join(binDir, "codex")}
+		return settings, nil
+	}
+	t.Cleanup(func() { workspaceLoadProviderSettings = previousLoadSettings })
 
 	claudeEnvFile := filepath.Join(binDir, "claude.env")
 	geminiEnvFile := filepath.Join(binDir, "gemini.env")
@@ -136,12 +144,20 @@ echo gemini-output
 `, geminiEnvFile))
 
 	writeFakeExecutable(t, filepath.Join(binDir, "codex"), fmt.Sprintf(`#!/bin/sh
+if [ "$1" = "--version" ]; then
+  echo codex-test
+  exit 0
+fi
 if [ "$1" = "app-server" ]; then
   printf '%%s\n' "$CODEX_HOME" > %q
   exit 0
 fi
 exit 1
 `, codexEnvFile), fmt.Sprintf(`@echo off
+if "%%~1"=="--version" (
+  echo codex-test
+  exit /b 0
+)
 if "%%~1"=="app-server" (
   > "%s" echo %%CODEX_HOME%%
   exit /b 0

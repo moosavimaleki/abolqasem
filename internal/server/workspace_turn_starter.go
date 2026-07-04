@@ -34,6 +34,7 @@ type workspaceTurnStarter struct {
 }
 
 var workspaceCodexSessions = newWorkspaceCodexSessionManager()
+var workspaceLoadProviderSettings = state.LoadSettings
 
 type workspaceCodexSessionManager struct {
 	mu       sync.Mutex
@@ -479,7 +480,7 @@ type workspaceCodexTransport struct {
 func startWorkspaceCodexProcess(ctx context.Context, cwd string, env []string) (*workspaceCodexProcess, error) {
 	// Abolqasem keeps codex app-server alive across turns; turn cancellation is sent via turn/interrupt.
 	_ = ctx
-	if settings, err := state.LoadSettings(); err == nil {
+	if settings, err := workspaceLoadProviderSettings(); err == nil {
 		providerexec.SetConfiguredExecutables(settings.ProviderExecutables)
 	}
 	cmd := exec.Command(providerexec.ExecutableOrName("codex"), "app-server")

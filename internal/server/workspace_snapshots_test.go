@@ -155,6 +155,41 @@ func TestWorkspaceChatSnapshotIgnoresStoredMessagesForTmuxChat(t *testing.T) {
 	}
 }
 
+func TestWorkspaceChatSnapshotPrefersNativeTranscriptForTmuxChat(t *testing.T) {
+	store := withWorkspaceSnapshotStore(t)
+	nativePath := filepath.Join(t.TempDir(), "native.jsonl")
+	body := `{"type":"event_msg","payload":{"type":"user_message","message":"native prompt"}}` + "\n" +
+		`{"type":"event_msg","payload":{"type":"agent_message","message":"native answer"}}` + "\n"
+	if err := os.WriteFile(nativePath, []byte(body), 0o644); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+	appendWorkspaceEvent(t, store, events.StreamProjects, events.TypeProjectOpened, 100, map[string]any{
+		"projectId": "project-1",
+		"localPath": "/tmp/project",
+		"title":     "Project",
+	})
+	appendWorkspaceEvent(t, store, events.StreamChats, events.TypeChatCreated, 200, map[string]any{
+		"chatId":               "chat-1",
+		"projectId":            "project-1",
+		"title":                "Chat",
+		"provider":             "codex",
+		"tmuxSession":          "abolqasem-chat-1",
+		"nativeSessionId":      "native-session",
+		"nativeTranscriptPath": nativePath,
+	})
+
+	snapshot := workspaceChatSnapshot("chat-1", 10).(*readmodels.ChatSnapshot)
+	if len(snapshot.Messages) != 2 {
+		t.Fatalf("expected native transcript messages, got %#v", snapshot.Messages)
+	}
+	if id, _ := snapshot.Messages[0]["_id"].(string); strings.HasPrefix(id, "tmux-capture-") {
+		t.Fatalf("expected native transcript entry, got tmux capture %#v", snapshot.Messages[0])
+	}
+	if transcript.Kind(snapshot.Messages[0]) != transcript.KindUserPrompt || transcript.Kind(snapshot.Messages[1]) != transcript.KindAssistantText {
+		t.Fatalf("expected native user/assistant messages, got %#v", snapshot.Messages)
+	}
+}
+
 func TestWorkspaceChatSnapshotTrimsRedundantToolResultDebugRaw(t *testing.T) {
 	store := withWorkspaceSnapshotStore(t)
 	appendWorkspaceEvent(t, store, events.StreamProjects, events.TypeProjectOpened, 100, map[string]any{

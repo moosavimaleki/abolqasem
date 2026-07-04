@@ -57,8 +57,8 @@ var serverCmd = &cobra.Command{
 }
 
 func init() {
-	serverCmd.Flags().IntVarP(&port, "port", "p", 9090, "Port to listen on")
-	serverCmd.Flags().BoolVar(&autoPort, "auto-port", false, "Listen on the first available port starting at 9090")
+	serverCmd.Flags().IntVarP(&port, "port", "p", 9091, "Port to listen on")
+	serverCmd.Flags().BoolVar(&autoPort, "auto-port", false, "Listen on the first available port starting at 9091")
 	rootCmd.AddCommand(serverCmd)
 }
 

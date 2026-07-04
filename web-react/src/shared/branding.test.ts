@@ -16,7 +16,7 @@ describe("cli branding", () => {
     expect(CLI_COMMAND).toBe("abolqasem")
     expect(getCliInvocation("open")).toBe("abolqasem open")
     expect(getCliInvocation("service start")).toBe("abolqasem service start")
-    expect(LOCAL_UI_URL).toBe("http://127.0.0.1:9090/")
+    expect(LOCAL_UI_URL).toBe("http://127.0.0.1:9091/")
   })
 })
 
