@@ -1,8 +1,11 @@
 package providerexec
 
 import (
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -55,7 +58,17 @@ func writeExecutable(t *testing.T, path string, content string) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatalf("MkdirAll returned error: %v", err)
 	}
-	if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
-		t.Fatalf("WriteFile returned error: %v", err)
+	exitCode := 0
+	if strings.Contains(content, "exit 1") {
+		exitCode = 1
+	}
+	sourcePath := filepath.Join(t.TempDir(), "main.go")
+	source := fmt.Sprintf("package main\n\nimport \"os\"\n\nfunc main() { os.Exit(%d) }\n", exitCode)
+	if err := os.WriteFile(sourcePath, []byte(source), 0o644); err != nil {
+		t.Fatalf("WriteFile source returned error: %v", err)
+	}
+	command := exec.Command("go", "build", "-o", path, sourcePath)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("go build fake executable failed: %v\n%s", err, output)
 	}
 }

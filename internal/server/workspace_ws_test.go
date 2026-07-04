@@ -6,7 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"ai-agent-manager/internal/state"
 	"ai-agent-manager/internal/workspace/events"
+	"ai-agent-manager/internal/workspace/legacyimport"
 	"ai-agent-manager/internal/workspace/protocol"
 	"ai-agent-manager/internal/workspace/transcript"
 )
@@ -77,6 +79,41 @@ func TestWorkspaceCommandRoutingCreatesProjectAndChat(t *testing.T) {
 	if !ok || chatID == "" {
 		t.Fatalf("expected chat id in result, got %#v", chatResult)
 	}
+}
+
+func TestWorkspaceCommandRoutingSendsStoredChatWhenLegacyAliasAlsoExists(t *testing.T) {
+	withWorkspaceComposerStore(t)
+
+	meta := state.SessionMeta{
+		Key:       "codex:shared-send",
+		Agent:     "codex",
+		SessionID: "shared-send",
+	}
+	withLegacyState(t, &state.AppState{Sessions: map[string]state.SessionMeta{meta.Key: meta}})
+	imported := legacyimport.ImportSession(meta, nil, legacyimport.ImportOptions{})
+
+	conn := newTestWorkspaceConnection(nil)
+	projectID := mustCreateWorkspaceProject(t, conn, t.TempDir())
+	if err := appendWorkspaceStoreEvent(workspaceStore(), events.StreamChats, events.TypeChatCreated, 100, map[string]any{
+		"chatId":    imported.Chat.ID,
+		"projectId": projectID,
+		"title":     "Stored Chat",
+	}); err != nil {
+		t.Fatalf("append chat event failed: %v", err)
+	}
+
+	response := conn.handle(protocol.ClientEnvelope{
+		V:    protocol.ProtocolVersion,
+		Type: protocol.EnvelopeCommand,
+		ID:   "chat-send",
+		Command: mustWorkspaceRawCommand(t, map[string]any{
+			"type":    protocol.CommandChatSend,
+			"chatId":  imported.Chat.ID,
+			"content": "hello",
+		}),
+	})
+
+	assertWorkspaceAck(t, response, "chat-send")
 }
 
 func TestWorkspaceCommandRoutingHandlesProjectAndChatMutations(t *testing.T) {

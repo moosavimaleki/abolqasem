@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { renderToStaticMarkup } from "react-dom/server"
 import { CollapsedToolGroup } from "../components/messages/CollapsedToolGroup"
+import { I18nProvider } from "../i18n/context"
 import type { HydratedTranscriptMessage } from "../../shared/types"
 import {
   buildResolvedTranscriptRows,
@@ -13,14 +14,16 @@ const ROW_WRAPPER_CLASS = "mx-auto max-w-[800px] pb-5"
 
 function renderTranscript(messages: HydratedTranscriptMessage[]) {
   return renderToStaticMarkup(
-    <AbolqasemTranscript
-      messages={messages}
-      isLoading={false}
-      latestToolIds={{ AskUserQuestion: null, ExitPlanMode: null, TodoWrite: null }}
-      onOpenLocalLink={() => undefined}
-      onAskUserQuestionSubmit={() => undefined}
-      onExitPlanModeConfirm={() => undefined}
-    />
+    <I18nProvider locale="en">
+      <AbolqasemTranscript
+        messages={messages}
+        isLoading={false}
+        latestToolIds={{ AskUserQuestion: null, ExitPlanMode: null, TodoWrite: null }}
+        onOpenLocalLink={() => undefined}
+        onAskUserQuestionSubmit={() => undefined}
+        onExitPlanModeConfirm={() => undefined}
+      />
+    </I18nProvider>
   )
 }
 

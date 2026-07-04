@@ -508,7 +508,7 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
 		}
-		if _, ok := workspaceLegacySessionByChatID(command.ChatID); ok {
+		if _, ok := workspaceLegacySessionByChatID(command.ChatID); ok && !workspaceStoredChatExists(command.ChatID) {
 			chatID, err := workspaceMaterializeLegacyChat(command.ChatID)
 			if err != nil {
 				response := protocol.ErrorEnvelope(envelope.ID, err.Error())

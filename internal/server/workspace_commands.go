@@ -842,6 +842,9 @@ func workspaceSearchableMatchesCursor(message parser.SearchableMessage, cursor s
 }
 
 func workspaceMaterializeImportedChatIfNeeded(chatID string) (string, error) {
+	if workspaceStoredChatExists(chatID) {
+		return chatID, nil
+	}
 	if _, ok := workspaceLegacySessionByChatID(chatID); !ok {
 		return chatID, nil
 	}

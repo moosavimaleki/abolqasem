@@ -3,6 +3,7 @@ import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import type { ClientRect } from "@dnd-kit/core"
 import type { SidebarChatRow, SidebarProjectGroup } from "../../../../shared/types"
+import { I18nProvider } from "../../../i18n/context"
 import { TooltipProvider } from "../../ui/tooltip"
 import {
   getProjectGroupReorderPreviewTargetId,
@@ -42,20 +43,24 @@ function renderSection(
   } = {}
 ) {
   return renderToStaticMarkup(createElement(
-    TooltipProvider,
-    null,
-    createElement(LocalProjectsSection, {
-      projectGroups,
-      editorLabel: "Cursor",
-      collapsedSections,
-      expandedGroups,
-      onToggleSection: () => undefined,
-      onToggleExpandedGroup: () => undefined,
-      renderChatRow: (chat: SidebarChatRow) => createElement("div", { key: chat.chatId }, chat.title),
-      onNewLocalChat,
-      isConnected: true,
-      creatingChatProjectId,
-    })
+    I18nProvider,
+    { locale: "en" },
+    createElement(
+      TooltipProvider,
+      null,
+      createElement(LocalProjectsSection, {
+        projectGroups,
+        editorLabel: "Cursor",
+        collapsedSections,
+        expandedGroups,
+        onToggleSection: () => undefined,
+        onToggleExpandedGroup: () => undefined,
+        renderChatRow: (chat: SidebarChatRow) => createElement("div", { key: chat.chatId }, chat.title),
+        onNewLocalChat,
+        isConnected: true,
+        creatingChatProjectId,
+      })
+    )
   ))
 }
 

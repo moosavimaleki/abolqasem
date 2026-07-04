@@ -100,18 +100,20 @@ describe("ChatRow", () => {
 
   test("renders a fork action next to the archive action when the chat can fork", () => {
     const html = renderToStaticMarkup(
-      <ChatRow
-        chat={{ ...baseChat, canFork: true }}
-        activeChatId={null}
-        nowMs={60_000}
-        onSelectChat={() => undefined}
-        onRenameChat={() => undefined}
-        onOpenInFinder={() => undefined}
-        onForkChat={() => undefined}
-        onConvertChat={() => undefined}
-        onArchiveChat={() => undefined}
-        onDeleteChat={() => undefined}
-      />
+      <I18nProvider locale="en">
+        <ChatRow
+          chat={{ ...baseChat, canFork: true }}
+          activeChatId={null}
+          nowMs={60_000}
+          onSelectChat={() => undefined}
+          onRenameChat={() => undefined}
+          onOpenInFinder={() => undefined}
+          onForkChat={() => undefined}
+          onConvertChat={() => undefined}
+          onArchiveChat={() => undefined}
+          onDeleteChat={() => undefined}
+        />
+      </I18nProvider>
     )
 
     expect(html).toContain("Fork chat")

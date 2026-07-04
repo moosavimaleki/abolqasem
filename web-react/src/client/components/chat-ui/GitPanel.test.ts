@@ -3,7 +3,12 @@ import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { GitPanel, canIgnoreDiffFile, canIgnoreDiffFolder, getCommitSummaryInputPaddingClassName, getPrimaryCommitActionPrefix, getUserTextDirection, shouldLoadDiffPatchNow } from "./GitPanel"
 import { TooltipProvider } from "../ui/tooltip"
+import { I18nProvider } from "../../i18n/context"
 import { fa } from "../../i18n/fa"
+
+function renderWithEnglishI18n(element: ReturnType<typeof createElement>) {
+  return renderToStaticMarkup(createElement(I18nProvider, { locale: "en" }, element))
+}
 
 describe("GitPanel", () => {
   test("loads missing patches for expanded rows", () => {
@@ -63,7 +68,7 @@ describe("GitPanel", () => {
   })
 
   test("defaults to history when there are no changes", () => {
-    const markup = renderToStaticMarkup(createElement(
+    const markup = renderWithEnglishI18n(createElement(
       TooltipProvider,
       null,
       createElement(GitPanel, {
@@ -116,7 +121,7 @@ describe("GitPanel", () => {
 
   test("defaults to changes when there are file changes", () => {
     const onClose = mock(() => {})
-    const markup = renderToStaticMarkup(createElement(
+    const markup = renderWithEnglishI18n(createElement(
       TooltipProvider,
       null,
       createElement(GitPanel, {
@@ -230,7 +235,7 @@ describe("GitPanel", () => {
   })
 
   test("right-aligns Persian commit history summaries and descriptions", () => {
-    const markup = renderToStaticMarkup(createElement(
+    const markup = renderWithEnglishI18n(createElement(
       TooltipProvider,
       null,
       createElement(GitPanel, {
@@ -282,7 +287,7 @@ describe("GitPanel", () => {
 
   test("renders the branch switcher affordance", () => {
     const onClose = mock(() => {})
-    const markup = renderToStaticMarkup(createElement(
+    const markup = renderWithEnglishI18n(createElement(
       TooltipProvider,
       null,
       createElement(GitPanel, {
@@ -318,7 +323,7 @@ describe("GitPanel", () => {
   })
 
   test("shows push to github for an unpublished local branch without a remote", () => {
-    const markup = renderToStaticMarkup(createElement(
+    const markup = renderWithEnglishI18n(createElement(
       TooltipProvider,
       null,
       createElement(GitPanel, {
@@ -359,7 +364,7 @@ describe("GitPanel", () => {
   })
 
   test("shows open pr for a published non-default branch", () => {
-    const markup = renderToStaticMarkup(createElement(
+    const markup = renderWithEnglishI18n(createElement(
       TooltipProvider,
       null,
       createElement(GitPanel, {
