@@ -195,6 +195,84 @@ func TestWorkspaceCommandRoutingHandlesGitAndHistoryCommands(t *testing.T) {
 	assertWorkspaceAck(t, historyResponse, "history")
 }
 
+func TestWorkspaceRefreshDiffsCommandRunsAsync(t *testing.T) {
+	conn := newTestWorkspaceConnection(nil)
+	raw := mustWorkspaceRawCommand(t, map[string]any{
+		"type":   protocol.CommandChatRefreshDiffs,
+		"chatId": "chat-1",
+	})
+	if !conn.shouldHandleCommandAsync(raw) {
+		t.Fatalf("expected chat.refreshDiffs to be handled asynchronously")
+	}
+}
+
+func TestWorkspaceRefreshDiffsBroadcastsSnapshotEvenWhenUnchanged(t *testing.T) {
+	withWorkspaceComposerStore(t)
+	withWorkspaceConnectionRegistry(t)
+	originalCache := workspaceProjectGitSnapshots
+	workspaceProjectGitSnapshots = newWorkspaceProjectGitSnapshotCache()
+	t.Cleanup(func() { workspaceProjectGitSnapshots = originalCache })
+
+	envelopes := []protocol.ServerEnvelope{}
+	conn := newTestWorkspaceConnection(func(envelope protocol.ServerEnvelope) error {
+		envelopes = append(envelopes, envelope)
+		return nil
+	})
+	workspaceConnections.add(conn)
+	t.Cleanup(func() { workspaceConnections.remove(conn) })
+
+	projectDir := t.TempDir()
+	runGit(t, projectDir, "init")
+	if err := os.WriteFile(filepath.Join(projectDir, "app.txt"), []byte("one\n"), 0o644); err != nil {
+		t.Fatalf("write app.txt failed: %v", err)
+	}
+	projectID := mustCreateWorkspaceProject(t, conn, projectDir)
+	chatID := mustCreateWorkspaceChat(t, conn, projectID)
+
+	subscribeResponse := conn.handle(protocol.ClientEnvelope{
+		V:     protocol.ProtocolVersion,
+		Type:  protocol.EnvelopeSubscribe,
+		ID:    "sub-project-git",
+		Topic: &protocol.SubscriptionTopic{Type: protocol.TopicProjectGit, ProjectID: projectID},
+	})
+	if subscribeResponse == nil || subscribeResponse.Snapshot == nil || subscribeResponse.Snapshot.Type != protocol.SnapshotProjectGit {
+		t.Fatalf("unexpected project git subscribe response: %#v", subscribeResponse)
+	}
+
+	rawCommand := mustWorkspaceRawCommand(t, map[string]any{
+		"type":   protocol.CommandChatRefreshDiffs,
+		"chatId": chatID,
+	})
+	firstResponse := conn.handleCommand(protocol.ClientEnvelope{
+		V:       protocol.ProtocolVersion,
+		Type:    protocol.EnvelopeCommand,
+		ID:      "refresh-1",
+		Command: rawCommand,
+	})
+	assertWorkspaceAck(t, firstResponse, "refresh-1")
+	secondResponse := conn.handleCommand(protocol.ClientEnvelope{
+		V:       protocol.ProtocolVersion,
+		Type:    protocol.EnvelopeCommand,
+		ID:      "refresh-2",
+		Command: rawCommand,
+	})
+	assertWorkspaceAck(t, secondResponse, "refresh-2")
+	secondResult, ok := secondResponse.Result.(map[string]any)
+	if !ok || secondResult["changed"] != false {
+		t.Fatalf("expected second refresh to be unchanged, got %#v", secondResponse.Result)
+	}
+
+	snapshotCount := 0
+	for _, envelope := range envelopes {
+		if envelope.Snapshot != nil && envelope.Snapshot.Type == protocol.SnapshotProjectGit {
+			snapshotCount++
+		}
+	}
+	if snapshotCount != 2 {
+		t.Fatalf("expected both refresh commands to broadcast project-git snapshots, got %d envelopes=%#v", snapshotCount, envelopes)
+	}
+}
+
 func TestWorkspaceCommandRoutingForksGeminiChatIntoNativeSession(t *testing.T) {
 	withWorkspaceComposerStore(t)
 	conn := newTestWorkspaceConnection(nil)

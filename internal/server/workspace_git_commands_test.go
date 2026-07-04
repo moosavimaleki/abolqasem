@@ -1,9 +1,11 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -181,6 +183,95 @@ func TestWorkspaceRefreshDiffsReportsOnlyRealSnapshotChanges(t *testing.T) {
 	}
 	if !changed {
 		t.Fatalf("expected changed snapshot after file update")
+	}
+}
+
+func TestWorkspaceRefreshDiffsFallsBackOnTimeout(t *testing.T) {
+	withWorkspaceComposerStore(t)
+	originalCache := workspaceProjectGitSnapshots
+	workspaceProjectGitSnapshots = newWorkspaceProjectGitSnapshotCache()
+	t.Cleanup(func() { workspaceProjectGitSnapshots = originalCache })
+
+	originalDetect := workspaceGitDetect
+	workspaceGitDetect = func(context.Context, string) (gitservice.Snapshot, error) {
+		return gitservice.Snapshot{}, context.DeadlineExceeded
+	}
+	t.Cleanup(func() { workspaceGitDetect = originalDetect })
+
+	conn := newTestWorkspaceConnection(nil)
+	projectDir := t.TempDir()
+	runGit(t, projectDir, "init")
+	projectID := mustCreateWorkspaceProject(t, conn, projectDir)
+	chatID := mustCreateWorkspaceChat(t, conn, projectID)
+	raw, err := json.Marshal(map[string]any{"chatId": chatID})
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+
+	snapshot, returnedProjectID, changed, err := workspaceRefreshDiffs(raw)
+	if err != nil {
+		t.Fatalf("workspaceRefreshDiffs returned error: %v", err)
+	}
+	if returnedProjectID != projectID || !changed {
+		t.Fatalf("expected timeout fallback to mark snapshot changed, project=%q changed=%t snapshot=%#v", returnedProjectID, changed, snapshot)
+	}
+	if snapshot.Status != gitservice.StatusUnknown {
+		t.Fatalf("expected unknown status on timeout fallback, got %#v", snapshot)
+	}
+	if snapshot.Warning == "" || !strings.Contains(snapshot.Warning, "timed out") {
+		t.Fatalf("expected timeout warning, got %#v", snapshot.Warning)
+	}
+	if snapshot.Files == nil || snapshot.BranchHistory.Entries == nil {
+		t.Fatalf("expected initialized empty slices, got %#v", snapshot)
+	}
+}
+
+func TestWorkspaceRefreshDiffsKeepsCachedSnapshotOnTimeout(t *testing.T) {
+	withWorkspaceComposerStore(t)
+	originalCache := workspaceProjectGitSnapshots
+	workspaceProjectGitSnapshots = newWorkspaceProjectGitSnapshotCache()
+	t.Cleanup(func() { workspaceProjectGitSnapshots = originalCache })
+
+	originalDetect := workspaceGitDetect
+	workspaceGitDetect = func(context.Context, string) (gitservice.Snapshot, error) {
+		return gitservice.Snapshot{}, context.DeadlineExceeded
+	}
+	t.Cleanup(func() { workspaceGitDetect = originalDetect })
+
+	conn := newTestWorkspaceConnection(nil)
+	projectDir := t.TempDir()
+	runGit(t, projectDir, "init")
+	if err := os.WriteFile(filepath.Join(projectDir, "app.txt"), []byte("one\n"), 0o644); err != nil {
+		t.Fatalf("write app.txt failed: %v", err)
+	}
+	projectID := mustCreateWorkspaceProject(t, conn, projectDir)
+	cachedSnapshot := gitservice.Snapshot{
+		Status:        gitservice.StatusReady,
+		Files:         []gitservice.DiffFile{{Path: "app.txt", ChangeType: "modified"}},
+		BranchHistory: gitservice.BranchHistorySnapshot{Entries: []gitservice.BranchHistoryEntry{{SHA: "abc"}}},
+	}
+	workspaceProjectGitSnapshots.store(projectID, cachedSnapshot)
+	chatID := mustCreateWorkspaceChat(t, conn, projectID)
+	raw, err := json.Marshal(map[string]any{"chatId": chatID})
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+
+	snapshot, returnedProjectID, changed, err := workspaceRefreshDiffs(raw)
+	if err != nil {
+		t.Fatalf("workspaceRefreshDiffs returned error: %v", err)
+	}
+	if returnedProjectID != projectID || !changed {
+		t.Fatalf("expected cached fallback to report change, project=%q changed=%t snapshot=%#v", returnedProjectID, changed, snapshot)
+	}
+	if snapshot.Status != gitservice.StatusReady {
+		t.Fatalf("expected cached status to be preserved, got %#v", snapshot)
+	}
+	if snapshot.Warning == "" || !strings.Contains(snapshot.Warning, "last available") {
+		t.Fatalf("expected cached warning, got %#v", snapshot.Warning)
+	}
+	if len(snapshot.Files) != 1 || snapshot.Files[0].Path != "app.txt" {
+		t.Fatalf("expected cached files to be preserved, got %#v", snapshot.Files)
 	}
 }
 

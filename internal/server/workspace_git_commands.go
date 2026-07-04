@@ -3,15 +3,20 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"reflect"
 	"strings"
 	"sync"
+	"time"
 
 	"ai-agent-manager/internal/workspace/gitservice"
 	"ai-agent-manager/internal/workspace/readmodels"
 )
 
 var workspaceProjectGitSnapshots = newWorkspaceProjectGitSnapshotCache()
+var workspaceGitDetect = gitservice.Detect
+
+const workspaceGitSnapshotTimeout = 3 * time.Second
 
 type workspaceProjectGitSnapshotCache struct {
 	mu        sync.Mutex
@@ -60,9 +65,9 @@ func workspaceProjectGitSnapshot(projectID string) any {
 	if err != nil {
 		return workspaceProjectGitSnapshotWithCheckpoints("", gitservice.Snapshot{Status: gitservice.StatusUnknown})
 	}
-	snapshot, err := gitservice.Detect(context.Background(), project.LocalPath)
+	snapshot, err := workspaceDetectGitSnapshot(project.LocalPath)
 	if err != nil {
-		snapshot = gitservice.Snapshot{Status: gitservice.StatusUnknown}
+		snapshot = workspaceGitFallbackSnapshot(project.ID, err)
 	}
 	snapshot = workspaceProjectGitSnapshotWithCheckpoints(project.ID, snapshot)
 	workspaceProjectGitSnapshots.store(project.ID, snapshot)
@@ -127,13 +132,47 @@ func workspaceRefreshDiffs(raw json.RawMessage) (gitservice.Snapshot, string, bo
 	if err != nil {
 		return gitservice.Snapshot{}, "", false, err
 	}
-	snapshot, err := gitservice.Detect(context.Background(), project.LocalPath)
+	snapshot, err := workspaceDetectGitSnapshot(project.LocalPath)
 	if err != nil {
-		return gitservice.Snapshot{}, project.ID, false, err
+		snapshot = workspaceGitFallbackSnapshot(project.ID, err)
+		snapshot = workspaceProjectGitSnapshotWithCheckpoints(project.ID, snapshot)
+		changed := workspaceProjectGitSnapshots.update(project.ID, snapshot)
+		return snapshot, project.ID, changed, nil
 	}
 	snapshot = workspaceProjectGitSnapshotWithCheckpoints(project.ID, snapshot)
 	changed := workspaceProjectGitSnapshots.update(project.ID, snapshot)
 	return snapshot, project.ID, changed, nil
+}
+
+func workspaceDetectGitSnapshot(localPath string) (gitservice.Snapshot, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), workspaceGitSnapshotTimeout)
+	defer cancel()
+	return workspaceGitDetect(ctx, localPath)
+}
+
+func workspaceGitFallbackSnapshot(projectID string, err error) gitservice.Snapshot {
+	if cached, ok := workspaceProjectGitSnapshots.get(projectID); ok && cached.Status != "" {
+		if cached.Files == nil {
+			cached.Files = []gitservice.DiffFile{}
+		}
+		if cached.BranchHistory.Entries == nil {
+			cached.BranchHistory = gitservice.BranchHistorySnapshot{Entries: []gitservice.BranchHistoryEntry{}}
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			cached.Warning = "Git scan timed out. Showing the last available snapshot."
+		}
+		return cached
+	}
+	warning := ""
+	if errors.Is(err, context.DeadlineExceeded) {
+		warning = "Git scan timed out. Try again after Git finishes indexing this repository."
+	}
+	return gitservice.Snapshot{
+		Status:        gitservice.StatusUnknown,
+		Files:         []gitservice.DiffFile{},
+		Warning:       warning,
+		BranchHistory: gitservice.BranchHistorySnapshot{Entries: []gitservice.BranchHistoryEntry{}},
+	}
 }
 
 func workspaceGetGitHubPublishInfo(raw json.RawMessage) (gitservice.GitHubPublishInfo, error) {

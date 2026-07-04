@@ -134,7 +134,7 @@ func (c *workspaceConnection) shouldHandleCommandAsync(raw json.RawMessage) bool
 		return false
 	}
 	switch commandType {
-	case protocol.CommandSkillsInstall, protocol.CommandSkillsUninstall, protocol.CommandMCPRegistryInstall:
+	case protocol.CommandSkillsInstall, protocol.CommandSkillsUninstall, protocol.CommandMCPRegistryInstall, protocol.CommandChatRefreshDiffs:
 		return true
 	default:
 		return false
@@ -645,9 +645,7 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
 		}
-		if changed {
-			workspaceConnections.broadcastProjectGitSnapshot(projectID, snapshot)
-		}
+		workspaceConnections.broadcastProjectGitSnapshot(projectID, snapshot)
 		response := protocol.AckEnvelope(envelope.ID, map[string]any{"changed": changed})
 		return &response
 	case protocol.CommandChatInitGit:

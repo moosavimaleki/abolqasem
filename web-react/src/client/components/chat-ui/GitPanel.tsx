@@ -2156,7 +2156,7 @@ function GitPanelImpl({
             <div className="min-h-full" dir="ltr">
             {diffs.status === "unknown" ? (
               <div className="flex h-full items-center justify-center px-6 py-3 text-center">
-                <p dir={direction} className="text-sm text-muted-foreground">{t.git.loadingDiff}</p>
+                <p dir={direction} className="text-sm text-muted-foreground">{diffs.warning || t.git.loadingDiff}</p>
               </div>
             ) : diffs.status === "no_repo" ? (
               <div className="flex h-full items-center justify-center px-6 py-3 text-center">

@@ -49,6 +49,7 @@ type BranchHistorySnapshot struct {
 type Snapshot struct {
 	Status            string                `json:"status"`
 	Files             []DiffFile            `json:"files"`
+	Warning           string                `json:"warning,omitempty"`
 	RepositoryRoot    string                `json:"repositoryRoot,omitempty"`
 	BranchName        string                `json:"branchName,omitempty"`
 	DefaultBranchName string                `json:"defaultBranchName,omitempty"`
@@ -363,6 +364,9 @@ func gitRawOutput(ctx context.Context, dir string, args ...string) (string, erro
 	output, err := cmd.CombinedOutput()
 	text := strings.TrimRight(string(output), "\r\n")
 	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return "", ctxErr
+		}
 		return "", gitCommandError{err: err, output: text}
 	}
 	return text, nil

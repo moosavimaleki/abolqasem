@@ -1001,6 +1001,7 @@ export interface UpstreamStatus {
 export interface ChatDiffSnapshot extends BranchMetadata, UpstreamStatus {
   status: "unknown" | "ready" | "no_repo"
   files: ChatDiffFile[]
+  warning?: string
   branchHistory?: ChatBranchHistorySnapshot
   checkpoints?: ChatCheckpointSummary[]
 }
