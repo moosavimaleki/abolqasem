@@ -95,14 +95,34 @@ func workspaceApplyRuntimePreferences(command workspaceRuntimePreferenceCommand)
 		return errors.New("chat has no tmux session")
 	}
 	provider := workspaceTmuxProviderForChat(chat, command.Provider)
-	if provider != "codex" {
-		return errors.New("live runtime preference changes are currently implemented only for Codex tmux sessions")
+	switch provider {
+	case "codex":
+		effort := catalog.DefaultCodexReasoningEffort
+		if command.ModelOptions != nil && command.ModelOptions.Codex != nil && catalog.IsCodexReasoningEffort(command.ModelOptions.Codex.ReasoningEffort) {
+			effort = command.ModelOptions.Codex.ReasoningEffort
+		}
+		return tmuxruntime.ApplyCodexRuntimePreferences(context.Background(), chat.TmuxSession, command.Model, effort)
+	case "claude":
+		return tmuxruntime.ApplyClaudeRuntimePreferences(context.Background(), chat.TmuxSession, workspaceClaudeRuntimeModelCommand(command.Model))
+	case "gemini":
+		return tmuxruntime.ApplyGeminiRuntimePreferences(context.Background(), chat.TmuxSession, catalog.NormalizeServerModel("gemini", command.Model))
+	default:
+		return errors.New("live runtime preference changes are not supported for this provider")
 	}
-	effort := catalog.DefaultCodexReasoningEffort
-	if command.ModelOptions != nil && command.ModelOptions.Codex != nil && catalog.IsCodexReasoningEffort(command.ModelOptions.Codex.ReasoningEffort) {
-		effort = command.ModelOptions.Codex.ReasoningEffort
+}
+
+func workspaceClaudeRuntimeModelCommand(model string) string {
+	model = catalog.NormalizeServerModel("claude", model)
+	provider, ok := catalog.Get("claude")
+	if !ok {
+		return model
 	}
-	return tmuxruntime.ApplyCodexRuntimePreferences(context.Background(), chat.TmuxSession, command.Model, effort)
+	for _, candidate := range provider.Models {
+		if candidate.ID == model && len(candidate.Aliases) > 0 {
+			return candidate.Aliases[0]
+		}
+	}
+	return model
 }
 
 func workspaceResolveTmuxChat(store *workspaceEventStore, command agent.SendCommand) (readmodels.ChatRecord, bool, error) {

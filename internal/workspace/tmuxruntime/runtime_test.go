@@ -311,6 +311,74 @@ func TestCodexEffortMatchDoesNotTreatXHighAsHigh(t *testing.T) {
 	}
 }
 
+func TestApplyClaudeRuntimePreferencesSendsDirectModelCommand(t *testing.T) {
+	restoreTmuxRuntimeCommands(t)
+
+	requireTmux = func() error { return nil }
+	commands := [][]string{}
+	runTmuxCommand = func(_ context.Context, args ...string) error {
+		commands = append(commands, append([]string(nil), args...))
+		return nil
+	}
+	runTmuxOutput = func(_ context.Context, args ...string) ([]byte, error) {
+		return []byte("Claude Sonnet - ~/project - tokens 120k\n"), nil
+	}
+
+	if err := ApplyClaudeRuntimePreferences(context.Background(), "Chat:1", "sonnet"); err != nil {
+		t.Fatalf("ApplyClaudeRuntimePreferences returned error: %v", err)
+	}
+
+	expected := [][]string{
+		{"send-keys", "-t", "chat-1", "-l", "/model sonnet"},
+		{"send-keys", "-t", "chat-1", "Enter"},
+	}
+	if strings.Join(flattenCommands(commands), "\x00") != strings.Join(flattenCommands(expected), "\x00") {
+		t.Fatalf("unexpected tmux command sequence: %#v", commands)
+	}
+}
+
+func TestApplyGeminiRuntimePreferencesUsesCapturedMenuText(t *testing.T) {
+	restoreTmuxRuntimeCommands(t)
+
+	requireTmux = func() error { return nil }
+	menuOpen := false
+	commands := [][]string{}
+	runTmuxCommand = func(_ context.Context, args ...string) error {
+		command := append([]string(nil), args...)
+		commands = append(commands, command)
+		if strings.Join(args, " ") == "send-keys -t chat-1 -l /model" {
+			menuOpen = true
+		}
+		return nil
+	}
+	runTmuxOutput = func(_ context.Context, args ...string) ([]byte, error) {
+		if !menuOpen {
+			return []byte("Gemini 3 Pro - ~/project - model ready\n"), nil
+		}
+		return []byte(`
+Select model
+❯ Gemini 3 Pro Preview
+  Gemini 3.1 Pro Preview
+  Gemini 3.1 Flash Lite Preview
+`), nil
+	}
+
+	if err := ApplyGeminiRuntimePreferences(context.Background(), "Chat:1", "gemini-3.1-flash-lite-preview"); err != nil {
+		t.Fatalf("ApplyGeminiRuntimePreferences returned error: %v", err)
+	}
+
+	expected := [][]string{
+		{"send-keys", "-t", "chat-1", "-l", "/model"},
+		{"send-keys", "-t", "chat-1", "Enter"},
+		{"send-keys", "-t", "chat-1", "Down"},
+		{"send-keys", "-t", "chat-1", "Down"},
+		{"send-keys", "-t", "chat-1", "Enter"},
+	}
+	if strings.Join(flattenCommands(commands), "\x00") != strings.Join(flattenCommands(expected), "\x00") {
+		t.Fatalf("unexpected tmux command sequence: %#v", commands)
+	}
+}
+
 func statusFromOutput(output string) (Status, error) {
 	lines := meaningfulLines(output)
 	lastLine := ""

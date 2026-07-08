@@ -28,7 +28,7 @@ cd abolqasem
 scripts/build-from-source.sh
 ```
 
-برای توسعه فرانت، سورس داخل `web-react/` است. پوشه `web/` خروجی generated برای embed شدن داخل باینری Go است و با دستور زیر دوباره ساخته می‌شود:
+برای توسعه فرانت، سورس داخل `web-react/` است. پوشه `web/` خروجی generated برای embed شدن داخل باینری Go است و با دستور زیر دوباره ساخته می‌شود. فایل‌های build داخل `web/` نباید commit شوند:
 
 ```bash
 sh scripts/prepare-web-assets.sh

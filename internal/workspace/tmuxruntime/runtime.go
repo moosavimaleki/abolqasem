@@ -176,7 +176,7 @@ func Interrupt(ctx context.Context, sessionName string) error {
 }
 
 func Capture(ctx context.Context, sessionName string, lines int) (string, error) {
-	if err := RequireTmux(); err != nil {
+	if err := requireTmux(); err != nil {
 		return "", err
 	}
 	if lines < 20 {
@@ -206,12 +206,12 @@ func ApplyCodexRuntimePreferences(ctx context.Context, sessionName string, model
 	if err := Send(ctx, sessionName, "/model", true); err != nil {
 		return err
 	}
-	modelSelectedWithEffort, err := selectCodexMenuTarget(ctx, sessionName, func(option string) bool {
+	modelSelectedWithEffort, err := selectRuntimeMenuTarget(ctx, sessionName, "codex model menu", func(option string) bool {
 		return codexOptionMatchesModel(option, model) && (effort == "" || codexOptionMatchesEffort(option, effort))
 	})
 	if err != nil {
 		modelSelectedWithEffort = false
-		if _, fallbackErr := selectCodexMenuTarget(ctx, sessionName, func(option string) bool {
+		if _, fallbackErr := selectRuntimeMenuTarget(ctx, sessionName, "codex model menu", func(option string) bool {
 			return codexOptionMatchesModel(option, model)
 		}); fallbackErr != nil {
 			_ = runTmuxCommand(ctx, "send-keys", "-t", sessionName, "Escape")
@@ -221,7 +221,7 @@ func ApplyCodexRuntimePreferences(ctx context.Context, sessionName string, model
 	if effort == "" || modelSelectedWithEffort {
 		return nil
 	}
-	if _, err := selectCodexMenuTarget(ctx, sessionName, func(option string) bool {
+	if _, err := selectRuntimeMenuTarget(ctx, sessionName, "codex effort menu", func(option string) bool {
 		return codexOptionMatchesEffort(option, effort)
 	}); err != nil {
 		_ = runTmuxCommand(ctx, "send-keys", "-t", sessionName, "Escape")
@@ -230,14 +230,72 @@ func ApplyCodexRuntimePreferences(ctx context.Context, sessionName string, model
 	return nil
 }
 
-func selectCodexMenuTarget(ctx context.Context, sessionName string, matches func(string) bool) (bool, error) {
+func ApplyClaudeRuntimePreferences(ctx context.Context, sessionName string, model string) error {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return errors.New("model is required")
+	}
+	if err := requireTmux(); err != nil {
+		return err
+	}
+	sessionName = NormalizeSessionName(sessionName)
+	if err := ensureAgentReady(ctx, sessionName); err != nil {
+		return err
+	}
+	return sendSlashCommand(ctx, sessionName, "/model "+model)
+}
+
+func ApplyGeminiRuntimePreferences(ctx context.Context, sessionName string, model string) error {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return errors.New("model is required")
+	}
+	if err := requireTmux(); err != nil {
+		return err
+	}
+	sessionName = NormalizeSessionName(sessionName)
+	if err := ensureAgentReady(ctx, sessionName); err != nil {
+		return err
+	}
+	if err := sendSlashCommand(ctx, sessionName, "/model"); err != nil {
+		return err
+	}
+	if _, err := selectRuntimeMenuTarget(ctx, sessionName, "gemini model menu", func(option string) bool {
+		return runtimeOptionMatchesModel(option, model)
+	}); err != nil {
+		_ = runTmuxCommand(ctx, "send-keys", "-t", sessionName, "Escape")
+		return err
+	}
+	return nil
+}
+
+func ensureAgentReady(ctx context.Context, sessionName string) error {
+	status, err := ReadStatus(ctx, sessionName)
+	if err == nil && status.State == "running" {
+		return errors.New("agent is running; wait until it is ready before changing model")
+	}
+	return nil
+}
+
+func sendSlashCommand(ctx context.Context, sessionName string, command string) error {
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return errors.New("command is required")
+	}
+	if err := sendText(ctx, sessionName, command); err != nil {
+		return err
+	}
+	return runTmuxCommand(ctx, "send-keys", "-t", sessionName, "Enter")
+}
+
+func selectRuntimeMenuTarget(ctx context.Context, sessionName string, menuName string, matches func(string) bool) (bool, error) {
 	deadline := time.Now().Add(2 * time.Second)
 	for {
 		output, err := Capture(ctx, sessionName, 80)
 		if err != nil {
 			return false, err
 		}
-		keys, selectedText, err := codexMenuSelectionKeys(output, matches)
+		keys, selectedText, err := runtimeMenuSelectionKeys(output, menuName, matches)
 		if err == nil {
 			for _, key := range keys {
 				if err := runTmuxCommand(ctx, "send-keys", "-t", sessionName, key); err != nil {
@@ -257,15 +315,19 @@ func selectCodexMenuTarget(ctx context.Context, sessionName string, matches func
 	}
 }
 
-type codexMenuOption struct {
+type runtimeMenuOption struct {
 	text        string
 	highlighted bool
 }
 
 func codexMenuSelectionKeys(output string, matches func(string) bool) ([]string, string, error) {
-	options := parseCodexMenuOptions(output)
+	return runtimeMenuSelectionKeys(output, "codex menu", matches)
+}
+
+func runtimeMenuSelectionKeys(output string, menuName string, matches func(string) bool) ([]string, string, error) {
+	options := parseRuntimeMenuOptions(output)
 	if len(options) == 0 {
-		return nil, "", errors.New("codex model menu was not found")
+		return nil, "", fmt.Errorf("%s was not found", menuName)
 	}
 	current := -1
 	target := -1
@@ -278,10 +340,10 @@ func codexMenuSelectionKeys(output string, matches func(string) bool) ([]string,
 		}
 	}
 	if target < 0 {
-		return nil, "", errors.New("target model option was not found in codex menu")
+		return nil, "", fmt.Errorf("target model option was not found in %s", menuName)
 	}
 	if current < 0 {
-		return nil, "", errors.New("codex model menu current selection was not found")
+		return nil, "", fmt.Errorf("%s current selection was not found", menuName)
 	}
 	keys := []string{}
 	key := "Down"
@@ -297,18 +359,18 @@ func codexMenuSelectionKeys(output string, matches func(string) bool) ([]string,
 	return keys, options[target].text, nil
 }
 
-func parseCodexMenuOptions(output string) []codexMenuOption {
-	options := []codexMenuOption{}
+func parseRuntimeMenuOptions(output string) []runtimeMenuOption {
+	options := []runtimeMenuOption{}
 	for _, line := range strings.Split(output, "\n") {
-		text, highlighted, ok := parseCodexMenuLine(line)
+		text, highlighted, ok := parseRuntimeMenuLine(line)
 		if ok {
-			options = append(options, codexMenuOption{text: text, highlighted: highlighted})
+			options = append(options, runtimeMenuOption{text: text, highlighted: highlighted})
 		}
 	}
 	return options
 }
 
-func parseCodexMenuLine(line string) (string, bool, bool) {
+func parseRuntimeMenuLine(line string) (string, bool, bool) {
 	line = strings.TrimSpace(stripANSI(line))
 	line = strings.Trim(line, "│ ")
 	if line == "" {
@@ -334,6 +396,15 @@ func parseCodexMenuLine(line string) (string, bool, bool) {
 	}
 	optionLike := highlighted ||
 		strings.Contains(normalized, "gpt-") ||
+		strings.Contains(normalized, "gemini-") ||
+		strings.Contains(normalized, "gemma-") ||
+		strings.Contains(normalized, "claude-") ||
+		strings.HasPrefix(normalized, "gemini ") ||
+		strings.HasPrefix(normalized, "gemma ") ||
+		strings.HasPrefix(normalized, "claude ") ||
+		strings.Contains(normalized, " sonnet") ||
+		strings.Contains(normalized, " opus") ||
+		strings.Contains(normalized, " haiku") ||
 		codexOptionMatchesEffort(normalized, "minimal") ||
 		codexOptionMatchesEffort(normalized, "low") ||
 		codexOptionMatchesEffort(normalized, "medium") ||
@@ -346,12 +417,16 @@ func parseCodexMenuLine(line string) (string, bool, bool) {
 }
 
 func codexOptionMatchesModel(option string, model string) bool {
-	return strings.Contains(normalizedCodexMenuText(option), normalizedCodexMenuText(model))
+	return runtimeOptionMatchesModel(option, model)
+}
+
+func runtimeOptionMatchesModel(option string, model string) bool {
+	return strings.Contains(normalizedRuntimeMenuText(option), normalizedRuntimeMenuText(model))
 }
 
 func codexOptionMatchesEffort(option string, effort string) bool {
-	option = normalizedCodexMenuText(option)
-	effort = normalizedCodexMenuText(effort)
+	option = normalizedRuntimeMenuText(option)
+	effort = normalizedRuntimeMenuText(effort)
 	switch effort {
 	case "xhigh":
 		return strings.Contains(option, "xhigh") || strings.Contains(option, "x high") || strings.Contains(option, "extra high")
@@ -364,9 +439,12 @@ func codexOptionMatchesEffort(option string, effort string) bool {
 	}
 }
 
-func normalizedCodexMenuText(value string) string {
+func normalizedRuntimeMenuText(value string) string {
 	value = strings.ToLower(stripANSI(value))
 	value = strings.ReplaceAll(value, "gpt-", "gpt ")
+	value = strings.ReplaceAll(value, "gemini-", "gemini ")
+	value = strings.ReplaceAll(value, "gemma-", "gemma ")
+	value = strings.ReplaceAll(value, "claude-", "claude ")
 	value = strings.ReplaceAll(value, "-", " ")
 	value = strings.ReplaceAll(value, "_", " ")
 	value = regexp.MustCompile(`[^a-z0-9.]+`).ReplaceAllString(value, " ")

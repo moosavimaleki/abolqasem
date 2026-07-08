@@ -153,7 +153,7 @@ interface ChatPreferenceControlsProps {
   onModelChange: (provider: AgentProvider, model: string) => void
   onModelOptionChange: (change: ModelOptionChange) => void
   runtimeMode?: boolean
-  onCodexRuntimeShortcut?: (model: string, effort: CodexReasoningEffort) => void
+  onRuntimeShortcut?: (provider: AgentProvider, model: string, effort?: CodexReasoningEffort) => void
   planMode?: boolean
   onPlanModeChange?: (planMode: boolean) => void
   includePlanMode?: boolean
@@ -172,7 +172,7 @@ export function ChatPreferenceControls({
   onModelChange,
   onModelOptionChange,
   runtimeMode = false,
-  onCodexRuntimeShortcut,
+  onRuntimeShortcut,
   planMode = false,
   onPlanModeChange,
   includePlanMode = true,
@@ -198,18 +198,34 @@ export function ChatPreferenceControls({
     { model: "gpt-5.4", effort: "xhigh", label: "5.4 XH" },
     { model: "gpt-5.5", effort: "high", label: "5.5 H" },
   ] as const
+  const claudeRuntimeShortcuts = [
+    { model: "claude-sonnet-4-6", label: "Sonnet" },
+    { model: "claude-opus-4-7", label: "Opus" },
+    { model: "claude-haiku-4-5-20251001", label: "Haiku" },
+  ] as const
+  const geminiRuntimeShortcuts = [
+    { model: "gemini-3.1-pro-preview", label: "3.1 Pro" },
+    { model: "gemini-3.1-flash-lite-preview", label: "3.1 Lite" },
+    { model: "gemini-3-pro-preview", label: "3 Pro" },
+    { model: "gemini-2.5-pro", label: "2.5 Pro" },
+  ] as const
+  const runtimeShortcuts = selectedProvider === "codex"
+    ? codexRuntimeShortcuts
+    : selectedProvider === "claude"
+      ? claudeRuntimeShortcuts
+      : geminiRuntimeShortcuts
 
   return (
     <div className={cn("flex md:justify-center items-center gap-0.5", className)}>
-      {runtimeMode && selectedProvider === "codex" && onCodexRuntimeShortcut ? (
+      {runtimeMode && onRuntimeShortcut ? (
         <div className="flex items-center gap-1 px-1">
-          {codexRuntimeShortcuts.map((shortcut) => (
+          {runtimeShortcuts.map((shortcut) => (
             <button
-              key={`${shortcut.model}-${shortcut.effort}`}
+              key={`${shortcut.model}-${"effort" in shortcut ? shortcut.effort : "model"}`}
               type="button"
               className="rounded-full border border-border/70 bg-muted/40 px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              onClick={() => onCodexRuntimeShortcut(shortcut.model, shortcut.effort)}
-              title={`${shortcut.model} ${shortcut.effort}`}
+              onClick={() => onRuntimeShortcut(selectedProvider, shortcut.model, "effort" in shortcut ? shortcut.effort : undefined)}
+              title={`${shortcut.model}${"effort" in shortcut ? ` ${shortcut.effort}` : ""}`}
             >
               {shortcut.label}
             </button>

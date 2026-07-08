@@ -23,6 +23,7 @@
 - برای cache و home dir به تفاوت‌های `XDG_CACHE_HOME`، `HOME`, `USERPROFILE`, `LOCALAPPDATA` و `os.UserCacheDir()` توجه کن. تست‌ها نباید روی cache واقعی runner یا سیستم توسعه‌دهنده بنویسند.
 - کدهای نصب و hook باید command، permission، extension باینری (`.exe`) و shell متفاوت Windows/Unix را در نظر بگیرند. فرض نکن `sh`, `bash`, `chmod`, `install`, `tar` یا مسیرهای Unix همیشه موجودند.
 - تستی که به asset ساخته‌شده، web build، binary release یا فایل generated نیاز دارد، یا خودش fixture را آماده کند یا در نبود fixture به شکل واضح skip شود. jobهای CI نباید به artifact باقی‌مانده از اجرای قبلی وابسته باشند.
+- پوشه `web/` فقط محل خروجی generated برای embed شدن داخل باینری است. سورس واقعی فرانت `web-react/` است. فایل‌های hashدار build، `web/assets/*`، `web/index.html` و assetهای تولیدی را commit نکن؛ فقط `web/.gitignore` و `web/README.md` باید versioned بمانند. برای ساخت واقعی از `scripts/prepare-web-assets.sh` استفاده کن.
 - هر fix مرتبط با filesystem یا installer باید حداقل با `GOTOOLCHAIN=local go test ./...` و در صورت ارتباط با frontend با `npm run check` بررسی شود. اگر نمی‌توان یک OS را محلی اجرا کرد، تست‌ها را طوری بنویس که اختلاف‌های شناخته‌شده آن OS را پوشش دهند.
 
 ## دستورالعمل دائمی نام پروژه، Provider Runtime و CI
@@ -30,7 +31,7 @@
 
 برای runtime providerها (`codex`, `claude`, `gemini`) هرگز command را با string خام و Unix-only تحلیل نکن. command ممکن است با absolute path، فاصله، پسوند `.exe`، یا مسیر Windows بیاید. برای تشخیص provider و قابلیت resume، همیشه basename را normalize کن: `filepath.Base`، lowercase، حذف پسوند `.exe`، سپس مقایسه با provider canonical.
 
-تنظیمات مدل‌ها نباید فقط UI state بی‌اثر باشند. در معماری tmux-first، مدل پیش‌فرض فقط وقتی معتبر است که روی launch command همان provider اعمال شود، مثل `--model <id>`. تغییر مدل وسط سشن را فقط وقتی پیاده کن که برای همان provider با CLI واقعی و تست end-to-end ثابت شده باشد؛ slash command حدسی به tmux نفرست.
+تنظیمات مدل‌ها نباید فقط UI state بی‌اثر باشند. در معماری tmux-first، مدل پیش‌فرض فقط وقتی معتبر است که روی launch command همان provider اعمال شود، مثل `--model <id>`. تغییر مدل وسط سشن را فقط وقتی پیاده کن که برای همان provider با CLI واقعی و تست end-to-end ثابت شده باشد؛ slash command حدسی به tmux نفرست. اگر ناچار به کار با منوی TUI هستی، متن واقعی pane را capture و parse کن و فقط وقتی current/target دقیقاً پیدا شد `Up/Down/Enter` بفرست.
 
 در تست‌های provider executable و tmux command:
 - روی Windows هم `HOME` و هم `USERPROFILE` را در temp dir تست ست کن.

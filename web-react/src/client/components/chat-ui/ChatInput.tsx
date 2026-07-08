@@ -961,16 +961,20 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 }
               }}
               runtimeMode={providerLocked}
-              onCodexRuntimeShortcut={(model, effort) => {
-                if (providerPrefs.provider !== "codex") return
-                applyRuntimeComposerState({
-                  ...providerPrefs,
-                  model,
-                  modelOptions: {
-                    ...providerPrefs.modelOptions,
-                    reasoningEffort: effort,
-                  },
-                })
+              onRuntimeShortcut={(provider, model, effort) => {
+                if (providerPrefs.provider !== provider) return
+                if (provider === "codex" && providerPrefs.provider === "codex" && effort) {
+                  applyRuntimeComposerState({
+                    ...providerPrefs,
+                    model,
+                    modelOptions: {
+                      ...providerPrefs.modelOptions,
+                      reasoningEffort: effort,
+                    },
+                  })
+                  return
+                }
+                applyRuntimeComposerState(withNormalizedContextWindow(providerPrefs, model))
               }}
               planMode={providerPrefs.planMode}
               onPlanModeChange={setEffectivePlanMode}
