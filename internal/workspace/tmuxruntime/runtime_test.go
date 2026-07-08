@@ -271,6 +271,46 @@ func TestStatusClassifiesWorkingTail(t *testing.T) {
 	}
 }
 
+func TestCodexMenuSelectionKeysUsesCapturedMenuText(t *testing.T) {
+	output := `
+Select model
+  GPT-5.5 High
+❯ GPT-5.4 Medium
+  GPT-5.4 High
+  GPT-5.4 XHigh
+`
+	keys, selected, err := codexMenuSelectionKeys(output, func(option string) bool {
+		return codexOptionMatchesModel(option, "gpt-5.4") && codexOptionMatchesEffort(option, "xhigh")
+	})
+	if err != nil {
+		t.Fatalf("codexMenuSelectionKeys returned error: %v", err)
+	}
+	if selected != "GPT-5.4 XHigh" {
+		t.Fatalf("unexpected selected option %q", selected)
+	}
+	if strings.Join(keys, ",") != "Down,Down,Enter" {
+		t.Fatalf("unexpected keys %#v", keys)
+	}
+}
+
+func TestCodexMenuSelectionKeysRequiresCurrentSelection(t *testing.T) {
+	_, _, err := codexMenuSelectionKeys("  GPT-5.4 High\n  GPT-5.4 XHigh\n", func(option string) bool {
+		return codexOptionMatchesEffort(option, "high")
+	})
+	if err == nil {
+		t.Fatal("expected missing current selection error")
+	}
+}
+
+func TestCodexEffortMatchDoesNotTreatXHighAsHigh(t *testing.T) {
+	if codexOptionMatchesEffort("GPT-5.4 XHigh", "high") {
+		t.Fatal("xhigh must not match high")
+	}
+	if !codexOptionMatchesEffort("GPT-5.4 XHigh", "xhigh") {
+		t.Fatal("expected xhigh match")
+	}
+}
+
 func statusFromOutput(output string) (Status, error) {
 	lines := meaningfulLines(output)
 	lastLine := ""
@@ -301,9 +341,11 @@ func restoreTmuxRuntimeCommands(t *testing.T) {
 	t.Helper()
 	originalRequireTmux := requireTmux
 	originalRunTmuxCommand := runTmuxCommand
+	originalRunTmuxOutput := runTmuxOutput
 	t.Cleanup(func() {
 		requireTmux = originalRequireTmux
 		runTmuxCommand = originalRunTmuxCommand
+		runTmuxOutput = originalRunTmuxOutput
 	})
 }
 

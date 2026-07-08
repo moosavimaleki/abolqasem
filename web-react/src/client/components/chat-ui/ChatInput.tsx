@@ -115,6 +115,7 @@ interface Props {
     value: string,
     options?: { provider?: AgentProvider; model?: string; modelOptions?: ModelOptions; planMode?: boolean; attachments?: ChatAttachment[] }
   ) => Promise<void>
+  onRuntimePreferenceChange?: (preference: { provider: AgentProvider; model: string; modelOptions: ModelOptions }) => Promise<void>
   onLayoutChange?: () => void
   onCancel?: () => void
   disabled: boolean
@@ -188,6 +189,7 @@ function getEffectiveComposerState(
 
 const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
   onSubmit,
+  onRuntimePreferenceChange,
   onLayoutChange,
   onCancel,
   disabled,
@@ -422,6 +424,22 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
   function toggleEffectivePlanMode() {
     setEffectivePlanMode(!providerPrefs.planMode)
+  }
+
+  function modelOptionsPayloadForState(state: ComposerState): ModelOptions {
+    if (state.provider === "claude") return { claude: { ...state.modelOptions } }
+    if (state.provider === "codex") return { codex: { ...state.modelOptions } }
+    return { gemini: { ...state.modelOptions } }
+  }
+
+  function applyRuntimeComposerState(nextState: ComposerState) {
+    setComposerState(composerChatId, nextState)
+    if (!providerLocked || !onRuntimePreferenceChange) return
+    void onRuntimePreferenceChange({
+      provider: nextState.provider,
+      model: nextState.model,
+      modelOptions: modelOptionsPayloadForState(nextState),
+    })
   }
 
   const processUploadQueue = useCallback(() => {
@@ -889,7 +907,7 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
               }}
               onModelChange={(_, model) => {
                 if (providerLocked) {
-                  updateComposerState((state) => withNormalizedContextWindow(state, model))
+                  applyRuntimeComposerState(withNormalizedContextWindow(providerPrefs, model))
                   return
                 }
                 setChatComposerModel(composerChatId, model)
@@ -897,15 +915,43 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
               onModelOptionChange={(change) => {
                 switch (change.type) {
                   case "claudeReasoningEffort":
+                    if (providerLocked && providerPrefs.provider === "claude") {
+                      applyRuntimeComposerState({
+                        ...providerPrefs,
+                        modelOptions: { ...providerPrefs.modelOptions, reasoningEffort: change.effort },
+                      })
+                      break
+                    }
                     setReasoningEffort(change.effort)
                     break
                   case "codexReasoningEffort":
+                    if (providerLocked && providerPrefs.provider === "codex") {
+                      applyRuntimeComposerState({
+                        ...providerPrefs,
+                        modelOptions: { ...providerPrefs.modelOptions, reasoningEffort: change.effort },
+                      })
+                      break
+                    }
                     setReasoningEffort(change.effort)
                     break
                   case "contextWindow":
+                    if (providerLocked && providerPrefs.provider === "claude") {
+                      applyRuntimeComposerState(withNormalizedContextWindow({
+                        ...providerPrefs,
+                        modelOptions: { ...providerPrefs.modelOptions, contextWindow: change.contextWindow },
+                      }, providerPrefs.model))
+                      break
+                    }
                     setClaudeContextWindow(change.contextWindow)
                     break
                   case "fastMode":
+                    if (providerLocked && providerPrefs.provider === "codex") {
+                      applyRuntimeComposerState({
+                        ...providerPrefs,
+                        modelOptions: { ...providerPrefs.modelOptions, fastMode: change.fastMode },
+                      })
+                      break
+                    }
                     updateComposerState(
                       (state) => state.provider !== "codex"
                         ? state
@@ -913,6 +959,18 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     )
                     break
                 }
+              }}
+              runtimeMode={providerLocked}
+              onCodexRuntimeShortcut={(model, effort) => {
+                if (providerPrefs.provider !== "codex") return
+                applyRuntimeComposerState({
+                  ...providerPrefs,
+                  model,
+                  modelOptions: {
+                    ...providerPrefs.modelOptions,
+                    reasoningEffort: effort,
+                  },
+                })
               }}
               planMode={providerPrefs.planMode}
               onPlanModeChange={setEffectivePlanMode}

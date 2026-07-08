@@ -93,6 +93,7 @@ const (
 	CommandChatMarkRead                    = "chat.markRead"
 	CommandChatRefresh                     = "chat.refresh"
 	CommandChatRestartTmux                 = "chat.restartTmux"
+	CommandChatApplyRuntimePreferences     = "chat.applyRuntimePreferences"
 	CommandChatSend                        = "chat.send"
 	CommandChatRefreshDiffs                = "chat.refreshDiffs"
 	CommandChatInitGit                     = "chat.initGit"

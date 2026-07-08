@@ -36,7 +36,7 @@ import { useStickyChatFocus } from "../useStickyChatFocus"
 import { useTerminalToggleAnimation } from "../useTerminalToggleAnimation"
 import type { AbolqasemState } from "../useAbolqasemState"
 import { getNextMeasuredInputHeight, getTranscriptPaddingBottom } from "../useAbolqasemState"
-import type { ChatTranscriptIndexSnapshot, TranscriptIndexItem } from "../../../shared/types"
+import type { AgentProvider, ChatTranscriptIndexSnapshot, ModelOptions, TranscriptIndexItem } from "../../../shared/types"
 import { ChatInputDock } from "./ChatInputDock"
 import { ChatTranscriptViewport } from "./ChatTranscriptViewport"
 import { TerminalWorkspaceShell } from "./TerminalWorkspaceShell"
@@ -1190,6 +1190,27 @@ export function ChatPage() {
       })
   }, [dialog, state.activeChatId, state.runtime?.tmuxSession, state.socket, t])
 
+  const handleRuntimePreferenceChange = useCallback(async (preference: { provider: AgentProvider; model: string; modelOptions: ModelOptions }) => {
+    if (!state.activeChatId) return
+    const chatId = state.activeChatId
+    try {
+      await state.socket.command({
+        type: "chat.applyRuntimePreferences",
+        chatId,
+        provider: preference.provider,
+        model: preference.model,
+        modelOptions: preference.modelOptions,
+      })
+      await state.socket.command({ type: "chat.refresh", chatId })
+    } catch (error) {
+      await dialog.alert({
+        title: "Runtime preference failed",
+        description: error instanceof Error ? error.message : String(error),
+        closeLabel: t.common.ok,
+      })
+    }
+  }, [dialog, state.activeChatId, state.socket, t])
+
   const handleTerminalResize = useCallback((layout: Record<string, number>) => {
     if (!projectId || !showTerminalPane || isTerminalAnimating.current) {
       return
@@ -1975,9 +1996,9 @@ export function ChatPage() {
           projectId={projectId}
           activeProvider={state.runtime?.provider ?? null}
           availableProviders={state.availableProviders}
-          hasTmuxRuntime={Boolean(state.runtime?.tmuxSession?.trim())}
           contextWindowSnapshot={contextWindowSnapshot}
           onSubmit={handleChatSubmit}
+          onRuntimePreferenceChange={state.runtime?.tmuxSession?.trim() ? handleRuntimePreferenceChange : undefined}
           onCancel={handleCancel}
         />
       )}

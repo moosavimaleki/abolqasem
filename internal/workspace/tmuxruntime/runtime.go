@@ -20,6 +20,9 @@ var ansiPattern = regexp.MustCompile(`\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])`)
 var runTmuxCommand = func(ctx context.Context, args ...string) error {
 	return exec.CommandContext(ctx, "tmux", args...).Run()
 }
+var runTmuxOutput = func(ctx context.Context, args ...string) ([]byte, error) {
+	return exec.CommandContext(ctx, "tmux", args...).Output()
+}
 var requireTmux = RequireTmux
 
 type Status struct {
@@ -182,8 +185,192 @@ func Capture(ctx context.Context, sessionName string, lines int) (string, error)
 	if lines > 5000 {
 		lines = 5000
 	}
-	output, err := exec.CommandContext(ctx, "tmux", "capture-pane", "-p", "-t", NormalizeSessionName(sessionName), "-S", fmt.Sprintf("-%d", lines)).Output()
+	output, err := runTmuxOutput(ctx, "capture-pane", "-p", "-t", NormalizeSessionName(sessionName), "-S", fmt.Sprintf("-%d", lines))
 	return string(output), err
+}
+
+func ApplyCodexRuntimePreferences(ctx context.Context, sessionName string, model string, effort string) error {
+	model = strings.TrimSpace(model)
+	effort = strings.TrimSpace(effort)
+	if model == "" {
+		return errors.New("model is required")
+	}
+	if err := requireTmux(); err != nil {
+		return err
+	}
+	sessionName = NormalizeSessionName(sessionName)
+	status, err := ReadStatus(ctx, sessionName)
+	if err == nil && status.State == "running" {
+		return errors.New("agent is running; wait until it is ready before changing model")
+	}
+	if err := Send(ctx, sessionName, "/model", true); err != nil {
+		return err
+	}
+	modelSelectedWithEffort, err := selectCodexMenuTarget(ctx, sessionName, func(option string) bool {
+		return codexOptionMatchesModel(option, model) && (effort == "" || codexOptionMatchesEffort(option, effort))
+	})
+	if err != nil {
+		modelSelectedWithEffort = false
+		if _, fallbackErr := selectCodexMenuTarget(ctx, sessionName, func(option string) bool {
+			return codexOptionMatchesModel(option, model)
+		}); fallbackErr != nil {
+			_ = runTmuxCommand(ctx, "send-keys", "-t", sessionName, "Escape")
+			return err
+		}
+	}
+	if effort == "" || modelSelectedWithEffort {
+		return nil
+	}
+	if _, err := selectCodexMenuTarget(ctx, sessionName, func(option string) bool {
+		return codexOptionMatchesEffort(option, effort)
+	}); err != nil {
+		_ = runTmuxCommand(ctx, "send-keys", "-t", sessionName, "Escape")
+		return err
+	}
+	return nil
+}
+
+func selectCodexMenuTarget(ctx context.Context, sessionName string, matches func(string) bool) (bool, error) {
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		output, err := Capture(ctx, sessionName, 80)
+		if err != nil {
+			return false, err
+		}
+		keys, selectedText, err := codexMenuSelectionKeys(output, matches)
+		if err == nil {
+			for _, key := range keys {
+				if err := runTmuxCommand(ctx, "send-keys", "-t", sessionName, key); err != nil {
+					return false, err
+				}
+			}
+			return strings.TrimSpace(selectedText) != "", nil
+		}
+		if time.Now().After(deadline) {
+			return false, err
+		}
+		select {
+		case <-ctx.Done():
+			return false, ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+}
+
+type codexMenuOption struct {
+	text        string
+	highlighted bool
+}
+
+func codexMenuSelectionKeys(output string, matches func(string) bool) ([]string, string, error) {
+	options := parseCodexMenuOptions(output)
+	if len(options) == 0 {
+		return nil, "", errors.New("codex model menu was not found")
+	}
+	current := -1
+	target := -1
+	for index, option := range options {
+		if option.highlighted {
+			current = index
+		}
+		if target < 0 && matches(option.text) {
+			target = index
+		}
+	}
+	if target < 0 {
+		return nil, "", errors.New("target model option was not found in codex menu")
+	}
+	if current < 0 {
+		return nil, "", errors.New("codex model menu current selection was not found")
+	}
+	keys := []string{}
+	key := "Down"
+	count := target - current
+	if count < 0 {
+		key = "Up"
+		count = -count
+	}
+	for i := 0; i < count; i++ {
+		keys = append(keys, key)
+	}
+	keys = append(keys, "Enter")
+	return keys, options[target].text, nil
+}
+
+func parseCodexMenuOptions(output string) []codexMenuOption {
+	options := []codexMenuOption{}
+	for _, line := range strings.Split(output, "\n") {
+		text, highlighted, ok := parseCodexMenuLine(line)
+		if ok {
+			options = append(options, codexMenuOption{text: text, highlighted: highlighted})
+		}
+	}
+	return options
+}
+
+func parseCodexMenuLine(line string) (string, bool, bool) {
+	line = strings.TrimSpace(stripANSI(line))
+	line = strings.Trim(line, "│ ")
+	if line == "" {
+		return "", false, false
+	}
+	highlighted := false
+	for _, prefix := range []string{"❯", "➜", "→", "›", ">"} {
+		if strings.HasPrefix(line, prefix) {
+			highlighted = true
+			line = strings.TrimSpace(strings.TrimPrefix(line, prefix))
+			break
+		}
+	}
+	line = strings.TrimSpace(regexp.MustCompile(`^\(?[0-9]+[.)]\s*`).ReplaceAllString(line, ""))
+	line = strings.TrimSpace(strings.TrimPrefix(line, "•"))
+	line = strings.TrimSpace(strings.TrimPrefix(line, "-"))
+	if line == "" || strings.HasPrefix(line, "/") {
+		return "", false, false
+	}
+	normalized := strings.ToLower(line)
+	if strings.Contains(normalized, "working ") || strings.Contains(normalized, "context ") || strings.Contains(normalized, "esc to interrupt") {
+		return "", false, false
+	}
+	optionLike := highlighted ||
+		strings.Contains(normalized, "gpt-") ||
+		codexOptionMatchesEffort(normalized, "minimal") ||
+		codexOptionMatchesEffort(normalized, "low") ||
+		codexOptionMatchesEffort(normalized, "medium") ||
+		codexOptionMatchesEffort(normalized, "high") ||
+		codexOptionMatchesEffort(normalized, "xhigh")
+	if !optionLike {
+		return "", false, false
+	}
+	return line, highlighted, true
+}
+
+func codexOptionMatchesModel(option string, model string) bool {
+	return strings.Contains(normalizedCodexMenuText(option), normalizedCodexMenuText(model))
+}
+
+func codexOptionMatchesEffort(option string, effort string) bool {
+	option = normalizedCodexMenuText(option)
+	effort = normalizedCodexMenuText(effort)
+	switch effort {
+	case "xhigh":
+		return strings.Contains(option, "xhigh") || strings.Contains(option, "x high") || strings.Contains(option, "extra high")
+	case "high":
+		return regexp.MustCompile(`(^| )high($| )`).MatchString(option) && !strings.Contains(option, "xhigh") && !strings.Contains(option, "x high")
+	case "medium", "low", "minimal":
+		return regexp.MustCompile(`(^| )` + regexp.QuoteMeta(effort) + `($| )`).MatchString(option)
+	default:
+		return strings.Contains(option, effort)
+	}
+}
+
+func normalizedCodexMenuText(value string) string {
+	value = strings.ToLower(stripANSI(value))
+	value = strings.ReplaceAll(value, "gpt-", "gpt ")
+	value = strings.ReplaceAll(value, "-", " ")
+	value = strings.ReplaceAll(value, "_", " ")
+	value = regexp.MustCompile(`[^a-z0-9.]+`).ReplaceAllString(value, " ")
+	return strings.Join(strings.Fields(value), " ")
 }
 
 func Resize(ctx context.Context, sessionName string, cols int, rows int) error {

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"abolqasem/internal/providers/catalog"
 	"abolqasem/internal/providers/providerexec"
 	"abolqasem/internal/state"
 	"abolqasem/internal/workspace/agent"
@@ -83,6 +84,25 @@ func workspaceRestartTmuxChat(chatID string) error {
 	}
 	command := workspaceTmuxCommandForChat(chat, "")
 	return tmuxruntime.RestartSession(context.Background(), chat.TmuxSession, project.LocalPath, command)
+}
+
+func workspaceApplyRuntimePreferences(command workspaceRuntimePreferenceCommand) error {
+	chat, _, err := workspaceChatProjectRequired(command.ChatID)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(chat.TmuxSession) == "" {
+		return errors.New("chat has no tmux session")
+	}
+	provider := workspaceTmuxProviderForChat(chat, command.Provider)
+	if provider != "codex" {
+		return errors.New("live runtime preference changes are currently implemented only for Codex tmux sessions")
+	}
+	effort := catalog.DefaultCodexReasoningEffort
+	if command.ModelOptions != nil && command.ModelOptions.Codex != nil && catalog.IsCodexReasoningEffort(command.ModelOptions.Codex.ReasoningEffort) {
+		effort = command.ModelOptions.Codex.ReasoningEffort
+	}
+	return tmuxruntime.ApplyCodexRuntimePreferences(context.Background(), chat.TmuxSession, command.Model, effort)
 }
 
 func workspaceResolveTmuxChat(store *workspaceEventStore, command agent.SendCommand) (readmodels.ChatRecord, bool, error) {

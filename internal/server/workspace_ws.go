@@ -639,6 +639,19 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 		workspaceConnections.broadcast(chatID)
 		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
 		return &response
+	case protocol.CommandChatApplyRuntimePreferences:
+		command, err := decodeRuntimePreferenceCommand(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		if err := workspaceApplyRuntimePreferences(command); err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		workspaceConnections.broadcast(command.ChatID)
+		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
+		return &response
 	case protocol.CommandChatRefreshDiffs:
 		snapshot, projectID, changed, err := workspaceRefreshDiffs(envelope.Command)
 		if err != nil {

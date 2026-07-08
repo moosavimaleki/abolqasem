@@ -1,5 +1,5 @@
 import { memo, type RefObject } from "react"
-import type { AgentProvider } from "../../../shared/types"
+import type { AgentProvider, ModelOptions } from "../../../shared/types"
 import { ChatInput, type ChatInputHandle } from "../../components/chat-ui/ChatInput"
 import type { ContextWindowSnapshot } from "../../lib/contextWindow"
 import type { AbolqasemState } from "../useAbolqasemState"
@@ -18,9 +18,9 @@ interface ChatInputDockProps {
   projectId: string | null
   activeProvider: AgentProvider | null
   availableProviders: AbolqasemState["availableProviders"]
-  hasTmuxRuntime: boolean
   contextWindowSnapshot: ContextWindowSnapshot | null
   onSubmit: AbolqasemState["handleSend"]
+  onRuntimePreferenceChange?: (preference: { provider: AgentProvider; model: string; modelOptions: ModelOptions }) => Promise<void>
   onCancel: () => void
 }
 
@@ -38,9 +38,9 @@ export const ChatInputDock = memo(function ChatInputDock({
   projectId,
   activeProvider,
   availableProviders,
-  hasTmuxRuntime,
   contextWindowSnapshot,
   onSubmit,
+  onRuntimePreferenceChange,
   onCancel,
 }: ChatInputDockProps) {
   return (
@@ -52,6 +52,7 @@ export const ChatInputDock = memo(function ChatInputDock({
           onLayoutChange={onLayoutChange}
           key={activeChatId ?? "new-chat"}
           onSubmit={onSubmit}
+          onRuntimePreferenceChange={onRuntimePreferenceChange}
           onCancel={onCancel}
           disabled={!hasSelectedProject}
           canCancel={canCancel}
@@ -59,7 +60,7 @@ export const ChatInputDock = memo(function ChatInputDock({
           projectId={projectId}
           activeProvider={activeProvider}
           availableProviders={availableProviders}
-          showPreferenceControls={!hasTmuxRuntime}
+          showPreferenceControls
           contextWindowSnapshot={contextWindowSnapshot}
           previousPrompt={previousPrompt}
           onJumpToPreviousUserPrompt={onJumpToPreviousUserPrompt}

@@ -583,6 +583,40 @@ func decodeSendCommand(raw json.RawMessage) (agent.SendCommand, error) {
 	}, nil
 }
 
+type workspaceRuntimePreferenceCommand struct {
+	ChatID       string
+	Provider     string
+	Model        string
+	ModelOptions *catalog.ModelOptions
+}
+
+func decodeRuntimePreferenceCommand(raw json.RawMessage) (workspaceRuntimePreferenceCommand, error) {
+	var payload struct {
+		ChatID       string                `json:"chatId"`
+		Provider     string                `json:"provider"`
+		Model        string                `json:"model"`
+		ModelOptions *catalog.ModelOptions `json:"modelOptions"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return workspaceRuntimePreferenceCommand{}, err
+	}
+	if strings.TrimSpace(payload.ChatID) == "" {
+		return workspaceRuntimePreferenceCommand{}, errors.New("chatId is required")
+	}
+	if strings.TrimSpace(payload.Provider) == "" {
+		return workspaceRuntimePreferenceCommand{}, errors.New("provider is required")
+	}
+	if strings.TrimSpace(payload.Model) == "" {
+		return workspaceRuntimePreferenceCommand{}, errors.New("model is required")
+	}
+	return workspaceRuntimePreferenceCommand{
+		ChatID:       payload.ChatID,
+		Provider:     payload.Provider,
+		Model:        payload.Model,
+		ModelOptions: payload.ModelOptions,
+	}, nil
+}
+
 func decodeQueueCommand(raw json.RawMessage) (agent.SendCommand, error) {
 	return decodeSendCommand(raw)
 }

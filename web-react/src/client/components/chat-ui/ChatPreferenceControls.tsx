@@ -152,6 +152,8 @@ interface ChatPreferenceControlsProps {
   onProviderChange?: (provider: AgentProvider) => void
   onModelChange: (provider: AgentProvider, model: string) => void
   onModelOptionChange: (change: ModelOptionChange) => void
+  runtimeMode?: boolean
+  onCodexRuntimeShortcut?: (model: string, effort: CodexReasoningEffort) => void
   planMode?: boolean
   onPlanModeChange?: (planMode: boolean) => void
   includePlanMode?: boolean
@@ -169,6 +171,8 @@ export function ChatPreferenceControls({
   onProviderChange,
   onModelChange,
   onModelOptionChange,
+  runtimeMode = false,
+  onCodexRuntimeShortcut,
   planMode = false,
   onPlanModeChange,
   includePlanMode = true,
@@ -188,9 +192,31 @@ export function ChatPreferenceControls({
   const contextWindowOptions = providerConfig.models.find((candidate) => candidate.id === model)?.contextWindowOptions ?? []
   const selectedContextWindow = claudeModelOptions?.contextWindow ?? CLAUDE_CONTEXT_WINDOW_OPTIONS[0].id
   const ContextWindowIcon = selectedContextWindow === "1m" ? SquareMenu : SquareMinus
+  const codexRuntimeShortcuts = [
+    { model: "gpt-5.4", effort: "medium", label: "5.4 M" },
+    { model: "gpt-5.4", effort: "high", label: "5.4 H" },
+    { model: "gpt-5.4", effort: "xhigh", label: "5.4 XH" },
+    { model: "gpt-5.5", effort: "high", label: "5.5 H" },
+  ] as const
 
   return (
     <div className={cn("flex md:justify-center items-center gap-0.5", className)}>
+      {runtimeMode && selectedProvider === "codex" && onCodexRuntimeShortcut ? (
+        <div className="flex items-center gap-1 px-1">
+          {codexRuntimeShortcuts.map((shortcut) => (
+            <button
+              key={`${shortcut.model}-${shortcut.effort}`}
+              type="button"
+              className="rounded-full border border-border/70 bg-muted/40 px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              onClick={() => onCodexRuntimeShortcut(shortcut.model, shortcut.effort)}
+              title={`${shortcut.model} ${shortcut.effort}`}
+            >
+              {shortcut.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
       {showProviderPicker ? (
         <InputPopover
           disabled={providerLocked || !onProviderChange}
