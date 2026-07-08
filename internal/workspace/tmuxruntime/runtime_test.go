@@ -2,6 +2,7 @@ package tmuxruntime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -103,6 +104,43 @@ func TestEnsureSessionCreatesDetachedTmuxSession(t *testing.T) {
 	defer exec.Command("tmux", "kill-session", "-t", session).Run()
 	if err := exec.Command("tmux", "has-session", "-t", session).Run(); err != nil {
 		t.Fatalf("expected tmux session to exist: %v", err)
+	}
+}
+
+func TestRestartSessionKillsThenCreatesDetachedSession(t *testing.T) {
+	restoreTmuxRuntimeCommands(t)
+
+	requireTmux = func() error { return nil }
+	sessionExists := true
+	commands := [][]string{}
+	runTmuxCommand = func(_ context.Context, args ...string) error {
+		command := append([]string(nil), args...)
+		commands = append(commands, command)
+		if len(args) >= 1 && args[0] == "has-session" {
+			if sessionExists {
+				return nil
+			}
+			return errors.New("missing")
+		}
+		if len(args) >= 1 && args[0] == "kill-session" {
+			sessionExists = false
+			return nil
+		}
+		return nil
+	}
+
+	if err := RestartSession(context.Background(), "Chat:1", "/tmp/project", "codex --sandbox workspace-write"); err != nil {
+		t.Fatalf("RestartSession returned error: %v", err)
+	}
+
+	expected := [][]string{
+		{"has-session", "-t", "chat-1"},
+		{"kill-session", "-t", "chat-1"},
+		{"has-session", "-t", "chat-1"},
+		{"new-session", "-d", "-s", "chat-1", "-c", "/tmp/project", "codex --sandbox workspace-write"},
+	}
+	if strings.Join(flattenCommands(commands), "\x00") != strings.Join(flattenCommands(expected), "\x00") {
+		t.Fatalf("unexpected tmux command sequence: %#v", commands)
 	}
 }
 

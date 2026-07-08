@@ -996,7 +996,9 @@ export function ChatPage() {
   const showTerminalPane = Boolean(projectId && terminalLayout.isVisible && hasTerminals)
   const shouldRenderTerminalLayout = Boolean(projectId && hasTerminals)
   const showChatTmuxTerminal = Boolean(projectId && state.activeChatId && chatViewMode === "terminal")
-  const chatTmuxTerminalId = state.activeChatId ? `chat-tmux-${state.activeChatId}` : ""
+  const [chatTmuxRestartVersionByChatId, setChatTmuxRestartVersionByChatId] = useState<Record<string, number>>({})
+  const chatTmuxRestartVersion = state.activeChatId ? (chatTmuxRestartVersionByChatId[state.activeChatId] ?? 0) : 0
+  const chatTmuxTerminalId = state.activeChatId ? `chat-tmux-${state.activeChatId}-${chatTmuxRestartVersion}` : ""
   const chatTmuxSession = state.runtime?.tmuxSession || (state.activeChatId ? `abolqasem-${state.activeChatId}` : "")
   const [terminalDirectionMode, setTerminalDirectionMode] = useState<TerminalDirectionMode>("normal")
   const activeRightPanel = projectId ? rightSidebarVisibility.rightPanel : "hidden"
@@ -1172,7 +1174,13 @@ export function ChatPage() {
     if (!state.activeChatId || !state.runtime?.tmuxSession?.trim()) return
     const chatId = state.activeChatId
     void state.socket.command({ type: "chat.restartTmux", chatId })
-      .then(() => state.socket.command({ type: "chat.refresh", chatId }))
+      .then(() => {
+        setChatTmuxRestartVersionByChatId((current) => ({
+          ...current,
+          [chatId]: (current[chatId] ?? 0) + 1,
+        }))
+        return state.socket.command({ type: "chat.refresh", chatId })
+      })
       .catch((error: unknown) => {
         void dialog.alert({
           title: "Restart tmux failed",

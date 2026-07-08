@@ -82,10 +82,7 @@ func workspaceRestartTmuxChat(chatID string) error {
 		return errors.New("chat has no tmux session")
 	}
 	command := workspaceTmuxCommandForChat(chat, "")
-	if err := tmuxruntime.KillSession(context.Background(), chat.TmuxSession); err != nil {
-		return err
-	}
-	return tmuxruntime.EnsureSession(context.Background(), chat.TmuxSession, project.LocalPath, command)
+	return tmuxruntime.RestartSession(context.Background(), chat.TmuxSession, project.LocalPath, command)
 }
 
 func workspaceResolveTmuxChat(store *workspaceEventStore, command agent.SendCommand) (readmodels.ChatRecord, bool, error) {

@@ -69,25 +69,49 @@ func DefaultCommand() string {
 }
 
 func EnsureSession(ctx context.Context, sessionName string, cwd string, command string) error {
-	if err := RequireTmux(); err != nil {
+	if err := requireTmux(); err != nil {
 		return err
 	}
 	sessionName = NormalizeSessionName(sessionName)
-	if exec.CommandContext(ctx, "tmux", "has-session", "-t", sessionName).Run() == nil {
+	if hasSession(ctx, sessionName) {
 		return nil
 	}
-	return exec.CommandContext(ctx, "tmux", buildEnsureSessionArgs(sessionName, cwd, command)...).Run()
+	return runTmuxCommand(ctx, buildEnsureSessionArgs(sessionName, cwd, command)...)
 }
 
 func KillSession(ctx context.Context, sessionName string) error {
-	if err := RequireTmux(); err != nil {
+	if err := requireTmux(); err != nil {
 		return err
 	}
 	sessionName = NormalizeSessionName(sessionName)
-	if exec.CommandContext(ctx, "tmux", "has-session", "-t", sessionName).Run() != nil {
+	if !hasSession(ctx, sessionName) {
 		return nil
 	}
-	return exec.CommandContext(ctx, "tmux", "kill-session", "-t", sessionName).Run()
+	return runTmuxCommand(ctx, "kill-session", "-t", sessionName)
+}
+
+func RestartSession(ctx context.Context, sessionName string, cwd string, command string) error {
+	if err := requireTmux(); err != nil {
+		return err
+	}
+	sessionName = NormalizeSessionName(sessionName)
+	if hasSession(ctx, sessionName) {
+		if err := runTmuxCommand(ctx, "kill-session", "-t", sessionName); err != nil {
+			return err
+		}
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for hasSession(ctx, sessionName) {
+		if time.Now().After(deadline) {
+			return errors.New("tmux session did not stop")
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+	return runTmuxCommand(ctx, buildEnsureSessionArgs(sessionName, cwd, command)...)
 }
 
 func AttachCommand(ctx context.Context, sessionName string) (*exec.Cmd, error) {
@@ -95,6 +119,10 @@ func AttachCommand(ctx context.Context, sessionName string) (*exec.Cmd, error) {
 		return nil, err
 	}
 	return exec.CommandContext(ctx, "tmux", "attach-session", "-t", NormalizeSessionName(sessionName)), nil
+}
+
+func hasSession(ctx context.Context, sessionName string) bool {
+	return runTmuxCommand(ctx, "has-session", "-t", sessionName) == nil
 }
 
 func Send(ctx context.Context, sessionName string, text string, enter bool) error {
