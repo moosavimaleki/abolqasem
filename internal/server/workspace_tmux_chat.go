@@ -8,12 +8,12 @@ import (
 	"strings"
 	"time"
 
-	"ai-agent-manager/internal/providers/providerexec"
-	"ai-agent-manager/internal/state"
-	"ai-agent-manager/internal/workspace/agent"
-	"ai-agent-manager/internal/workspace/events"
-	"ai-agent-manager/internal/workspace/readmodels"
-	"ai-agent-manager/internal/workspace/tmuxruntime"
+	"abolqasem/internal/providers/providerexec"
+	"abolqasem/internal/state"
+	"abolqasem/internal/workspace/agent"
+	"abolqasem/internal/workspace/events"
+	"abolqasem/internal/workspace/readmodels"
+	"abolqasem/internal/workspace/tmuxruntime"
 )
 
 func workspaceSendTmuxChat(command agent.SendCommand) (agent.SendResult, bool, error) {

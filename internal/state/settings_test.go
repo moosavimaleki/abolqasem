@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"ai-agent-manager/internal/providers/catalog"
+	"abolqasem/internal/providers/catalog"
 )
 
 func TestApplySettingsPatchPersistsAbolqasemSettings(t *testing.T) {

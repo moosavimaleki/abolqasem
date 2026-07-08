@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"ai-agent-manager/internal/workspace/readmodels"
+	"abolqasem/internal/workspace/readmodels"
 )
 
 type ExportArgs struct {

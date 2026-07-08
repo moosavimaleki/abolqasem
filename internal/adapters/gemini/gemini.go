@@ -1,9 +1,9 @@
 package gemini
 
 import (
-	"ai-agent-manager/internal/adapters"
-	"ai-agent-manager/internal/appinfo"
-	"ai-agent-manager/internal/state"
+	"abolqasem/internal/adapters"
+	"abolqasem/internal/appinfo"
+	"abolqasem/internal/state"
 	"encoding/json"
 	"fmt"
 	"os"

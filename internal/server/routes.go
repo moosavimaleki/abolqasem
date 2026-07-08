@@ -1,8 +1,8 @@
 package server
 
 import (
-	"ai-agent-manager/internal/appinfo"
-	"ai-agent-manager/internal/state"
+	"abolqasem/internal/appinfo"
+	"abolqasem/internal/state"
 	"io/fs"
 	"net/http"
 	"net/http/pprof"

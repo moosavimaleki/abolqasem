@@ -1,10 +1,10 @@
 package server
 
 import (
-	"ai-agent-manager/internal/providers/providerexec"
-	"ai-agent-manager/internal/state"
-	"ai-agent-manager/internal/workspace/protocol"
-	"ai-agent-manager/internal/workspace/terminal"
+	"abolqasem/internal/providers/providerexec"
+	"abolqasem/internal/state"
+	"abolqasem/internal/workspace/protocol"
+	"abolqasem/internal/workspace/terminal"
 	"context"
 	"encoding/json"
 	"net/http"

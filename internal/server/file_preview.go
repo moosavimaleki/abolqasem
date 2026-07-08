@@ -1,8 +1,8 @@
 package server
 
 import (
-	"ai-agent-manager/internal/render"
-	"ai-agent-manager/internal/state"
+	"abolqasem/internal/render"
+	"abolqasem/internal/state"
 	"bufio"
 	"errors"
 	"net/http"

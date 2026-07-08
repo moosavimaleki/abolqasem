@@ -1,7 +1,7 @@
 package server
 
 import (
-	"ai-agent-manager/internal/workspace/legacyimport"
+	"abolqasem/internal/workspace/legacyimport"
 	"context"
 	"crypto/sha1"
 	"encoding/hex"

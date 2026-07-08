@@ -8,14 +8,14 @@ import (
 	"sync"
 	"time"
 
-	"ai-agent-manager/internal/providers/catalog"
-	"ai-agent-manager/internal/state"
-	"ai-agent-manager/internal/workspace/agent"
-	"ai-agent-manager/internal/workspace/events"
-	"ai-agent-manager/internal/workspace/eventstore"
-	"ai-agent-manager/internal/workspace/protocol"
-	"ai-agent-manager/internal/workspace/readmodels"
-	"ai-agent-manager/internal/workspace/tmuxruntime"
+	"abolqasem/internal/providers/catalog"
+	"abolqasem/internal/state"
+	"abolqasem/internal/workspace/agent"
+	"abolqasem/internal/workspace/events"
+	"abolqasem/internal/workspace/eventstore"
+	"abolqasem/internal/workspace/protocol"
+	"abolqasem/internal/workspace/readmodels"
+	"abolqasem/internal/workspace/tmuxruntime"
 )
 
 const (

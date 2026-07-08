@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"ai-agent-manager/internal/state"
+	"abolqasem/internal/state"
 )
 
 const literalSendChunkSize = 16000

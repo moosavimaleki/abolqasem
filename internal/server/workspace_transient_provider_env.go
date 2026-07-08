@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"ai-agent-manager/internal/state"
+	"abolqasem/internal/state"
 )
 
 func workspaceTransientProviderEnv(provider string) ([]string, func(), error) {

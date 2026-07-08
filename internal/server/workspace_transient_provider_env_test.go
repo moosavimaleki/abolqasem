@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"ai-agent-manager/internal/state"
-	"ai-agent-manager/internal/workspace/agent"
+	"abolqasem/internal/state"
+	"abolqasem/internal/workspace/agent"
 )
 
 func TestWorkspaceTransientProviderEnvCopiesProviderHome(t *testing.T) {

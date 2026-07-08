@@ -14,8 +14,8 @@ import (
 	"sync"
 	"time"
 
-	"ai-agent-manager/internal/workspace/events"
-	"ai-agent-manager/internal/workspace/readmodels"
+	"abolqasem/internal/workspace/events"
+	"abolqasem/internal/workspace/readmodels"
 )
 
 var ErrInvalidStream = errors.New("invalid event stream")

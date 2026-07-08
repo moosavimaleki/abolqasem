@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"ai-agent-manager/internal/workspace/readmodels"
-	"ai-agent-manager/internal/workspace/transcript"
+	"abolqasem/internal/workspace/readmodels"
+	"abolqasem/internal/workspace/transcript"
 )
 
 const geminiVisibleToolTextLimit = 4000

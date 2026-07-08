@@ -1,6 +1,6 @@
 package main
 
-import "ai-agent-manager/internal/cli"
+import "abolqasem/internal/cli"
 
 func main() {
 	cli.Execute()

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"ai-agent-manager/internal/workspace/agent"
+	"abolqasem/internal/workspace/agent"
 )
 
 func TestStartWorkspaceGeminiTurnPassesResumeToken(t *testing.T) {

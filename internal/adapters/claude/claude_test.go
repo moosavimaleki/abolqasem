@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"ai-agent-manager/internal/adapters"
+	"abolqasem/internal/adapters"
 )
 
 func TestInstallAndUninstallHookPreservesOtherHooks(t *testing.T) {
@@ -65,7 +65,7 @@ func TestInstallHookIsIdempotentAndRepairsExistingHook(t *testing.T) {
       {
         "hooks": [
           {
-            "name": "ai-agent-manager-claude-stop",
+            "name": "abolqasem-claude-stop",
             "type": "command",
             "command": "/old/bin/ai-agent-manager hook --agent claude",
             "timeout": 1

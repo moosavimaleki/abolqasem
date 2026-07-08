@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"ai-agent-manager/internal/adapters"
+	"abolqasem/internal/adapters"
 )
 
 func TestInstallAndUninstallHookPreservesOtherHooks(t *testing.T) {
@@ -68,7 +68,7 @@ func TestInstallHookIsIdempotentAndRepairsExistingHooks(t *testing.T) {
         "matcher": "*",
         "hooks": [
           {
-            "name": "ai-agent-manager-gemini-after-agent",
+            "name": "abolqasem-gemini-after-agent",
             "type": "command",
             "command": "/old/bin/ai-agent-manager hook --agent gemini"
           }
@@ -80,7 +80,7 @@ func TestInstallHookIsIdempotentAndRepairsExistingHooks(t *testing.T) {
         "matcher": "*",
         "hooks": [
           {
-            "name": "ai-agent-manager-gemini-session-end",
+            "name": "abolqasem-gemini-session-end",
             "type": "command",
             "command": "/old/bin/ai-agent-manager hook --agent gemini"
           }

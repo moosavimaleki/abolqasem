@@ -1,7 +1,7 @@
 package server
 
 import (
-	"ai-agent-manager/internal/appinfo"
+	"abolqasem/internal/appinfo"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"

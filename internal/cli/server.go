@@ -1,9 +1,9 @@
 package cli
 
 import (
-	viewer "ai-agent-manager"
-	"ai-agent-manager/internal/server"
-	"ai-agent-manager/internal/state"
+	viewer "abolqasem"
+	"abolqasem/internal/server"
+	"abolqasem/internal/state"
 	"log"
 	"net"
 	"net/url"

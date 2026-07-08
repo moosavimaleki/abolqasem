@@ -1,7 +1,7 @@
 package cli
 
 import (
-	"ai-agent-manager/internal/appinfo"
+	"abolqasem/internal/appinfo"
 	"fmt"
 	"time"
 

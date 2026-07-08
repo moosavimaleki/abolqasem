@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"ai-agent-manager/internal/state"
-	"ai-agent-manager/internal/workspace/events"
-	"ai-agent-manager/internal/workspace/legacyimport"
-	"ai-agent-manager/internal/workspace/readmodels"
-	"ai-agent-manager/internal/workspace/transcript"
+	"abolqasem/internal/state"
+	"abolqasem/internal/workspace/events"
+	"abolqasem/internal/workspace/legacyimport"
+	"abolqasem/internal/workspace/readmodels"
+	"abolqasem/internal/workspace/transcript"
 )
 
 func TestHandleAPISearchSearchesCurrentLegacyChat(t *testing.T) {

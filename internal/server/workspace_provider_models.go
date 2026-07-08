@@ -1,9 +1,9 @@
 package server
 
 import (
-	"ai-agent-manager/internal/providers/catalog"
-	"ai-agent-manager/internal/providers/providerexec"
-	"ai-agent-manager/internal/state"
+	"abolqasem/internal/providers/catalog"
+	"abolqasem/internal/providers/providerexec"
+	"abolqasem/internal/state"
 	"context"
 	"strings"
 	"time"

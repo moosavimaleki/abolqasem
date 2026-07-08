@@ -1,7 +1,7 @@
 package server
 
 import (
-	"ai-agent-manager/internal/state"
+	"abolqasem/internal/state"
 	"strings"
 	"unicode"
 )

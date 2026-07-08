@@ -1,7 +1,7 @@
 package server
 
 import (
-	"ai-agent-manager/internal/appinfo"
+	"abolqasem/internal/appinfo"
 	"context"
 	"encoding/json"
 	"errors"
@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"ai-agent-manager/internal/workspace/gitservice"
-	"ai-agent-manager/internal/workspace/readmodels"
+	"abolqasem/internal/workspace/gitservice"
+	"abolqasem/internal/workspace/readmodels"
 )
 
 const (

@@ -1,8 +1,8 @@
 package server
 
 import (
-	"ai-agent-manager/internal/agent"
-	"ai-agent-manager/internal/state"
+	"abolqasem/internal/agent"
+	"abolqasem/internal/state"
 	"context"
 	"encoding/json"
 	"errors"

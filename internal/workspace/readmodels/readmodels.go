@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
-	"ai-agent-manager/internal/providers/catalog"
-	"ai-agent-manager/internal/workspace/events"
-	"ai-agent-manager/internal/workspace/transcript"
+	"abolqasem/internal/providers/catalog"
+	"abolqasem/internal/workspace/events"
+	"abolqasem/internal/workspace/transcript"
 )
 
 const sidebarRecentWindowMs = 24 * 60 * 60 * 1000

@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"ai-agent-manager/internal/state"
-	"ai-agent-manager/internal/workspace/events"
-	"ai-agent-manager/internal/workspace/eventstore"
-	"ai-agent-manager/internal/workspace/readmodels"
-	"ai-agent-manager/internal/workspace/transcript"
+	"abolqasem/internal/state"
+	"abolqasem/internal/workspace/events"
+	"abolqasem/internal/workspace/eventstore"
+	"abolqasem/internal/workspace/readmodels"
+	"abolqasem/internal/workspace/transcript"
 )
 
 func withWorkspaceSnapshotStore(t *testing.T) *eventstore.Store {

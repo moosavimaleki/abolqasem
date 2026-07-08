@@ -58,7 +58,7 @@ fi
 
 printf 'Building %s from local source...\n' "$APP"
 mkdir -p "$DIST_DIR"
-CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X ai-agent-manager/internal/buildinfo.Version=dev-local" -o "$OUT" ./cmd/abolqasem
+CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X abolqasem/internal/buildinfo.Version=dev-local" -o "$OUT" ./cmd/abolqasem
 
 printf 'Installing to %s...\n' "$INSTALL_PATH"
 mkdir -p "$BIN_DIR"

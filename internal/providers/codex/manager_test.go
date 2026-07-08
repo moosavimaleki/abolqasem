@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	codexprotocol "ai-agent-manager/internal/providers/codex/protocol"
+	codexprotocol "abolqasem/internal/providers/codex/protocol"
 )
 
 func TestStartSessionInitializesAndStartsFreshThread(t *testing.T) {

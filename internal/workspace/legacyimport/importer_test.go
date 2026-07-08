@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"ai-agent-manager/internal/parser"
-	"ai-agent-manager/internal/state"
-	"ai-agent-manager/internal/workspace/transcript"
+	"abolqasem/internal/parser"
+	"abolqasem/internal/state"
+	"abolqasem/internal/workspace/transcript"
 )
 
 func TestImportSessionMapsParserMessagesToWritableChatIDs(t *testing.T) {

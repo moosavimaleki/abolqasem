@@ -1,8 +1,8 @@
 package agent
 
 import (
-	"ai-agent-manager/internal/appinfo"
-	"ai-agent-manager/internal/state"
+	"abolqasem/internal/appinfo"
+	"abolqasem/internal/state"
 	"bufio"
 	"bytes"
 	"context"
@@ -18,7 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"ai-agent-manager/internal/providers/providerexec"
+	"abolqasem/internal/providers/providerexec"
 )
 
 const (

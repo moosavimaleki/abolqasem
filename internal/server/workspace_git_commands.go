@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"ai-agent-manager/internal/workspace/gitservice"
-	"ai-agent-manager/internal/workspace/readmodels"
+	"abolqasem/internal/workspace/gitservice"
+	"abolqasem/internal/workspace/readmodels"
 )
 
 var workspaceProjectGitSnapshots = newWorkspaceProjectGitSnapshotCache()

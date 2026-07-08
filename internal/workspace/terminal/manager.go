@@ -1,7 +1,7 @@
 package terminal
 
 import (
-	"ai-agent-manager/internal/workspace/tmuxruntime"
+	"abolqasem/internal/workspace/tmuxruntime"
 	"context"
 	"errors"
 	"io"

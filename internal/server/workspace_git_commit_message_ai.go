@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"ai-agent-manager/internal/state"
-	"ai-agent-manager/internal/workspace/agent"
-	"ai-agent-manager/internal/workspace/gitservice"
-	"ai-agent-manager/internal/workspace/transcript"
+	"abolqasem/internal/state"
+	"abolqasem/internal/workspace/agent"
+	"abolqasem/internal/workspace/gitservice"
+	"abolqasem/internal/workspace/transcript"
 )
 
 const (

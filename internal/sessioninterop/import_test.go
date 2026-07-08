@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"ai-agent-manager/internal/state"
-	"ai-agent-manager/internal/workspace/transcript"
+	"abolqasem/internal/state"
+	"abolqasem/internal/workspace/transcript"
 )
 
 func TestImportLegacySessionGeminiStructuredPreservesMessagesAndTools(t *testing.T) {

@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -13,8 +14,8 @@ func TestResolveCommandUsesWorkingBunCodex(t *testing.T) {
 	SetConfiguredExecutables(nil)
 	t.Cleanup(func() { SetConfiguredExecutables(nil) })
 	home := t.TempDir()
-	t.Setenv("HOME", home)
-	codexPath := filepath.Join(home, ".bun", "bin", "codex")
+	setTestHome(t, home)
+	codexPath := filepath.Join(home, ".bun", "bin", testExecutableName("codex"))
 	writeExecutable(t, codexPath, "#!/bin/sh\nexit 0\n")
 
 	command := ResolveCommand("codex", "codex --sandbox workspace-write")
@@ -27,10 +28,10 @@ func TestExecutableUsesWorkingLocalClaudeBeforeBrokenBunClaude(t *testing.T) {
 	SetConfiguredExecutables(nil)
 	t.Cleanup(func() { SetConfiguredExecutables(nil) })
 	home := t.TempDir()
-	t.Setenv("HOME", home)
-	localClaudePath := filepath.Join(home, ".local", "bin", "claude")
+	setTestHome(t, home)
+	localClaudePath := filepath.Join(home, ".local", "bin", testExecutableName("claude"))
 	writeExecutable(t, localClaudePath, "#!/bin/sh\nexit 0\n")
-	writeExecutable(t, filepath.Join(home, ".bun", "bin", "claude"), "#!/bin/sh\nexit 1\n")
+	writeExecutable(t, filepath.Join(home, ".bun", "bin", testExecutableName("claude")), "#!/bin/sh\nexit 1\n")
 
 	if got := Executable("claude"); got != localClaudePath {
 		t.Fatalf("expected local claude command, got %q", got)
@@ -41,9 +42,9 @@ func TestExecutableUsesConfiguredPathBeforeDetectedPath(t *testing.T) {
 	SetConfiguredExecutables(nil)
 	t.Cleanup(func() { SetConfiguredExecutables(nil) })
 	home := t.TempDir()
-	t.Setenv("HOME", home)
-	configuredCodexPath := filepath.Join(home, "tools", "codex")
-	detectedCodexPath := filepath.Join(home, ".bun", "bin", "codex")
+	setTestHome(t, home)
+	configuredCodexPath := filepath.Join(home, "tools", testExecutableName("codex"))
+	detectedCodexPath := filepath.Join(home, ".bun", "bin", testExecutableName("codex"))
 	writeExecutable(t, configuredCodexPath, "#!/bin/sh\nexit 0\n")
 	writeExecutable(t, detectedCodexPath, "#!/bin/sh\nexit 0\n")
 	SetConfiguredExecutables(map[string]string{"codex": configuredCodexPath})
@@ -51,6 +52,36 @@ func TestExecutableUsesConfiguredPathBeforeDetectedPath(t *testing.T) {
 	if got := Executable("codex"); got != configuredCodexPath {
 		t.Fatalf("expected configured codex command, got %q", got)
 	}
+}
+
+func TestExecutableFindsWindowsExeForExtensionlessConfiguredPath(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("windows executable extension fallback")
+	}
+	SetConfiguredExecutables(nil)
+	t.Cleanup(func() { SetConfiguredExecutables(nil) })
+	home := t.TempDir()
+	setTestHome(t, home)
+	configuredCodexPath := filepath.Join(home, "tools", "codex")
+	writeExecutable(t, configuredCodexPath+".exe", "#!/bin/sh\nexit 0\n")
+	SetConfiguredExecutables(map[string]string{"codex": configuredCodexPath})
+
+	if got := Executable("codex"); got != configuredCodexPath+".exe" {
+		t.Fatalf("expected configured codex executable with .exe suffix, got %q", got)
+	}
+}
+
+func setTestHome(t *testing.T, home string) {
+	t.Helper()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+}
+
+func testExecutableName(name string) string {
+	if runtime.GOOS == "windows" {
+		return name + ".exe"
+	}
+	return name
 }
 
 func writeExecutable(t *testing.T, path string, content string) {

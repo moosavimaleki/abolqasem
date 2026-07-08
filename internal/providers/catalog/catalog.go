@@ -1,7 +1,7 @@
 package catalog
 
 import (
-	"ai-agent-manager/internal/appinfo"
+	"abolqasem/internal/appinfo"
 	"bufio"
 	"context"
 	"encoding/json"
@@ -13,9 +13,9 @@ import (
 	"sync"
 	"time"
 
-	codexprotocol "ai-agent-manager/internal/providers/codex/protocol"
-	codexrpc "ai-agent-manager/internal/providers/codex/rpc"
-	"ai-agent-manager/internal/providers/providerexec"
+	codexprotocol "abolqasem/internal/providers/codex/protocol"
+	codexrpc "abolqasem/internal/providers/codex/rpc"
+	"abolqasem/internal/providers/providerexec"
 )
 
 type ProviderCatalogEntry struct {

@@ -1,7 +1,7 @@
 package state
 
 import (
-	"ai-agent-manager/internal/appinfo"
+	"abolqasem/internal/appinfo"
 	"encoding/json"
 	"fmt"
 	"os"

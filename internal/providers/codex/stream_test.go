@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	codexrpc "ai-agent-manager/internal/providers/codex/rpc"
+	codexrpc "abolqasem/internal/providers/codex/rpc"
 )
 
 func TestStreamNormalizerMapsCoreTurnTranscriptEvents(t *testing.T) {

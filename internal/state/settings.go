@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"ai-agent-manager/internal/providers/catalog"
+	"abolqasem/internal/providers/catalog"
 )
 
 const (

@@ -1,7 +1,7 @@
 package server
 
 import (
-	"ai-agent-manager/internal/buildinfo"
+	"abolqasem/internal/buildinfo"
 	"io"
 	"net/http"
 	"strings"

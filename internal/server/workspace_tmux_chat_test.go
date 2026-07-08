@@ -7,18 +7,19 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
-	"ai-agent-manager/internal/providers/providerexec"
-	"ai-agent-manager/internal/state"
-	"ai-agent-manager/internal/workspace/agent"
-	"ai-agent-manager/internal/workspace/events"
-	"ai-agent-manager/internal/workspace/legacyimport"
-	"ai-agent-manager/internal/workspace/readmodels"
-	"ai-agent-manager/internal/workspace/tmuxruntime"
-	"ai-agent-manager/internal/workspace/transcript"
+	"abolqasem/internal/providers/providerexec"
+	"abolqasem/internal/state"
+	"abolqasem/internal/workspace/agent"
+	"abolqasem/internal/workspace/events"
+	"abolqasem/internal/workspace/legacyimport"
+	"abolqasem/internal/workspace/readmodels"
+	"abolqasem/internal/workspace/tmuxruntime"
+	"abolqasem/internal/workspace/transcript"
 )
 
 func TestWorkspaceSendTmuxChatCreatesSessionAndSendsPrompt(t *testing.T) {
@@ -101,8 +102,8 @@ func TestWorkspaceResolveTmuxProviderCommandUsesWorkingBunCodex(t *testing.T) {
 	providerexec.SetConfiguredExecutables(nil)
 	t.Cleanup(func() { providerexec.SetConfiguredExecutables(nil) })
 	home := t.TempDir()
-	t.Setenv("HOME", home)
-	codexPath := filepath.Join(home, ".bun", "bin", "codex")
+	setWorkspaceTestHome(t, home)
+	codexPath := filepath.Join(home, ".bun", "bin", workspaceTestExecutableName("codex"))
 	writeWorkspaceExecutable(t, codexPath, "#!/bin/sh\nexit 0\n")
 	providerexec.SetConfiguredExecutables(map[string]string{"codex": codexPath})
 
@@ -116,10 +117,10 @@ func TestWorkspaceResolveTmuxProviderCommandUsesWorkingLocalClaude(t *testing.T)
 	providerexec.SetConfiguredExecutables(nil)
 	t.Cleanup(func() { providerexec.SetConfiguredExecutables(nil) })
 	home := t.TempDir()
-	t.Setenv("HOME", home)
-	localClaudePath := filepath.Join(home, ".local", "bin", "claude")
+	setWorkspaceTestHome(t, home)
+	localClaudePath := filepath.Join(home, ".local", "bin", workspaceTestExecutableName("claude"))
 	writeWorkspaceExecutable(t, localClaudePath, "#!/bin/sh\nexit 0\n")
-	writeWorkspaceExecutable(t, filepath.Join(home, ".bun", "bin", "claude"), "#!/bin/sh\nexit 1\n")
+	writeWorkspaceExecutable(t, filepath.Join(home, ".bun", "bin", workspaceTestExecutableName("claude")), "#!/bin/sh\nexit 1\n")
 	providerexec.SetConfiguredExecutables(map[string]string{"claude": localClaudePath})
 
 	command := workspaceResolveTmuxProviderCommand("claude", "claude")
@@ -132,8 +133,8 @@ func TestWorkspaceTmuxCommandForChatDefaultsCodexProviderAndResumes(t *testing.T
 	providerexec.SetConfiguredExecutables(nil)
 	t.Cleanup(func() { providerexec.SetConfiguredExecutables(nil) })
 	home := t.TempDir()
-	t.Setenv("HOME", home)
-	codexPath := filepath.Join(home, ".bun", "bin", "codex")
+	setWorkspaceTestHome(t, home)
+	codexPath := filepath.Join(home, ".bun", "bin", workspaceTestExecutableName("codex"))
 	writeWorkspaceExecutable(t, codexPath, "#!/bin/sh\nexit 0\n")
 	providerexec.SetConfiguredExecutables(map[string]string{"codex": codexPath})
 	t.Setenv("ABOLQASEM_TMUX_CODEX_COMMAND", "codex --sandbox workspace-write")
@@ -152,8 +153,8 @@ func TestWorkspaceTmuxCommandForChatInfersClaudeProviderFromTranscriptPath(t *te
 	providerexec.SetConfiguredExecutables(nil)
 	t.Cleanup(func() { providerexec.SetConfiguredExecutables(nil) })
 	home := t.TempDir()
-	t.Setenv("HOME", home)
-	claudePath := filepath.Join(home, ".local", "bin", "claude")
+	setWorkspaceTestHome(t, home)
+	claudePath := filepath.Join(home, ".local", "bin", workspaceTestExecutableName("claude"))
 	writeWorkspaceExecutable(t, claudePath, "#!/bin/sh\nexit 0\n")
 	providerexec.SetConfiguredExecutables(map[string]string{"claude": claudePath})
 	t.Setenv("ABOLQASEM_TMUX_CLAUDE_COMMAND", "claude --permission-mode auto")
@@ -172,8 +173,8 @@ func TestWorkspaceTmuxCommandForChatInfersGeminiProviderFromTranscriptPath(t *te
 	providerexec.SetConfiguredExecutables(nil)
 	t.Cleanup(func() { providerexec.SetConfiguredExecutables(nil) })
 	home := t.TempDir()
-	t.Setenv("HOME", home)
-	geminiPath := filepath.Join(home, ".bun", "bin", "gemini")
+	setWorkspaceTestHome(t, home)
+	geminiPath := filepath.Join(home, ".bun", "bin", workspaceTestExecutableName("gemini"))
 	writeWorkspaceExecutable(t, geminiPath, "#!/bin/sh\nexit 0\n")
 	providerexec.SetConfiguredExecutables(map[string]string{"gemini": geminiPath})
 	t.Setenv("ABOLQASEM_TMUX_GEMINI_COMMAND", "gemini --model gemini-3-pro")
@@ -346,4 +347,17 @@ func writeWorkspaceExecutable(t *testing.T, path string, content string) {
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("go build fake executable failed: %v\n%s", err, output)
 	}
+}
+
+func setWorkspaceTestHome(t *testing.T, home string) {
+	t.Helper()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+}
+
+func workspaceTestExecutableName(name string) string {
+	if runtime.GOOS == "windows" {
+		return name + ".exe"
+	}
+	return name
 }

@@ -1,7 +1,7 @@
 package cli
 
 import (
-	"ai-agent-manager/internal/platform"
+	"abolqasem/internal/platform"
 	"fmt"
 	"time"
 

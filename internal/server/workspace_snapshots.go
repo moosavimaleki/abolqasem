@@ -5,13 +5,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"ai-agent-manager/internal/state"
-	"ai-agent-manager/internal/workspace/events"
-	"ai-agent-manager/internal/workspace/eventstore"
-	"ai-agent-manager/internal/workspace/protocol"
-	"ai-agent-manager/internal/workspace/readmodels"
-	"ai-agent-manager/internal/workspace/tmuxruntime"
-	"ai-agent-manager/internal/workspace/transcript"
+	"abolqasem/internal/state"
+	"abolqasem/internal/workspace/events"
+	"abolqasem/internal/workspace/eventstore"
+	"abolqasem/internal/workspace/protocol"
+	"abolqasem/internal/workspace/readmodels"
+	"abolqasem/internal/workspace/tmuxruntime"
+	"abolqasem/internal/workspace/transcript"
 )
 
 var workspaceDataDir = func() string {

@@ -3,8 +3,8 @@ package readmodels
 import (
 	"testing"
 
-	"ai-agent-manager/internal/providers/catalog"
-	"ai-agent-manager/internal/workspace/events"
+	"abolqasem/internal/providers/catalog"
+	"abolqasem/internal/workspace/events"
 )
 
 func TestDeriveSidebarData(t *testing.T) {

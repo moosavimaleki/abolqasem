@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"ai-agent-manager/internal/workspace/readmodels"
-	"ai-agent-manager/internal/workspace/transcript"
+	"abolqasem/internal/workspace/readmodels"
+	"abolqasem/internal/workspace/transcript"
 )
 
 func exportClaudeSession(args ExportArgs) (ExportResult, error) {

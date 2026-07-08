@@ -1,8 +1,8 @@
 package cli
 
 import (
-	"ai-agent-manager/internal/appinfo"
-	"ai-agent-manager/internal/netproxy"
+	"abolqasem/internal/appinfo"
+	"abolqasem/internal/netproxy"
 	"fmt"
 	"io"
 	"os"

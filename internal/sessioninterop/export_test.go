@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"ai-agent-manager/internal/state"
-	"ai-agent-manager/internal/workspace/readmodels"
-	"ai-agent-manager/internal/workspace/transcript"
+	"abolqasem/internal/state"
+	"abolqasem/internal/workspace/readmodels"
+	"abolqasem/internal/workspace/transcript"
 )
 
 func setTestHome(t *testing.T, home string) {

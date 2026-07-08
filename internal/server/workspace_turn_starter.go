@@ -1,7 +1,7 @@
 package server
 
 import (
-	"ai-agent-manager/internal/appinfo"
+	"abolqasem/internal/appinfo"
 	"bufio"
 	"bytes"
 	"context"
@@ -17,16 +17,16 @@ import (
 	"sync"
 	"time"
 
-	claudeprovider "ai-agent-manager/internal/providers/claude"
-	codexprovider "ai-agent-manager/internal/providers/codex"
-	codexprotocol "ai-agent-manager/internal/providers/codex/protocol"
-	codexrpc "ai-agent-manager/internal/providers/codex/rpc"
-	"ai-agent-manager/internal/providers/providerexec"
-	"ai-agent-manager/internal/state"
-	"ai-agent-manager/internal/workspace/agent"
-	"ai-agent-manager/internal/workspace/eventstore"
-	"ai-agent-manager/internal/workspace/readmodels"
-	"ai-agent-manager/internal/workspace/transcript"
+	claudeprovider "abolqasem/internal/providers/claude"
+	codexprovider "abolqasem/internal/providers/codex"
+	codexprotocol "abolqasem/internal/providers/codex/protocol"
+	codexrpc "abolqasem/internal/providers/codex/rpc"
+	"abolqasem/internal/providers/providerexec"
+	"abolqasem/internal/state"
+	"abolqasem/internal/workspace/agent"
+	"abolqasem/internal/workspace/eventstore"
+	"abolqasem/internal/workspace/readmodels"
+	"abolqasem/internal/workspace/transcript"
 )
 
 type workspaceTurnStarter struct {

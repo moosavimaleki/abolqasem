@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"ai-agent-manager/internal/workspace/events"
+	"abolqasem/internal/workspace/events"
 )
 
 func TestResourceStorageStatsReportsArchivesNativeTranscriptsAndIndexes(t *testing.T) {

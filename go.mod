@@ -1,4 +1,4 @@
-module ai-agent-manager
+module abolqasem
 
 go 1.22.2
 

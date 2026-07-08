@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"ai-agent-manager/internal/sessioninterop"
-	"ai-agent-manager/internal/workspace/events"
-	"ai-agent-manager/internal/workspace/readmodels"
-	"ai-agent-manager/internal/workspace/transcript"
+	"abolqasem/internal/sessioninterop"
+	"abolqasem/internal/workspace/events"
+	"abolqasem/internal/workspace/readmodels"
+	"abolqasem/internal/workspace/transcript"
 )
 
 type workspaceSessionConversionResult struct {

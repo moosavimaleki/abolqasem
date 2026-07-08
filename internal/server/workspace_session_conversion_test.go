@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"ai-agent-manager/internal/workspace/events"
-	"ai-agent-manager/internal/workspace/readmodels"
-	"ai-agent-manager/internal/workspace/transcript"
+	"abolqasem/internal/workspace/events"
+	"abolqasem/internal/workspace/readmodels"
+	"abolqasem/internal/workspace/transcript"
 )
 
 func TestWorkspaceExportChatTranscriptWritesNativeTranscript(t *testing.T) {

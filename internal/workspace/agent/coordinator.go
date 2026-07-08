@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"ai-agent-manager/internal/providers/catalog"
-	"ai-agent-manager/internal/workspace/readmodels"
+	"abolqasem/internal/providers/catalog"
+	"abolqasem/internal/workspace/readmodels"
 )
 
 var (

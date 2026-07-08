@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"ai-agent-manager/internal/workspace/agent"
-	"ai-agent-manager/internal/workspace/events"
-	"ai-agent-manager/internal/workspace/readmodels"
+	"abolqasem/internal/workspace/agent"
+	"abolqasem/internal/workspace/events"
+	"abolqasem/internal/workspace/readmodels"
 )
 
 func TestWorkspaceCheckpointRestoreCodeAndChat(t *testing.T) {

@@ -1,12 +1,12 @@
 package cli
 
 import (
-	"ai-agent-manager/internal/adapters"
-	"ai-agent-manager/internal/adapters/claude"
-	"ai-agent-manager/internal/adapters/codex"
-	"ai-agent-manager/internal/adapters/gemini"
-	"ai-agent-manager/internal/appinfo"
-	"ai-agent-manager/internal/state"
+	"abolqasem/internal/adapters"
+	"abolqasem/internal/adapters/claude"
+	"abolqasem/internal/adapters/codex"
+	"abolqasem/internal/adapters/gemini"
+	"abolqasem/internal/appinfo"
+	"abolqasem/internal/state"
 	"errors"
 	"fmt"
 	"os"

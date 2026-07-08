@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -22,7 +23,7 @@ func ResolveCommand(provider string, command string) string {
 		return command
 	}
 	head, suffix := commandHead(command)
-	if filepath.Base(head) != provider {
+	if executableBase(head) != provider {
 		return command
 	}
 	if resolved := Executable(provider); resolved != "" {
@@ -49,8 +50,10 @@ func Executable(provider string) string {
 	candidates := configuredExecutableCandidates(provider)
 	candidates = append(candidates, detectedExecutableCandidates(provider)...)
 	for _, candidate := range candidates {
-		if executableWorks(candidate) {
-			return candidate
+		for _, path := range executableCandidatePaths(candidate) {
+			if executableWorks(path) {
+				return path
+			}
 		}
 	}
 	return ""
@@ -62,8 +65,10 @@ func DetectExecutable(provider string) string {
 		return ""
 	}
 	for _, candidate := range detectedExecutableCandidates(provider) {
-		if executableWorks(candidate) {
-			return candidate
+		for _, path := range executableCandidatePaths(candidate) {
+			if executableWorks(path) {
+				return path
+			}
 		}
 	}
 	return ""
@@ -94,23 +99,24 @@ func configuredExecutableCandidates(provider string) []string {
 
 func detectedExecutableCandidates(provider string) []string {
 	candidates := []string{}
+	executable := platformExecutableName(provider)
 	if home, err := os.UserHomeDir(); err == nil && strings.TrimSpace(home) != "" {
 		switch provider {
 		case "claude":
 			candidates = append(candidates,
-				filepath.Join(home, ".local", "bin", provider),
-				filepath.Join(home, ".bun", "bin", provider),
+				filepath.Join(home, ".local", "bin", executable),
+				filepath.Join(home, ".bun", "bin", executable),
 			)
 		case "codex":
 			candidates = append(candidates,
-				filepath.Join(home, ".local", "bin", provider),
-				filepath.Join(home, ".bun", "install", "global", "node_modules", "@openai", "codex-linux-x64", "vendor", "x86_64-unknown-linux-musl", "bin", provider),
-				filepath.Join(home, ".bun", "bin", provider),
+				filepath.Join(home, ".local", "bin", executable),
+				filepath.Join(home, ".bun", "install", "global", "node_modules", "@openai", "codex-linux-x64", "vendor", "x86_64-unknown-linux-musl", "bin", executable),
+				filepath.Join(home, ".bun", "bin", executable),
 			)
 		default:
 			candidates = append(candidates,
-				filepath.Join(home, ".bun", "bin", provider),
-				filepath.Join(home, ".local", "bin", provider),
+				filepath.Join(home, ".bun", "bin", executable),
+				filepath.Join(home, ".local", "bin", executable),
 			)
 		}
 	}
@@ -118,6 +124,29 @@ func detectedExecutableCandidates(provider string) []string {
 		candidates = append(candidates, path)
 	}
 	return candidates
+}
+
+func platformExecutableName(provider string) string {
+	if runtime.GOOS == "windows" {
+		return provider + ".exe"
+	}
+	return provider
+}
+
+func executableBase(path string) string {
+	base := strings.ToLower(filepath.Base(strings.TrimSpace(path)))
+	if runtime.GOOS == "windows" {
+		base = strings.TrimSuffix(base, ".exe")
+	}
+	return base
+}
+
+func executableCandidatePaths(path string) []string {
+	path = strings.TrimSpace(path)
+	if runtime.GOOS != "windows" || strings.EqualFold(filepath.Ext(path), ".exe") {
+		return []string{path}
+	}
+	return []string{path, path + ".exe"}
 }
 
 func Normalize(provider string) string {

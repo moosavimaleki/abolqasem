@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"ai-agent-manager/internal/state"
-	"ai-agent-manager/internal/workspace/events"
-	"ai-agent-manager/internal/workspace/gitservice"
-	"ai-agent-manager/internal/workspace/legacyimport"
+	"abolqasem/internal/state"
+	"abolqasem/internal/workspace/events"
+	"abolqasem/internal/workspace/gitservice"
+	"abolqasem/internal/workspace/legacyimport"
 )
 
 func TestWorkspaceListBranchesResolvesLegacyChatProject(t *testing.T) {

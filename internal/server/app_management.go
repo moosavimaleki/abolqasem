@@ -1,14 +1,14 @@
 package server
 
 import (
-	"ai-agent-manager/internal/adapters"
-	"ai-agent-manager/internal/adapters/claude"
-	"ai-agent-manager/internal/adapters/codex"
-	"ai-agent-manager/internal/adapters/gemini"
-	"ai-agent-manager/internal/appinfo"
-	"ai-agent-manager/internal/buildinfo"
-	"ai-agent-manager/internal/netproxy"
-	"ai-agent-manager/internal/state"
+	"abolqasem/internal/adapters"
+	"abolqasem/internal/adapters/claude"
+	"abolqasem/internal/adapters/codex"
+	"abolqasem/internal/adapters/gemini"
+	"abolqasem/internal/appinfo"
+	"abolqasem/internal/buildinfo"
+	"abolqasem/internal/netproxy"
+	"abolqasem/internal/state"
 	"encoding/json"
 	"fmt"
 	"net/http"

@@ -1,8 +1,8 @@
 package cli
 
 import (
-	"ai-agent-manager/internal/appinfo"
-	"ai-agent-manager/internal/state"
+	"abolqasem/internal/appinfo"
+	"abolqasem/internal/state"
 	"encoding/json"
 	"fmt"
 	"net"

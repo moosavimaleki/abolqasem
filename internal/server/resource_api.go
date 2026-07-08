@@ -7,8 +7,8 @@ import (
 	"runtime"
 	"strings"
 
-	"ai-agent-manager/internal/parser"
-	"ai-agent-manager/internal/workspace/events"
+	"abolqasem/internal/parser"
+	"abolqasem/internal/workspace/events"
 )
 
 type resourceUsageResponse struct {

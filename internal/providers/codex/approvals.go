@@ -3,7 +3,7 @@ package codex
 import (
 	"encoding/json"
 
-	"ai-agent-manager/internal/workspace/transcript"
+	"abolqasem/internal/workspace/transcript"
 )
 
 type ServerRequest struct {

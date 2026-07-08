@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"ai-agent-manager/internal/appinfo"
-	"ai-agent-manager/internal/workspace/readmodels"
-	"ai-agent-manager/internal/workspace/transcript"
+	"abolqasem/internal/appinfo"
+	"abolqasem/internal/workspace/readmodels"
+	"abolqasem/internal/workspace/transcript"
 )
 
 func exportCodexSession(args ExportArgs) (ExportResult, error) {

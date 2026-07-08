@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"ai-agent-manager/internal/adapters"
+	"abolqasem/internal/adapters"
 )
 
 func TestInstallAndUninstallHookPreservesConfig(t *testing.T) {

@@ -1,7 +1,7 @@
 package netproxy
 
 import (
-	"ai-agent-manager/internal/state"
+	"abolqasem/internal/state"
 	"net/http"
 	"net/url"
 	"os"

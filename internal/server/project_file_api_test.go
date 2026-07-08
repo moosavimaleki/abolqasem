@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"ai-agent-manager/internal/state"
-	"ai-agent-manager/internal/workspace/legacyimport"
+	"abolqasem/internal/state"
+	"abolqasem/internal/workspace/legacyimport"
 )
 
 func TestProjectFileServingServesRegisteredProjectFiles(t *testing.T) {

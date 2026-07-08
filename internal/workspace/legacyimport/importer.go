@@ -7,10 +7,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"ai-agent-manager/internal/parser"
-	"ai-agent-manager/internal/state"
-	"ai-agent-manager/internal/workspace/readmodels"
-	"ai-agent-manager/internal/workspace/transcript"
+	"abolqasem/internal/parser"
+	"abolqasem/internal/state"
+	"abolqasem/internal/workspace/readmodels"
+	"abolqasem/internal/workspace/transcript"
 )
 
 type ImportOptions struct {

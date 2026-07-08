@@ -1,6 +1,6 @@
 package adapters
 
-import "ai-agent-manager/internal/state"
+import "abolqasem/internal/state"
 
 type InstallScope string
 

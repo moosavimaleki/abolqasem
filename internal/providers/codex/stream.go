@@ -3,9 +3,9 @@ package codex
 import (
 	"encoding/json"
 
-	codexrpc "ai-agent-manager/internal/providers/codex/rpc"
-	"ai-agent-manager/internal/workspace/readmodels"
-	"ai-agent-manager/internal/workspace/transcript"
+	codexrpc "abolqasem/internal/providers/codex/rpc"
+	"abolqasem/internal/workspace/readmodels"
+	"abolqasem/internal/workspace/transcript"
 )
 
 type HarnessEvent struct {

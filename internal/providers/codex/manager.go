@@ -1,13 +1,13 @@
 package codex
 
 import (
-	"ai-agent-manager/internal/appinfo"
+	"abolqasem/internal/appinfo"
 	"context"
 	"errors"
 	"strings"
 	"sync"
 
-	codexprotocol "ai-agent-manager/internal/providers/codex/protocol"
+	codexprotocol "abolqasem/internal/providers/codex/protocol"
 )
 
 type RPCClient interface {
