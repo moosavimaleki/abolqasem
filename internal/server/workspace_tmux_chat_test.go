@@ -189,6 +189,40 @@ func TestWorkspaceTmuxCommandForChatInfersGeminiProviderFromTranscriptPath(t *te
 	}
 }
 
+func TestWorkspaceTmuxCommandParsesWindowsExecutablePaths(t *testing.T) {
+	for _, tt := range []struct {
+		command  string
+		provider string
+	}{
+		{`C:\Tools\codex.exe --sandbox workspace-write`, "codex"},
+		{`C:\Tools\claude.exe --permission-mode auto`, "claude"},
+		{`C:\Tools\gemini.exe --model gemini-3-pro`, "gemini"},
+	} {
+		t.Run(tt.provider, func(t *testing.T) {
+			if got := workspaceTmuxProviderFromCommand(tt.command); got != tt.provider {
+				t.Fatalf("expected provider %q, got %q", tt.provider, got)
+			}
+			if !workspaceTmuxCommandSupportsResume(tt.command, tt.provider) {
+				t.Fatalf("expected %q to support resume for %q", tt.command, tt.provider)
+			}
+		})
+	}
+}
+
+func TestWorkspaceTmuxCommandWithModelAppendsLaunchModel(t *testing.T) {
+	command := workspaceTmuxCommandWithModel("codex --sandbox workspace-write", "codex", "gpt-5.5")
+	if command != "codex --sandbox workspace-write --model 'gpt-5.5'" {
+		t.Fatalf("expected model flag, got %q", command)
+	}
+}
+
+func TestWorkspaceTmuxCommandWithModelDoesNotDuplicateModel(t *testing.T) {
+	command := workspaceTmuxCommandWithModel("gemini --model gemini-3-pro --approval-mode plan", "gemini", "gemini-2.5-pro")
+	if command != "gemini --model gemini-3-pro --approval-mode plan" {
+		t.Fatalf("expected existing model flag to be preserved, got %q", command)
+	}
+}
+
 func TestWorkspaceMigrateChatsToTmuxArchivesEventstoreTranscript(t *testing.T) {
 	withWorkspaceComposerStore(t)
 	project, err := workspaceOpenProject(t.TempDir(), "Project")

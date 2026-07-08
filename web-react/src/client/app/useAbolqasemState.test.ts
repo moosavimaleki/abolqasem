@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
+  appendLaunchModelFlag,
   applySidebarProjectOrder,
   countMatchingUserPrompts,
   getActiveChatSnapshot,
@@ -151,6 +152,24 @@ describe("getComposerStateForActiveProvider", () => {
       modelOptions: { reasoningEffort: "low", fastMode: true },
       planMode: true,
     })
+  })
+})
+
+describe("appendLaunchModelFlag", () => {
+  test("adds the configured model to a provider launch command", () => {
+    expect(appendLaunchModelFlag("codex --sandbox workspace-write", "gpt-5.5")).toBe(
+      "codex --sandbox workspace-write --model gpt-5.5"
+    )
+  })
+
+  test("preserves commands that already select a model", () => {
+    expect(appendLaunchModelFlag("gemini --model gemini-3-pro --approval-mode plan", "gemini-2.5-pro")).toBe(
+      "gemini --model gemini-3-pro --approval-mode plan"
+    )
+  })
+
+  test("quotes unusual model ids safely", () => {
+    expect(appendLaunchModelFlag("claude", "custom model")).toBe("claude --model 'custom model'")
   })
 })
 

@@ -134,11 +134,9 @@ func platformExecutableName(provider string) string {
 }
 
 func executableBase(path string) string {
-	base := strings.ToLower(filepath.Base(strings.TrimSpace(path)))
-	if runtime.GOOS == "windows" {
-		base = strings.TrimSuffix(base, ".exe")
-	}
-	return base
+	normalized := strings.ReplaceAll(strings.TrimSpace(path), "\\", "/")
+	base := strings.ToLower(filepath.Base(normalized))
+	return strings.TrimSuffix(base, ".exe")
 }
 
 func executableCandidatePaths(path string) []string {

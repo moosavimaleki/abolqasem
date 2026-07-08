@@ -691,6 +691,27 @@ function getDefaultTmuxCommand(provider: AgentProvider, settings: AppSettingsSna
   return settings?.providerExecutables?.[provider]?.trim() || provider
 }
 
+export function appendLaunchModelFlag(command: string, model: string | null | undefined) {
+  const trimmedCommand = command.trim()
+  const trimmedModel = (model ?? "").trim()
+  if (!trimmedCommand || !trimmedModel || commandHasModelFlag(trimmedCommand)) {
+    return trimmedCommand
+  }
+  return `${trimmedCommand} --model ${quoteLaunchArg(trimmedModel)}`
+}
+
+function commandHasModelFlag(command: string) {
+  return /(^|\s)(--model(?:=|\s)|-m(?:=|\s|$))/.test(command)
+    || /(^|\s)(?:-c|--config)\s+model=/.test(command)
+}
+
+function quoteLaunchArg(value: string) {
+  if (/^[A-Za-z0-9._:/=@+-]+$/.test(value)) {
+    return value
+  }
+  return `'${value.replaceAll("'", "'\"'\"'")}'`
+}
+
 function getProviderLabel(availableProviders: readonly ProviderCatalogEntry[], provider: AgentProvider) {
   return availableProviders.find((candidate) => candidate.id === provider)?.label ?? provider
 }
@@ -1774,7 +1795,8 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
         })
         return
       }
-      const baseCommand = getDefaultTmuxCommand(provider, settings)
+      const providerComposerState = getComposerStateForActiveProvider(sourceComposerState, provider, chatPreferences.providerDefaults)
+      const baseCommand = appendLaunchModelFlag(getDefaultTmuxCommand(provider, settings), providerComposerState.model)
       const launchModeChoices = getLaunchModeChoices(provider, baseCommand)
       const modeInput = await dialog.choice({
         title: `Launch ${getProviderLabel(availableProviders, provider)}`,
@@ -1795,7 +1817,6 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
       if (customCommand === null) return
       const tmuxCommand = customCommand.trim() || baseCommand
       const result = await socket.command<{ chatId: string }>({ type: "chat.create", projectId, provider, tmuxCommand })
-      const providerComposerState = getComposerStateForActiveProvider(sourceComposerState, provider, chatPreferences.providerDefaults)
       chatPreferences.initializeComposerForChat(result.chatId, { sourceState: providerComposerState })
       setSelectedProjectId(projectId)
       setPendingChatId(result.chatId)

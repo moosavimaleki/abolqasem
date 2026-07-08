@@ -41,7 +41,11 @@ func workspaceSendTmuxChat(command agent.SendCommand) (agent.SendResult, bool, e
 		chat.Provider = &command.Provider
 	}
 
+	provider := workspaceTmuxProviderForChat(chat, command.Provider)
 	runtimeCommand := workspaceTmuxCommandForChat(chat, command.Provider)
+	if strings.TrimSpace(command.ChatID) == "" {
+		runtimeCommand = workspaceTmuxCommandWithModel(runtimeCommand, provider, command.Model)
+	}
 	if err := tmuxruntime.EnsureSession(context.Background(), chat.TmuxSession, projectPath, runtimeCommand); err != nil {
 		return agent.SendResult{}, true, err
 	}
@@ -328,7 +332,7 @@ func workspaceTmuxProviderFromCommand(command string) string {
 	if len(fields) == 0 {
 		return ""
 	}
-	return normalizeWorkspaceTmuxProvider(filepath.Base(fields[0]))
+	return normalizeWorkspaceTmuxProvider(workspaceTmuxCommandBase(fields[0]))
 }
 
 func workspaceTmuxCommandSupportsResume(command string, provider string) bool {
@@ -336,8 +340,38 @@ func workspaceTmuxCommandSupportsResume(command string, provider string) bool {
 	if len(parts) == 0 {
 		return false
 	}
-	binary := filepath.Base(parts[0])
+	binary := workspaceTmuxCommandBase(parts[0])
 	return binary == normalizeWorkspaceTmuxProvider(provider)
+}
+
+func workspaceTmuxCommandWithModel(command string, provider string, model string) string {
+	command = strings.TrimSpace(command)
+	model = strings.TrimSpace(model)
+	if command == "" || model == "" || normalizeWorkspaceTmuxProvider(provider) == "" || workspaceTmuxCommandHasModelFlag(command) {
+		return command
+	}
+	return strings.TrimSpace(command + " --model " + shellQuote(model))
+}
+
+func workspaceTmuxCommandHasModelFlag(command string) bool {
+	fields := strings.Fields(command)
+	for index, field := range fields {
+		switch {
+		case field == "--model", field == "-m":
+			return true
+		case strings.HasPrefix(field, "--model="), strings.HasPrefix(field, "-m="):
+			return true
+		case (field == "-c" || field == "--config") && index+1 < len(fields) && strings.HasPrefix(fields[index+1], "model="):
+			return true
+		}
+	}
+	return false
+}
+
+func workspaceTmuxCommandBase(path string) string {
+	normalized := strings.ReplaceAll(strings.TrimSpace(path), "\\", "/")
+	base := strings.ToLower(filepath.Base(normalized))
+	return strings.TrimSuffix(base, ".exe")
 }
 
 func shellQuote(value string) string {

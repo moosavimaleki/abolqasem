@@ -24,3 +24,21 @@
 - کدهای نصب و hook باید command، permission، extension باینری (`.exe`) و shell متفاوت Windows/Unix را در نظر بگیرند. فرض نکن `sh`, `bash`, `chmod`, `install`, `tar` یا مسیرهای Unix همیشه موجودند.
 - تستی که به asset ساخته‌شده، web build، binary release یا فایل generated نیاز دارد، یا خودش fixture را آماده کند یا در نبود fixture به شکل واضح skip شود. jobهای CI نباید به artifact باقی‌مانده از اجرای قبلی وابسته باشند.
 - هر fix مرتبط با filesystem یا installer باید حداقل با `GOTOOLCHAIN=local go test ./...` و در صورت ارتباط با frontend با `npm run check` بررسی شود. اگر نمی‌توان یک OS را محلی اجرا کرد، تست‌ها را طوری بنویس که اختلاف‌های شناخته‌شده آن OS را پوشش دهند.
+
+## دستورالعمل دائمی نام پروژه، Provider Runtime و CI
+نام canonical پروژه `abolqasem` است. اگر Go package output، module path، import path، `ldflags` یا build script دوباره `ai-agent-manager/...` نشان داد، یعنی rename ناقص است. `ai-agent-manager` فقط در مسیرهای مهاجرت و compatibility مجاز است: legacy env مثل `AI_AGENT_MANAGER_*`، legacy localStorage key، legacy drag MIME type، تست تعمیر hookهای قدیمی، و constantهای `Legacy*`.
+
+برای runtime providerها (`codex`, `claude`, `gemini`) هرگز command را با string خام و Unix-only تحلیل نکن. command ممکن است با absolute path، فاصله، پسوند `.exe`، یا مسیر Windows بیاید. برای تشخیص provider و قابلیت resume، همیشه basename را normalize کن: `filepath.Base`، lowercase، حذف پسوند `.exe`، سپس مقایسه با provider canonical.
+
+تنظیمات مدل‌ها نباید فقط UI state بی‌اثر باشند. در معماری tmux-first، مدل پیش‌فرض فقط وقتی معتبر است که روی launch command همان provider اعمال شود، مثل `--model <id>`. تغییر مدل وسط سشن را فقط وقتی پیاده کن که برای همان provider با CLI واقعی و تست end-to-end ثابت شده باشد؛ slash command حدسی به tmux نفرست.
+
+در تست‌های provider executable و tmux command:
+- روی Windows هم `HOME` و هم `USERPROFILE` را در temp dir تست ست کن.
+- fake executable را به صورت cross-platform بساز؛ shell script خام برای Windows کافی نیست.
+- انتظار command کامل نباید به جداکننده مسیر یا پسوند سیستم‌عامل وابسته باشد. اگر هدف تست resume است، وجود subcommand/flagهای resume را assert کن و path را normalize کن.
+- سناریوهای Windows را با تست صریح بپوشان: `codex.exe`, `claude.exe`, `gemini.exe` و configured path بدون `.exe` که باید fallback به `.exe` داشته باشد.
+
+قبل از تمام‌شده دانستن هر تغییر مرتبط با provider runtime یا tmux، این موارد را چک کن:
+- `go test ./internal/providers/providerexec ./internal/server -run 'ProviderCommand|TmuxCommand|Executable|Resume' -count=1`
+- `go test ./...`
+- خروجی `go test` باید با `abolqasem/...` شروع شود، نه `ai-agent-manager/...`.
