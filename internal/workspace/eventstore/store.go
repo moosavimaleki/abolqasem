@@ -45,8 +45,10 @@ type QueuedMessageSet struct {
 
 type Store struct {
 	dir string
-	mu  sync.Mutex
+	mu  *sync.Mutex
 }
+
+var storeLocks sync.Map
 
 var autoCompaction = struct {
 	sync.Mutex
@@ -58,7 +60,9 @@ var autoCompaction = struct {
 }
 
 func New(dir string) *Store {
-	return &Store{dir: dir}
+	dir = filepath.Clean(dir)
+	lock, _ := storeLocks.LoadOrStore(dir, &sync.Mutex{})
+	return &Store{dir: dir, mu: lock.(*sync.Mutex)}
 }
 
 func (s *Store) Dir() string {
@@ -128,12 +132,12 @@ func (s *Store) Replay(stream string) ([]events.Event, error) {
 	lineNumber := 0
 	for scanner.Scan() {
 		lineNumber++
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
+		line := trimEventLogLine(scanner.Bytes())
+		if len(line) == 0 {
 			continue
 		}
 		var event events.Event
-		if err := json.Unmarshal([]byte(line), &event); err != nil {
+		if err := json.Unmarshal(line, &event); err != nil {
 			return nil, fmt.Errorf("%s:%d: %w", s.streamPath(stream), lineNumber, err)
 		}
 		result = append(result, event)
@@ -202,7 +206,10 @@ func (s *Store) LastMessageEventForChat(chatID string) (string, int64, error) {
 func (s *Store) Compact(state readmodels.StoreState) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.compactLocked(state)
+}
 
+func (s *Store) compactLocked(state readmodels.StoreState) error {
 	if err := os.MkdirAll(s.dir, 0o755); err != nil {
 		return err
 	}
@@ -316,11 +323,13 @@ func (s *Store) maybeCompactAsync() {
 			autoCompaction.lastRun[key] = time.Now()
 			autoCompaction.Unlock()
 		}()
-		state, err := s.LoadState()
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		state, err := s.loadStateForStreamsLocked(events.Streams())
 		if err != nil {
 			return
 		}
-		_ = s.Compact(state)
+		_ = s.compactLocked(state)
 	}()
 }
 
@@ -787,12 +796,12 @@ func (s *Store) replayStreamLocked(stream string) ([]events.Event, error) {
 	lineNumber := 0
 	for scanner.Scan() {
 		lineNumber++
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
+		line := trimEventLogLine(scanner.Bytes())
+		if len(line) == 0 {
 			continue
 		}
 		var event events.Event
-		if err := json.Unmarshal([]byte(line), &event); err != nil {
+		if err := json.Unmarshal(line, &event); err != nil {
 			return nil, fmt.Errorf("%s:%d: %w", s.streamPath(stream), lineNumber, err)
 		}
 		result = append(result, event)
@@ -801,6 +810,10 @@ func (s *Store) replayStreamLocked(stream string) ([]events.Event, error) {
 		return nil, err
 	}
 	return result, nil
+}
+
+func trimEventLogLine(line []byte) []byte {
+	return bytes.TrimSpace(bytes.Trim(line, "\x00"))
 }
 
 func validateStream(stream string) error {

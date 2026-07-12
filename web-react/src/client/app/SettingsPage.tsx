@@ -214,6 +214,30 @@ export function providerModelCatalogResetPatch(provider: AgentProvider): AppSett
   }
 }
 
+export function providerModelCatalogRemoval(
+  provider: AgentProvider,
+  modelId: string,
+  models: ProviderModelOption[],
+  selectedModel: string
+): { models: ProviderModelOption[]; patch: AppSettingsPatch } | null {
+  const current = normalizeEditableProviderModels(provider, models)
+  if (current.length <= 1) return null
+  const nextModels = current.filter((model) => model.id !== modelId)
+  if (nextModels.length === current.length) return null
+  const nextDefaultModel = selectedModel === modelId ? nextModels[0].id : null
+  return {
+    models: nextModels,
+    patch: {
+      providerModelCatalog: {
+        [provider]: { catalogModels: nextModels, customModels: [] },
+      },
+      ...(nextDefaultModel ? {
+        providerDefaults: { [provider]: { model: nextDefaultModel } },
+      } : {}),
+    },
+  }
+}
+
 const GITHUB_RELEASES_URL = "https://api.github.com/repos/moosavimaleki/abolqasem/releases"
 const CHANGELOG_CACHE_TTL_MS = 5 * 60 * 1000
 
@@ -2636,13 +2660,22 @@ export function SettingsPage() {
   }
 
   function handleRemoveProviderModel(provider: AgentProvider, modelId: string) {
-    const current = normalizeEditableProviderModels(provider, modelCatalogDrafts[provider] ?? [])
-    if (current.length <= 1) return
-    const nextModels = current.filter((model) => model.id !== modelId)
-    persistProviderModelCatalog(provider, nextModels)
-    if (providerDefaults[provider].model === modelId && nextModels[0]) {
-      handleProviderDefaultModelChange(provider, nextModels[0].id)
-    }
+    const removal = providerModelCatalogRemoval(
+      provider,
+      modelId,
+      modelCatalogDrafts[provider] ?? [],
+      providerDefaults[provider].model
+    )
+    if (!removal) return
+    setModelCatalogDrafts((drafts) => ({
+      ...drafts,
+      [provider]: cloneProviderModelOptions(removal.models),
+    }))
+    const nextDefaultModel = removal.patch.providerDefaults?.[provider]?.model
+    if (nextDefaultModel) setProviderDefaultModel(provider, nextDefaultModel)
+    void handleWriteAppSettings(removal.patch).catch((error) => {
+      setAppSettingsError(error instanceof Error ? error.message : "Unable to remove provider model.")
+    })
   }
 
   function resetProviderModelCatalog(provider: AgentProvider) {

@@ -11,6 +11,7 @@ import {
   loadChangelog,
   resetSettingsPageChangelogCache,
   providerModelCatalogResetPatch,
+  providerModelCatalogRemoval,
   resolveSettingsSectionId,
   resolveSettingsAppVersion,
   setCachedChangelog,
@@ -170,6 +171,29 @@ describe("providerModelCatalogResetPatch", () => {
         codex: { catalogModels: [], customModels: [] },
       },
     })
+  })
+})
+
+describe("providerModelCatalogRemoval", () => {
+  const models = [
+    { id: "model-a", label: "Model A", supportsEffort: false },
+    { id: "model-b", label: "Model B", supportsEffort: false },
+  ]
+
+  test("removes the selected default model and changes the default in one patch", () => {
+    expect(providerModelCatalogRemoval("codex", "model-a", models, "model-a")).toEqual({
+      models: [models[1]],
+      patch: {
+        providerModelCatalog: {
+          codex: { catalogModels: [models[1]], customModels: [] },
+        },
+        providerDefaults: { codex: { model: "model-b" } },
+      },
+    })
+  })
+
+  test("does not change the default when removing another model", () => {
+    expect(providerModelCatalogRemoval("codex", "model-b", models, "model-a")?.patch.providerDefaults).toBeUndefined()
   })
 })
 

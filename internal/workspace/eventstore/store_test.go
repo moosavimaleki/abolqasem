@@ -12,6 +12,46 @@ import (
 	"abolqasem/internal/workspace/readmodels"
 )
 
+func TestStoresForSameDirectorySerializeWrites(t *testing.T) {
+	dir := t.TempDir()
+	first := New(dir)
+	second := New(dir)
+	if first.mu != second.mu {
+		t.Fatal("expected stores for the same directory to share a lock")
+	}
+}
+
+func TestReplayIgnoresTrailingNULBytes(t *testing.T) {
+	dir := t.TempDir()
+	store := New(dir)
+	event, err := events.NewAt(events.TypeProjectOpened, 1234, map[string]string{"projectId": "project-1"})
+	if err != nil {
+		t.Fatalf("NewAt returned error: %v", err)
+	}
+	if err := store.Append(events.StreamProjects, event); err != nil {
+		t.Fatalf("Append returned error: %v", err)
+	}
+	file, err := os.OpenFile(filepath.Join(dir, events.StreamProjects+".jsonl"), os.O_WRONLY|os.O_APPEND, 0)
+	if err != nil {
+		t.Fatalf("OpenFile returned error: %v", err)
+	}
+	if _, err := file.Write(make([]byte, 176)); err != nil {
+		_ = file.Close()
+		t.Fatalf("write NUL tail: %v", err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("close NUL tail: %v", err)
+	}
+
+	replayed, err := store.Replay(events.StreamProjects)
+	if err != nil {
+		t.Fatalf("Replay returned error: %v", err)
+	}
+	if len(replayed) != 1 || replayed[0].Type != events.TypeProjectOpened {
+		t.Fatalf("expected the valid event before the NUL tail, got %#v", replayed)
+	}
+}
+
 func TestAppendReplay(t *testing.T) {
 	store := New(t.TempDir())
 
