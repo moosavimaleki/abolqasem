@@ -1085,6 +1085,11 @@ func TestWorkspaceSyncLegacyBackedChatMarksUnreadOnExternalUpdate(t *testing.T) 
 }
 
 func TestWorkspaceMarkChatReadClearsLegacyUnreadState(t *testing.T) {
+	dir := t.TempDir()
+	previousDataDir := workspaceDataDir
+	workspaceDataDir = func() string { return dir }
+	t.Cleanup(func() { workspaceDataDir = previousDataDir })
+
 	meta := state.SessionMeta{
 		Key:            "codex:legacy-session-1",
 		Agent:          "codex",

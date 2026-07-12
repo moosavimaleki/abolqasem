@@ -119,6 +119,31 @@ func TestServerProvidersWithInventoryUsesEditableCatalogModels(t *testing.T) {
 	}
 }
 
+func TestServerProvidersWithInventoryUsesDiscoveredModelsAfterCatalogReset(t *testing.T) {
+	withCodexRuntimeProbe(t, CodexRuntimeInfo{})
+
+	providers := ServerProvidersWithInventory(ProviderModelInventoryByProvider{
+		"codex": {
+			CatalogModels: []ProviderModelOption{},
+			DiscoveredModels: []ProviderModelOption{
+				{ID: "gpt-5.6-sol", Label: "GPT-5.6-Sol"},
+				{ID: "gpt-5.6-terra", Label: "GPT-5.6-Terra"},
+			},
+		},
+	})
+
+	var codex ProviderCatalogEntry
+	for _, provider := range providers {
+		if provider.ID == "codex" {
+			codex = provider
+			break
+		}
+	}
+	if len(codex.Models) != 2 || codex.Models[0].ID != "gpt-5.6-sol" || codex.Models[1].ID != "gpt-5.6-terra" {
+		t.Fatalf("expected discovered models after reset, got %#v", codex.Models)
+	}
+}
+
 func TestNormalizeModelUsesAliasesAndSafeFallback(t *testing.T) {
 	withCodexRuntimeProbe(t, CodexRuntimeInfo{})
 

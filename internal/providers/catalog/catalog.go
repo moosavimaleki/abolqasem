@@ -679,7 +679,7 @@ func withModelInventory(provider ProviderCatalogEntry, inventory ProviderModelIn
 	catalogModels := normalizeProviderModelOptions(provider.ID, inventory.CatalogModels)
 	discovered := normalizeProviderModelOptions(provider.ID, inventory.DiscoveredModels)
 	custom := normalizeProviderModelOptions(provider.ID, inventory.CustomModels)
-	if inventory.CatalogModels != nil {
+	if len(catalogModels) > 0 {
 		provider.Models = catalogModels
 	} else if len(discovered) > 0 {
 		provider.Models = discovered

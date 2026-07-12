@@ -10,6 +10,7 @@ import {
   getKeybindingsSubtitle,
   loadChangelog,
   resetSettingsPageChangelogCache,
+  providerModelCatalogResetPatch,
   resolveSettingsSectionId,
   resolveSettingsAppVersion,
   setCachedChangelog,
@@ -159,6 +160,16 @@ describe("resolveSettingsSectionId", () => {
     expect(resolveSettingsSectionId("page-3")).toBeNull()
     expect(resolveSettingsSectionId("nope")).toBeNull()
     expect(resolveSettingsSectionId(undefined)).toBeNull()
+  })
+})
+
+describe("providerModelCatalogResetPatch", () => {
+  test("clears the saved override so runtime-discovered models become visible", () => {
+    expect(providerModelCatalogResetPatch("codex")).toEqual({
+      providerModelCatalog: {
+        codex: { catalogModels: [], customModels: [] },
+      },
+    })
   })
 })
 

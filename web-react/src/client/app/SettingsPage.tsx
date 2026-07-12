@@ -206,6 +206,14 @@ function normalizeEditableProviderModels(provider: AgentProvider, models: Provid
   return normalized
 }
 
+export function providerModelCatalogResetPatch(provider: AgentProvider): AppSettingsPatch {
+  return {
+    providerModelCatalog: {
+      [provider]: { catalogModels: [], customModels: [] },
+    },
+  }
+}
+
 const GITHUB_RELEASES_URL = "https://api.github.com/repos/moosavimaleki/abolqasem/releases"
 const CHANGELOG_CACHE_TTL_MS = 5 * 60 * 1000
 
@@ -2638,8 +2646,9 @@ export function SettingsPage() {
   }
 
   function resetProviderModelCatalog(provider: AgentProvider) {
-    const fallbackModels = cloneProviderModelOptions(PROVIDERS.find((candidate) => candidate.id === provider)?.models ?? [])
-    persistProviderModelCatalog(provider, fallbackModels)
+    void handleWriteAppSettings(providerModelCatalogResetPatch(provider)).catch((error) => {
+      setAppSettingsError(error instanceof Error ? error.message : "Unable to reset model catalog.")
+    })
   }
 
   function handleProviderProxyModeChange(mode: ProviderProxyMode) {
