@@ -60,6 +60,8 @@ func TestChatRuntimeMetadataFlowsToSnapshot(t *testing.T) {
 	})
 	runtimeEvent, _ := events.NewAt(events.TypeChatRuntimeSet, 300, map[string]any{
 		"chatId":               "chat-1",
+		"provider":             "claude",
+		"tmuxCommand":          "claude --permission-mode plan",
 		"nativeSessionId":      "thread-1",
 		"nativeTranscriptPath": "/tmp/thread.jsonl",
 		"parentChatId":         "chat-parent",
@@ -77,7 +79,7 @@ func TestChatRuntimeMetadataFlowsToSnapshot(t *testing.T) {
 		t.Fatal("expected chat snapshot")
 	}
 	runtime := snapshot.Runtime
-	if runtime.TmuxSession != "abolqasem-chat-1" || runtime.NativeSessionID != "thread-1" || runtime.NativeTranscriptPath != "/tmp/thread.jsonl" || runtime.ParentChatID != "chat-parent" || runtime.LastSummary != "latest state" {
+	if runtime.Provider == nil || *runtime.Provider != "claude" || runtime.TmuxCommand != "claude --permission-mode plan" || runtime.TmuxSession != "abolqasem-chat-1" || runtime.NativeSessionID != "thread-1" || runtime.NativeTranscriptPath != "/tmp/thread.jsonl" || runtime.ParentChatID != "chat-parent" || runtime.LastSummary != "latest state" {
 		t.Fatalf("unexpected runtime metadata: %#v", runtime)
 	}
 }

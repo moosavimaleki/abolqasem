@@ -1173,8 +1173,9 @@ export function ChatPage() {
   const handleRestartTmuxSession = useCallback(() => {
     if (!state.activeChatId || !state.runtime?.tmuxSession?.trim()) return
     const chatId = state.activeChatId
-    void state.socket.command({ type: "chat.restartTmux", chatId })
-      .then(() => {
+    void state.handleRestartTmuxSession()
+      .then((restarted) => {
+        if (!restarted) return
         setChatTmuxRestartVersionByChatId((current) => ({
           ...current,
           [chatId]: (current[chatId] ?? 0) + 1,
@@ -1188,7 +1189,7 @@ export function ChatPage() {
           closeLabel: t.common.ok,
         })
       })
-  }, [dialog, state.activeChatId, state.runtime?.tmuxSession, state.socket, t])
+  }, [dialog, state.activeChatId, state.handleRestartTmuxSession, state.runtime?.tmuxSession, state.socket, t])
 
   const handleRuntimePreferenceChange = useCallback(async (preference: { provider: AgentProvider; model: string; modelOptions: ModelOptions }) => {
     if (!state.activeChatId) return

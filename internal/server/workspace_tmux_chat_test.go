@@ -33,10 +33,14 @@ func TestWorkspaceSendTmuxChatCreatesSessionAndSendsPrompt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("workspaceOpenProject returned error: %v", err)
 	}
+	chat, err := (&workspaceEventStore{store: workspaceStore()}).CreateChatWithOptions(project.ID, "codex", "sh")
+	if err != nil {
+		t.Fatalf("CreateChatWithOptions returned error: %v", err)
+	}
 	result, handled, err := workspaceSendTmuxChat(agent.SendCommand{
-		ProjectID: project.ID,
-		Content:   "printf tmux-send-ok\\n",
-		Provider:  "codex",
+		ChatID:   chat.ID,
+		Content:  "printf tmux-send-ok\\n",
+		Provider: "codex",
 	})
 	if err != nil {
 		t.Fatalf("workspaceSendTmuxChat returned error: %v", err)
@@ -49,9 +53,9 @@ func TestWorkspaceSendTmuxChatCreatesSessionAndSendsPrompt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadStateLight returned error: %v", err)
 	}
-	chat := state.ChatsByID[result.ChatID]
-	if chat.TmuxSession == "" {
-		t.Fatalf("expected chat tmux session, got %#v", chat)
+	storedChat := state.ChatsByID[result.ChatID]
+	if storedChat.TmuxSession == "" {
+		t.Fatalf("expected chat tmux session, got %#v", storedChat)
 	}
 	messageEvents, err := workspaceStore().Replay(events.StreamMessages)
 	if err != nil {
@@ -60,12 +64,12 @@ func TestWorkspaceSendTmuxChatCreatesSessionAndSendsPrompt(t *testing.T) {
 	if len(messageEvents) != 0 {
 		t.Fatalf("expected tmux-first send to avoid message events, got %#v", messageEvents)
 	}
-	defer exec.Command("tmux", "kill-session", "-t", chat.TmuxSession).Run()
+	defer exec.Command("tmux", "kill-session", "-t", storedChat.TmuxSession).Run()
 
 	var output string
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		output, _ = tmuxruntime.Capture(context.Background(), chat.TmuxSession, 40)
+		output, _ = tmuxruntime.Capture(context.Background(), storedChat.TmuxSession, 40)
 		if strings.Contains(output, "tmux-send-ok") {
 			return
 		}
@@ -129,7 +133,7 @@ func TestWorkspaceResolveTmuxProviderCommandUsesWorkingLocalClaude(t *testing.T)
 	}
 }
 
-func TestWorkspaceTmuxCommandForChatDefaultsCodexProviderAndResumes(t *testing.T) {
+func TestWorkspaceTmuxCommandForChatUsesPersistedCodexLaunchAndResumes(t *testing.T) {
 	providerexec.SetConfiguredExecutables(nil)
 	t.Cleanup(func() { providerexec.SetConfiguredExecutables(nil) })
 	home := t.TempDir()
@@ -142,6 +146,7 @@ func TestWorkspaceTmuxCommandForChatDefaultsCodexProviderAndResumes(t *testing.T
 	command := workspaceTmuxCommandForChat(readmodels.ChatRecord{
 		NativeSessionID:      "codex-session-1",
 		NativeTranscriptPath: filepath.Join(home, ".codex", "sessions", "2026", "07", "04", "rollout.jsonl"),
+		TmuxCommand:          "codex --sandbox workspace-write",
 	}, "")
 
 	if !strings.HasSuffix(command, " --sandbox workspace-write resume 'codex-session-1'") {
@@ -162,6 +167,7 @@ func TestWorkspaceTmuxCommandForChatInfersClaudeProviderFromTranscriptPath(t *te
 	command := workspaceTmuxCommandForChat(readmodels.ChatRecord{
 		NativeSessionID:      "claude-session-1",
 		NativeTranscriptPath: filepath.Join(home, ".claude", "projects", "project", "session.jsonl"),
+		TmuxCommand:          "claude --permission-mode auto",
 	}, "")
 
 	if !strings.HasSuffix(command, " --permission-mode auto --resume 'claude-session-1'") {
@@ -182,10 +188,77 @@ func TestWorkspaceTmuxCommandForChatInfersGeminiProviderFromTranscriptPath(t *te
 	command := workspaceTmuxCommandForChat(readmodels.ChatRecord{
 		NativeSessionID:      "gemini-session-1",
 		NativeTranscriptPath: filepath.Join(home, ".gemini", "tmp", "session.json"),
+		TmuxCommand:          "gemini --model gemini-3-pro",
 	}, "")
 
 	if !strings.HasSuffix(command, " --model gemini-3-pro --resume 'gemini-session-1'") {
 		t.Fatalf("expected gemini resume command, got %q", command)
+	}
+}
+
+func TestWorkspaceTmuxCommandForChatRequiresPersistedLaunchChoice(t *testing.T) {
+	t.Setenv("ABOLQASEM_TMUX_CODEX_COMMAND", "codex --dangerously-bypass-approvals-and-sandbox")
+	command := workspaceTmuxCommandForChat(readmodels.ChatRecord{
+		NativeSessionID:      "codex-session-1",
+		NativeTranscriptPath: filepath.Join(t.TempDir(), ".codex", "sessions", "rollout.jsonl"),
+	}, "")
+	if command != "" {
+		t.Fatalf("expected unknown imported session to require a launch choice, got %q", command)
+	}
+}
+
+func TestDecodeRestartTmuxCommandRequiresExplicitLaunchChoice(t *testing.T) {
+	raw := json.RawMessage(`{"type":"chat.restartTmux","chatId":"chat-1"}`)
+	if _, err := decodeRestartTmuxCommand(raw); err == nil {
+		t.Fatal("expected missing provider and tmuxCommand to be rejected")
+	}
+}
+
+func TestWorkspaceRestartTmuxChatPersistsLaunchChoice(t *testing.T) {
+	withWorkspaceComposerStore(t)
+	project, err := workspaceOpenProject(t.TempDir(), "Project")
+	if err != nil {
+		t.Fatalf("workspaceOpenProject returned error: %v", err)
+	}
+	store := &workspaceEventStore{store: workspaceStore()}
+	chat, err := store.CreateChatWithOptions(project.ID, "codex", "codex --sandbox workspace-write")
+	if err != nil {
+		t.Fatalf("CreateChatWithOptions returned error: %v", err)
+	}
+	if err := store.SetSessionToken(chat.ID, "session-1"); err != nil {
+		t.Fatalf("SetSessionToken returned error: %v", err)
+	}
+
+	originalRestart := restartTmuxRuntime
+	t.Cleanup(func() { restartTmuxRuntime = originalRestart })
+	var restartedCommand string
+	restartTmuxRuntime = func(_ context.Context, sessionName string, cwd string, command string) error {
+		if sessionName != chat.TmuxSession || cwd != project.LocalPath {
+			t.Fatalf("unexpected restart target session=%q cwd=%q", sessionName, cwd)
+		}
+		restartedCommand = command
+		return nil
+	}
+
+	request := workspaceRestartTmuxCommand{
+		ChatID:      chat.ID,
+		Provider:    "codex",
+		TmuxCommand: "codex --dangerously-bypass-approvals-and-sandbox",
+	}
+	if err := workspaceRestartTmuxChat(request); err != nil {
+		t.Fatalf("workspaceRestartTmuxChat returned error: %v", err)
+	}
+	if !strings.Contains(restartedCommand, "--dangerously-bypass-approvals-and-sandbox resume 'session-1'") {
+		t.Fatalf("expected selected command and resume token, got %q", restartedCommand)
+	}
+
+	stateSnapshot, err := workspaceStore().LoadStateLight()
+	if err != nil {
+		t.Fatalf("LoadStateLight returned error: %v", err)
+	}
+	stored := stateSnapshot.ChatsByID[chat.ID]
+	if stored.Provider == nil || *stored.Provider != "codex" || stored.TmuxCommand != request.TmuxCommand {
+		t.Fatalf("expected restart choice to be persisted, got %#v", stored)
 	}
 }
 

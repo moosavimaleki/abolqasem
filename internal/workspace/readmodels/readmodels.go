@@ -103,6 +103,7 @@ type ChatRuntime struct {
 	LegacySessionKey        string          `json:"legacySessionKey,omitempty"`
 	TmuxSession             string          `json:"tmuxSession,omitempty"`
 	TmuxCommand             string          `json:"tmuxCommand,omitempty"`
+	TmuxActive              bool            `json:"tmuxActive"`
 	NativeSessionID         string          `json:"nativeSessionId,omitempty"`
 	NativeTranscriptPath    string          `json:"nativeTranscriptPath,omitempty"`
 	ParentChatID            string          `json:"parentChatId,omitempty"`
@@ -340,6 +341,7 @@ func Apply(state StoreState, event events.Event) StoreState {
 	case events.TypeChatRuntimeSet:
 		var data struct {
 			ChatID               string `json:"chatId"`
+			Provider             string `json:"provider"`
 			TmuxSession          string `json:"tmuxSession"`
 			TmuxCommand          string `json:"tmuxCommand"`
 			NativeSessionID      string `json:"nativeSessionId"`
@@ -351,6 +353,9 @@ func Apply(state StoreState, event events.Event) StoreState {
 			return state
 		}
 		record := state.ChatsByID[data.ChatID]
+		if data.Provider != "" {
+			record.Provider = &data.Provider
+		}
 		if data.TmuxSession != "" {
 			record.TmuxSession = data.TmuxSession
 		}
@@ -637,6 +642,7 @@ func DeriveChatSnapshot(
 			SessionToken:            chat.SessionToken,
 			PendingForkSessionToken: chat.PendingForkSessionToken,
 			TmuxSession:             chat.TmuxSession,
+			TmuxCommand:             chat.TmuxCommand,
 			NativeSessionID:         chat.NativeSessionID,
 			NativeTranscriptPath:    chat.NativeTranscriptPath,
 			ParentChatID:            chat.ParentChatID,

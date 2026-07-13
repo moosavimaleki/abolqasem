@@ -1281,6 +1281,7 @@ export interface ChatRuntime {
   legacySessionKey?: string
   tmuxSession?: string
   tmuxCommand?: string
+  tmuxActive?: boolean
   nativeSessionId?: string
   nativeTranscriptPath?: string
   parentChatId?: string

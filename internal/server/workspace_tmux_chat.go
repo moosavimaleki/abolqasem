@@ -2,8 +2,8 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -47,6 +47,9 @@ func workspaceSendTmuxChat(command agent.SendCommand) (agent.SendResult, bool, e
 	if strings.TrimSpace(command.ChatID) == "" {
 		runtimeCommand = workspaceTmuxCommandWithModel(runtimeCommand, provider, command.Model)
 	}
+	if runtimeCommand == "" && !tmuxruntime.SessionExists(context.Background(), chat.TmuxSession) {
+		return agent.SendResult{}, true, errors.New("choose how to launch this tmux session first")
+	}
 	if err := tmuxruntime.EnsureSession(context.Background(), chat.TmuxSession, projectPath, runtimeCommand); err != nil {
 		return agent.SendResult{}, true, err
 	}
@@ -74,16 +77,65 @@ func workspaceCancelTmuxChat(chatID string) (bool, error) {
 	return true, tmuxruntime.Interrupt(context.Background(), chat.TmuxSession)
 }
 
-func workspaceRestartTmuxChat(chatID string) error {
-	chat, project, err := workspaceChatProjectRequired(chatID)
+type workspaceRestartTmuxCommand struct {
+	ChatID      string
+	Provider    string
+	TmuxCommand string
+}
+
+var restartTmuxRuntime = tmuxruntime.RestartSession
+
+func decodeRestartTmuxCommand(raw json.RawMessage) (workspaceRestartTmuxCommand, error) {
+	var payload struct {
+		ChatID      string `json:"chatId"`
+		Provider    string `json:"provider"`
+		TmuxCommand string `json:"tmuxCommand"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return workspaceRestartTmuxCommand{}, err
+	}
+	payload.ChatID = strings.TrimSpace(payload.ChatID)
+	payload.Provider = normalizeWorkspaceTmuxProvider(payload.Provider)
+	payload.TmuxCommand = strings.TrimSpace(payload.TmuxCommand)
+	if payload.ChatID == "" {
+		return workspaceRestartTmuxCommand{}, errors.New("chatId is required")
+	}
+	if payload.Provider == "" {
+		return workspaceRestartTmuxCommand{}, errors.New("provider is required")
+	}
+	if payload.TmuxCommand == "" {
+		return workspaceRestartTmuxCommand{}, errors.New("tmuxCommand is required")
+	}
+	return workspaceRestartTmuxCommand{
+		ChatID:      payload.ChatID,
+		Provider:    payload.Provider,
+		TmuxCommand: payload.TmuxCommand,
+	}, nil
+}
+
+func workspaceRestartTmuxChat(request workspaceRestartTmuxCommand) error {
+	chat, project, err := workspaceChatProjectRequired(request.ChatID)
 	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(chat.TmuxSession) == "" {
 		return errors.New("chat has no tmux session")
 	}
+	provider := normalizeWorkspaceTmuxProvider(request.Provider)
+	if provider == "" {
+		return errors.New("provider is required")
+	}
+	tmuxCommand := strings.TrimSpace(request.TmuxCommand)
+	if tmuxCommand == "" {
+		return errors.New("tmuxCommand is required")
+	}
+	if err := (&workspaceEventStore{store: workspaceStore()}).SetTmuxLaunch(chat.ID, provider, tmuxCommand); err != nil {
+		return err
+	}
+	chat.Provider = &provider
+	chat.TmuxCommand = tmuxCommand
 	command := workspaceTmuxCommandForChat(chat, "")
-	return tmuxruntime.RestartSession(context.Background(), chat.TmuxSession, project.LocalPath, command)
+	return restartTmuxRuntime(context.Background(), chat.TmuxSession, project.LocalPath, command)
 }
 
 func workspaceApplyRuntimePreferences(command workspaceRuntimePreferenceCommand) error {
@@ -270,42 +322,6 @@ func workspaceHookRuntimeSummary(meta state.SessionMeta, event state.HookEvent, 
 	return workspacePromptPreview(firstNonEmpty(event.LastPreview, event.PromptPreview, meta.LastPreview, meta.FirstPreview, chat.LastSummary))
 }
 
-type workspaceTmuxProviderCommandBuilder interface {
-	Build(provider string) string
-}
-
-type workspaceSettingsTmuxProviderCommandBuilder struct{}
-
-var workspaceTmuxProviderCommands workspaceTmuxProviderCommandBuilder = workspaceSettingsTmuxProviderCommandBuilder{}
-
-func (workspaceSettingsTmuxProviderCommandBuilder) Build(provider string) string {
-	return workspaceTmuxProviderCommand(provider)
-}
-
-func workspaceTmuxProviderCommand(provider string) string {
-	provider = normalizeWorkspaceTmuxProvider(provider)
-	if provider == "" {
-		provider = "codex"
-	}
-	if command := strings.TrimSpace(os.Getenv("ABOLQASEM_TMUX_" + strings.ToUpper(provider) + "_COMMAND")); command != "" {
-		return workspaceResolveTmuxProviderCommand(provider, command)
-	}
-	if settings, err := state.LoadSettings(); err == nil {
-		providerexec.SetConfiguredExecutables(settings.ProviderExecutables)
-		if command := strings.TrimSpace(settings.TmuxCommands[provider]); command != "" {
-			return workspaceResolveTmuxProviderCommand(provider, command)
-		}
-	}
-	switch provider {
-	case "claude":
-		return workspaceResolveTmuxProviderCommand(provider, "claude")
-	case "gemini":
-		return workspaceResolveTmuxProviderCommand(provider, "gemini")
-	default:
-		return workspaceResolveTmuxProviderCommand(provider, tmuxruntime.DefaultCommand())
-	}
-}
-
 func workspaceResolveTmuxProviderCommand(provider string, command string) string {
 	return providerexec.ResolveCommand(provider, command)
 }
@@ -317,7 +333,7 @@ func workspaceTmuxCommandForChat(chat readmodels.ChatRecord, providerOverride st
 	}
 	base := strings.TrimSpace(chat.TmuxCommand)
 	if base == "" {
-		base = workspaceTmuxProviderCommands.Build(provider)
+		return ""
 	}
 	base = workspaceResolveTmuxProviderCommand(provider, base)
 	token := firstNonEmpty(chat.NativeSessionID, derefWorkspaceString(chat.SessionToken), derefWorkspaceString(chat.PendingForkSessionToken))

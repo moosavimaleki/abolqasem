@@ -82,6 +82,13 @@ func EnsureSession(ctx context.Context, sessionName string, cwd string, command 
 	return runTmuxCommand(ctx, buildEnsureSessionArgs(sessionName, cwd, command)...)
 }
 
+func SessionExists(ctx context.Context, sessionName string) bool {
+	if requireTmux() != nil {
+		return false
+	}
+	return hasSession(ctx, NormalizeSessionName(sessionName))
+}
+
 func KillSession(ctx context.Context, sessionName string) error {
 	if err := requireTmux(); err != nil {
 		return err

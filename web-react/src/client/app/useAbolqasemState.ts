@@ -37,6 +37,7 @@ function sameRuntime(left: ChatSnapshot["runtime"] | null | undefined, right: Ch
     && left.pendingForkSessionToken === right.pendingForkSessionToken
     && left.tmuxSession === right.tmuxSession
     && left.tmuxCommand === right.tmuxCommand
+    && left.tmuxActive === right.tmuxActive
     && left.readOnly === right.readOnly
     && left.legacySessionKey === right.legacySessionKey
 }
@@ -466,6 +467,10 @@ export function shouldRefreshActiveTmuxChat(activeChatId: string | null, tmuxSes
   return Boolean(activeChatId && tmuxSession?.trim() && connectionStatus === "connected")
 }
 
+export function shouldRequestTmuxLaunch(runtime: ChatSnapshot["runtime"] | null | undefined) {
+  return Boolean(runtime?.tmuxSession?.trim() && !runtime.tmuxActive && !runtime.tmuxCommand?.trim())
+}
+
 export function getNewestRemainingChatId(projectGroups: SidebarData["projectGroups"], activeChatId: string): string | null {
   const projectGroup = projectGroups.find((group) => group.chats.some((chat) => chat.chatId === activeChatId))
   if (!projectGroup) return null
@@ -723,6 +728,12 @@ function getLaunchProviderChoices(availableProviders: readonly ProviderCatalogEn
     description: `Start a new ${provider.label} tmux session for this project.`,
     icon: provider.id,
   }))
+}
+
+interface TmuxLaunchSelection {
+  provider: AgentProvider
+  tmuxCommand: string
+  composerState: ComposerState
 }
 
 function getLaunchModeChoices(provider: AgentProvider, baseCommand: string) {
@@ -1024,6 +1035,7 @@ export interface AbolqasemState {
   handleRemoveQueuedMessage: (queuedMessageId: string) => Promise<void>
   handleCancel: () => Promise<void>
   handleStopDraining: () => Promise<void>
+  handleRestartTmuxSession: () => Promise<boolean>
   handleRenameChat: (chat: SidebarChatRow) => Promise<void>
   handleRenameProject: (projectId: string, sidebarTitle: string | undefined, realTitle: string) => Promise<void>
   handleArchiveChat: (chat: SidebarChatRow) => Promise<void>
@@ -1091,6 +1103,7 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
   const [optimisticProcessing, setOptimisticProcessing] = useState<OptimisticProcessingState | null>(null)
   const [focusEpoch, setFocusEpoch] = useState(0)
   const creatingChatProjectIdRef = useRef<string | null>(null)
+  const autoLaunchPromptChatIdRef = useRef<string | null>(null)
   const sendToStartingProfilesRef = useRef<Map<string, SendToStartingTrace>>(new Map())
   const pendingArchiveChatIdsRef = useRef<Set<string>>(new Set())
   const draftChatIds = useChatInputStore(useShallow((state) => Object.keys(state.drafts).sort()))
@@ -1758,6 +1771,74 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
     }
   }, [activeChatId, isHistoryLoading, socket])
 
+  const chooseTmuxLaunch = useCallback(async (options: {
+    suggestedProvider?: AgentProvider | null
+    sourceComposerState: ComposerState
+    askProvider: boolean
+    currentCommand?: string
+  }): Promise<TmuxLaunchSelection | null> => {
+    const settings = useAppSettingsStore.getState().settings
+    const chatPreferences = useChatPreferencesStore.getState()
+    let provider = normalizeLaunchProvider(options.suggestedProvider ?? null)
+
+    if (options.askProvider || !provider) {
+      const defaultProvider = getDefaultLaunchProvider(provider, settings?.defaultProvider, options.sourceComposerState.provider)
+      const providerInput = await dialog.choice({
+        title: "Launch agent",
+        description: "Proxy and executable settings are applied automatically.",
+        choices: getLaunchProviderChoices(availableProviders.length ? availableProviders : PROVIDERS),
+        initialValue: defaultProvider,
+        dir: "ltr",
+      })
+      if (providerInput === null) return null
+      provider = normalizeLaunchProvider(providerInput)
+    }
+
+    if (!provider) {
+      await dialog.alert({
+        title: "Invalid provider",
+        description: "Use one of: codex, claude, gemini.",
+        dir: "ltr",
+      })
+      return null
+    }
+
+    const composerState = getComposerStateForActiveProvider(
+      options.sourceComposerState,
+      provider,
+      chatPreferences.providerDefaults
+    )
+    const baseCommand = appendLaunchModelFlag(getDefaultTmuxCommand(provider, settings), composerState.model)
+    const launchModeChoices = getLaunchModeChoices(provider, baseCommand)
+    const currentCommand = options.currentCommand?.trim() ?? ""
+    const initialValue = launchModeChoices.some((choice) => choice.value === currentCommand)
+      ? currentCommand
+      : baseCommand
+    const modeInput = await dialog.choice({
+      title: `Launch ${getProviderLabel(availableProviders, provider)}`,
+      description: "Choose how this agent should run in tmux.",
+      choices: launchModeChoices,
+      initialValue,
+      dir: "ltr",
+    })
+    if (modeInput === null) return null
+    const customCommand = modeInput === "custom"
+      ? await dialog.prompt({
+        title: "Custom launch command",
+        description: "Full command with any provider-specific flags.",
+        initialValue: currentCommand || baseCommand,
+        dir: "ltr",
+      })
+      : modeInput
+    if (customCommand === null) return null
+
+    return {
+      provider,
+      tmuxCommand: customCommand.trim() || baseCommand,
+      composerState,
+    }
+  }, [availableProviders, dialog])
+
   const createChatForProject = useCallback(async (projectId: string) => {
     if (creatingChatProjectIdRef.current) {
       return
@@ -1775,49 +1856,19 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
         activeChatId ? runtime?.provider ?? null : null,
         chatPreferences.providerDefaults
       )
-      const settings = useAppSettingsStore.getState().settings
-      const defaultProvider = getDefaultLaunchProvider(runtime?.provider, settings?.defaultProvider, sourceComposerState.provider)
-      const providerChoices = getLaunchProviderChoices(availableProviders.length ? availableProviders : PROVIDERS)
-      const providerInput = await dialog.choice({
-        title: "Launch agent",
-        description: "Proxy and executable settings are applied automatically.",
-        choices: providerChoices,
-        initialValue: defaultProvider,
-        dir: "ltr",
+      const selection = await chooseTmuxLaunch({
+        suggestedProvider: runtime?.provider,
+        sourceComposerState,
+        askProvider: true,
       })
-      if (providerInput === null) return
-      const provider = normalizeLaunchProvider(providerInput)
-      if (!provider) {
-        await dialog.alert({
-          title: "Invalid provider",
-          description: "Use one of: codex, claude, gemini.",
-          dir: "ltr",
-        })
-        return
-      }
-      const providerComposerState = getComposerStateForActiveProvider(sourceComposerState, provider, chatPreferences.providerDefaults)
-      const baseCommand = appendLaunchModelFlag(getDefaultTmuxCommand(provider, settings), providerComposerState.model)
-      const launchModeChoices = getLaunchModeChoices(provider, baseCommand)
-      const modeInput = await dialog.choice({
-        title: `Launch ${getProviderLabel(availableProviders, provider)}`,
-        description: "Choose how this agent should run in tmux.",
-        choices: launchModeChoices,
-        initialValue: baseCommand,
-        dir: "ltr",
+      if (!selection) return
+      const result = await socket.command<{ chatId: string }>({
+        type: "chat.create",
+        projectId,
+        provider: selection.provider,
+        tmuxCommand: selection.tmuxCommand,
       })
-      if (modeInput === null) return
-      const customCommand = modeInput === "custom"
-        ? await dialog.prompt({
-          title: "Custom launch command",
-          description: "Full command with any provider-specific flags.",
-          initialValue: baseCommand,
-          dir: "ltr",
-        })
-        : modeInput
-      if (customCommand === null) return
-      const tmuxCommand = customCommand.trim() || baseCommand
-      const result = await socket.command<{ chatId: string }>({ type: "chat.create", projectId, provider, tmuxCommand })
-      chatPreferences.initializeComposerForChat(result.chatId, { sourceState: providerComposerState })
+      chatPreferences.initializeComposerForChat(result.chatId, { sourceState: selection.composerState })
       setSelectedProjectId(projectId)
       setPendingChatId(result.chatId)
       navigate(chatRoute(result.chatId))
@@ -1827,7 +1878,45 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
       creatingChatProjectIdRef.current = null
       setCreatingChatProjectId(null)
     }
-  }, [activeChatId, availableProviders, dialog, navigate, runtime?.provider, socket])
+  }, [activeChatId, chooseTmuxLaunch, navigate, runtime?.provider, socket])
+
+  const handleRestartTmuxSession = useCallback(async () => {
+    if (!runtime?.chatId || !runtime.tmuxSession?.trim()) return false
+    const chatPreferences = useChatPreferencesStore.getState()
+    const sourceComposerState = getComposerStateForActiveProvider(
+      chatPreferences.getComposerState(runtime.chatId),
+      runtime.provider,
+      chatPreferences.providerDefaults
+    )
+    const selection = await chooseTmuxLaunch({
+      suggestedProvider: runtime.provider,
+      sourceComposerState,
+      askProvider: !normalizeLaunchProvider(runtime.provider),
+      currentCommand: runtime.tmuxCommand,
+    })
+    if (!selection) return false
+
+    await socket.command({
+      type: "chat.restartTmux",
+      chatId: runtime.chatId,
+      provider: selection.provider,
+      tmuxCommand: selection.tmuxCommand,
+    })
+    return true
+  }, [chooseTmuxLaunch, runtime, socket])
+
+  useEffect(() => {
+    autoLaunchPromptChatIdRef.current = null
+  }, [activeChatId])
+
+  useEffect(() => {
+    if (!activeChatId || runtime?.chatId !== activeChatId || !shouldRequestTmuxLaunch(runtime)) return
+    if (autoLaunchPromptChatIdRef.current === activeChatId) return
+    autoLaunchPromptChatIdRef.current = activeChatId
+    void handleRestartTmuxSession().catch((error: unknown) => {
+      setCommandError(error instanceof Error ? error.message : String(error))
+    })
+  }, [activeChatId, handleRestartTmuxSession, runtime])
 
   const resolveProjectIdForStartChat = useCallback(async (intent: StartChatIntent): Promise<{ projectId: string; localPath?: string }> => {
     if (intent.kind === "project_id") {
@@ -2577,6 +2666,7 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
     handleRemoveQueuedMessage,
     handleCancel,
     handleStopDraining,
+    handleRestartTmuxSession,
     handleRenameChat,
     handleRenameProject,
     handleArchiveChat,

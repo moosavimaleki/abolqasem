@@ -5,8 +5,10 @@ import (
 	"abolqasem/internal/state"
 	"abolqasem/internal/workspace/protocol"
 	"abolqasem/internal/workspace/terminal"
+	"abolqasem/internal/workspace/tmuxruntime"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/url"
 	"strings"
@@ -627,16 +629,16 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
 		return &response
 	case protocol.CommandChatRestartTmux:
-		chatID, err := decodeChatID(envelope.Command)
+		command, err := decodeRestartTmuxCommand(envelope.Command)
 		if err != nil {
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
 		}
-		if err := workspaceRestartTmuxChat(chatID); err != nil {
+		if err := workspaceRestartTmuxChat(command); err != nil {
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
 		}
-		workspaceConnections.broadcast(chatID)
+		workspaceConnections.broadcast(command.ChatID)
 		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
 		return &response
 	case protocol.CommandChatApplyRuntimePreferences:
@@ -1144,13 +1146,18 @@ func workspaceTerminalCreateRequest(raw json.RawMessage) (terminal.CreateRequest
 		tmuxSession = workspaceChatTmuxSession(payload.ChatID)
 	}
 	if mode == "tmux" && strings.TrimSpace(payload.ChatID) != "" {
-		if chat, _, err := workspaceChatProjectRequired(payload.ChatID); err == nil {
-			if strings.TrimSpace(chat.TmuxSession) != "" {
-				tmuxSession = chat.TmuxSession
-			}
-			if command == "" {
-				command = workspaceTmuxCommandForChat(chat, "")
-			}
+		chat, _, err := workspaceChatProjectRequired(payload.ChatID)
+		if err != nil {
+			return terminal.CreateRequest{}, err
+		}
+		if strings.TrimSpace(chat.TmuxSession) != "" {
+			tmuxSession = chat.TmuxSession
+		}
+		if command == "" {
+			command = workspaceTmuxCommandForChat(chat, "")
+		}
+		if command == "" && !tmuxruntime.SessionExists(context.Background(), tmuxSession) {
+			return terminal.CreateRequest{}, errors.New("choose how to launch this tmux session first")
 		}
 	}
 	return terminal.CreateRequest{

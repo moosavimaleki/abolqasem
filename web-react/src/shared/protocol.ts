@@ -147,7 +147,7 @@ export type ClientCommand =
   | { type: "chat.setDraftProtection"; chatIds: string[] }
   | { type: "chat.markRead"; chatId: string }
   | { type: "chat.refresh"; chatId: string }
-  | { type: "chat.restartTmux"; chatId: string }
+  | { type: "chat.restartTmux"; chatId: string; provider: AgentProvider; tmuxCommand: string }
   | { type: "chat.applyRuntimePreferences"; chatId: string; provider: AgentProvider; model: string; modelOptions?: ModelOptions }
   | {
       type: "chat.send"

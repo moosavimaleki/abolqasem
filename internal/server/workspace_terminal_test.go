@@ -53,11 +53,15 @@ func TestWorkspaceTerminalCreateRequestBuildsTmuxSessionFromChatID(t *testing.T)
 	if err != nil {
 		t.Fatalf("workspaceOpenProject returned error: %v", err)
 	}
+	chat, err := (&workspaceEventStore{store: workspaceStore()}).CreateChatWithOptions(project.ID, "codex", "codex --sandbox workspace-write")
+	if err != nil {
+		t.Fatalf("CreateChatWithOptions returned error: %v", err)
+	}
 	raw, err := json.Marshal(map[string]any{
 		"projectId":  project.ID,
 		"terminalId": "term-chat",
 		"mode":       "tmux",
-		"chatId":     "chat-95501291d512c628",
+		"chatId":     chat.ID,
 		"cols":       100,
 		"rows":       30,
 	})
@@ -72,8 +76,11 @@ func TestWorkspaceTerminalCreateRequestBuildsTmuxSessionFromChatID(t *testing.T)
 	if request.Mode != "tmux" {
 		t.Fatalf("expected tmux mode, got %q", request.Mode)
 	}
-	if request.TmuxSession != "abolqasem-chat-95501291d512c628" {
+	if request.TmuxSession != chat.TmuxSession {
 		t.Fatalf("unexpected tmux session %q", request.TmuxSession)
+	}
+	if request.Command == "" {
+		t.Fatal("expected persisted tmux command")
 	}
 }
 
@@ -89,6 +96,27 @@ func TestWorkspaceTerminalCreateRequestRejectsUnknownProject(t *testing.T) {
 	}
 	if _, err := workspaceTerminalCreateRequest(raw); err == nil {
 		t.Fatal("expected unknown project to be rejected")
+	}
+}
+
+func TestWorkspaceTerminalCreateRequestRejectsUnknownTmuxLaunch(t *testing.T) {
+	withWorkspaceComposerStore(t)
+	project, err := workspaceOpenProject(t.TempDir(), "Project")
+	if err != nil {
+		t.Fatalf("workspaceOpenProject returned error: %v", err)
+	}
+	chat, err := (&workspaceEventStore{store: workspaceStore()}).CreateChat(project.ID)
+	if err != nil {
+		t.Fatalf("CreateChat returned error: %v", err)
+	}
+	raw, _ := json.Marshal(map[string]any{
+		"projectId":  project.ID,
+		"terminalId": "term-unknown-launch",
+		"mode":       "tmux",
+		"chatId":     chat.ID,
+	})
+	if _, err := workspaceTerminalCreateRequest(raw); err == nil {
+		t.Fatal("expected tmux terminal to require a saved launch choice")
 	}
 }
 

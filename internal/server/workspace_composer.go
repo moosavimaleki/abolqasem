@@ -271,6 +271,18 @@ func (s *workspaceEventStore) SetChatProvider(chatID string, provider string) er
 	return s.store.Append(events.StreamChats, event)
 }
 
+func (s *workspaceEventStore) SetTmuxLaunch(chatID string, provider string, tmuxCommand string) error {
+	event, err := events.New(events.TypeChatRuntimeSet, map[string]any{
+		"chatId":      chatID,
+		"provider":    strings.TrimSpace(provider),
+		"tmuxCommand": strings.TrimSpace(tmuxCommand),
+	})
+	if err != nil {
+		return err
+	}
+	return s.store.Append(events.StreamChats, event)
+}
+
 func (s *workspaceEventStore) SetPlanMode(chatID string, planMode bool) error {
 	event, err := events.New(events.TypeChatPlanModeSet, map[string]any{"chatId": chatID, "planMode": planMode})
 	if err != nil {

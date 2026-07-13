@@ -21,6 +21,7 @@ import {
   shouldMarkActiveChatRead,
   shouldAutoFollowTranscript,
   shouldRefreshActiveTmuxChat,
+  shouldRequestTmuxLaunch,
   shouldRenderOptimisticWebPrompt,
 } from "./useAbolqasemState"
 import type { ChatAttachment, ChatProviderPreferences, ChatSnapshot, SidebarData, UserPromptEntry } from "../../shared/types"
@@ -170,6 +171,30 @@ describe("appendLaunchModelFlag", () => {
 
   test("quotes unusual model ids safely", () => {
     expect(appendLaunchModelFlag("claude", "custom model")).toBe("claude --model 'custom model'")
+  })
+})
+
+describe("shouldRequestTmuxLaunch", () => {
+  test("asks for a launch choice when an imported session is not active and has no saved command", () => {
+    expect(shouldRequestTmuxLaunch({
+      tmuxSession: "abolqasem-chat-1",
+      tmuxActive: false,
+    } as ChatSnapshot["runtime"])).toBe(true)
+  })
+
+  test("does not ask while the tmux session is already active", () => {
+    expect(shouldRequestTmuxLaunch({
+      tmuxSession: "abolqasem-chat-1",
+      tmuxActive: true,
+    } as ChatSnapshot["runtime"])).toBe(false)
+  })
+
+  test("does not ask when the session already remembers its launch command", () => {
+    expect(shouldRequestTmuxLaunch({
+      tmuxSession: "abolqasem-chat-1",
+      tmuxActive: false,
+      tmuxCommand: "codex --dangerously-bypass-approvals-and-sandbox",
+    } as ChatSnapshot["runtime"])).toBe(false)
   })
 })
 

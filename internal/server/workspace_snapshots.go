@@ -107,7 +107,9 @@ func workspaceTmuxTranscriptSnapshot(chat readmodels.ChatRecord, recentLimit int
 	}
 	if firstNonEmpty(chat.NativeSessionID, derefWorkspaceString(chat.SessionToken), derefWorkspaceString(chat.PendingForkSessionToken)) != "" {
 		if projectPath, err := workspaceProjectLocalPathRequired(chat.ProjectID); err == nil {
-			_ = tmuxruntime.EnsureSession(context.Background(), chat.TmuxSession, projectPath, workspaceTmuxCommandForChat(chat, ""))
+			if command := workspaceTmuxCommandForChat(chat, ""); command != "" {
+				_ = tmuxruntime.EnsureSession(context.Background(), chat.TmuxSession, projectPath, command)
+			}
 		}
 	}
 	output, err := tmuxruntime.Capture(context.Background(), chat.TmuxSession, lines)
@@ -170,6 +172,10 @@ func applyTmuxRuntimeStatus(snapshot *readmodels.ChatSnapshot) {
 	if snapshot == nil || strings.TrimSpace(snapshot.Runtime.TmuxSession) == "" {
 		return
 	}
+	if !tmuxruntime.SessionExists(context.Background(), snapshot.Runtime.TmuxSession) {
+		return
+	}
+	snapshot.Runtime.TmuxActive = true
 	status, err := tmuxruntime.ReadStatus(context.Background(), snapshot.Runtime.TmuxSession)
 	if err != nil {
 		return
