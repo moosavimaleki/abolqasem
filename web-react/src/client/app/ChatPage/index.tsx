@@ -1888,6 +1888,7 @@ export function ChatPage() {
           onToggleFilesPanel={projectId ? handleToggleFilesPanel : undefined}
           onOpenExternal={handleOpenExternal}
           activeChatId={state.activeChatId}
+          messages={state.messages}
           onChatSearchResultSelect={state.activeChatId ? handleChatSearchResultSelect : undefined}
           editorPreset={editorPreset}
           editorCommandTemplate={editorCommandTemplate}

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react"
-import { Copy, Files, GitBranch, Globe, Loader2, Menu, MessageSquare, MoreHorizontal, PanelLeft, PanelRight, RefreshCw, Search as SearchIcon, Settings2, SquarePen, Terminal } from "lucide-react"
+import { Check, Copy, Files, GitBranch, Globe, Loader2, Menu, MessageSquare, MoreHorizontal, PanelLeft, PanelRight, RefreshCw, Search as SearchIcon, Settings2, SquarePen, Terminal } from "lucide-react"
 import type { EditorOpenSettings, EditorPreset, OpenExternalAction } from "../../../shared/protocol"
 import { Button } from "../ui/button"
 import { CardHeader } from "../ui/card"
@@ -12,6 +12,10 @@ import { OpenExternalSelect } from "../open-external-menu"
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "../ui/context-menu"
 import { useI18n } from "../../i18n/context"
 import { ReaderAppearancePopover } from "../appearance/ReaderAppearance"
+import type { HydratedTranscriptMessage } from "../../../shared/types"
+import { copyTextToClipboard } from "../messages/shared"
+import { buildSessionCopyText, collectSessionCopyTurns } from "../../app/ChatPage/sessionCopy"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select"
 
 export interface ChatSearchMatch {
   message_id?: string
@@ -224,6 +228,95 @@ function ChatSessionSearchPopover({
   )
 }
 
+function ChatSessionCopyPopover({
+  messages,
+  align,
+  isPersian,
+}: {
+  messages: HydratedTranscriptMessage[]
+  align: "start" | "end"
+  isPersian: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const [turnCount, setTurnCount] = useState("5")
+  const [copied, setCopied] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const turnsAvailable = collectSessionCopyTurns(messages).length
+  const title = isPersian ? "کپی سشن" : "Copy session"
+  const labels = isPersian ? { user: "کاربر", assistant: "AI" } : { user: "User", assistant: "AI" }
+  const selectedTurns = Number(turnCount)
+  const copiedTurns = Math.min(selectedTurns, turnsAvailable)
+
+  const handleCopy = async () => {
+    const text = buildSessionCopyText(messages, selectedTurns, labels)
+    if (!text) return
+    try {
+      await copyTextToClipboard(text)
+      setCopied(true)
+      setError(null)
+      window.setTimeout(() => setCopied(false), 1800)
+    } catch {
+      setError(isPersian ? "کپی در کلیپ‌بورد ناموفق بود." : "Could not copy to the clipboard.")
+    }
+  }
+
+  return (
+    <Popover open={open} onOpenChange={(nextOpen) => {
+      setOpen(nextOpen)
+      if (!nextOpen) setError(null)
+    }}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="none"
+          title={title}
+          aria-label={title}
+          className="gap-1.5 border border-border/0 px-2 h-9 hover:!border-border/0 hover:!bg-transparent"
+        >
+          <Copy strokeWidth={2.1} className="h-4 w-4" />
+          <span className="text-xs font-medium">{title}</span>
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align={align} sideOffset={8} className="w-[min(calc(100vw-2rem),300px)] p-3">
+        <div className="space-y-3">
+          <div>
+            <div className="text-sm font-medium text-foreground">{title}</div>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              {isPersian
+                ? "هر turn شامل یک پیام کاربر و همهٔ پاسخ‌های AI تا پیام بعدی است."
+                : "Each turn includes one user message and every AI reply before the next user message."}
+            </p>
+          </div>
+          <label className="block space-y-1.5">
+            <span className="text-xs font-medium text-muted-foreground">{isPersian ? "تعداد turn آخر" : "Last turns"}</span>
+            <Select value={turnCount} onValueChange={setTurnCount}>
+              <SelectTrigger aria-label={isPersian ? "تعداد turn برای کپی" : "Number of turns to copy"} className="h-10">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {[1, 3, 5, 10].map((count) => (
+                  <SelectItem key={count} value={String(count)}>{count}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </label>
+          {turnsAvailable === 0 ? (
+            <p role="status" className="text-xs text-muted-foreground">{isPersian ? "هنوز turn قابل کپی وجود ندارد." : "There are no turns to copy yet."}</p>
+          ) : null}
+          {error ? <p role="alert" className="text-xs text-destructive">{error}</p> : null}
+          <Button type="button" className="w-full" onClick={() => void handleCopy()} disabled={turnsAvailable === 0}>
+            {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+            {copied
+              ? (isPersian ? "کپی شد" : "Copied")
+              : (isPersian ? `کپی ${copiedTurns} turn` : `Copy ${copiedTurns} turn${copiedTurns === 1 ? "" : "s"}`)}
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 interface Props {
   sidebarCollapsed: boolean
   onOpenSidebar: () => void
@@ -241,6 +334,7 @@ interface Props {
   onToggleFilesPanel?: () => void
   onOpenExternal?: (action: OpenExternalAction, editor?: EditorOpenSettings) => void
   activeChatId?: string | null
+  messages?: HydratedTranscriptMessage[]
   onChatSearchResultSelect?: (match: ChatSearchMatch) => void | Promise<void>
   editorPreset?: EditorPreset
   editorCommandTemplate?: string
@@ -273,6 +367,7 @@ export function ChatNavbar({
   onToggleFilesPanel,
   onOpenExternal,
   activeChatId,
+  messages = [],
   onChatSearchResultSelect,
   editorPreset = "cursor",
   editorCommandTemplate,
@@ -336,6 +431,7 @@ export function ChatNavbar({
   const hasHeaderActions = Boolean(
     onOpenExternal
     || canSearchCurrentChat
+    || messages.length > 0
     || onToggleChatTerminalMode
     || onToggleEmbeddedTerminal
     || onToggleGitPanel
@@ -424,7 +520,7 @@ export function ChatNavbar({
           ) : null}
         </div>
 
-        {(localPath || canSearchCurrentChat || onToggleChatTerminalMode) && hasHeaderActions ? (
+        {(localPath || canSearchCurrentChat || messages.length > 0 || onToggleChatTerminalMode) && hasHeaderActions ? (
           <div className="flex items-center gap-2 flex-shrink-0">
             {localPath && onOpenExternal ? (
               <div className="hidden md:flex h-[30px] items-center overflow-hidden border border-border/70 rounded-[9px] backdrop-blur-lg">
@@ -440,6 +536,11 @@ export function ChatNavbar({
             ) : null}
             {(canSearchCurrentChat || onToggleEmbeddedTerminal || onToggleGitPanel || onToggleBrowserPanel || onToggleFilesPanel) ? (
               <div className="flex items-center  rounded-[9px] h-[30px]">
+                <ChatSessionCopyPopover
+                  messages={messages}
+                  align={isPersian ? "start" : "end"}
+                  isPersian={isPersian}
+                />
                 {canSearchCurrentChat && activeChatId && onChatSearchResultSelect ? (
                   <ChatSessionSearchPopover
                     chatId={activeChatId}
