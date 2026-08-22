@@ -78,6 +78,74 @@ func TestParseMessagesCodexKeepsRealRepeatedUserPrompts(t *testing.T) {
 	}
 }
 
+func TestParseMessagesCodexSkipsEncryptedAndImageContentBlocks(t *testing.T) {
+	path := writeTranscript(t, strings.Join([]string{
+		`{"type":"response_item","payload":{"type":"agent_message","content":[{"type":"input_text","text":"پاسخ قابل نمایش"},{"type":"encrypted_content","encrypted_content":"gAAAA-should-not-render"}]}}`,
+		`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"تصویر را بررسی کن"},{"type":"input_image","image_url":"data:image/png;base64,should-not-render"},{"type":"input_text","text":"data:image/png;base64,also-should-not-render"}]}}`,
+		`{"type":"response_item","payload":{"type":"reasoning","encrypted_content":"gAAAA-reasoning-should-not-render"}}`,
+	}, "\n"))
+
+	result, err := ParseMessages("codex", "session-1", path, ParseOptions{Limit: 10})
+	if err != nil {
+		t.Fatalf("ParseMessages returned error: %v", err)
+	}
+	if len(result.Items) != 2 {
+		t.Fatalf("expected visible text messages only, got %d: %#v", len(result.Items), result.Items)
+	}
+	if result.Items[0].Role != "assistant" || result.Items[0].Text != "پاسخ قابل نمایش" {
+		t.Fatalf("unexpected assistant message: %#v", result.Items[0])
+	}
+	if result.Items[1].Role != "user" || result.Items[1].Text != "تصویر را بررسی کن" {
+		t.Fatalf("unexpected user message: %#v", result.Items[1])
+	}
+	for _, item := range result.Items {
+		if strings.Contains(item.Text, "should-not-render") || strings.Contains(item.Text, "encrypted_content") {
+			t.Fatalf("internal Codex payload leaked into transcript: %#v", item)
+		}
+	}
+}
+
+func TestParseMessagesCodexSkipsInterAgentMessages(t *testing.T) {
+	path := writeTranscript(t, strings.Join([]string{
+		`{"type":"event_msg","payload":{"type":"agent_message","message":"پاسخ واقعی دستیار"}}`,
+		`{"type":"response_item","payload":{"type":"agent_message","author":"/root/reviewer","recipient":"/root","content":[{"type":"input_text","text":"Message Type: FINAL_ANSWER\nPayload: خروجی داخلی"}]}}`,
+	}, "\n"))
+
+	result, err := ParseMessages("codex", "session-1", path, ParseOptions{Limit: 10})
+	if err != nil {
+		t.Fatalf("ParseMessages returned error: %v", err)
+	}
+	if len(result.Items) != 1 {
+		t.Fatalf("expected only the user-facing assistant answer, got %d: %#v", len(result.Items), result.Items)
+	}
+	if result.Items[0].Role != "assistant" || result.Items[0].Text != "پاسخ واقعی دستیار" {
+		t.Fatalf("unexpected visible message: %#v", result.Items[0])
+	}
+}
+
+func TestParseMessagesCodexCurrentResponseItemFormatKeepsOnlyConversation(t *testing.T) {
+	path := writeTranscript(t, strings.Join([]string{
+		`{"type":"response_item","payload":{"type":"message","role":"developer","content":[{"type":"input_text","text":"internal runtime instruction"}]}}`,
+		`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"پرسش واقعی کاربر"},{"type":"input_image","image_url":"data:image/png;base64,do-not-render"}]}}`,
+		`{"type":"response_item","payload":{"type":"reasoning","encrypted_content":"gAAAA-do-not-render"}}`,
+		`{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"پاسخ واقعی دستیار"}]}}`,
+		`{"type":"event_msg","payload":{"type":"item_completed","item":{"type":"reasoning","encrypted_content":"gAAAA-do-not-render"}}}`,
+	}, "\n"))
+
+	result, err := ParseMessages("codex", "session-1", path, ParseOptions{Limit: 10})
+	if err != nil {
+		t.Fatalf("ParseMessages returned error: %v", err)
+	}
+	if len(result.Items) != 2 {
+		t.Fatalf("expected only user and assistant messages, got %d: %#v", len(result.Items), result.Items)
+	}
+	if result.Items[0].Role != "user" || result.Items[0].Text != "پرسش واقعی کاربر" {
+		t.Fatalf("unexpected user message: %#v", result.Items[0])
+	}
+	if result.Items[1].Role != "assistant" || result.Items[1].Text != "پاسخ واقعی دستیار" {
+		t.Fatalf("unexpected assistant message: %#v", result.Items[1])
+	}
+}
 func TestParseMessagesClaudeArrayContent(t *testing.T) {
 	path := writeTranscript(t, strings.Join([]string{
 		`{"message":{"role":"user","content":[{"type":"text","text":"hello"}]}}`,

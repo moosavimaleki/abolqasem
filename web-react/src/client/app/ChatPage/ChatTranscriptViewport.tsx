@@ -519,6 +519,7 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
         <QueuedUserMessage
           key={message.id}
           message={message}
+          onSendNow={() => void onSteerQueuedMessage(message.id)}
           onRemove={() => void onRemoveQueuedMessage(message.id)}
         />
       ))}

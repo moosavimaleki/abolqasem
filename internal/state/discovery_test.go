@@ -121,6 +121,36 @@ func TestDiscoverSessionsPrefersExistingCanonicalSessionIDForCodexTranscript(t *
 	}
 }
 
+func TestDiscoverSessionsDoesNotReplaceNewerCodexTranscriptWithOlderRollout(t *testing.T) {
+	root := t.TempDir()
+	codexRoot := filepath.Join(root, "codex", "sessions")
+	sessionID := "019e2a32-513d-7c02-a78c-ab1b0130635c"
+	completePath := writeDiscoveryFile(t,
+		filepath.Join(codexRoot, "2026", "05", "15", "rollout-2026-05-15T09-23-21-"+sessionID+".jsonl"),
+		`{"session_id":"`+sessionID+`","cwd":"/work/project","payload":{"type":"user_message","message":"first"}}`+"\n",
+	)
+	partialPath := writeDiscoveryFile(t,
+		filepath.Join(codexRoot, "2026", "05", "15", "rollout-2026-05-15T10-00-00-019e2a33-513d-7c02-a78c-ab1b0130635c.jsonl"),
+		`{"session_id":"`+sessionID+`","cwd":"/work/project","payload":{"type":"user_message","message":"partial"}}`+"\n",
+	)
+	newer := time.Date(2026, 5, 16, 9, 0, 0, 0, time.UTC)
+	setModTime(t, completePath, newer)
+	setModTime(t, partialPath, newer.Add(-time.Hour))
+
+	appState := newAppState()
+	if _, err := DiscoverSessionsInRoots(appState, []DiscoveryRoot{{Agent: "codex", Path: codexRoot}}); err != nil {
+		t.Fatalf("DiscoverSessionsInRoots returned error: %v", err)
+	}
+
+	meta, ok := appState.Sessions["codex:"+sessionID]
+	if !ok {
+		t.Fatalf("expected codex session %q, got %#v", sessionID, appState.Sessions)
+	}
+	if meta.TranscriptPath != completePath {
+		t.Fatalf("expected complete newer rollout %q, got %q", completePath, meta.TranscriptPath)
+	}
+}
+
 func writeDiscoveryFile(t *testing.T, path, body string) string {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

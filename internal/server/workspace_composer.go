@@ -219,17 +219,18 @@ func (s *workspaceEventStore) CreateChatWithOptions(projectID string, provider s
 	now := time.Now().UnixMilli()
 	chatID := "chat-" + randomID()
 	title := "New Chat"
-	tmuxSession := workspaceChatTmuxSession(chatID)
+	provider = strings.TrimSpace(provider)
+	tmuxCommand = strings.TrimSpace(tmuxCommand)
 	data := map[string]any{
 		"chatId":      chatID,
 		"projectId":   project.ID,
 		"title":       title,
-		"tmuxSession": tmuxSession,
+		"tmuxSession": workspaceChatTmuxSession(chatID),
 	}
-	if provider = strings.TrimSpace(provider); provider != "" {
+	if provider != "" {
 		data["provider"] = provider
 	}
-	if tmuxCommand = strings.TrimSpace(tmuxCommand); tmuxCommand != "" {
+	if tmuxCommand != "" {
 		data["tmuxCommand"] = tmuxCommand
 	}
 	event, err := events.NewAt(events.TypeChatCreated, now, data)
@@ -244,7 +245,7 @@ func (s *workspaceEventStore) CreateChatWithOptions(projectID string, provider s
 		ProjectID:   project.ID,
 		Title:       title,
 		Provider:    optionalString(provider),
-		TmuxSession: tmuxSession,
+		TmuxSession: workspaceChatTmuxSession(chatID),
 		TmuxCommand: tmuxCommand,
 		CreatedAt:   now,
 		UpdatedAt:   now,
@@ -622,9 +623,9 @@ func decodeRuntimePreferenceCommand(raw json.RawMessage) (workspaceRuntimePrefer
 		return workspaceRuntimePreferenceCommand{}, errors.New("model is required")
 	}
 	return workspaceRuntimePreferenceCommand{
-		ChatID:       payload.ChatID,
-		Provider:     payload.Provider,
-		Model:        payload.Model,
+		ChatID:       strings.TrimSpace(payload.ChatID),
+		Provider:     strings.TrimSpace(payload.Provider),
+		Model:        strings.TrimSpace(payload.Model),
 		ModelOptions: payload.ModelOptions,
 	}, nil
 }

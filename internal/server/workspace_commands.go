@@ -687,26 +687,27 @@ func workspaceNativeTranscriptMetaForChat(chatID string) (state.SessionMeta, boo
 	if !ok || project.DeletedAt != 0 {
 		return state.SessionMeta{}, false, errors.New("project not found")
 	}
-	return state.SessionMeta{
-		Agent:          firstNonEmpty(derefWorkspaceString(chat.Provider), "codex"),
-		SessionID:      firstNonEmpty(chat.NativeSessionID, derefWorkspaceString(chat.SessionToken), chat.ID),
-		TranscriptPath: chat.NativeTranscriptPath,
-		Cwd:            project.LocalPath,
-		ProjectName:    project.Title,
-	}, true, nil
+	meta, ok := workspaceNativeTranscriptMetaForChatRecord(chat, project)
+	return meta, ok, nil
 }
 
 func workspaceNativeTranscriptMetaForChatRecord(chat readmodels.ChatRecord, project readmodels.ProjectRecord) (state.SessionMeta, bool) {
 	if chat.DeletedAt != 0 || project.DeletedAt != 0 || strings.TrimSpace(chat.NativeTranscriptPath) == "" {
 		return state.SessionMeta{}, false
 	}
-	return state.SessionMeta{
+	meta := state.SessionMeta{
 		Agent:          firstNonEmpty(derefWorkspaceString(chat.Provider), "codex"),
 		SessionID:      firstNonEmpty(chat.NativeSessionID, derefWorkspaceString(chat.SessionToken), chat.ID),
 		TranscriptPath: chat.NativeTranscriptPath,
 		Cwd:            project.LocalPath,
 		ProjectName:    project.Title,
-	}, true
+	}
+	if appState, err := workspaceLoadLegacyState(); err == nil {
+		if discovered, ok := appState.Sessions[state.SessionKey(meta.Agent, meta.SessionID)]; ok && strings.TrimSpace(discovered.TranscriptPath) != "" && !discovered.MetadataOnly {
+			meta.TranscriptPath = discovered.TranscriptPath
+		}
+	}
+	return meta, true
 }
 
 func workspaceLoadNativeChatHistory(meta state.SessionMeta, beforeCursor string, limit int) (map[string]any, error) {

@@ -137,11 +137,17 @@ func workspaceTmuxMigrationSummary(store interface {
 	if err != nil {
 		return ""
 	}
+	fallback := ""
 	for index := len(entries) - 1; index >= 0; index -= 1 {
-		text, _ := workspaceTranscriptEntryPreview(entries[index])
+		text, isUser := workspaceTranscriptEntryPreview(entries[index])
 		if summary := workspacePromptPreview(text); summary != "" {
-			return summary
+			if !isUser {
+				return summary
+			}
+			if fallback == "" {
+				fallback = summary
+			}
 		}
 	}
-	return ""
+	return fallback
 }

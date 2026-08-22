@@ -3,11 +3,40 @@ package sessioninterop
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"abolqasem/internal/state"
 	"abolqasem/internal/workspace/transcript"
 )
+
+func TestImportLegacySessionCodexCurrentFormatSkipsInternalAndImageBlocks(t *testing.T) {
+	root := t.TempDir()
+	transcriptPath := filepath.Join(root, "codex-current.jsonl")
+	body := strings.Join([]string{
+		`{"type":"response_item","payload":{"type":"message","role":"developer","content":[{"type":"input_text","text":"internal instruction"}]}}`,
+		`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"تصویر را بررسی کن"},{"type":"input_image","image_url":"data:image/png;base64,do-not-render"},{"type":"input_text","text":"data:image/png;base64,also-do-not-render"}]}}`,
+		`{"type":"response_item","payload":{"type":"reasoning","encrypted_content":"gAAAA-do-not-render"}}`,
+		`{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"تصویر را بررسی کردم"}]}}`,
+	}, "\n")
+	if err := os.WriteFile(transcriptPath, []byte(body), 0o644); err != nil {
+		t.Fatalf("write transcript: %v", err)
+	}
+
+	result, err := ImportLegacySession(state.SessionMeta{Agent: "codex", SessionID: "codex-current", TranscriptPath: transcriptPath})
+	if err != nil {
+		t.Fatalf("ImportLegacySession returned error: %v", err)
+	}
+	if len(result.Entries) != 2 {
+		t.Fatalf("expected only user and assistant entries, got %d: %#v", len(result.Entries), result.Entries)
+	}
+	if result.Entries[0]["content"] != "تصویر را بررسی کن" {
+		t.Fatalf("unexpected user entry: %#v", result.Entries[0])
+	}
+	if result.Entries[1]["text"] != "تصویر را بررسی کردم" {
+		t.Fatalf("unexpected assistant entry: %#v", result.Entries[1])
+	}
+}
 
 func TestImportLegacySessionGeminiStructuredPreservesMessagesAndTools(t *testing.T) {
 	root := t.TempDir()

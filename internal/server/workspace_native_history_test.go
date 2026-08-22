@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"abolqasem/internal/state"
 	"abolqasem/internal/workspace/events"
 	"abolqasem/internal/workspace/readmodels"
 	"abolqasem/internal/workspace/transcript"
@@ -74,5 +75,60 @@ func TestWorkspaceNativeHistoryDoesNotReadStoredMessagesStream(t *testing.T) {
 	aroundMessages := around["messages"].([]readmodels.TranscriptEntry)
 	if around["targetFound"] != true || len(aroundMessages) != 3 {
 		t.Fatalf("unexpected native history around result: %#v", around)
+	}
+}
+
+func TestWorkspaceNativeHistoryUsesCanonicalDiscoveredTranscriptForTmuxChat(t *testing.T) {
+	withWorkspaceComposerStore(t)
+	projectDir := t.TempDir()
+	stalePath := filepath.Join(t.TempDir(), "partial.jsonl")
+	canonicalPath := filepath.Join(t.TempDir(), "complete.jsonl")
+	if err := os.WriteFile(stalePath, []byte(`{"type":"event_msg","payload":{"type":"user_message","message":"partial"}}`+"\n"), 0o644); err != nil {
+		t.Fatalf("write partial transcript: %v", err)
+	}
+	if err := os.WriteFile(canonicalPath, []byte(
+		`{"type":"event_msg","payload":{"type":"user_message","message":"first"}}`+"\n"+
+			`{"type":"event_msg","payload":{"type":"agent_message","message":"answer"}}`+"\n",
+	), 0o644); err != nil {
+		t.Fatalf("write complete transcript: %v", err)
+	}
+
+	project, err := workspaceOpenProject(projectDir, "Project")
+	if err != nil {
+		t.Fatalf("workspaceOpenProject returned error: %v", err)
+	}
+	store := &workspaceEventStore{store: workspaceStore()}
+	chat, err := store.CreateChat(project.ID)
+	if err != nil {
+		t.Fatalf("CreateChat returned error: %v", err)
+	}
+	if err := appendWorkspaceStoreEvent(workspaceStore(), events.StreamChats, events.TypeChatRuntimeSet, time.Now().UnixMilli(), map[string]any{
+		"chatId":               chat.ID,
+		"nativeSessionId":      "native-session",
+		"nativeTranscriptPath": stalePath,
+	}); err != nil {
+		t.Fatalf("append runtime metadata: %v", err)
+	}
+
+	previousLoad := workspaceLoadLegacyState
+	workspaceLoadLegacyState = func() (*state.AppState, error) {
+		return &state.AppState{Sessions: map[string]state.SessionMeta{
+			"codex:native-session": {
+				Key:            "codex:native-session",
+				Agent:          "codex",
+				SessionID:      "native-session",
+				TranscriptPath: canonicalPath,
+			},
+		}}, nil
+	}
+	t.Cleanup(func() { workspaceLoadLegacyState = previousLoad })
+
+	history, err := workspaceLoadStoredChatHistory(chat.ID, "", 10)
+	if err != nil {
+		t.Fatalf("workspaceLoadStoredChatHistory returned error: %v", err)
+	}
+	messages := history["messages"].([]readmodels.TranscriptEntry)
+	if len(messages) != 2 || messages[0]["content"] != "first" || messages[1]["text"] != "answer" {
+		t.Fatalf("expected canonical transcript history, got %#v", messages)
 	}
 }

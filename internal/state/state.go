@@ -150,7 +150,7 @@ func UpsertSession(appState *AppState, event HookEvent) SessionMeta {
 		meta.MetadataOnly = event.MetadataOnly
 		meta.InvalidReason = event.InvalidReason
 	}
-	if event.TranscriptPath != "" {
+	if event.TranscriptPath != "" && (!staleEvent || meta.TranscriptPath == "") {
 		meta.TranscriptPath = event.TranscriptPath
 	}
 	if event.LastPreview != "" {

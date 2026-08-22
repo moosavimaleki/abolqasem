@@ -437,12 +437,16 @@ func codexContentText(value any) string {
 		block := mapValue(rawBlock)
 		switch stringValue(block["type"]) {
 		case "output_text", "text", "input_text":
-			if text := strings.TrimSpace(stringValue(block["text"])); text != "" {
+			if text := strings.TrimSpace(stringValue(block["text"])); text != "" && !isEmbeddedDataURL(text) {
 				parts = append(parts, text)
 			}
 		}
 	}
 	return strings.Join(parts, "\n\n")
+}
+
+func isEmbeddedDataURL(text string) bool {
+	return strings.HasPrefix(strings.TrimSpace(strings.ToLower(text)), "data:")
 }
 
 func inferToolKind(toolName string) string {
