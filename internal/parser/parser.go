@@ -941,61 +941,6 @@ func transcriptTimesMatch(left *time.Time, right *time.Time) bool {
 	return delta <= 2*time.Second
 }
 
-func codexMessageSource(recordType string, eventType string) string {
-	recordType = strings.TrimSpace(recordType)
-	eventType = strings.TrimSpace(eventType)
-	if recordType == "" {
-		return ""
-	}
-	if eventType == "" || eventType == recordType {
-		return "codex:" + recordType
-	}
-	return "codex:" + recordType + ":" + eventType
-}
-
-func newCodexSearchableMessage(sessionID string, index int, role, kind, text string, createdAt *time.Time, source string) *SearchableMessage {
-	msg := newSearchableMessage(sessionID, index, role, kind, text, createdAt)
-	if msg != nil {
-		msg.Source = source
-	}
-	return msg
-}
-
-func shouldDropSearchableDuplicate(agent string, previous *SearchableMessage, current *SearchableMessage) bool {
-	if !strings.EqualFold(strings.TrimSpace(agent), "codex") || previous == nil || current == nil {
-		return false
-	}
-	if previous.Role != current.Role || previous.Kind != current.Kind {
-		return false
-	}
-	if strings.TrimSpace(previous.Text) == "" || strings.TrimSpace(previous.Text) != strings.TrimSpace(current.Text) {
-		return false
-	}
-	if !isCodexResponseEventPair(previous.Source, current.Source) {
-		return false
-	}
-	return transcriptTimesMatch(previous.CreatedAt, current.CreatedAt)
-}
-
-func isCodexResponseEventPair(left string, right string) bool {
-	leftIsResponse := strings.HasPrefix(left, "codex:response_item:message")
-	rightIsResponse := strings.HasPrefix(right, "codex:response_item:message")
-	leftIsEvent := strings.HasPrefix(left, "codex:event_msg:")
-	rightIsEvent := strings.HasPrefix(right, "codex:event_msg:")
-	return (leftIsResponse && rightIsEvent) || (leftIsEvent && rightIsResponse)
-}
-
-func transcriptTimesMatch(left *time.Time, right *time.Time) bool {
-	if left == nil || right == nil {
-		return true
-	}
-	delta := left.Sub(*right)
-	if delta < 0 {
-		delta = -delta
-	}
-	return delta <= 2*time.Second
-}
-
 func extractClaudeMessage(raw map[string]any, sessionID string, index int) *SearchableMessage {
 	message := asMap(raw["message"])
 	role := firstNonEmpty(stringValue(message["role"]), stringValue(raw["role"]))
