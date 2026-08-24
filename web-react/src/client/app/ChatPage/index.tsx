@@ -916,8 +916,8 @@ export function ChatPage() {
   const showEmptyState = state.messages.length === 0 && state.runtime?.title === "New Chat"
   const transcriptTailVersion = useMemo(() => getTranscriptTailVersion(state.messages), [state.messages])
   const projectId = state.activeProjectId
-  const codexLock = state.runtime?.provider === "codex" ? state.runtime.codexLock : undefined
-  const codexChatReadOnly = codexLock?.state === "owned_elsewhere" || codexLock?.state === "unknown"
+  const codexLock = state.runtime?.codexLock
+  const codexChatReadOnly = state.runtime?.readOnly === true || codexLock?.state === "owned_elsewhere" || codexLock?.state === "unknown"
   const projectTerminalLayout = useTerminalLayoutStore((store) => (projectId ? store.projects[projectId] : undefined))
   const terminalLayout = projectTerminalLayout ?? DEFAULT_PROJECT_TERMINAL_LAYOUT
   const projectRightSidebarVisibility = useRightSidebarStore((store) => (projectId ? store.projects[projectId] : undefined))

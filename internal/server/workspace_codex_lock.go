@@ -164,7 +164,7 @@ func workspaceCodexWritableOwners(sessionPath string) ([]workspaceCodexLockOwner
 	if runtime.GOOS == "windows" {
 		return nil, errors.New("writer inspection is not supported on Windows")
 	}
-	output, err := exec.Command("lsof", "-nP", "-Fpcf", "--", sessionPath).Output()
+	output, err := exec.Command("lsof", "-nP", "-Fpcfa", "--", sessionPath).Output()
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) && len(exitErr.Stderr) == 0 {
@@ -172,10 +172,15 @@ func workspaceCodexWritableOwners(sessionPath string) ([]workspaceCodexLockOwner
 		}
 		return nil, err
 	}
+	return workspaceCodexWritableOwnerRecords(string(output)), nil
+}
+
+func workspaceCodexWritableOwnerRecords(output string) []workspaceCodexLockOwner {
 	owners := map[int]workspaceCodexLockOwner{}
 	currentPID := 0
 	currentCommand := ""
-	for _, line := range strings.Split(string(output), "\n") {
+	currentFD := ""
+	for _, line := range strings.Split(output, "\n") {
 		if len(line) < 2 {
 			continue
 		}
@@ -183,10 +188,16 @@ func workspaceCodexWritableOwners(sessionPath string) ([]workspaceCodexLockOwner
 		case 'p':
 			currentPID, _ = strconv.Atoi(line[1:])
 			currentCommand = ""
+			currentFD = ""
 		case 'c':
 			currentCommand = line[1:]
 		case 'f':
-			if currentPID > 0 && workspaceCodexWritableFD(line[1:]) {
+			currentFD = line[1:]
+			if currentPID > 0 && workspaceCodexWritableFD(currentFD) {
+				owners[currentPID] = workspaceCodexLockOwner{PID: currentPID, Command: currentCommand}
+			}
+		case 'a':
+			if currentPID > 0 && currentFD != "" && workspaceCodexWritableAccess(line[1:]) {
 				owners[currentPID] = workspaceCodexLockOwner{PID: currentPID, Command: currentCommand}
 			}
 		}
@@ -196,18 +207,22 @@ func workspaceCodexWritableOwners(sessionPath string) ([]workspaceCodexLockOwner
 		result = append(result, owner)
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].PID < result[j].PID })
-	return result, nil
+	return result
 }
 
 func workspaceCodexWritableFD(value string) bool {
 	return strings.HasSuffix(value, "w") || strings.HasSuffix(value, "u")
 }
 
+func workspaceCodexWritableAccess(value string) bool {
+	return value == "w" || value == "u"
+}
+
 func workspaceCodexOtherWritableSessionCount(pid int, targetPath string) int {
 	if pid <= 0 || runtime.GOOS == "windows" {
 		return 0
 	}
-	output, err := exec.Command("lsof", "-nP", "-p", strconv.Itoa(pid), "-Ffn").Output()
+	output, err := exec.Command("lsof", "-nP", "-p", strconv.Itoa(pid), "-Ffna").Output()
 	if err != nil {
 		return 0
 	}
@@ -220,6 +235,8 @@ func workspaceCodexOtherWritableSessionCount(pid int, targetPath string) int {
 		switch line[0] {
 		case 'f':
 			writable = workspaceCodexWritableFD(line[1:])
+		case 'a':
+			writable = writable || workspaceCodexWritableAccess(line[1:])
 		case 'n':
 			path := line[1:]
 			if writable && path != targetPath && strings.Contains(filepath.ToSlash(path), "/.codex/sessions/") && strings.HasSuffix(path, ".jsonl") {

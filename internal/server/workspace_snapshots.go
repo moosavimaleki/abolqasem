@@ -80,7 +80,9 @@ func workspaceChatSnapshot(chatID string, recentLimit int) any {
 		snapshot := readmodels.DeriveChatSnapshot(storeState, coordinator.ActiveStatuses(), coordinator.DrainingChatIDs(), chatID, transcript)
 		if snapshot != nil {
 			snapshot.AvailableProviders = workspaceAvailableProviders()
-			snapshot.Runtime.CodexLock = workspaceCodexLockStatus(chat)
+			lock := workspaceCodexLockStatus(chat)
+			snapshot.Runtime.CodexLock = lock
+			snapshot.Runtime.ReadOnly = lock.State == codexLockOwnedElsewhere || lock.State == codexLockUnknown
 		}
 		return snapshot
 	}
