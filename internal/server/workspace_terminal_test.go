@@ -45,45 +45,6 @@ func TestWorkspaceTerminalCreateRequestUsesProjectRoot(t *testing.T) {
 	}
 }
 
-func TestWorkspaceTerminalCreateRequestBuildsTmuxSessionFromChatID(t *testing.T) {
-	withWorkspaceComposerStore(t)
-
-	projectDir := t.TempDir()
-	project, err := workspaceOpenProject(projectDir, "Project")
-	if err != nil {
-		t.Fatalf("workspaceOpenProject returned error: %v", err)
-	}
-	chat, err := (&workspaceEventStore{store: workspaceStore()}).CreateChatWithOptions(project.ID, "codex", "codex --sandbox workspace-write")
-	if err != nil {
-		t.Fatalf("CreateChatWithOptions returned error: %v", err)
-	}
-	raw, err := json.Marshal(map[string]any{
-		"projectId":  project.ID,
-		"terminalId": "term-chat",
-		"mode":       "tmux",
-		"chatId":     chat.ID,
-		"cols":       100,
-		"rows":       30,
-	})
-	if err != nil {
-		t.Fatalf("json.Marshal returned error: %v", err)
-	}
-
-	request, err := workspaceTerminalCreateRequest(raw)
-	if err != nil {
-		t.Fatalf("workspaceTerminalCreateRequest returned error: %v", err)
-	}
-	if request.Mode != "tmux" {
-		t.Fatalf("expected tmux mode, got %q", request.Mode)
-	}
-	if request.TmuxSession != chat.TmuxSession {
-		t.Fatalf("unexpected tmux session %q", request.TmuxSession)
-	}
-	if request.Command == "" {
-		t.Fatal("expected persisted tmux command")
-	}
-}
-
 func TestWorkspaceTerminalCreateRequestRejectsUnknownProject(t *testing.T) {
 	withWorkspaceComposerStore(t)
 

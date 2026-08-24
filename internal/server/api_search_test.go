@@ -169,7 +169,7 @@ func TestHandleAPISearchSearchesNativeWorkspaceChatWithoutStoredMessages(t *test
 	}
 }
 
-func TestHandleAPISearchSkipsStoredMessagesForTmuxChat(t *testing.T) {
+func TestHandleAPISearchReadsStoredMessagesForLegacyTmuxMetadata(t *testing.T) {
 	withWorkspaceComposerStore(t)
 	project, err := workspaceOpenProject(t.TempDir(), "Project")
 	if err != nil {
@@ -200,8 +200,8 @@ func TestHandleAPISearchSkipsStoredMessagesForTmuxChat(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &directPayload); err != nil {
 		t.Fatalf("unmarshal direct response: %v", err)
 	}
-	if directPayload.Total != 0 || len(directPayload.Matches) != 0 {
-		t.Fatalf("expected tmux direct search to ignore stored messages, got %#v", directPayload)
+	if directPayload.Total != 1 || len(directPayload.Matches) != 1 || directPayload.Matches[0].EntryID != "stale-message" {
+		t.Fatalf("expected app-server search to keep stored messages, got %#v", directPayload)
 	}
 
 	response = performSearchAPIRequest(t, "/api/search?q=stale_tmux_search_needle&limit=10")
@@ -215,8 +215,8 @@ func TestHandleAPISearchSkipsStoredMessagesForTmuxChat(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &globalPayload); err != nil {
 		t.Fatalf("unmarshal global response: %v", err)
 	}
-	if globalPayload.Total != 0 || len(globalPayload.Items) != 0 {
-		t.Fatalf("expected tmux global search to ignore stored messages, got %#v", globalPayload)
+	if globalPayload.Total != 1 || len(globalPayload.Items) != 1 || globalPayload.Items[0].ChatID != chat.ID {
+		t.Fatalf("expected app-server global search to keep stored messages, got %#v", globalPayload)
 	}
 }
 

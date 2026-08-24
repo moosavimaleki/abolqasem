@@ -76,13 +76,18 @@ func workspaceCodexLockStatus(chat readmodels.ChatRecord) readmodels.CodexLockSt
 		}
 	}
 
-	path, err := workspaceCodexSessionPath(sessionID)
+	path, err := workspaceCodexSessionPathForChat(chat, sessionID)
 	if err != nil {
 		return readmodels.CodexLockStatus{
 			State:     codexLockUnknown,
 			SessionID: sessionID,
 			Message:   "The Codex session file could not be located. Refresh or claim it before sending.",
 		}
+	}
+	if !strings.HasSuffix(filepath.Base(path), "-"+sessionID+".jsonl") {
+		// Imported/legacy transcript paths are read-only history sources, not the
+		// durable Codex writer file. Do not run a costly lsof scan for them.
+		return readmodels.CodexLockStatus{State: codexLockAvailable, SessionID: sessionID, SessionPath: path}
 	}
 	owners, err := workspaceCodexWritableOwners(path)
 	if err != nil {
@@ -107,6 +112,15 @@ func workspaceCodexLockStatus(chat readmodels.ChatRecord) readmodels.CodexLockSt
 	}
 	status.OtherWritableSessions = workspaceCodexOtherWritableSessionCount(owners[0].PID, path)
 	return status
+}
+
+func workspaceCodexSessionPathForChat(chat readmodels.ChatRecord, sessionID string) (string, error) {
+	if path := strings.TrimSpace(chat.NativeTranscriptPath); path != "" {
+		if _, err := os.Stat(path); err == nil {
+			return path, nil
+		}
+	}
+	return workspaceCodexSessionPath(sessionID)
 }
 
 func workspaceCodexSessionPath(sessionID string) (string, error) {

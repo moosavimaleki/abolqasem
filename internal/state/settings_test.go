@@ -24,8 +24,8 @@ func TestApplySettingsPatchPersistsAbolqasemSettings(t *testing.T) {
 	noProxy := " localhost,127.0.0.1 "
 	fastMode := true
 	planMode := true
-	commitProvider := "gemini"
-	commitModel := "gemini-2.5-flash"
+	commitProvider := "codex"
+	commitModel := "gpt-5.4"
 	codexExecutable := " /home/user/.bun/bin/codex "
 	settings = ApplySettingsPatch(settings, AppSettingsPatch{
 		Locale:      "fa",
@@ -136,8 +136,8 @@ func TestLoadSettingsNormalizesCorruptOrInvalidValues(t *testing.T) {
 	if loaded.Terminal != defaults.Terminal {
 		t.Fatalf("expected default terminal settings, got %#v", loaded.Terminal)
 	}
-	if loaded.DefaultProvider != "gemini" {
-		t.Fatalf("expected gemini default provider, got %q", loaded.DefaultProvider)
+	if loaded.DefaultProvider != defaults.DefaultProvider {
+		t.Fatalf("expected removed provider to fall back to %q, got %q", defaults.DefaultProvider, loaded.DefaultProvider)
 	}
 	if loaded.ProviderDefaults["codex"].Model != catalog.CodexRuntimeDefaultModel() {
 		t.Fatalf("expected runtime codex model default, got %q", loaded.ProviderDefaults["codex"].Model)
@@ -148,28 +148,28 @@ func TestApplySettingsPatchPersistsEditableProviderModelCatalog(t *testing.T) {
 	settings := DefaultAppSettings()
 	settings = ApplySettingsPatch(settings, AppSettingsPatch{
 		ProviderModelCatalog: map[string]ProviderModelInventoryPatch{
-			"gemini": {
+			"codex": {
 				CatalogModels: &[]catalog.ProviderModelOption{
-					{ID: " gemini-custom-a ", Label: " Custom A "},
-					{ID: "gemini-custom-a", Label: "Duplicate"},
-					{ID: "gemini-custom-b"},
+					{ID: " gpt-5.99-a ", Label: " Custom A "},
+					{ID: "gpt-5.99-a", Label: "Duplicate"},
+					{ID: "gpt-5.99-b"},
 				},
 				CustomModels: &[]catalog.ProviderModelOption{},
 			},
 		},
 	})
 
-	models := settings.ProviderModelCatalog["gemini"].CatalogModels
+	models := settings.ProviderModelCatalog["codex"].CatalogModels
 	if len(models) != 2 {
 		t.Fatalf("expected two normalized catalog models, got %#v", models)
 	}
-	if models[0].ID != "gemini-custom-a" || models[0].Label != "Custom A" {
+	if models[0].ID != "gpt-5.99-a" || models[0].Label != "Custom A" {
 		t.Fatalf("unexpected first catalog model: %#v", models[0])
 	}
-	if models[1].ID != "gemini-custom-b" || models[1].Label != "gemini-custom-b" {
+	if models[1].ID != "gpt-5.99-b" || models[1].Label != "gpt-5.99-b" {
 		t.Fatalf("unexpected second catalog model: %#v", models[1])
 	}
-	if got := catalog.NormalizeServerModelWithInventory("gemini", "", settings.ProviderModelCatalog); got != "gemini-custom-a" {
+	if got := catalog.NormalizeServerModelWithInventory("codex", "", settings.ProviderModelCatalog); got != "gpt-5.99-a" {
 		t.Fatalf("expected editable catalog default fallback, got %q", got)
 	}
 }

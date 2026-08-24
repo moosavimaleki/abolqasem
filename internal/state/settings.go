@@ -157,11 +157,6 @@ func DefaultAppSettings() AppSettings {
 				},
 				PlanMode: false,
 			},
-			"gemini": {
-				Model:        catalog.DefaultGeminiModel,
-				ModelOptions: map[string]any{},
-				PlanMode:     false,
-			},
 		},
 		ProviderModelCatalog: catalog.ProviderModelInventoryByProvider{},
 		ProviderExecutables:  map[string]string{},
@@ -450,7 +445,6 @@ func normalizeAgentModels(models map[string]string) map[string]string {
 	normalized := map[string]string{
 		"codex":  "",
 		"claude": "",
-		"gemini": "",
 	}
 	for agent, model := range models {
 		agent = normalizeAgentName(agent)
@@ -469,7 +463,7 @@ func normalizeAgentModels(models map[string]string) map[string]string {
 func normalizeAgentName(agent string) string {
 	agent = strings.TrimSpace(strings.ToLower(agent))
 	switch agent {
-	case "codex", "claude", "gemini":
+	case "codex", "claude":
 		return agent
 	default:
 		return ""
@@ -543,7 +537,7 @@ func envLookupKey(key string) string {
 
 func normalizeDefaultProvider(value string, fallback string) string {
 	value = strings.TrimSpace(strings.ToLower(value))
-	if value == "last_used" || value == "claude" || value == "codex" || value == "gemini" {
+	if value == "last_used" || value == "claude" || value == "codex" {
 		return value
 	}
 	return fallback
@@ -551,7 +545,7 @@ func normalizeDefaultProvider(value string, fallback string) string {
 
 func normalizeWorkspaceProvider(value string) string {
 	value = strings.TrimSpace(strings.ToLower(value))
-	if value == "claude" || value == "codex" || value == "gemini" {
+	if value == "claude" || value == "codex" {
 		return value
 	}
 	return ""
