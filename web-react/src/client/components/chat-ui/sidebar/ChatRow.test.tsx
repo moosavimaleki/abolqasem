@@ -146,7 +146,7 @@ describe("ChatRow", () => {
   test("renders the provider icon label beside the chat title", () => {
     const html = renderToStaticMarkup(
       <ChatRow
-        chat={{ ...baseChat, provider: "gemini" }}
+        chat={{ ...baseChat, provider: "codex" }}
         activeChatId={null}
         nowMs={60_000}
         onSelectChat={() => undefined}
@@ -159,7 +159,7 @@ describe("ChatRow", () => {
       />
     )
 
-    expect(html).toContain("aria-label=\"Gemini\"")
+    expect(html).toContain("aria-label=\"Codex\"")
     expect(html).toContain("Test chat")
   })
 })

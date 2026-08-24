@@ -30,8 +30,6 @@ func ExportNativeSession(args ExportArgs) (ExportResult, error) {
 		return exportClaudeSession(args)
 	case "codex":
 		return exportCodexSession(args)
-	case "gemini":
-		return exportGeminiSession(args)
 	default:
 		return ExportResult{}, fmt.Errorf("unsupported export provider: %s", args.Provider)
 	}

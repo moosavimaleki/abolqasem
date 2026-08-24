@@ -95,8 +95,6 @@ const (
 	CommandChatClaimCodexSession           = "chat.claimCodexSession"
 	CommandChatReleaseCodexSession         = "chat.releaseCodexSession"
 	CommandChatTakeOverCodexSession        = "chat.takeOverCodexSession"
-	CommandChatRestartTmux                 = "chat.restartTmux"
-	CommandChatApplyRuntimePreferences     = "chat.applyRuntimePreferences"
 	CommandChatSend                        = "chat.send"
 	CommandChatRefreshDiffs                = "chat.refreshDiffs"
 	CommandChatInitGit                     = "chat.initGit"

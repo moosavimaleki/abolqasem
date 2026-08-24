@@ -55,7 +55,7 @@ func workspaceRefreshProviderModels(force bool) (state.AppSettings, error) {
 }
 
 func providerModelRefreshDue(inventory catalog.ProviderModelInventoryByProvider) bool {
-	for _, provider := range []string{"claude", "codex", "gemini"} {
+	for _, provider := range []string{"claude", "codex"} {
 		lastRefresh := strings.TrimSpace(inventory[provider].LastRefreshAt)
 		if lastRefresh == "" {
 			return true
@@ -70,7 +70,7 @@ func providerModelRefreshDue(inventory catalog.ProviderModelInventoryByProvider)
 
 func providerModelCatalogSnapshot(inventory catalog.ProviderModelInventoryByProvider) map[string]any {
 	out := map[string]any{}
-	for _, provider := range []string{"claude", "codex", "gemini"} {
+	for _, provider := range []string{"claude", "codex"} {
 		current := inventory[provider]
 		out[provider] = map[string]any{
 			"catalogModels":    nonNilProviderModelOptions(current.CatalogModels),

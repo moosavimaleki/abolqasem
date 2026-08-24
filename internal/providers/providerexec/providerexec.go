@@ -150,7 +150,7 @@ func executableCandidatePaths(path string) []string {
 func Normalize(provider string) string {
 	provider = strings.TrimSpace(strings.ToLower(provider))
 	switch provider {
-	case "claude", "codex", "gemini":
+	case "claude", "codex":
 		return provider
 	default:
 		return ""

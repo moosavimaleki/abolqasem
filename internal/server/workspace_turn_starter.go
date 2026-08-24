@@ -950,6 +950,15 @@ func workspacePromptText(content string, attachments []readmodels.ChatAttachment
 	return strings.TrimSpace(content + "\n\n" + strings.Join(lines, "\n"))
 }
 
+func workspacePromptPreview(content string) string {
+	content = strings.Join(strings.Fields(strings.TrimSpace(content)), " ")
+	const limit = 180
+	if len([]rune(content)) <= limit {
+		return content
+	}
+	return string([]rune(content)[:limit]) + "…"
+}
+
 func escapeWorkspaceXML(value string) string {
 	value = strings.ReplaceAll(value, "&", "&amp;")
 	value = strings.ReplaceAll(value, `"`, "&quot;")

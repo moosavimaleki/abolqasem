@@ -18,7 +18,7 @@ func TestExportNativeSessionRealCLISmoke(t *testing.T) {
 		t.Skip("set AI_AGENT_MANAGER_REAL_CLI_SMOKE=1 to run real provider CLI resume smoke tests")
 	}
 
-	for _, provider := range []string{"claude", "codex", "gemini"} {
+	for _, provider := range []string{"claude", "codex"} {
 		t.Run(provider, func(t *testing.T) {
 			if _, err := exec.LookPath(provider); err != nil {
 				t.Skipf("%s CLI is not installed: %v", provider, err)
@@ -32,7 +32,6 @@ func TestExportNativeSessionRealCLISmoke(t *testing.T) {
 			setTestHome(t, home)
 			t.Setenv("CODEX_HOME", filepath.Join(home, ".codex"))
 			t.Setenv("CLAUDE_HOME", filepath.Join(home, ".claude"))
-			t.Setenv("GEMINI_CLI_HOME", filepath.Join(home, ".gemini"))
 
 			needle := "hello smoke from " + provider
 			result, err := ExportNativeSession(ExportArgs{
@@ -79,14 +78,6 @@ func runProviderResumeSmoke(t *testing.T, provider string, cwd string, sessionTo
 			"--ask-for-approval", "never",
 			"--sandbox", "read-only",
 		)
-	case "gemini":
-		cmd = exec.CommandContext(ctx, "gemini",
-			"--resume", sessionToken,
-			"--prompt", prompt,
-			"--output-format", "text",
-			"--approval-mode", "plan",
-			"--skip-trust",
-		)
 	default:
 		t.Fatalf("unsupported provider %q", provider)
 	}
@@ -96,7 +87,6 @@ func runProviderResumeSmoke(t *testing.T, provider string, cwd string, sessionTo
 		"USERPROFILE="+home,
 		"CODEX_HOME="+filepath.Join(home, ".codex"),
 		"CLAUDE_HOME="+filepath.Join(home, ".claude"),
-		"GEMINI_CLI_HOME="+filepath.Join(home, ".gemini"),
 		"NO_COLOR=1",
 	)
 	output, err := cmd.CombinedOutput()

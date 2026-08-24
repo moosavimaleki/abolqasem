@@ -49,16 +49,6 @@ func TestWorkspaceTransientProviderEnvCopiesProviderHome(t *testing.T) {
 			sessionRelPath:   "projects/project-1/session.jsonl",
 			expectedCopyPath: "config/settings.json",
 		},
-		{
-			provider:         "gemini",
-			sourceRoot:       filepath.Join(home, "gemini-base", ".gemini"),
-			sourceEnvKey:     "GEMINI_CLI_HOME",
-			targetEnvKey:     "GEMINI_CLI_HOME",
-			skipDir:          "tmp",
-			configRelPath:    "settings.json",
-			sessionRelPath:   "tmp/container/chats/session-1.jsonl",
-			expectedCopyPath: "settings.json",
-		},
 	}
 
 	for _, fixture := range fixtures {
@@ -66,11 +56,7 @@ func TestWorkspaceTransientProviderEnvCopiesProviderHome(t *testing.T) {
 			if fixture.provider == "claude" {
 				t.Setenv("CLAUDE_CONFIG_DIR", "")
 			}
-			if fixture.provider == "gemini" {
-				t.Setenv(fixture.sourceEnvKey, filepath.Dir(fixture.sourceRoot))
-			} else {
-				t.Setenv(fixture.sourceEnvKey, fixture.sourceRoot)
-			}
+			t.Setenv(fixture.sourceEnvKey, fixture.sourceRoot)
 			writeProviderHomeFixture(t, fixture.sourceRoot, fixture.configRelPath, "config="+fixture.provider)
 			writeProviderHomeFixture(t, fixture.sourceRoot, fixture.sessionRelPath, "session="+fixture.provider)
 
@@ -86,9 +72,6 @@ func TestWorkspaceTransientProviderEnvCopiesProviderHome(t *testing.T) {
 			}
 
 			targetRoot := targetEnvValue
-			if fixture.provider == "gemini" {
-				targetRoot = filepath.Join(targetEnvValue, ".gemini")
-			}
 			if _, err := os.Stat(filepath.Join(targetRoot, fixture.expectedCopyPath)); err != nil {
 				t.Fatalf("expected copied config at %s: %v", filepath.Join(targetRoot, fixture.expectedCopyPath), err)
 			}
@@ -119,7 +102,6 @@ func TestStartWorkspaceTurnUsesTransientEnv(t *testing.T) {
 	t.Cleanup(func() { workspaceLoadProviderSettings = previousLoadSettings })
 
 	claudeEnvFile := filepath.Join(binDir, "claude.env")
-	geminiEnvFile := filepath.Join(binDir, "gemini.env")
 	codexEnvFile := filepath.Join(binDir, "codex.env")
 
 	writeFakeExecutable(t, filepath.Join(binDir, "claude"), fmt.Sprintf(`#!/bin/sh
@@ -134,14 +116,6 @@ printf '%%s\n' '{"type":"result","result":"done","duration_ms":1,"session_id":"c
 echo {"type":"assistant","message":{"content":[{"type":"text","text":"claude-output"}]}}
 echo {"type":"result","result":"done","duration_ms":1,"session_id":"claude-session-1"}
 `, claudeEnvFile))
-
-	writeFakeExecutable(t, filepath.Join(binDir, "gemini"), fmt.Sprintf(`#!/bin/sh
-printf '%%s\n' "$GEMINI_CLI_HOME" > %q
-echo gemini-output
-`, geminiEnvFile), fmt.Sprintf(`@echo off
-> "%s" echo %%GEMINI_CLI_HOME%%
-echo gemini-output
-`, geminiEnvFile))
 
 	writeFakeExecutable(t, filepath.Join(binDir, "codex"), fmt.Sprintf(`#!/bin/sh
 if [ "$1" = "--version" ]; then

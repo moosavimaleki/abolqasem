@@ -134,12 +134,11 @@ export type ClientCommand =
       column?: number
       editor?: EditorOpenSettings
     }
-  | { type: "chat.create"; projectId: string; provider?: AgentProvider; tmuxCommand?: string }
+  | { type: "chat.create"; projectId: string; provider?: AgentProvider }
   | { type: "chat.fork"; chatId: string }
   | { type: "chat.convertPreview"; chatId: string; targetProvider: AgentProvider; targetProjectId?: string }
   | { type: "chat.convert"; chatId: string; targetProvider: AgentProvider; targetProjectId?: string }
   | { type: "chat.exportTranscript"; chatId: string; targetProvider?: AgentProvider; targetProjectId?: string }
-  | { type: "chat.migrateToTmux"; chatIds?: string[]; dryRun?: boolean; compact?: boolean }
   | { type: "chat.rename"; chatId: string; title: string }
   | { type: "chat.archive"; chatId: string }
   | { type: "chat.unarchive"; chatId: string }
@@ -150,8 +149,6 @@ export type ClientCommand =
   | { type: "chat.claimCodexSession"; chatId: string }
   | { type: "chat.releaseCodexSession"; chatId: string }
   | { type: "chat.takeOverCodexSession"; chatId: string; confirm: boolean }
-  | { type: "chat.restartTmux"; chatId: string; provider: AgentProvider; tmuxCommand: string }
-  | { type: "chat.applyRuntimePreferences"; chatId: string; provider: AgentProvider; model: string; modelOptions?: ModelOptions }
   | {
       type: "chat.send"
       chatId?: string
@@ -268,9 +265,6 @@ export type ClientCommand =
       cols: number
       rows: number
       scrollback: number
-      mode?: "shell" | "tmux"
-      chatId?: string
-      tmuxSession?: string
       command?: string
     }
   | { type: "terminal.input"; terminalId: string; data: string }

@@ -312,7 +312,6 @@ function readLegacyBrowserSettingsPatch(): AppSettingsPatch | null {
     chatPreferencesState?.defaultProvider === "last_used"
     || chatPreferencesState?.defaultProvider === "claude"
     || chatPreferencesState?.defaultProvider === "codex"
-    || chatPreferencesState?.defaultProvider === "gemini"
   ) {
     patch.defaultProvider = chatPreferencesState.defaultProvider
   }
@@ -393,7 +392,6 @@ export function reconcileOptimisticUserPrompts(
 
 const INITIAL_CHAT_RECENT_LIMIT = 200
 const CHAT_HISTORY_PAGE_SIZE = 500
-const LIVE_TMUX_CHAT_REFRESH_INTERVAL_MS = 1000
 
 type RuntimeChatSnapshot = Omit<ChatSnapshot, "queuedMessages" | "messages" | "history" | "availableProviders"> & {
   queuedMessages?: ChatSnapshot["queuedMessages"] | null
@@ -456,20 +454,8 @@ export function normalizeChatSnapshot(snapshot: ChatSnapshot | null): ChatSnapsh
   }
 }
 
-export function shouldEnqueueUserPrompt(activeChatId: string | null, isProcessing: boolean, tmuxSession?: string | null) {
-  return Boolean(activeChatId && isProcessing && !tmuxSession?.trim())
-}
-
-export function shouldRenderOptimisticWebPrompt(activeChatId: string | null, tmuxSession?: string | null) {
-  return !activeChatId || !tmuxSession?.trim()
-}
-
-export function shouldRefreshActiveTmuxChat(activeChatId: string | null, tmuxSession: string | null | undefined, connectionStatus: SocketStatus) {
-  return Boolean(activeChatId && tmuxSession?.trim() && connectionStatus === "connected")
-}
-
-export function shouldRequestTmuxLaunch(runtime: ChatSnapshot["runtime"] | null | undefined) {
-  return Boolean(runtime?.tmuxSession?.trim() && !runtime.tmuxActive && !runtime.tmuxCommand?.trim())
+export function shouldEnqueueUserPrompt(activeChatId: string | null, isProcessing: boolean) {
+	return Boolean(activeChatId && isProcessing)
 }
 
 export function getNewestRemainingChatId(projectGroups: SidebarData["projectGroups"], activeChatId: string): string | null {
@@ -622,15 +608,6 @@ function composerStateFromSendOptions(options?: {
     }
   }
 
-  if (options?.provider === "gemini" && options.model) {
-    return {
-      provider: "gemini",
-      model: options.model,
-      modelOptions: {},
-      planMode: Boolean(options.planMode),
-    }
-  }
-
   return null
 }
 
@@ -652,15 +629,6 @@ export function getComposerStateForActiveProvider(
     }
   }
 
-  if (activeProvider === "gemini") {
-    return {
-      provider: "gemini",
-      model: providerDefaults.gemini.model,
-      modelOptions: { ...providerDefaults.gemini.modelOptions },
-      planMode: composerState.planMode,
-    }
-  }
-
   return {
     provider: "codex",
     model: providerDefaults.codex.model,
@@ -672,174 +640,6 @@ export function getComposerStateForActiveProvider(
 function getProjectIdForChat(projectGroups: SidebarData["projectGroups"], chatId: string | null) {
   if (!chatId) return null
   return projectGroups.find((group) => group.chats.some((chat) => chat.chatId === chatId))?.groupKey ?? null
-}
-
-function normalizeLaunchProvider(value: string | null): AgentProvider | null {
-  const normalized = (value ?? "").trim().toLowerCase()
-  return normalized === "codex" || normalized === "claude" || normalized === "gemini"
-    ? normalized
-    : null
-}
-
-function getDefaultLaunchProvider(
-  activeProvider: AgentProvider | null | undefined,
-  settingsDefaultProvider: AppSettingsSnapshot["defaultProvider"] | undefined,
-  composerProvider: AgentProvider,
-) {
-  if (activeProvider) return activeProvider
-  if (settingsDefaultProvider && settingsDefaultProvider !== "last_used") return settingsDefaultProvider
-  return composerProvider
-}
-
-function getDefaultTmuxCommand(provider: AgentProvider, settings: AppSettingsSnapshot | null) {
-  const configured = settings?.tmuxCommands?.[provider]?.trim()
-  if (configured) return configured
-  return settings?.providerExecutables?.[provider]?.trim() || provider
-}
-
-export function appendLaunchModelFlag(command: string, model: string | null | undefined) {
-  const trimmedCommand = command.trim()
-  const trimmedModel = (model ?? "").trim()
-  if (!trimmedCommand || !trimmedModel || commandHasModelFlag(trimmedCommand)) {
-    return trimmedCommand
-  }
-  return `${trimmedCommand} --model ${quoteLaunchArg(trimmedModel)}`
-}
-
-function commandHasModelFlag(command: string) {
-  return /(^|\s)(--model(?:=|\s)|-m(?:=|\s|$))/.test(command)
-    || /(^|\s)(?:-c|--config)\s+model=/.test(command)
-}
-
-function quoteLaunchArg(value: string) {
-  if (/^[A-Za-z0-9._:/=@+-]+$/.test(value)) {
-    return value
-  }
-  return `'${value.replaceAll("'", "'\"'\"'")}'`
-}
-
-function getProviderLabel(availableProviders: readonly ProviderCatalogEntry[], provider: AgentProvider) {
-  return availableProviders.find((candidate) => candidate.id === provider)?.label ?? provider
-}
-
-function getLaunchProviderChoices(availableProviders: readonly ProviderCatalogEntry[]) {
-  return availableProviders.map((provider) => ({
-    value: provider.id,
-    label: provider.label,
-    description: `Start a new ${provider.label} tmux session for this project.`,
-    icon: provider.id,
-  }))
-}
-
-interface TmuxLaunchSelection {
-  provider: AgentProvider
-  tmuxCommand: string
-  composerState: ComposerState
-}
-
-function getLaunchModeChoices(provider: AgentProvider, baseCommand: string) {
-  if (provider === "codex") {
-    return [
-      {
-        value: baseCommand,
-        label: "Normal",
-        description: baseCommand,
-        icon: "terminal",
-      },
-      {
-        value: `${baseCommand} --sandbox workspace-write --ask-for-approval on-request`,
-        label: "Workspace write",
-        description: "Workspace-write sandbox with approval prompts.",
-        icon: "safe",
-      },
-      {
-        value: `${baseCommand} --dangerously-bypass-approvals-and-sandbox`,
-        label: "Danger",
-        description: "No sandbox and no approval prompts.",
-        icon: "danger",
-      },
-      {
-        value: "custom",
-        label: "Custom command",
-        description: "Edit the full Codex launch command.",
-        icon: "custom",
-      },
-    ]
-  }
-
-  if (provider === "gemini") {
-    return [
-      {
-        value: baseCommand,
-        label: "Normal",
-        description: baseCommand,
-        icon: "terminal",
-      },
-      {
-        value: `${baseCommand} --skip-trust`,
-        label: "Skip trust",
-        description: "Trust this workspace for the session.",
-        icon: "safe",
-      },
-      {
-        value: `${baseCommand} --approval-mode auto_edit`,
-        label: "Auto edit",
-        description: "Auto-approve edit tools.",
-        icon: "safe",
-      },
-      {
-        value: `${baseCommand} --approval-mode plan`,
-        label: "Plan",
-        description: "Read-only planning mode.",
-        icon: "safe",
-      },
-      {
-        value: `${baseCommand} --yolo`,
-        label: "YOLO",
-        description: "Auto-approve all tools.",
-        icon: "danger",
-      },
-      {
-        value: "custom",
-        label: "Custom command",
-        description: "Edit the full Gemini launch command.",
-        icon: "custom",
-      },
-    ]
-  }
-
-  return [
-    {
-      value: baseCommand,
-      label: "Normal",
-      description: baseCommand,
-      icon: "terminal",
-    },
-    {
-      value: `${baseCommand} --permission-mode acceptEdits`,
-      label: "Accept edits",
-      description: "Accept file edits with safer command approvals.",
-      icon: "safe",
-    },
-    {
-      value: `${baseCommand} --permission-mode plan`,
-      label: "Plan",
-      description: "Read-only planning mode.",
-      icon: "safe",
-    },
-    {
-      value: `${baseCommand} --dangerously-skip-permissions`,
-      label: "Bypass permissions",
-      description: "Skip Claude permission checks.",
-      icon: "danger",
-    },
-    {
-      value: "custom",
-      label: "Custom command",
-      description: "Edit the full Claude launch command.",
-      icon: "custom",
-    },
-  ]
 }
 
 export function shouldAutoFollowTranscript(distanceFromBottom: number) {
@@ -1036,7 +836,6 @@ export interface AbolqasemState {
   handleRemoveQueuedMessage: (queuedMessageId: string) => Promise<void>
   handleCancel: () => Promise<void>
   handleStopDraining: () => Promise<void>
-  handleRestartTmuxSession: () => Promise<boolean>
   handleRenameChat: (chat: SidebarChatRow) => Promise<void>
   handleRenameProject: (projectId: string, sidebarTitle: string | undefined, realTitle: string) => Promise<void>
   handleArchiveChat: (chat: SidebarChatRow) => Promise<void>
@@ -1104,7 +903,6 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
   const [optimisticProcessing, setOptimisticProcessing] = useState<OptimisticProcessingState | null>(null)
   const [focusEpoch, setFocusEpoch] = useState(0)
   const creatingChatProjectIdRef = useRef<string | null>(null)
-  const autoLaunchPromptChatIdRef = useRef<string | null>(null)
   const sendToStartingProfilesRef = useRef<Map<string, SendToStartingTrace>>(new Map())
   const pendingArchiveChatIdsRef = useRef<Set<string>>(new Set())
   const draftChatIds = useChatInputStore(useShallow((state) => Object.keys(state.drafts).sort()))
@@ -1554,7 +1352,7 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
   const optimisticScopeId = activeChatId ?? NEW_CHAT_OPTIMISTIC_SCOPE
   const runtime = activeChatSnapshot?.runtime ?? null
   const queuedMessages = activeChatSnapshot?.queuedMessages ?? []
-  const shouldShowOptimisticWebPrompts = shouldRenderOptimisticWebPrompt(activeChatId, runtime?.tmuxSession)
+	const shouldShowOptimisticWebPrompts = true
   const optimisticTranscriptEntries = useMemo(
     () => {
       if (!shouldShowOptimisticWebPrompts) {
@@ -1618,32 +1416,6 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
     }, 300)
     return () => window.clearTimeout(timeoutId)
   }, [optimisticProcessing, optimisticScopeId, runtime?.status])
-
-  useEffect(() => {
-    if (!shouldRefreshActiveTmuxChat(activeChatId, runtime?.tmuxSession, connectionStatus)) {
-      return
-    }
-
-    const refreshChatId = activeChatId
-    if (!refreshChatId) return
-
-    let inFlight = false
-    const refresh = () => {
-      if (document.visibilityState !== "visible" || inFlight) {
-        return
-      }
-      inFlight = true
-      void socket.command({ type: "chat.refresh", chatId: refreshChatId })
-        .catch(() => undefined)
-        .finally(() => {
-          inFlight = false
-        })
-    }
-
-    refresh()
-    const intervalId = window.setInterval(refresh, LIVE_TMUX_CHAT_REFRESH_INTERVAL_MS)
-    return () => window.clearInterval(intervalId)
-  }, [activeChatId, connectionStatus, runtime?.tmuxSession, socket])
 
   useEffect(() => {
     if (!activeChatId || runtime?.status !== "starting") {
@@ -1772,75 +1544,7 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
     }
   }, [activeChatId, isHistoryLoading, socket])
 
-  const chooseTmuxLaunch = useCallback(async (options: {
-    suggestedProvider?: AgentProvider | null
-    sourceComposerState: ComposerState
-    askProvider: boolean
-    currentCommand?: string
-  }): Promise<TmuxLaunchSelection | null> => {
-    const settings = useAppSettingsStore.getState().settings
-    const chatPreferences = useChatPreferencesStore.getState()
-    let provider = normalizeLaunchProvider(options.suggestedProvider ?? null)
-
-    if (options.askProvider || !provider) {
-      const defaultProvider = getDefaultLaunchProvider(provider, settings?.defaultProvider, options.sourceComposerState.provider)
-      const providerInput = await dialog.choice({
-        title: "Launch agent",
-        description: "Proxy and executable settings are applied automatically.",
-        choices: getLaunchProviderChoices(availableProviders.length ? availableProviders : PROVIDERS),
-        initialValue: defaultProvider,
-        dir: "ltr",
-      })
-      if (providerInput === null) return null
-      provider = normalizeLaunchProvider(providerInput)
-    }
-
-    if (!provider) {
-      await dialog.alert({
-        title: "Invalid provider",
-        description: "Use one of: codex, claude, gemini.",
-        dir: "ltr",
-      })
-      return null
-    }
-
-    const composerState = getComposerStateForActiveProvider(
-      options.sourceComposerState,
-      provider,
-      chatPreferences.providerDefaults
-    )
-    const baseCommand = appendLaunchModelFlag(getDefaultTmuxCommand(provider, settings), composerState.model)
-    const launchModeChoices = getLaunchModeChoices(provider, baseCommand)
-    const currentCommand = options.currentCommand?.trim() ?? ""
-    const initialValue = launchModeChoices.some((choice) => choice.value === currentCommand)
-      ? currentCommand
-      : baseCommand
-    const modeInput = await dialog.choice({
-      title: `Launch ${getProviderLabel(availableProviders, provider)}`,
-      description: "Choose how this agent should run in tmux.",
-      choices: launchModeChoices,
-      initialValue,
-      dir: "ltr",
-    })
-    if (modeInput === null) return null
-    const customCommand = modeInput === "custom"
-      ? await dialog.prompt({
-        title: "Custom launch command",
-        description: "Full command with any provider-specific flags.",
-        initialValue: currentCommand || baseCommand,
-        dir: "ltr",
-      })
-      : modeInput
-    if (customCommand === null) return null
-
-    return {
-      provider,
-      tmuxCommand: customCommand.trim() || baseCommand,
-      composerState,
-    }
-  }, [availableProviders, dialog])
-
-  const createChatForProject = useCallback(async (projectId: string) => {
+	const createChatForProject = useCallback(async (projectId: string) => {
     if (creatingChatProjectIdRef.current) {
       return
     }
@@ -1852,24 +1556,17 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
       const baseSourceComposerState = activeChatId
         ? chatPreferences.getComposerState(activeChatId)
         : chatPreferences.getComposerState(NEW_CHAT_COMPOSER_ID)
-      const sourceComposerState = getComposerStateForActiveProvider(
-        baseSourceComposerState,
-        activeChatId ? runtime?.provider ?? null : null,
-        chatPreferences.providerDefaults
-      )
-      const selection = await chooseTmuxLaunch({
-        suggestedProvider: runtime?.provider,
-        sourceComposerState,
-        askProvider: true,
-      })
-      if (!selection) return
-      const result = await socket.command<{ chatId: string }>({
-        type: "chat.create",
-        projectId,
-        provider: selection.provider,
-        tmuxCommand: selection.tmuxCommand,
-      })
-      chatPreferences.initializeComposerForChat(result.chatId, { sourceState: selection.composerState })
+		const composerState = getComposerStateForActiveProvider(
+			baseSourceComposerState,
+			activeChatId ? runtime?.provider ?? null : null,
+			chatPreferences.providerDefaults
+		)
+		const result = await socket.command<{ chatId: string }>({
+			type: "chat.create",
+			projectId,
+			provider: composerState.provider,
+		})
+		chatPreferences.initializeComposerForChat(result.chatId, { sourceState: composerState })
       setSelectedProjectId(projectId)
       setPendingChatId(result.chatId)
       navigate(chatRoute(result.chatId))
@@ -1879,45 +1576,7 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
       creatingChatProjectIdRef.current = null
       setCreatingChatProjectId(null)
     }
-  }, [activeChatId, chooseTmuxLaunch, navigate, runtime?.provider, socket])
-
-  const handleRestartTmuxSession = useCallback(async () => {
-    if (!runtime?.chatId || !runtime.tmuxSession?.trim()) return false
-    const chatPreferences = useChatPreferencesStore.getState()
-    const sourceComposerState = getComposerStateForActiveProvider(
-      chatPreferences.getComposerState(runtime.chatId),
-      runtime.provider,
-      chatPreferences.providerDefaults
-    )
-    const selection = await chooseTmuxLaunch({
-      suggestedProvider: runtime.provider,
-      sourceComposerState,
-      askProvider: !normalizeLaunchProvider(runtime.provider),
-      currentCommand: runtime.tmuxCommand,
-    })
-    if (!selection) return false
-
-    await socket.command({
-      type: "chat.restartTmux",
-      chatId: runtime.chatId,
-      provider: selection.provider,
-      tmuxCommand: selection.tmuxCommand,
-    })
-    return true
-  }, [chooseTmuxLaunch, runtime, socket])
-
-  useEffect(() => {
-    autoLaunchPromptChatIdRef.current = null
-  }, [activeChatId])
-
-  useEffect(() => {
-    if (!activeChatId || runtime?.chatId !== activeChatId || !shouldRequestTmuxLaunch(runtime)) return
-    if (autoLaunchPromptChatIdRef.current === activeChatId) return
-    autoLaunchPromptChatIdRef.current = activeChatId
-    void handleRestartTmuxSession().catch((error: unknown) => {
-      setCommandError(error instanceof Error ? error.message : String(error))
-    })
-  }, [activeChatId, handleRestartTmuxSession, runtime])
+	}, [activeChatId, navigate, runtime?.provider, socket])
 
   const resolveProjectIdForStartChat = useCallback(async (intent: StartChatIntent): Promise<{ projectId: string; localPath?: string }> => {
     if (intent.kind === "project_id") {
@@ -2005,7 +1664,7 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
         targetProvider: provider,
       })
       setSessionForkOperation(null)
-      const providerLabel = provider === "claude" ? "Claude" : provider === "codex" ? "Codex" : "Gemini"
+		const providerLabel = provider === "claude" ? "Claude" : "Codex"
       const confirmed = await dialog.confirm({
         dir: direction,
         title: locale === "fa" ? `Fork به ${providerLabel}؟` : `Fork to ${providerLabel}?`,
@@ -2122,7 +1781,7 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
     options?: { provider?: AgentProvider; model?: string; modelOptions?: ModelOptions; planMode?: boolean; attachments?: ChatAttachment[] }
   ) => {
     const attachments = options?.attachments ?? []
-    if (shouldEnqueueUserPrompt(activeChatId, isProcessing, runtime?.tmuxSession)) {
+	if (shouldEnqueueUserPrompt(activeChatId, isProcessing)) {
       const queueChatId = activeChatId
       if (!queueChatId) return
       try {
@@ -2148,7 +1807,7 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
     const clientTraceId = generateUUID()
     const signature = getUserPromptSignature(content, attachments)
     const optimisticScopeId = activeChatId ?? NEW_CHAT_OPTIMISTIC_SCOPE
-    const shouldUseOptimisticWebPrompt = shouldRenderOptimisticWebPrompt(activeChatId, runtime?.tmuxSession)
+	const shouldUseOptimisticWebPrompt = true
     if (shouldUseOptimisticWebPrompt) {
       setOptimisticProcessing({
         scopeId: optimisticScopeId,
@@ -2171,7 +1830,6 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
       attachments: attachments.length,
       contentLength: content.length,
       contentPreview: sendTrace.contentPreview,
-      tmuxSession: runtime?.tmuxSession ?? null,
     })
     if (shouldUseOptimisticWebPrompt) {
       const requiredMatchCount = countMatchingUserPrompts(serverTranscriptEntries, signature)
@@ -2271,7 +1929,7 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
       setCommandError(error instanceof Error ? error.message : String(error))
       throw error
     }
-  }, [activeChatId, fallbackLocalProjectPath, isProcessing, navigate, optimisticUserPrompts, runtime?.tmuxSession, selectedProjectId, serverTranscriptEntries, sidebarProjectGroups, socket])
+	}, [activeChatId, fallbackLocalProjectPath, isProcessing, navigate, optimisticUserPrompts, selectedProjectId, serverTranscriptEntries, sidebarProjectGroups, socket])
 
   const handleSteerQueuedMessage = useCallback(async (queuedMessageId: string) => {
     if (!activeChatId) return
@@ -2667,7 +2325,6 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
     handleRemoveQueuedMessage,
     handleCancel,
     handleStopDraining,
-    handleRestartTmuxSession,
     handleRenameChat,
     handleRenameProject,
     handleArchiveChat,

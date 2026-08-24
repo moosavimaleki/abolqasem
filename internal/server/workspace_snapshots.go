@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"path/filepath"
 	"strings"
 
@@ -10,7 +9,6 @@ import (
 	"abolqasem/internal/workspace/eventstore"
 	"abolqasem/internal/workspace/protocol"
 	"abolqasem/internal/workspace/readmodels"
-	"abolqasem/internal/workspace/tmuxruntime"
 )
 
 var workspaceDataDir = func() string {
@@ -136,28 +134,6 @@ func workspaceNativeTranscriptSnapshot(chat readmodels.ChatRecord, recentLimit i
 			RecentLimit: recentLimit,
 		},
 	}, true
-}
-
-func applyTmuxRuntimeStatus(snapshot *readmodels.ChatSnapshot) {
-	if snapshot == nil || strings.TrimSpace(snapshot.Runtime.TmuxSession) == "" {
-		return
-	}
-	if !tmuxruntime.SessionExists(context.Background(), snapshot.Runtime.TmuxSession) {
-		return
-	}
-	snapshot.Runtime.TmuxActive = true
-	status, err := tmuxruntime.ReadStatus(context.Background(), snapshot.Runtime.TmuxSession)
-	if err != nil {
-		return
-	}
-	switch status.State {
-	case "waiting":
-		snapshot.Runtime.Status = readmodels.StatusWaitingForUser
-	case "idle":
-		snapshot.Runtime.Status = readmodels.StatusIdle
-	case "running":
-		snapshot.Runtime.Status = readmodels.StatusRunning
-	}
 }
 
 func workspaceBackfillLegacySessionTokenForSnapshot(

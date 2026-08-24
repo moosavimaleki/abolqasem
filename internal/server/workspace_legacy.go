@@ -447,7 +447,6 @@ func workspaceShouldExposeLegacySession(meta state.SessionMeta) bool {
 	providerRoots := []string{
 		filepath.Join(home, ".claude", "projects"),
 		filepath.Join(home, ".codex", "sessions"),
-		filepath.Join(home, ".gemini", "tmp"),
 	}
 	for _, root := range providerRoots {
 		if strings.HasPrefix(filepath.Clean(cwd), filepath.Clean(root)+string(filepath.Separator)) || filepath.Clean(cwd) == filepath.Clean(root) {
@@ -980,16 +979,6 @@ func workspaceLegacyImportedEntryPrefixes(meta state.SessionMeta) []string {
 			"codex-tool-result-" + sessionID + "-",
 			"codex-message-" + sessionID + "-",
 			"codex-compact-" + sessionID + "-",
-		}
-	case "gemini":
-		return []string{
-			"gemini-compact-summary-" + sessionID,
-			"gemini-user-" + sessionID + "-",
-			"gemini-assistant-" + sessionID + "-",
-			"gemini-tool-call-" + sessionID + "-",
-			"gemini-tool-result-" + sessionID + "-",
-			"gemini-status-" + sessionID + "-",
-			"gemini-info-" + sessionID + "-",
 		}
 	default:
 		return nil

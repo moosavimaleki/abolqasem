@@ -17,9 +17,6 @@ interface Props {
   clearVersion?: number
   focusRequestVersion?: number
   initialCommand?: string
-  mode?: "shell" | "tmux"
-  chatId?: string
-  tmuxSession?: string
   command?: string
   closeOnUnmount?: boolean
   directionMode?: TerminalDirectionMode
@@ -280,9 +277,6 @@ export function TerminalPane({
   clearVersion = 0,
   focusRequestVersion = 0,
   initialCommand,
-  mode = "shell",
-  chatId,
-  tmuxSession,
   command,
   closeOnUnmount = false,
   directionMode = "normal",
@@ -304,10 +298,6 @@ export function TerminalPane({
   const [error, setError] = useState<string | null>(null)
   const terminalTheme = resolvedTheme === "dark" ? TERMINAL_THEME_DARK : TERMINAL_THEME_LIGHT
   const sendInput = (data: string) => {
-    if (mode === "tmux") {
-      data = filterTerminalInputForTmux(data)
-      if (!data) return
-    }
     void socket.command({
       type: "terminal.input",
       terminalId,
@@ -534,9 +524,6 @@ export function TerminalPane({
         type: "terminal.create",
         projectId,
         terminalId,
-        mode,
-        chatId,
-        tmuxSession,
         command,
         cols: size.cols,
         rows: size.rows,
@@ -616,7 +603,7 @@ export function TerminalPane({
         }
       },
     })
-  }, [chatId, command, connectionStatus, initialCommand, mode, onInitialCommandSent, projectId, scrollback, socket, terminalId, tmuxSession])
+  }, [command, connectionStatus, initialCommand, onInitialCommandSent, projectId, scrollback, socket, terminalId])
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pb-4">

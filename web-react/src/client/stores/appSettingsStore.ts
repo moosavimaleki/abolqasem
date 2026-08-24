@@ -34,10 +34,6 @@ export function mergeAppSettingsPatch(
       ...settings.providerExecutables,
       ...(patch.providerExecutables ?? {}),
     },
-    tmuxCommands: {
-      ...settings.tmuxCommands,
-      ...(patch.tmuxCommands ?? {}),
-    },
     commitMessageGenerator: {
       ...settings.commitMessageGenerator,
       ...patch.commitMessageGenerator,
@@ -59,14 +55,6 @@ export function mergeAppSettingsPatch(
           ...patch.providerDefaults?.codex?.modelOptions,
         },
       },
-      gemini: {
-        ...settings.providerDefaults.gemini,
-        ...patch.providerDefaults?.gemini,
-        modelOptions: {
-          ...settings.providerDefaults.gemini.modelOptions,
-          ...patch.providerDefaults?.gemini?.modelOptions,
-        },
-      },
     },
     providerModelCatalog: {
       ...settings.providerModelCatalog,
@@ -78,10 +66,6 @@ export function mergeAppSettingsPatch(
       codex: {
         ...settings.providerModelCatalog.codex,
         ...patch.providerModelCatalog?.codex,
-      },
-      gemini: {
-        ...settings.providerModelCatalog.gemini,
-        ...patch.providerModelCatalog?.gemini,
       },
     },
   }

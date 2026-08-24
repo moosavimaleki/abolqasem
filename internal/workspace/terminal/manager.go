@@ -1,7 +1,6 @@
 package terminal
 
 import (
-	"abolqasem/internal/workspace/tmuxruntime"
 	"context"
 	"errors"
 	"io"
@@ -117,22 +116,6 @@ func (m *Manager) Create(ctx context.Context, request CreateRequest) (Snapshot, 
 	shell := defaultShell()
 	title := "Terminal"
 	cmd := exec.CommandContext(ctx, shell)
-	if request.Mode == "tmux" {
-		if runtime.GOOS == "windows" {
-			return Snapshot{}, errors.New("tmux terminal mode is not supported on Windows")
-		}
-		tmuxSession := tmuxruntime.NormalizeSessionName(request.TmuxSession)
-		if err := tmuxruntime.EnsureSession(ctx, tmuxSession, cwd, request.Command); err != nil {
-			return Snapshot{}, err
-		}
-		shell = "tmux"
-		title = "Tmux: " + tmuxSession
-		attachCommand, err := tmuxruntime.AttachCommand(ctx, tmuxSession)
-		if err != nil {
-			return Snapshot{}, err
-		}
-		cmd = attachCommand
-	}
 	cmd.Dir = cwd
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
 	proc, err := startProcess(cmd, cols, rows)

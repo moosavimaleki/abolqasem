@@ -4,7 +4,6 @@ import (
 	"abolqasem/internal/adapters"
 	"abolqasem/internal/adapters/claude"
 	"abolqasem/internal/adapters/codex"
-	"abolqasem/internal/adapters/gemini"
 	"abolqasem/internal/appinfo"
 	"abolqasem/internal/state"
 	"errors"
@@ -16,7 +15,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var supportedInstallAgents = []string{"codex", "claude", "gemini"}
+var supportedInstallAgents = []string{"codex", "claude"}
 
 var (
 	installPersistentService = installService
@@ -46,8 +45,6 @@ func getAdapter(agent string) (adapters.AgentAdapter, error) {
 		return codex.New(), nil
 	case "claude":
 		return claude.New(), nil
-	case "gemini":
-		return gemini.New(), nil
 	default:
 		return nil, fmt.Errorf("unknown agent: %s", agent)
 	}
@@ -173,8 +170,6 @@ func humanAgentList(agents []string) string {
 			names = append(names, "Codex")
 		case "claude":
 			names = append(names, "Claude Code")
-		case "gemini":
-			names = append(names, "Gemini CLI")
 		default:
 			names = append(names, agent)
 		}
@@ -185,5 +180,5 @@ func humanAgentList(agents []string) string {
 	if len(names) == 2 {
 		return names[0] + " and " + names[1]
 	}
-	return names[0] + ", " + names[1] + ", and " + names[2]
+	return strings.Join(names[:len(names)-1], ", ") + ", and " + names[len(names)-1]
 }

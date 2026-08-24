@@ -67,11 +67,6 @@ describe("migrateChatPreferencesState", () => {
           modelOptions: { reasoningEffort: "minimal", fastMode: true },
           planMode: false,
         },
-        gemini: {
-          model: "gemini-3-pro-preview",
-          modelOptions: {},
-          planMode: false,
-        },
       },
       chatStates: {},
       legacyComposerState: {

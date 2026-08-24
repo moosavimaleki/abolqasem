@@ -201,6 +201,20 @@ func TestStreamNormalizerMapsFileChanges(t *testing.T) {
 	}
 }
 
+func TestStreamNormalizerMapsPlanToPlanCard(t *testing.T) {
+	events := NewStreamNormalizer().HandleNotification(notification("item/completed", map[string]any{
+		"item": map[string]any{"type": "plan", "id": "plan-1", "text": "1. Inspect\n2. Implement"},
+	}))
+	if len(events) != 1 || events[0].Entry["kind"] != "tool_call" {
+		t.Fatalf("unexpected plan events: %#v", events)
+	}
+	tool := events[0].Entry["tool"].(map[string]any)
+	input := tool["input"].(map[string]any)
+	if tool["toolKind"] != "exit_plan_mode" || input["plan"] != "1. Inspect\n2. Implement" {
+		t.Fatalf("unexpected plan card payload: %#v", tool)
+	}
+}
+
 func notification(method string, params any) codexrpc.Notification {
 	data, err := json.Marshal(params)
 	if err != nil {

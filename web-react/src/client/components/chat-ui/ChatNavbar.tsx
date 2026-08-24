@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react"
-import { Check, Copy, Files, GitBranch, Globe, Loader2, Menu, MessageSquare, MoreHorizontal, PanelLeft, PanelRight, RefreshCw, Search as SearchIcon, Settings2, SquarePen, Terminal } from "lucide-react"
+import { Check, Copy, Files, GitBranch, Globe, Loader2, Menu, MoreHorizontal, PanelLeft, PanelRight, Search as SearchIcon, Settings2, SquarePen, Terminal } from "lucide-react"
 import type { EditorOpenSettings, EditorPreset, OpenExternalAction } from "../../../shared/protocol"
 import { Button } from "../ui/button"
 import { CardHeader } from "../ui/card"
@@ -325,9 +325,6 @@ interface Props {
   localPath?: string
   embeddedTerminalVisible?: boolean
   onToggleEmbeddedTerminal?: () => void
-  chatTerminalModeActive?: boolean
-  onToggleChatTerminalMode?: () => void
-  onRestartTmuxSession?: () => void
   rightPanel?: "hidden" | "git" | "browser" | "files"
   onToggleGitPanel?: () => void
   onToggleBrowserPanel?: () => void
@@ -358,9 +355,6 @@ export function ChatNavbar({
   localPath,
   embeddedTerminalVisible = false,
   onToggleEmbeddedTerminal,
-  chatTerminalModeActive = false,
-  onToggleChatTerminalMode,
-  onRestartTmuxSession,
   rightPanel = "hidden",
   onToggleGitPanel,
   onToggleBrowserPanel,
@@ -409,10 +403,6 @@ export function ChatNavbar({
   const showFilesPanelButton = rightPanel !== "files"
   const showGitPanelButton = rightPanel !== "git"
   const canSearchCurrentChat = Boolean(activeChatId && onChatSearchResultSelect)
-  const chatTerminalModeLabel = chatTerminalModeActive
-    ? (isPersian ? "نمای وب" : "Web view")
-    : (isPersian ? "نمای ترمینال" : "Terminal view")
-  const restartTmuxLabel = isPersian ? "باز کردن دوباره tmux" : "Restart tmux session"
   const chatSearchLabels = isPersian ? {
     title: "جست‌وجو در همین نشست",
     placeholder: "جست‌وجو در transcript همین نشست",
@@ -432,7 +422,6 @@ export function ChatNavbar({
     onOpenExternal
     || canSearchCurrentChat
     || messages.length > 0
-    || onToggleChatTerminalMode
     || onToggleEmbeddedTerminal
     || onToggleGitPanel
     || onToggleBrowserPanel
@@ -503,24 +492,11 @@ export function ChatNavbar({
                 <span dir="ltr" className="truncate text-foreground">{shortSessionToken(visibleSessionToken)}</span>
                 <Copy className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
               </Button>
-              {onRestartTmuxSession ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  onClick={onRestartTmuxSession}
-                  className="h-6 w-6 rounded-full text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-                  title={restartTmuxLabel}
-                  aria-label={restartTmuxLabel}
-                >
-                  <RefreshCw className="h-3.5 w-3.5" />
-                </Button>
-              ) : null}
             </div>
           ) : null}
         </div>
 
-        {(localPath || canSearchCurrentChat || messages.length > 0 || onToggleChatTerminalMode) && hasHeaderActions ? (
+        {(localPath || canSearchCurrentChat || messages.length > 0) && hasHeaderActions ? (
           <div className="flex items-center gap-2 flex-shrink-0">
             {localPath && onOpenExternal ? (
               <div className="hidden md:flex h-[30px] items-center overflow-hidden border border-border/70 rounded-[9px] backdrop-blur-lg">
@@ -566,22 +542,6 @@ export function ChatNavbar({
                     </Button>
                   )}
                 />
-                {onToggleChatTerminalMode ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="none"
-                    onClick={onToggleChatTerminalMode}
-                    title={chatTerminalModeLabel}
-                    aria-label={chatTerminalModeLabel}
-                    className={cn(
-                      "border border-border/0 px-1.5 h-9 hover:!border-border/0 hover:!bg-transparent",
-                      chatTerminalModeActive && "text-foreground"
-                    )}
-                  >
-                    {chatTerminalModeActive ? <MessageSquare strokeWidth={2.1} className="h-4" /> : <Terminal strokeWidth={2.1} className="h-4" />}
-                  </Button>
-                ) : null}
                 <NavbarOverflowMenu
                   showOnDesktop={rightPanelVisible}
                   onToggleEmbeddedTerminal={onToggleEmbeddedTerminal}

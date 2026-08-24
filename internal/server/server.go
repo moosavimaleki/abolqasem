@@ -25,6 +25,7 @@ func Serve(listener net.Listener) error {
 	mux := http.NewServeMux()
 
 	setupRoutes(mux)
+	workspaceTelegramBridge.Reload()
 
 	srv := &http.Server{
 		Addr:    listener.Addr().String(),

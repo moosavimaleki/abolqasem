@@ -120,11 +120,9 @@ func ParseStreamResult(reader io.Reader) (PromptResult, error) {
 func entriesFromEvent(event map[string]any) []readmodels.TranscriptEntry {
 	switch eventType(event) {
 	case "assistant":
-		text := assistantText(event)
-		if text == "" {
-			return nil
-		}
-		return []readmodels.TranscriptEntry{transcript.New(transcript.KindAssistantText, map[string]any{"text": text})}
+		return assistantEntries(event)
+	case "user":
+		return toolResultEntries(event)
 	case "result":
 		return []readmodels.TranscriptEntry{transcript.New(transcript.KindResult, map[string]any{
 			"subtype":    "success",
@@ -134,6 +132,82 @@ func entriesFromEvent(event map[string]any) []readmodels.TranscriptEntry {
 		})}
 	default:
 		return nil
+	}
+}
+
+func assistantEntries(event map[string]any) []readmodels.TranscriptEntry {
+	message, _ := event["message"].(map[string]any)
+	content, _ := message["content"].([]any)
+	if len(content) == 0 {
+		if text := assistantText(event); text != "" {
+			return []readmodels.TranscriptEntry{transcript.New(transcript.KindAssistantText, map[string]any{"text": text})}
+		}
+		return nil
+	}
+	entries := make([]readmodels.TranscriptEntry, 0, len(content))
+	for _, raw := range content {
+		block, _ := raw.(map[string]any)
+		switch stringValue(block["type"]) {
+		case "text":
+			if text := stringValue(block["text"]); text != "" {
+				entries = append(entries, transcript.New(transcript.KindAssistantText, map[string]any{"text": text}))
+			}
+		case "tool_use":
+			toolID := stringValue(block["id"])
+			if toolID == "" {
+				continue
+			}
+			name := stringValue(block["name"])
+			entries = append(entries, transcript.New(transcript.KindToolCall, map[string]any{"tool": map[string]any{
+				"kind":     "tool",
+				"toolKind": claudeToolKind(name),
+				"toolName": name,
+				"toolId":   toolID,
+				"input":    block["input"],
+			}}))
+		}
+	}
+	return entries
+}
+
+func toolResultEntries(event map[string]any) []readmodels.TranscriptEntry {
+	message, _ := event["message"].(map[string]any)
+	content, _ := message["content"].([]any)
+	entries := make([]readmodels.TranscriptEntry, 0, len(content))
+	for _, raw := range content {
+		block, _ := raw.(map[string]any)
+		if stringValue(block["type"]) != "tool_result" {
+			continue
+		}
+		toolID := stringValue(block["tool_use_id"])
+		if toolID == "" {
+			continue
+		}
+		entries = append(entries, transcript.New(transcript.KindToolResult, map[string]any{
+			"toolId":  toolID,
+			"content": block["content"],
+			"isError": block["is_error"] == true,
+		}))
+	}
+	return entries
+}
+
+func claudeToolKind(name string) string {
+	switch name {
+	case "Bash":
+		return "bash"
+	case "Read":
+		return "read_file"
+	case "Write":
+		return "write_file"
+	case "Edit", "MultiEdit":
+		return "edit_file"
+	case "Glob":
+		return "glob"
+	case "Grep":
+		return "grep"
+	default:
+		return "unknown_tool"
 	}
 }
 

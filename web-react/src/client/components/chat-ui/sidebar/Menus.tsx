@@ -149,7 +149,7 @@ export function ChatRowMenu({
           <Split className="h-3.5 w-3.5" />
           <span className="text-xs font-medium">{t.common.fork}</span>
         </ContextMenuItem>
-        {(["claude", "codex", "gemini"] as const).map((provider) => (
+        {(["claude", "codex"] as const).map((provider) => (
           <ContextMenuItem
             key={provider}
             disabled={!canFork}
@@ -160,7 +160,7 @@ export function ChatRowMenu({
             }}
           >
             <Split className="h-3.5 w-3.5" />
-            <span className="text-xs font-medium">{t.sidebar.forkToProvider(provider === "claude" ? "Claude" : provider === "codex" ? "Codex" : "Gemini")}</span>
+            <span className="text-xs font-medium">{t.sidebar.forkToProvider(provider === "claude" ? "Claude" : "Codex")}</span>
           </ContextMenuItem>
         ))}
         <ContextMenuItem

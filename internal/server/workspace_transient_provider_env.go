@@ -42,11 +42,6 @@ func workspaceTransientProviderEnv(provider string) ([]string, func(), error) {
 		env = workspaceSetEnvValue(env, "CLAUDE_CONFIG_DIR", targetRoot)
 		env = workspaceSetEnvValue(env, "CLAUDE_HOME", targetRoot)
 		skipDir = "projects"
-	case "gemini":
-		sourceRoot = workspaceGeminiRootDir()
-		targetRoot = filepath.Join(tempHome, ".gemini")
-		env = workspaceSetEnvValue(env, "GEMINI_CLI_HOME", tempHome)
-		skipDir = "tmp"
 	default:
 		cleanup()
 		return nil, nil, fmt.Errorf("unsupported commit message provider: %s", provider)
@@ -186,16 +181,4 @@ func workspaceClaudeRootDir() string {
 	}
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".claude")
-}
-
-func workspaceGeminiRootDir() string {
-	home, _ := os.UserHomeDir()
-	base := strings.TrimSpace(os.Getenv("GEMINI_CLI_HOME"))
-	if base == "" {
-		return filepath.Join(home, ".gemini")
-	}
-	if filepath.Base(base) == ".gemini" {
-		return base
-	}
-	return filepath.Join(base, ".gemini")
 }

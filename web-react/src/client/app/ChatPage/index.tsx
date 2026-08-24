@@ -9,7 +9,6 @@ import { BrowserPanel } from "../../components/chat-ui/BrowserPanel"
 import type { MessageIndexItem } from "../../components/chat-ui/ConversationMinimap"
 import { GitPanel } from "../../components/chat-ui/GitPanel"
 import { ProjectFilesPanel, type ProjectFileEntry } from "../../components/chat-ui/ProjectFilesPanel"
-import { TerminalPane, type TerminalDirectionMode } from "../../components/chat-ui/TerminalPane"
 import { readProjectFilePreview } from "../../components/chat-ui/projectFilesData"
 import { FilePreviewPanel, fileRouteHref, type FilePreviewResponse } from "../../components/file-preview/FilePreviewPanel"
 import { useAppDialog } from "../../components/ui/app-dialog"
@@ -36,7 +35,7 @@ import { useStickyChatFocus } from "../useStickyChatFocus"
 import { useTerminalToggleAnimation } from "../useTerminalToggleAnimation"
 import type { AbolqasemState } from "../useAbolqasemState"
 import { getNextMeasuredInputHeight, getTranscriptPaddingBottom } from "../useAbolqasemState"
-import type { AgentProvider, ChatTranscriptIndexSnapshot, ModelOptions, TranscriptIndexItem } from "../../../shared/types"
+import type { ChatTranscriptIndexSnapshot, TranscriptIndexItem } from "../../../shared/types"
 import { ChatInputDock } from "./ChatInputDock"
 import { CodexSessionLockNotice } from "./CodexSessionLockNotice"
 import { ChatTranscriptViewport } from "./ChatTranscriptViewport"
@@ -685,12 +684,6 @@ const ChatSidebarContent = memo(function ChatSidebarContent(props: ChatSidebarCo
   )
 })
 
-type ChatViewMode = "web" | "terminal"
-
-export function getNextChatViewMode(current: ChatViewMode): ChatViewMode {
-  return current === "terminal" ? "web" : "terminal"
-}
-
 export function getTerminalPanelDefaultSizes(showTerminalPane: boolean, mainSizes: [number, number]): [number, number] {
   return showTerminalPane ? mainSizes : [100, 0]
 }
@@ -912,7 +905,6 @@ export function ChatPage() {
   const [conversationIndex, setConversationIndex] = useState<TranscriptIndexItem[]>([])
   const [conversationIndexLoading, setConversationIndexLoading] = useState(false)
   const [conversationIndexChatId, setConversationIndexChatId] = useState<string | null>(null)
-  const [chatViewMode, setChatViewMode] = useState<ChatViewMode>("web")
   const [pendingTerminalCommands, setPendingTerminalCommands] = useState<Record<string, string>>({})
   const [filesPanelFocusToken, setFilesPanelFocusToken] = useState(0)
   const [projectFilePreviewTarget, setProjectFilePreviewTarget] = useState<ProjectFilePreviewTarget | null>(null)
@@ -999,12 +991,6 @@ export function ChatPage() {
   const hasTerminals = terminalLayout.terminals.length > 0
   const showTerminalPane = Boolean(projectId && terminalLayout.isVisible && hasTerminals)
   const shouldRenderTerminalLayout = Boolean(projectId && hasTerminals)
-  const showChatTmuxTerminal = Boolean(projectId && state.activeChatId && chatViewMode === "terminal")
-  const [chatTmuxRestartVersionByChatId, setChatTmuxRestartVersionByChatId] = useState<Record<string, number>>({})
-  const chatTmuxRestartVersion = state.activeChatId ? (chatTmuxRestartVersionByChatId[state.activeChatId] ?? 0) : 0
-  const chatTmuxTerminalId = state.activeChatId ? `chat-tmux-${state.activeChatId}-${chatTmuxRestartVersion}` : ""
-  const chatTmuxSession = state.runtime?.tmuxSession || (state.activeChatId ? `abolqasem-${state.activeChatId}` : "")
-  const [terminalDirectionMode, setTerminalDirectionMode] = useState<TerminalDirectionMode>("normal")
   const activeRightPanel = projectId ? rightSidebarVisibility.rightPanel : "hidden"
   const showRightSidebar = Boolean(projectId && activeRightPanel !== "hidden")
   const showGitPanel = Boolean(projectId && activeRightPanel === "git")
@@ -1164,57 +1150,6 @@ export function ChatPage() {
 
     addTerminal(projectId)
   }, [addTerminal, hasTerminals, projectId, toggleVisibility])
-
-  const handleToggleChatTerminalMode = useCallback(() => {
-    if (!projectId || !state.activeChatId) return
-    const nextMode = getNextChatViewMode(chatViewMode)
-    setChatViewMode(nextMode)
-    if (nextMode === "web") {
-      void state.socket.command({ type: "chat.refresh", chatId: state.activeChatId }).catch(() => {})
-    }
-  }, [chatViewMode, projectId, state.activeChatId, state.socket])
-
-  const handleRestartTmuxSession = useCallback(() => {
-    if (!state.activeChatId || !state.runtime?.tmuxSession?.trim()) return
-    const chatId = state.activeChatId
-    void state.handleRestartTmuxSession()
-      .then((restarted) => {
-        if (!restarted) return
-        setChatTmuxRestartVersionByChatId((current) => ({
-          ...current,
-          [chatId]: (current[chatId] ?? 0) + 1,
-        }))
-        return state.socket.command({ type: "chat.refresh", chatId })
-      })
-      .catch((error: unknown) => {
-        void dialog.alert({
-          title: "Restart tmux failed",
-          description: error instanceof Error ? error.message : String(error),
-          closeLabel: t.common.ok,
-        })
-      })
-  }, [dialog, state.activeChatId, state.handleRestartTmuxSession, state.runtime?.tmuxSession, state.socket, t])
-
-  const handleRuntimePreferenceChange = useCallback(async (preference: { provider: AgentProvider; model: string; modelOptions: ModelOptions }) => {
-    if (!state.activeChatId) return
-    const chatId = state.activeChatId
-    try {
-      await state.socket.command({
-        type: "chat.applyRuntimePreferences",
-        chatId,
-        provider: preference.provider,
-        model: preference.model,
-        modelOptions: preference.modelOptions,
-      })
-      await state.socket.command({ type: "chat.refresh", chatId })
-    } catch (error) {
-      await dialog.alert({
-        title: "Runtime preference failed",
-        description: error instanceof Error ? error.message : String(error),
-        closeLabel: t.common.ok,
-      })
-    }
-  }, [dialog, state.activeChatId, state.socket, t])
 
   const handleTerminalResize = useCallback((layout: Record<string, number>) => {
     if (!projectId || !showTerminalPane || isTerminalAnimating.current) {
@@ -1945,9 +1880,6 @@ export function ChatPage() {
           localPath={state.navbarLocalPath}
           embeddedTerminalVisible={showTerminalPane}
           onToggleEmbeddedTerminal={projectId ? handleToggleEmbeddedTerminal : undefined}
-          chatTerminalModeActive={showChatTmuxTerminal}
-          onToggleChatTerminalMode={projectId && state.activeChatId ? handleToggleChatTerminalMode : undefined}
-          onRestartTmuxSession={state.runtime?.tmuxSession?.trim() ? handleRestartTmuxSession : undefined}
           rightPanel={activeRightPanel}
           onToggleGitPanel={projectId ? handleToggleGitPanel : undefined}
           onToggleBrowserPanel={projectId ? handleToggleBrowserPanel : undefined}
@@ -1969,44 +1901,7 @@ export function ChatPage() {
           sessionToken={state.runtime?.sessionToken}
           pendingForkSessionToken={state.runtime?.pendingForkSessionToken}
         />
-        {showChatTmuxTerminal ? (
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden" style={{ paddingTop: PROJECT_FILE_PREVIEW_NAVBAR_OFFSET_PX }}>
-            <div className="mx-auto mb-2 flex shrink-0 items-center gap-1 rounded-full border border-border/70 bg-background/80 p-1 shadow-sm backdrop-blur">
-              {[
-                ["normal", "Normal"],
-                ["rtl", "RTL"],
-                ["smart", "Smart RTL"],
-              ].map(([mode, label]) => (
-                <Button
-                  key={mode}
-                  type="button"
-                  variant={terminalDirectionMode === mode ? "secondary" : "ghost"}
-                  size="sm"
-                  className={cn(
-                    "h-7 rounded-full px-3 text-xs",
-                    terminalDirectionMode === mode && "border border-primary/20 bg-primary/10 text-primary"
-                  )}
-                  onClick={() => setTerminalDirectionMode(mode as TerminalDirectionMode)}
-                >
-                  {label}
-                </Button>
-              ))}
-            </div>
-            <TerminalPane
-              projectId={projectId ?? ""}
-              terminalId={chatTmuxTerminalId}
-              socket={state.socket}
-              scrollback={scrollback}
-              connectionStatus={state.connectionStatus}
-              mode="tmux"
-              chatId={state.activeChatId ?? undefined}
-              tmuxSession={chatTmuxSession}
-              command={state.runtime?.tmuxCommand}
-              directionMode={terminalDirectionMode}
-              closeOnUnmount
-            />
-          </div>
-        ) : projectFilePreviewContent ?? (
+        {projectFilePreviewContent ?? (
           <ChatTranscriptViewport
             activeChatId={state.activeChatId}
             listRef={transcriptListRef}
@@ -2020,7 +1915,6 @@ export function ChatPage() {
             isHistoryLoading={state.isHistoryLoading}
             hasOlderHistory={state.hasOlderHistory}
             isProcessing={state.isProcessing}
-            hasTmuxRuntime={Boolean(state.runtime?.tmuxSession?.trim())}
             runtimeStatus={state.runtimeStatus}
             isDraining={state.isDraining}
             commandError={state.commandError}
@@ -2059,7 +1953,7 @@ export function ChatPage() {
         />
       ) : null}
 
-      {showChatTmuxTerminal || codexChatReadOnly ? null : (
+      {codexChatReadOnly ? null : (
         <ChatInputDock
           inputRef={inputRef}
           onLayoutChange={syncInputHeight}
@@ -2076,7 +1970,6 @@ export function ChatPage() {
           availableProviders={state.availableProviders}
           contextWindowSnapshot={contextWindowSnapshot}
           onSubmit={handleChatSubmit}
-          onRuntimePreferenceChange={state.runtime?.tmuxSession?.trim() ? handleRuntimePreferenceChange : undefined}
           onCancel={handleCancel}
         />
       )}

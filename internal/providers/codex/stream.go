@@ -65,6 +65,8 @@ func itemStartedEvents(raw json.RawMessage) []HarnessEvent {
 		return nil
 	}
 	switch asString(params.Item["type"]) {
+	case "plan":
+		return planItemEvents(params.Item)
 	case "commandExecution":
 		command := asString(params.Item["command"])
 		if command == "" {
@@ -104,6 +106,23 @@ func itemStartedEvents(raw json.RawMessage) []HarnessEvent {
 	}
 }
 
+func planItemEvents(item map[string]any) []HarnessEvent {
+	text := firstStringValue(item, "text", "plan", "content", "summary")
+	if text == "" {
+		return nil
+	}
+	return []HarnessEvent{{
+		Type: "transcript",
+		Entry: transcript.New(transcript.KindToolCall, map[string]any{"tool": map[string]any{
+			"kind":     "tool",
+			"toolKind": "exit_plan_mode",
+			"toolName": "Plan",
+			"toolId":   asString(item["id"]),
+			"input":    map[string]any{"plan": text},
+		}}),
+	}}
+}
+
 func itemCompletedEvents(raw json.RawMessage) []HarnessEvent {
 	var params struct {
 		Item map[string]any `json:"item"`
@@ -112,6 +131,8 @@ func itemCompletedEvents(raw json.RawMessage) []HarnessEvent {
 		return nil
 	}
 	switch asString(params.Item["type"]) {
+	case "plan":
+		return planItemEvents(params.Item)
 	case "agentMessage":
 		text := asString(params.Item["text"])
 		if text == "" {

@@ -15,7 +15,6 @@ import (
 	"abolqasem/internal/workspace/eventstore"
 	"abolqasem/internal/workspace/protocol"
 	"abolqasem/internal/workspace/readmodels"
-	"abolqasem/internal/workspace/tmuxruntime"
 )
 
 const (
@@ -497,9 +496,7 @@ func optionalString(value string) *string {
 	return &value
 }
 
-func workspaceChatTmuxSession(chatID string) string {
-	return tmuxruntime.NormalizeSessionName("abolqasem-" + strings.TrimSpace(chatID))
-}
+func workspaceChatTmuxSession(chatID string) string { return "abolqasem-" + strings.TrimSpace(chatID) }
 
 func workspaceMarkChatRead(chatID string) error {
 	chatID = strings.TrimSpace(chatID)
@@ -605,40 +602,6 @@ func decodeSendCommand(raw json.RawMessage) (agent.SendCommand, error) {
 		ModelOptions: payload.ModelOptions,
 		Effort:       payload.Effort,
 		PlanMode:     payload.PlanMode,
-	}, nil
-}
-
-type workspaceRuntimePreferenceCommand struct {
-	ChatID       string
-	Provider     string
-	Model        string
-	ModelOptions *catalog.ModelOptions
-}
-
-func decodeRuntimePreferenceCommand(raw json.RawMessage) (workspaceRuntimePreferenceCommand, error) {
-	var payload struct {
-		ChatID       string                `json:"chatId"`
-		Provider     string                `json:"provider"`
-		Model        string                `json:"model"`
-		ModelOptions *catalog.ModelOptions `json:"modelOptions"`
-	}
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		return workspaceRuntimePreferenceCommand{}, err
-	}
-	if strings.TrimSpace(payload.ChatID) == "" {
-		return workspaceRuntimePreferenceCommand{}, errors.New("chatId is required")
-	}
-	if strings.TrimSpace(payload.Provider) == "" {
-		return workspaceRuntimePreferenceCommand{}, errors.New("provider is required")
-	}
-	if strings.TrimSpace(payload.Model) == "" {
-		return workspaceRuntimePreferenceCommand{}, errors.New("model is required")
-	}
-	return workspaceRuntimePreferenceCommand{
-		ChatID:       strings.TrimSpace(payload.ChatID),
-		Provider:     strings.TrimSpace(payload.Provider),
-		Model:        strings.TrimSpace(payload.Model),
-		ModelOptions: payload.ModelOptions,
 	}, nil
 }
 

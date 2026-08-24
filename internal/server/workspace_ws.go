@@ -5,7 +5,6 @@ import (
 	"abolqasem/internal/state"
 	"abolqasem/internal/workspace/protocol"
 	"abolqasem/internal/workspace/terminal"
-	"abolqasem/internal/workspace/tmuxruntime"
 	"context"
 	"encoding/json"
 	"errors"
@@ -663,32 +662,6 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 		workspaceConnections.broadcast(payload.ChatID)
 		response := protocol.AckEnvelope(envelope.ID, status)
 		return &response
-	case protocol.CommandChatRestartTmux:
-		command, err := decodeRestartTmuxCommand(envelope.Command)
-		if err != nil {
-			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
-			return &response
-		}
-		if err := workspaceRestartTmuxChat(command); err != nil {
-			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
-			return &response
-		}
-		workspaceConnections.broadcast(command.ChatID)
-		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
-		return &response
-	case protocol.CommandChatApplyRuntimePreferences:
-		command, err := decodeRuntimePreferenceCommand(envelope.Command)
-		if err != nil {
-			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
-			return &response
-		}
-		if err := workspaceApplyRuntimePreferences(command); err != nil {
-			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
-			return &response
-		}
-		workspaceConnections.broadcast(command.ChatID)
-		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
-		return &response
 	case protocol.CommandChatRefreshDiffs:
 		snapshot, projectID, changed, err := workspaceRefreshDiffs(envelope.Command)
 		if err != nil {
@@ -1175,37 +1148,19 @@ func workspaceTerminalCreateRequest(raw json.RawMessage) (terminal.CreateRequest
 		return terminal.CreateRequest{}, err
 	}
 	mode := strings.TrimSpace(payload.Mode)
-	tmuxSession := strings.TrimSpace(payload.TmuxSession)
-	command := strings.TrimSpace(payload.Command)
-	if mode == "tmux" && tmuxSession == "" {
-		tmuxSession = workspaceChatTmuxSession(payload.ChatID)
-	}
-	if mode == "tmux" && strings.TrimSpace(payload.ChatID) != "" {
-		chat, _, err := workspaceChatProjectRequired(payload.ChatID)
-		if err != nil {
-			return terminal.CreateRequest{}, err
-		}
-		if strings.TrimSpace(chat.TmuxSession) != "" {
-			tmuxSession = chat.TmuxSession
-		}
-		if command == "" {
-			command = workspaceTmuxCommandForChat(chat, "")
-		}
-		if command == "" && !tmuxruntime.SessionExists(context.Background(), tmuxSession) {
-			return terminal.CreateRequest{}, errors.New("choose how to launch this tmux session first")
-		}
+	if mode == "tmux" {
+		return terminal.CreateRequest{}, errors.New("tmux terminals are no longer supported")
 	}
 	return terminal.CreateRequest{
-		ProjectID:   payload.ProjectID,
-		TerminalID:  payload.TerminalID,
-		CWD:         projectPath,
-		Mode:        mode,
-		ChatID:      payload.ChatID,
-		TmuxSession: tmuxSession,
-		Command:     command,
-		Cols:        payload.Cols,
-		Rows:        payload.Rows,
-		Scrollback:  payload.Scrollback,
+		ProjectID:  payload.ProjectID,
+		TerminalID: payload.TerminalID,
+		CWD:        projectPath,
+		Mode:       mode,
+		ChatID:     payload.ChatID,
+		Command:    strings.TrimSpace(payload.Command),
+		Cols:       payload.Cols,
+		Rows:       payload.Rows,
+		Scrollback: payload.Scrollback,
 	}, nil
 }
 
@@ -1286,7 +1241,7 @@ func workspaceAppSettingsSnapshot() map[string]any {
 
 func providerExecutableSnapshot(configured map[string]string) map[string]string {
 	out := map[string]string{}
-	for _, provider := range []string{"claude", "codex", "gemini"} {
+	for _, provider := range []string{"claude", "codex"} {
 		if executable := strings.TrimSpace(configured[provider]); executable != "" {
 			out[provider] = executable
 			continue

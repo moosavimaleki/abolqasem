@@ -195,49 +195,6 @@ func useClaudeGatewayModelDiscovery() bool {
 	}
 }
 
-func discoverGeminiAPIModels(ctx context.Context, apiKey string) ([]ProviderModelOption, error) {
-	endpoint := "https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000&key=" + url.QueryEscape(apiKey)
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, err
-	}
-	response, err := http.DefaultClient.Do(request)
-	if err != nil {
-		return nil, err
-	}
-	defer response.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(response.Body, 4*1024*1024))
-	if err != nil {
-		return nil, err
-	}
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, fmt.Errorf("request failed with %s", response.Status)
-	}
-	var payload struct {
-		Models []struct {
-			Name                       string   `json:"name"`
-			BaseModelID                string   `json:"baseModelId"`
-			DisplayName                string   `json:"displayName"`
-			SupportedGenerationMethods []string `json:"supportedGenerationMethods"`
-		} `json:"models"`
-	}
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return nil, err
-	}
-	models := make([]ProviderModelOption, 0, len(payload.Models))
-	for _, item := range payload.Models {
-		if len(item.SupportedGenerationMethods) > 0 && !containsString(item.SupportedGenerationMethods, "generateContent") {
-			continue
-		}
-		id := firstNonEmpty(item.BaseModelID, strings.TrimPrefix(item.Name, "models/"))
-		if !providerModelIDLooksValid("gemini", id) {
-			continue
-		}
-		models = append(models, ProviderModelOption{ID: id, Label: firstNonEmpty(item.DisplayName, id)})
-	}
-	return models, nil
-}
-
 func providerModelIDLooksValid(provider string, id string) bool {
 	id = strings.TrimSpace(id)
 	switch provider {
@@ -245,8 +202,6 @@ func providerModelIDLooksValid(provider string, id string) bool {
 		return strings.HasPrefix(id, "claude-")
 	case "codex":
 		return strings.HasPrefix(id, "gpt-")
-	case "gemini":
-		return id == "auto" || strings.HasPrefix(id, "gemini-") || strings.HasPrefix(id, "gemma-")
 	default:
 		return false
 	}

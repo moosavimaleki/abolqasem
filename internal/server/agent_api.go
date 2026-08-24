@@ -63,7 +63,6 @@ func handleAPIAgentStatus(w http.ResponseWriter, r *http.Request) {
 	agents := []agentRuntimeStatus{
 		codexStatus,
 		buildReadOnlyRuntimeStatus("claude", "کلود", commandAvailable("claude")),
-		buildReadOnlyRuntimeStatus("gemini", "جمینای", commandAvailable("gemini")),
 	}
 	writeJSON(w, agentStatusResponse{
 		Agents: agents,
@@ -279,7 +278,7 @@ func commandAvailable(name string) bool {
 
 func normalizeAgentNameServer(agentName string) string {
 	switch strings.TrimSpace(strings.ToLower(agentName)) {
-	case "codex", "claude", "gemini":
+	case "codex", "claude":
 		return strings.TrimSpace(strings.ToLower(agentName))
 	default:
 		return ""

@@ -30,21 +30,18 @@ var hookCmd = &cobra.Command{
 		adapter, err := getAdapter(strings.ToLower(hookAgent))
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%v\n", err)
-			emitGeminiAck(hookAgent)
 			os.Exit(0)
 		}
 
 		event, err := adapter.NormalizeHookInput(input)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error parsing hook input: %v\n", err)
-			emitGeminiAck(hookAgent)
 			os.Exit(0)
 		}
 		event = state.NormalizeAndValidateEvent(event)
 
 		payload, _ := json.Marshal(event)
 		if err := ensureServiceRunning(5 * time.Second); err == nil && postHookEvent(payload) {
-			emitGeminiAck(hookAgent)
 			return
 		}
 
@@ -52,19 +49,12 @@ var hookCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "Error saving pending event: %v\n", err)
 		}
 
-		emitGeminiAck(hookAgent)
 	},
 }
 
 func init() {
-	hookCmd.Flags().StringVar(&hookAgent, "agent", "codex", "Agent type (codex, claude, gemini)")
+	hookCmd.Flags().StringVar(&hookAgent, "agent", "codex", "Agent type (codex or claude)")
 	rootCmd.AddCommand(hookCmd)
-}
-
-func emitGeminiAck(agent string) {
-	if strings.EqualFold(agent, "gemini") {
-		fmt.Println("{}")
-	}
 }
 
 func postHookEvent(payload []byte) bool {

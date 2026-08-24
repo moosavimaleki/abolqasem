@@ -11,7 +11,6 @@ func TestDiscoverSessionsInRootsFindsKnownAgentTranscripts(t *testing.T) {
 	root := t.TempDir()
 	codexRoot := filepath.Join(root, "codex", "sessions")
 	claudeRoot := filepath.Join(root, "claude", "projects")
-	geminiRoot := filepath.Join(root, "gemini", "tmp")
 
 	codexPath := writeDiscoveryFile(t,
 		filepath.Join(codexRoot, "2026", "05", "14", "rollout-2026-05-14T10-00-00-019e2a32-513d-7c02-a78c-ab1b0130635c.jsonl"),
@@ -21,34 +20,27 @@ func TestDiscoverSessionsInRootsFindsKnownAgentTranscripts(t *testing.T) {
 		filepath.Join(claudeRoot, "-work-claude-project", "claude-session.jsonl"),
 		`{"session_id":"claude-session","cwd":"/work/claude-project","message":{"role":"user","content":"hi"}}`+"\n",
 	)
-	geminiPath := writeDiscoveryFile(t,
-		filepath.Join(geminiRoot, "projecthash", "chats", "session-2026-05-14T10-00.json"),
-		`{"session_id":"gemini-session","cwd":"/work/gemini-project","history":[{"role":"user","parts":[{"text":"hi"}]}]}`,
-	)
 
 	baseTime := time.Date(2026, 5, 14, 10, 0, 0, 0, time.UTC)
 	setModTime(t, codexPath, baseTime)
 	setModTime(t, claudePath, baseTime.Add(time.Minute))
-	setModTime(t, geminiPath, baseTime.Add(2*time.Minute))
 
 	appState := newAppState()
 	report, err := DiscoverSessionsInRoots(appState, []DiscoveryRoot{
 		{Agent: "codex", Path: codexRoot},
 		{Agent: "claude", Path: claudeRoot},
-		{Agent: "gemini", Path: geminiRoot},
 	})
 	if err != nil {
 		t.Fatalf("DiscoverSessionsInRoots returned error: %v", err)
 	}
-	if report.Found != 3 || report.Added != 3 {
+	if report.Found != 2 || report.Added != 2 {
 		t.Fatalf("unexpected discovery report: %+v", report)
 	}
 
 	assertDiscoveredSession(t, appState, "codex:019e2a32-513d-7c02-a78c-ab1b0130635c", "codex-project", codexPath)
 	assertDiscoveredSession(t, appState, "claude:claude-session", "claude-project", claudePath)
-	assertDiscoveredSession(t, appState, "gemini:gemini-session", "gemini-project", geminiPath)
-	if appState.LatestSessionKey != "gemini:gemini-session" {
-		t.Fatalf("expected latest gemini session, got %q", appState.LatestSessionKey)
+	if appState.LatestSessionKey != "claude:claude-session" {
+		t.Fatalf("expected latest claude session, got %q", appState.LatestSessionKey)
 	}
 }
 

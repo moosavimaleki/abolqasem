@@ -170,15 +170,6 @@ function getEffectiveComposerState(
     }
   }
 
-  if (activeProvider === "gemini") {
-    return {
-      provider: "gemini",
-      model: providerDefaults.gemini.model,
-      modelOptions: { ...providerDefaults.gemini.modelOptions },
-      planMode: composerState.planMode,
-    }
-  }
-
   return {
     provider: "codex",
     model: providerDefaults.codex.model,
@@ -429,7 +420,7 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
   function modelOptionsPayloadForState(state: ComposerState): ModelOptions {
     if (state.provider === "claude") return { claude: { ...state.modelOptions } }
     if (state.provider === "codex") return { codex: { ...state.modelOptions } }
-    return { gemini: { ...state.modelOptions } }
+    return { codex: {} }
   }
 
   function applyRuntimeComposerState(nextState: ComposerState) {
@@ -618,9 +609,7 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
       modelOptions = { claude: { ...providerPrefs.modelOptions } }
     } else if (providerPrefs.provider === "codex") {
       modelOptions = { codex: { ...providerPrefs.modelOptions } }
-    } else {
-      modelOptions = { gemini: { ...providerPrefs.modelOptions } }
-    }
+    } else { modelOptions = { codex: {} } }
     const submitOptions = {
       provider: selectedProvider,
       model: providerPrefs.model,

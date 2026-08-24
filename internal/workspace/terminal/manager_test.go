@@ -2,8 +2,6 @@ package terminal
 
 import (
 	"context"
-	"fmt"
-	"os/exec"
 	"runtime"
 	"strings"
 	"sync"
@@ -104,36 +102,6 @@ func TestTerminalStateIsBounded(t *testing.T) {
 	state.setLimit(4)
 	if got := state.String(); got != "7890" {
 		t.Fatalf("expected terminal state to shrink after limit change, got %q", got)
-	}
-}
-
-func TestManagerCloseTmuxAttachKeepsTmuxSession(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("tmux mode is not supported on windows")
-	}
-	if _, err := exec.LookPath("tmux"); err != nil {
-		t.Skip("tmux is not installed")
-	}
-
-	tmuxSession := fmt.Sprintf("abolqasem-test-%d", time.Now().UnixNano())
-	manager := NewManager(nil)
-	_, err := manager.Create(context.Background(), CreateRequest{
-		TerminalID:  "tmux-term-1",
-		Mode:        "tmux",
-		TmuxSession: tmuxSession,
-		Command:     "sh",
-		Cols:        80,
-		Rows:        24,
-	})
-	if err != nil {
-		t.Fatalf("Create returned error: %v", err)
-	}
-	if err := manager.Close("tmux-term-1"); err != nil {
-		t.Fatalf("Close returned error: %v", err)
-	}
-	defer exec.Command("tmux", "kill-session", "-t", tmuxSession).Run()
-	if err := exec.Command("tmux", "has-session", "-t", tmuxSession).Run(); err != nil {
-		t.Fatalf("expected tmux session to remain after closing attach: %v", err)
 	}
 }
 

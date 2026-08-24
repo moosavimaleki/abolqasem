@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
   getTerminalPanelDefaultSizes,
-  getNextChatViewMode,
   getTranscriptTailVersion,
   getOrderedRightSidebarLayout,
   getRightSidebarPanelDefaultSizes,
@@ -93,12 +92,6 @@ describe("getTerminalPanelDefaultSizes", () => {
   })
 })
 
-describe("getNextChatViewMode", () => {
-  test("toggles between web and terminal chat modes", () => {
-    expect(getNextChatViewMode("web")).toBe("terminal")
-    expect(getNextChatViewMode("terminal")).toBe("web")
-  })
-})
 
 describe("right sidebar pixel sizing", () => {
   test("converts the saved pixel width to a panel percentage", () => {

@@ -4,7 +4,6 @@ import (
 	"abolqasem/internal/adapters"
 	"abolqasem/internal/adapters/claude"
 	"abolqasem/internal/adapters/codex"
-	"abolqasem/internal/adapters/gemini"
 	"abolqasem/internal/appinfo"
 	"abolqasem/internal/buildinfo"
 	"abolqasem/internal/netproxy"
@@ -105,8 +104,8 @@ func applyWorkspaceManagementPatch(raw json.RawMessage) (map[string]any, error) 
 }
 
 func workspaceHookStatuses() []hookStatus {
-	statuses := make([]hookStatus, 0, 3)
-	for _, adapter := range []adapters.AgentAdapter{codex.New(), claude.New(), gemini.New()} {
+	statuses := make([]hookStatus, 0, 2)
+	for _, adapter := range []adapters.AgentAdapter{codex.New(), claude.New()} {
 		status := hookStatus{Agent: adapter.Name()}
 		installed, err := adapter.IsHookInstalled(adapters.ScopeUser)
 		status.Installed = installed

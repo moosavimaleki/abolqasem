@@ -16,12 +16,10 @@ const loadingStatuses = new Set(["starting", "running"])
 const providerLabels: Record<AgentProvider, string> = {
   claude: "Claude",
   codex: "Codex",
-  gemini: "Gemini",
 }
 const providerIconClasses: Record<AgentProvider, string> = {
   claude: "text-orange-500 dark:text-orange-300",
   codex: "text-emerald-600 dark:text-emerald-300",
-  gemini: "text-sky-600 dark:text-sky-300",
 }
 
 interface Props {
@@ -196,8 +194,8 @@ function ChatRowImpl({
                     <span>{t.common.fork}</span>
                     <Split className="size-3.5 text-muted-foreground" />
                   </button>
-                  {(["claude", "codex", "gemini"] as const).map((provider) => {
-                    const label = provider === "claude" ? "Claude" : provider === "codex" ? "Codex" : "Gemini"
+                  {(["claude", "codex"] as const).map((provider) => {
+                    const label = provider === "claude" ? "Claude" : "Codex"
                     return (
                       <button
                         key={provider}

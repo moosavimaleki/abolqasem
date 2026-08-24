@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react"
-import { Bot, Code2, PencilLine, ShieldAlert, ShieldCheck, Sparkles, Terminal } from "lucide-react"
+import { Bot, Code2, PencilLine, ShieldAlert, ShieldCheck, Terminal } from "lucide-react"
 import { Button } from "./button"
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "./dialog"
 import { Input } from "./input"
@@ -43,7 +43,7 @@ interface AlertDialogOptions {
   dir?: "ltr" | "rtl"
 }
 
-type ChoiceDialogIcon = "claude" | "codex" | "gemini" | "custom" | "danger" | "safe" | "terminal"
+type ChoiceDialogIcon = "claude" | "codex" | "custom" | "danger" | "safe" | "terminal"
 
 interface ChoiceDialogOption {
   value: string
@@ -95,7 +95,6 @@ const AppDialogContext = createContext<AppDialogContextValue | null>(null)
 const choiceIcons: Record<ChoiceDialogIcon, typeof Bot> = {
   claude: Bot,
   codex: Code2,
-  gemini: Sparkles,
   custom: PencilLine,
   danger: ShieldAlert,
   safe: ShieldCheck,

@@ -1,8 +1,6 @@
 package sessioninterop
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -29,19 +27,6 @@ func codexRootDir() string {
 	return filepath.Join(home, ".codex")
 }
 
-func geminiRootDir() string {
-	home, _ := os.UserHomeDir()
-	base := strings.TrimSpace(os.Getenv("GEMINI_CLI_HOME"))
-	if base == "" {
-		return filepath.Join(home, ".gemini")
-	}
-	base = strings.TrimSpace(base)
-	if filepath.Base(base) == ".gemini" {
-		return base
-	}
-	return filepath.Join(base, ".gemini")
-}
-
 func claudeProjectSlug(localPath string) string {
 	localPath = filepath.Clean(strings.TrimSpace(localPath))
 	if localPath == "" {
@@ -64,34 +49,4 @@ func generateSessionToken() string {
 
 func codexThreadID() string {
 	return generateSessionToken()
-}
-
-func geminiProjectHash(localPath string) string {
-	sum := sha256.Sum256([]byte(filepath.Clean(strings.TrimSpace(localPath))))
-	return hex.EncodeToString(sum[:])
-}
-
-func geminiContainerName(localPath string) string {
-	base := strings.ToLower(strings.TrimSpace(filepath.Base(localPath)))
-	base = strings.Map(func(r rune) rune {
-		switch {
-		case r >= 'a' && r <= 'z':
-			return r
-		case r >= '0' && r <= '9':
-			return r
-		case r == '-' || r == '_':
-			return '-'
-		default:
-			return '-'
-		}
-	}, base)
-	base = strings.Trim(base, "-")
-	base = strings.ReplaceAll(base, "_", "-")
-	for strings.Contains(base, "--") {
-		base = strings.ReplaceAll(base, "--", "-")
-	}
-	if base == "" {
-		base = geminiProjectHash(localPath)
-	}
-	return base
 }

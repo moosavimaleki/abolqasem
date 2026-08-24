@@ -670,9 +670,7 @@ func handleAPIHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	broadcastChatID := ""
-	if chatID, synced, _ := workspaceSyncTmuxRuntimeFromHook(meta, event); synced {
-		broadcastChatID = chatID
-	} else if isPromptSubmitHookEvent(event) {
+	if isPromptSubmitHookEvent(event) {
 		if record, err := workspaceRecordHookPromptCheckpoint(meta, event); err == nil && record.ProjectID != "" {
 			workspaceConnections.broadcastProjectGit(record.ProjectID)
 			broadcastChatID = record.ChatID

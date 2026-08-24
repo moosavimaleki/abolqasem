@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react"
 import {
   BookText,
   Command,
@@ -112,7 +112,7 @@ const sidebarItems = [
     id: "mcp",
     label: "MCP",
     icon: Server,
-    subtitle: "Manage shared MCP servers for Codex, Claude Code, and Gemini.",
+    subtitle: "Manage shared MCP servers for Codex and Claude Code.",
   },
   {
     id: "providers",
@@ -124,7 +124,13 @@ const sidebarItems = [
     id: "proxy",
     label: "Proxy",
     icon: Network,
-    subtitle: "Control proxy environment variables for Claude Code, Codex, and Gemini runs.",
+    subtitle: "Control proxy environment variables for Claude Code and Codex runs.",
+  },
+  {
+    id: "telegram",
+    label: "Telegram",
+    icon: MessageSquareQuote,
+    subtitle: "Connect an allowlisted Telegram bot to existing Codex chats.",
   },
   {
     id: "keybindings",
@@ -154,20 +160,19 @@ const QUICK_RESPONSE_PROVIDER_OPTIONS: Array<{ value: LlmProviderKind; label: st
   { value: "custom", label: "Custom" },
 ]
 
-const AGENT_PROVIDER_IDS: AgentProvider[] = ["claude", "codex", "gemini"]
+const AGENT_PROVIDER_IDS: AgentProvider[] = ["claude", "codex"]
 
 type ModelCatalogDrafts = Record<AgentProvider, ProviderModelOption[]>
 type NewModelCatalogDrafts = Record<AgentProvider, { id: string; label: string }>
 
 function emptyModelCatalogDrafts(): ModelCatalogDrafts {
-  return { claude: [], codex: [], gemini: [] }
+  return { claude: [], codex: [] }
 }
 
 function emptyNewModelCatalogDrafts(): NewModelCatalogDrafts {
   return {
     claude: { id: "", label: "" },
     codex: { id: "", label: "" },
-    gemini: { id: "", label: "" },
   }
 }
 
@@ -1160,7 +1165,6 @@ export function SkillsSection({
 const MCP_PROVIDER_OPTIONS: Array<{ id: McpProviderId; label: string }> = [
   { id: "codex", label: "Codex" },
   { id: "claude", label: "Claude Code" },
-  { id: "gemini", label: "Gemini" },
 ]
 
 type McpFormState = {
@@ -2155,6 +2159,7 @@ export function SettingsPage() {
       mcp: { label: dictionary.settings.mcpServers, subtitle: dictionary.settings.mcpServersSubtitle },
       providers: { label: dictionary.settings.providers, subtitle: dictionary.settings.providersSubtitle },
       proxy: { label: dictionary.settings.proxy, subtitle: dictionary.settings.proxySubtitle },
+      telegram: { label: "Telegram", subtitle: "Connect an allowlisted Telegram bot to existing Codex chats." },
       keybindings: { label: dictionary.settings.keybindings, subtitle: dictionary.settings.keybindingsSubtitle },
       changelog: { label: dictionary.settings.changelog, subtitle: dictionary.settings.changelogSubtitle },
     } satisfies Record<SidebarPageId, { label: string; subtitle: string }>
@@ -2234,6 +2239,10 @@ export function SettingsPage() {
   const [llmValidationStatus, setLlmValidationStatus] = useState<"idle" | "valid" | "invalid">("idle")
   const [llmValidationError, setLlmValidationError] = useState<unknown | null>(null)
   const [llmValidationDialogOpen, setLlmValidationDialogOpen] = useState(false)
+  const [telegramDraft, setTelegramDraft] = useState({ botToken: "", allowedUserIds: "" })
+  const [telegramStatus, setTelegramStatus] = useState<{ configured: boolean; active: boolean; mappedChats: number; lastError: string } | null>(null)
+  const [telegramError, setTelegramError] = useState<string | null>(null)
+  const [telegramSaving, setTelegramSaving] = useState(false)
   const updateSnapshot = state.updateSnapshot
   const handleWriteAppSettings = state.handleWriteAppSettings
   const handleReadLlmProvider = state.handleReadLlmProvider
@@ -2283,12 +2292,10 @@ export function SettingsPage() {
     setProviderExecutableDrafts({
       claude: appSettings?.providerExecutables?.claude ?? "",
       codex: appSettings?.providerExecutables?.codex ?? "",
-      gemini: appSettings?.providerExecutables?.gemini ?? "",
     })
   }, [
     appSettings?.providerExecutables?.claude,
     appSettings?.providerExecutables?.codex,
-    appSettings?.providerExecutables?.gemini,
   ])
 
   useEffect(() => {
@@ -2386,6 +2393,44 @@ export function SettingsPage() {
       cancelled = true
     }
   }, [isConnecting, selectedPage])
+
+  const refreshTelegram = useCallback(async () => {
+    const [configResponse, statusResponse] = await Promise.all([
+      fetch("/api/telegram/config", { cache: "no-store" }),
+      fetch("/api/telegram/status", { cache: "no-store" }),
+    ])
+    if (!configResponse.ok || !statusResponse.ok) throw new Error("Telegram settings could not be loaded")
+    const config = await configResponse.json() as { botToken?: string; allowedUserIds?: string[] }
+    const status = await statusResponse.json() as { configured?: boolean; active?: boolean; mappedChats?: number; lastError?: string }
+    setTelegramDraft({ botToken: config.botToken ?? "", allowedUserIds: (config.allowedUserIds ?? []).join(", ") })
+    setTelegramStatus({ configured: status.configured === true, active: status.active === true, mappedChats: status.mappedChats ?? 0, lastError: status.lastError ?? "" })
+  }, [])
+
+  useEffect(() => {
+    if (selectedPage !== "telegram" || isConnecting) return
+    void refreshTelegram().catch((error: unknown) => setTelegramError(error instanceof Error ? error.message : String(error)))
+  }, [isConnecting, refreshTelegram, selectedPage])
+
+  const saveTelegram = useCallback(async () => {
+    setTelegramSaving(true)
+    setTelegramError(null)
+    try {
+      const response = await fetch("/api/telegram/configure", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          botToken: telegramDraft.botToken,
+          allowedUserIds: telegramDraft.allowedUserIds.split(/[\s,]+/).filter(Boolean),
+        }),
+      })
+      if (!response.ok) throw new Error(await response.text())
+      await refreshTelegram()
+    } catch (error) {
+      setTelegramError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setTelegramSaving(false)
+    }
+  }, [refreshTelegram, telegramDraft])
 
   function commitScrollback() {
     const nextValue = Number(scrollbackDraft)
@@ -3347,6 +3392,30 @@ export function SettingsPage() {
 
                     </div>
                   </>
+                ) : selectedPage === "telegram" ? (
+                  <div className="border-b border-border">
+                    {telegramError ? <div className="mb-4 rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">{telegramError}</div> : null}
+                    <SettingsRow
+                      title="Telegram bridge"
+                      description="Only allowlisted user IDs can connect a Telegram conversation to a chat. In Telegram, use /chat &lt;chat-id&gt; once, then send normal messages."
+                      bordered={false}
+                    >
+                      <div className="text-sm text-muted-foreground">{telegramStatus?.active ? "Active" : telegramStatus?.configured ? "Configured; starting" : "Not configured"}</div>
+                    </SettingsRow>
+                    <SettingsRow title="Bot token" description="Stored locally with owner-only file permissions.">
+                      <Input type="password" value={telegramDraft.botToken} onChange={(event) => setTelegramDraft((current) => ({ ...current, botToken: event.target.value }))} placeholder="123456:token" />
+                    </SettingsRow>
+                    <SettingsRow title="Allowed user IDs" description="Comma-separated Telegram numeric IDs, or * for all users.">
+                      <Input value={telegramDraft.allowedUserIds} onChange={(event) => setTelegramDraft((current) => ({ ...current, allowedUserIds: event.target.value }))} placeholder="123456789" />
+                    </SettingsRow>
+                    <SettingsRow title="Mappings" description="Each Telegram chat chooses its destination with /chat &lt;chat-id&gt;.">
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm text-muted-foreground">{telegramStatus?.mappedChats ?? 0} connected</span>
+                        <Button type="button" size="sm" onClick={() => void saveTelegram()} disabled={telegramSaving}>{telegramSaving ? "Saving…" : "Save and connect"}</Button>
+                      </div>
+                    </SettingsRow>
+                    {telegramStatus?.lastError ? <div className="px-4 pb-4 text-sm text-destructive">{telegramStatus.lastError}</div> : null}
+                  </div>
                 ) : selectedPage === "providers" ? (
                   <div className="border-b border-border">
                     <SettingsRow
@@ -3544,42 +3613,6 @@ export function SettingsPage() {
                           dir="ltr"
                         />
                         {renderModelCatalogControls("codex")}
-                      </div>
-                    </SettingsRow>
-
-                    <SettingsRow
-                      title={dictionary.settings.geminiDefaults}
-                      description={dictionary.settings.geminiDefaultsDescription}
-                      alignStart
-                    >
-                      <div className="max-w-[420px]">
-                        <ChatPreferenceControls
-                          availableProviders={settingsAvailableProviders}
-                          selectedProvider="gemini"
-                          showProviderPicker={false}
-                          providerLocked
-                          model={providerDefaults.gemini.model}
-                          modelOptions={providerDefaults.gemini.modelOptions}
-                          onModelChange={(_, model) => {
-                            handleProviderDefaultModelChange("gemini", model)
-                          }}
-                          onModelOptionChange={() => undefined}
-                          planMode={providerDefaults.gemini.planMode}
-                          onPlanModeChange={(planMode) => handleProviderDefaultPlanModeChange("gemini", planMode)}
-                          includePlanMode
-                          className="justify-start flex-wrap"
-                        />
-                        <Input
-                          value={providerExecutableDrafts.gemini ?? ""}
-                          onChange={(event) => handleProviderExecutableDraftChange("gemini", event.target.value)}
-                          onBlur={() => commitProviderExecutable("gemini")}
-                          onKeyDown={(event) => handleTextInputKeyDown(event, () => commitProviderExecutable("gemini"))}
-                          placeholder={dictionary.settings.providerExecutablePlaceholder("gemini")}
-                          aria-label={dictionary.settings.providerExecutable("Gemini")}
-                          className="mt-3 w-full font-mono text-xs"
-                          dir="ltr"
-                        />
-                        {renderModelCatalogControls("gemini")}
                       </div>
                     </SettingsRow>
 

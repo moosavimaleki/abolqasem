@@ -1,5 +1,5 @@
 import { useState, type ComponentType, type SVGProps } from "react"
-import { Box, Brain, Gauge, ListTodo, LockOpen, Sparkles, SquareMenu, SquareMinus } from "lucide-react"
+import { Box, Brain, Gauge, ListTodo, LockOpen, SquareMenu, SquareMinus } from "lucide-react"
 import {
   CLAUDE_CONTEXT_WINDOW_OPTIONS,
   CLAUDE_REASONING_OPTIONS,
@@ -10,7 +10,6 @@ import {
   type ClaudeReasoningEffort,
   type CodexModelOptions,
   type CodexReasoningEffort,
-  type GeminiModelOptions,
   type ProviderCatalogEntry,
   supportsClaudeMaxReasoningEffort,
 } from "../../../shared/types"
@@ -51,7 +50,6 @@ function OpenAIIcon({ className, ...props }: SVGProps<SVGSVGElement>) {
 export const PROVIDER_ICONS: Record<AgentProvider, IconComponent> = {
   claude: AnthropicIcon,
   codex: OpenAIIcon,
-  gemini: Sparkles,
 }
 
 export function PopoverMenuItem({
@@ -148,7 +146,7 @@ interface ChatPreferenceControlsProps {
   providerLocked?: boolean
   showCodexCliRequirementHints?: boolean
   model: string
-  modelOptions: ClaudeModelOptions | CodexModelOptions | GeminiModelOptions
+  modelOptions: ClaudeModelOptions | CodexModelOptions
   onProviderChange?: (provider: AgentProvider) => void
   onModelChange: (provider: AgentProvider, model: string) => void
   onModelOptionChange: (change: ModelOptionChange) => void

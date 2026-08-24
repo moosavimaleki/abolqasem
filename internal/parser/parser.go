@@ -780,8 +780,6 @@ func extractSearchableMessage(agent string, raw map[string]any, sessionID string
 		return extractCodexMessage(raw, sessionID, index)
 	case "claude":
 		return extractClaudeMessage(raw, sessionID, index)
-	case "gemini":
-		return extractGeminiMessage(raw, sessionID, index)
 	default:
 		return extractGenericMessage(raw, sessionID, index)
 	}
@@ -965,28 +963,6 @@ func extractClaudeMessage(raw map[string]any, sessionID string, index int) *Sear
 		kind = "tool"
 	}
 	return newSearchableMessage(sessionID, index, normalizeRole(role), kind, text, extractTimestamp(raw, message))
-}
-
-func extractGeminiMessage(raw map[string]any, sessionID string, index int) *SearchableMessage {
-	role := normalizeRole(firstNonEmpty(stringValue(raw["role"]), stringValue(raw["speaker"])))
-	kind := "message"
-	text := firstNonEmpty(
-		flattenText(raw["parts"]),
-		flattenText(raw["content"]),
-		flattenText(raw["response"]),
-		flattenText(raw["prompt"]),
-		flattenText(raw["text"]),
-	)
-	if text == "" {
-		return nil
-	}
-	if role == "" {
-		role = "assistant"
-	}
-	if role == "tool" {
-		kind = "tool"
-	}
-	return newSearchableMessage(sessionID, index, role, kind, text, extractTimestamp(raw))
 }
 
 func normalizeRole(role string) string {

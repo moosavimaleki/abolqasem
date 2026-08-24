@@ -9,7 +9,6 @@ import (
 	"unicode/utf8"
 
 	"abolqasem/internal/parser"
-	"abolqasem/internal/sessioninterop"
 	"abolqasem/internal/state"
 	"abolqasem/internal/workspace/events"
 	"abolqasem/internal/workspace/readmodels"
@@ -164,41 +163,7 @@ func workspaceForkChat(raw json.RawMessage) (map[string]any, string, error) {
 			return nil, "", err
 		}
 	}
-	provider := strings.TrimSpace(derefWorkspaceString(chat.Provider))
 	forkToken := firstNonEmpty(chat.NativeSessionID, derefWorkspaceString(chat.PendingForkSessionToken), derefWorkspaceString(chat.SessionToken))
-	if provider == "gemini" && strings.TrimSpace(project.LocalPath) != "" {
-		entries, err := workspaceChatMessages(payload.ChatID)
-		if err != nil {
-			return nil, "", err
-		}
-		if len(entries) > 0 {
-			exportResult, err := sessioninterop.ExportNativeSession(sessioninterop.ExportArgs{
-				Provider:           provider,
-				LocalPath:          project.LocalPath,
-				Title:              title,
-				SourceSessionToken: derefWorkspaceString(chat.SessionToken),
-				Entries:            workspaceConvertedTranscriptEntries(entries),
-				PreferFork:         true,
-			})
-			if err != nil {
-				return nil, "", err
-			}
-			if exportResult.SessionToken != "" {
-				store := &workspaceEventStore{store: workspaceStore()}
-				if err := store.SetSessionToken(fork.ID, exportResult.SessionToken); err != nil {
-					return nil, "", err
-				}
-			}
-			if err := appendWorkspaceStoreEvent(workspaceStore(), events.StreamChats, events.TypeChatRuntimeSet, time.Now().UnixMilli(), map[string]any{
-				"chatId":               fork.ID,
-				"nativeSessionId":      exportResult.SessionToken,
-				"nativeTranscriptPath": exportResult.TranscriptPath,
-				"lastSummary":          workspaceConversionLastSummary(entries),
-			}); err != nil {
-				return nil, "", err
-			}
-		}
-	}
 	if forkToken != "" {
 		if err := appendWorkspaceStoreEvent(workspaceStore(), events.StreamTurns, events.TypePendingForkSessionTokenSet, time.Now().UnixMilli(), map[string]any{
 			"chatId":                  fork.ID,

@@ -59,12 +59,7 @@ func importEntries(agent string, sessionID string, transcriptPath string) ([]rea
 		if err := json.Unmarshal(data, &raw); err != nil {
 			return nil, err
 		}
-		switch agent {
-		case "gemini":
-			return importGeminiStructured(sessionID, raw), nil
-		default:
-			return nil, nil
-		}
+		return nil, nil
 	}
 	file, err := os.Open(transcriptPath)
 	if err != nil {
@@ -91,8 +86,6 @@ func importEntries(agent string, sessionID string, transcriptPath string) ([]rea
 			chunk = importClaudeLine(sessionID, raw, index)
 		case "codex":
 			chunk = importCodexLine(sessionID, raw, index)
-		case "gemini":
-			chunk = importGeminiLine(sessionID, raw, index)
 		}
 		entries = append(entries, chunk...)
 	}
@@ -284,116 +277,6 @@ func importCodexLine(sessionID string, raw map[string]any, index int) []readmode
 		}
 	}
 	return nil
-}
-
-func importGeminiStructured(sessionID string, raw any) []readmodels.TranscriptEntry {
-	root := mapValue(raw)
-	messages, _ := root["messages"].([]any)
-	entries := make([]readmodels.TranscriptEntry, 0, len(messages)*2+2)
-	if summary := strings.TrimSpace(stringValue(root["summary"])); summary != "" {
-		entries = append(entries, newEntryAt(transcript.KindCompactSummary, map[string]any{
-			"_id":       fmt.Sprintf("gemini-compact-summary-%s", sessionID),
-			"summary":   summary,
-			"createdAt": float64(time.Now().UnixMilli()),
-		}))
-	}
-	for index, rawMessage := range messages {
-		entries = append(entries, importGeminiMessage(sessionID, mapValue(rawMessage), index+1)...)
-	}
-	return dedupeAdjacentTranscriptEntries(entries)
-}
-
-func importGeminiLine(sessionID string, raw map[string]any, index int) []readmodels.TranscriptEntry {
-	if len(raw) == 0 {
-		return nil
-	}
-	if stringValue(raw["kind"]) != "" {
-		return nil
-	}
-	return importGeminiMessage(sessionID, raw, index)
-}
-
-func importGeminiMessage(sessionID string, message map[string]any, index int) []readmodels.TranscriptEntry {
-	createdAt := parseUnixMilli(message["timestamp"])
-	messageType := strings.ToLower(strings.TrimSpace(stringValue(message["type"])))
-	entries := make([]readmodels.TranscriptEntry, 0, 3)
-	switch messageType {
-	case "user":
-		text := strings.TrimSpace(flattenUnknown(message["content"]))
-		if text != "" {
-			entries = append(entries, newEntryAt(transcript.KindUserPrompt, map[string]any{
-				"_id":       fmt.Sprintf("gemini-user-%s-%d", sessionID, index),
-				"createdAt": float64(createdAt),
-				"content":   text,
-			}))
-		}
-	case "gemini":
-		text := strings.TrimSpace(flattenUnknown(message["content"]))
-		if text != "" {
-			entries = append(entries, newEntryAt(transcript.KindAssistantText, map[string]any{
-				"_id":       fmt.Sprintf("gemini-assistant-%s-%d", sessionID, index),
-				"createdAt": float64(createdAt),
-				"text":      text,
-			}))
-		}
-		if rawCalls, ok := message["toolCalls"].([]any); ok {
-			for callIndex, rawCall := range rawCalls {
-				call := mapValue(rawCall)
-				toolID := firstNonEmptyString(stringValue(call["id"]), fmt.Sprintf("gemini-tool-%s-%d-%d", sessionID, index, callIndex))
-				toolName := stringValue(call["name"])
-				entries = append(entries, newEntryAt(transcript.KindToolCall, map[string]any{
-					"_id":       fmt.Sprintf("gemini-tool-call-%s-%d-%d", sessionID, index, callIndex),
-					"createdAt": float64(createdAt),
-					"tool": map[string]any{
-						"kind":     "tool",
-						"toolKind": inferToolKind(toolName),
-						"toolName": toolName,
-						"toolId":   toolID,
-						"input":    firstNonNil(call["args"], map[string]any{}),
-					},
-				}))
-				entries = append(entries, newEntryAt(transcript.KindToolResult, map[string]any{
-					"_id":       fmt.Sprintf("gemini-tool-result-%s-%d-%d", sessionID, index, callIndex),
-					"createdAt": float64(createdAt),
-					"toolId":    toolID,
-					"content":   flattenUnknown(call["result"]),
-					"isError":   strings.EqualFold(stringValue(call["status"]), "error"),
-					"debugRaw":  mustJSONString(call),
-				}))
-			}
-		}
-	case "error":
-		text := strings.TrimSpace(flattenUnknown(message["content"]))
-		if text != "" {
-			entries = append(entries, newEntryAt(transcript.KindStatus, map[string]any{
-				"_id":       fmt.Sprintf("gemini-status-%s-%d", sessionID, index),
-				"createdAt": float64(createdAt),
-				"status":    text,
-			}))
-		}
-	case "info":
-		text := strings.TrimSpace(flattenUnknown(message["content"]))
-		if text == "" {
-			break
-		}
-		kind := transcript.KindStatus
-		fields := map[string]any{
-			"_id":       fmt.Sprintf("gemini-info-%s-%d", sessionID, index),
-			"createdAt": float64(createdAt),
-			"status":    text,
-		}
-		lower := strings.ToLower(text)
-		if strings.Contains(lower, "checkpoint saved") {
-			kind = transcript.KindCompactBoundary
-			delete(fields, "status")
-		} else if strings.HasPrefix(lower, "conversation summary:") {
-			kind = transcript.KindCompactSummary
-			delete(fields, "status")
-			fields["summary"] = strings.TrimSpace(strings.TrimPrefix(text, "Conversation summary:"))
-		}
-		entries = append(entries, newEntryAt(kind, fields))
-	}
-	return entries
 }
 
 func dedupeAdjacentTranscriptEntries(entries []readmodels.TranscriptEntry) []readmodels.TranscriptEntry {

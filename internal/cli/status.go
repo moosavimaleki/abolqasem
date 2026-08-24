@@ -39,7 +39,7 @@ var statusCmd = &cobra.Command{
 		if latest, ok := appState.Sessions[appState.LatestSessionKey]; ok {
 			fmt.Printf("Latest session: %s/%s (%s ago)\n", latest.Agent, latest.ProjectName, time.Since(latest.UpdatedAt).Round(time.Second))
 		}
-		for _, agent := range []string{"codex", "claude", "gemini"} {
+		for _, agent := range []string{"codex", "claude"} {
 			adapter, adapterErr := getAdapter(agent)
 			if adapterErr != nil {
 				continue

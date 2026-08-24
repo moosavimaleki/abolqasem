@@ -60,7 +60,6 @@ type ProviderModelInventory struct {
 type ModelOptions struct {
 	Claude *ClaudeModelOptionsPatch `json:"claude,omitempty"`
 	Codex  *CodexModelOptionsPatch  `json:"codex,omitempty"`
-	Gemini *GeminiModelOptionsPatch `json:"gemini,omitempty"`
 }
 
 type ClaudeModelOptionsPatch struct {
@@ -72,8 +71,6 @@ type CodexModelOptionsPatch struct {
 	ReasoningEffort string `json:"reasoningEffort,omitempty"`
 	FastMode        *bool  `json:"fastMode,omitempty"`
 }
-
-type GeminiModelOptionsPatch struct{}
 
 type ClaudeModelOptions struct {
 	ReasoningEffort string `json:"reasoningEffort"`
@@ -89,7 +86,6 @@ const (
 	DefaultClaudeReasoningEffort = "high"
 	DefaultClaudeContextWindow   = "200k"
 	DefaultCodexModel            = "gpt-5.5"
-	DefaultGeminiModel           = "gemini-3-pro-preview"
 	CompatibleCodexModel         = "gpt-5.4"
 	MinGPT55CodexCLIVersion      = "0.124.0"
 	DefaultCodexReasoningEffort  = "high"

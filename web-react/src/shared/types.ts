@@ -1,7 +1,7 @@
 export const STORE_VERSION = 2 as const
 export const PROTOCOL_VERSION = 1 as const
 
-export type AgentProvider = "claude" | "codex" | "gemini"
+export type AgentProvider = "claude" | "codex"
 export type LlmProviderKind = "openai" | "openrouter" | "custom"
 export type AppThemePreference = "light" | "dark" | "system"
 export type AppLocale = "en" | "fa"
@@ -13,7 +13,6 @@ export type EditorPreset = "cursor" | "vscode" | "xcode" | "windsurf" | "custom"
 export const DEFAULT_OPENAI_SDK_MODEL = "gpt-5.4-mini"
 export const DEFAULT_OPENROUTER_SDK_MODEL = "moonshotai/kimi-k2.5:nitro"
 export const DEFAULT_CODEX_MODEL = "gpt-5.5"
-export const DEFAULT_GEMINI_MODEL = "gemini-3-pro-preview"
 
 export type AttachmentKind = "image" | "file"
 export type StandaloneTranscriptAttachmentMode = "metadata" | "bundle"
@@ -197,12 +196,9 @@ export interface CodexModelOptions {
   fastMode: boolean
 }
 
-export type GeminiModelOptions = Record<string, never>
-
 export interface ProviderModelOptionsByProvider {
-  claude: ClaudeModelOptions
-  codex: CodexModelOptions
-  gemini: GeminiModelOptions
+	claude: ClaudeModelOptions
+	codex: CodexModelOptions
 }
 
 export interface ProviderPreference<TModelOptions> {
@@ -212,9 +208,8 @@ export interface ProviderPreference<TModelOptions> {
 }
 
 export type ChatProviderPreferences = {
-  claude: ProviderPreference<ClaudeModelOptions>
-  codex: ProviderPreference<CodexModelOptions>
-  gemini: ProviderPreference<GeminiModelOptions>
+	claude: ProviderPreference<ClaudeModelOptions>
+	codex: ProviderPreference<CodexModelOptions>
 }
 
 export type ModelOptions = Partial<{
@@ -230,8 +225,6 @@ export const DEFAULT_CODEX_MODEL_OPTIONS = {
   reasoningEffort: "high",
   fastMode: false,
 } as const satisfies CodexModelOptions
-
-export const DEFAULT_GEMINI_MODEL_OPTIONS = {} as const satisfies GeminiModelOptions
 
 export function isClaudeReasoningEffort(value: unknown): value is ClaudeReasoningEffort {
   return CLAUDE_REASONING_OPTIONS.some((option) => option.id === value)
@@ -320,25 +313,6 @@ export const PROVIDERS: ProviderCatalogEntry[] = [
     ],
     efforts: [],
   },
-  {
-    id: "gemini",
-    label: "Gemini",
-    defaultModel: DEFAULT_GEMINI_MODEL,
-    supportsPlanMode: true,
-    models: [
-      { id: "auto", label: "Auto", supportsEffort: false },
-      { id: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro Preview", supportsEffort: false },
-      { id: "gemini-3.1-flash-lite-preview", label: "Gemini 3.1 Flash Lite Preview", supportsEffort: false },
-      { id: "gemini-3-pro-preview", label: "Gemini 3 Pro Preview", supportsEffort: false },
-      { id: "gemini-3-flash-preview", label: "Gemini 3 Flash Preview", supportsEffort: false },
-      { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro", supportsEffort: false },
-      { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash", supportsEffort: false },
-      { id: "gemini-2.5-flash-lite", label: "Gemini 2.5 Flash Lite", supportsEffort: false },
-      { id: "gemma-4-31b-it", label: "gemma-4-31b-it", supportsEffort: false },
-      { id: "gemma-4-26b-a4b-it", label: "gemma-4-26b-a4b-it", supportsEffort: false },
-    ],
-    efforts: [],
-  },
 ]
 
 export function getProviderCatalog(provider: AgentProvider): ProviderCatalogEntry {
@@ -375,10 +349,6 @@ export function normalizeClaudeModelId(modelId?: string, fallbackModelId = "clau
 
 export function normalizeCodexModelId(modelId?: string, fallbackModelId = DEFAULT_CODEX_MODEL): string {
   return normalizeProviderModelId("codex", modelId, fallbackModelId)
-}
-
-export function normalizeGeminiModelId(modelId?: string, fallbackModelId = DEFAULT_GEMINI_MODEL): string {
-  return normalizeProviderModelId("gemini", modelId, fallbackModelId)
 }
 
 export function getProviderModelOption(provider: AgentProvider, modelId: string): ProviderModelOption | undefined {
@@ -559,13 +529,11 @@ export interface AppSettingsPatch {
   providerDefaults?: {
     claude?: Partial<ProviderPreference<ClaudeModelOptions>>
     codex?: Partial<ProviderPreference<CodexModelOptions>>
-    gemini?: Partial<ProviderPreference<GeminiModelOptions>>
   }
   providerModelCatalog?: Partial<Record<AgentProvider, {
     catalogModels?: ProviderModelOption[]
     customModels?: ProviderModelOption[]
   }>>
-  tmuxCommands?: Partial<Record<AgentProvider, string>>
   commitMessageGenerator?: Partial<CommitMessageGeneratorSettings>
 }
 

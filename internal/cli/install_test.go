@@ -38,7 +38,7 @@ func TestInstallDesiredStateInstallsServiceAllHooksAndRestarts(t *testing.T) {
 	if !reflect.DeepEqual(successful, supportedInstallAgents) {
 		t.Fatalf("installDesiredState() agents = %v, want %v", successful, supportedInstallAgents)
 	}
-	wantCalls := []string{"service", "hook:codex", "hook:claude", "hook:gemini", "restart", "health"}
+	wantCalls := []string{"service", "hook:codex", "hook:claude", "restart", "health"}
 	if !reflect.DeepEqual(calls, wantCalls) {
 		t.Fatalf("installDesiredState() calls = %v, want %v", calls, wantCalls)
 	}
@@ -68,7 +68,7 @@ func TestInstallDesiredStateReportsAnyHookFailure(t *testing.T) {
 	if !reflect.DeepEqual(calls, supportedInstallAgents) {
 		t.Fatalf("installDesiredState() hook calls = %v, want %v", calls, supportedInstallAgents)
 	}
-	if !reflect.DeepEqual(successful, []string{"codex", "gemini"}) {
+	if !reflect.DeepEqual(successful, []string{"codex"}) {
 		t.Fatalf("installDesiredState() successful = %v", successful)
 	}
 }
@@ -104,7 +104,7 @@ func TestUninstallDesiredStateRemovesAllHooksAndService(t *testing.T) {
 	if err := uninstallDesiredState(); err != nil {
 		t.Fatalf("uninstallDesiredState() error = %v", err)
 	}
-	wantCalls := []string{"hook:codex", "hook:claude", "hook:gemini", "service"}
+	wantCalls := []string{"hook:codex", "hook:claude", "service"}
 	if !reflect.DeepEqual(calls, wantCalls) {
 		t.Fatalf("uninstallDesiredState() calls = %v, want %v", calls, wantCalls)
 	}

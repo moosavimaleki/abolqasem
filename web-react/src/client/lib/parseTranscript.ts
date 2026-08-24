@@ -135,8 +135,7 @@ function isLikelyAssistantStartAfterPrompt(line: string) {
 function isAgentStatusLine(line: string) {
   return /^gpt-[\w.-]+\s+/i.test(line)
     || /^claude(?:\s|[-\w.]+\s)/i.test(line)
-    || /^gemini(?:\s|[-\w.]+\s)/i.test(line)
-    || /\b(?:codex|claude|gemini)\b.*\b(?:context|tokens|model|cwd|directory)\b/i.test(line)
+	|| /\b(?:codex|claude)\b.*\b(?:context|tokens|model|cwd|directory)\b/i.test(line)
 }
 
 function isTmuxWarningLine(line: string) {

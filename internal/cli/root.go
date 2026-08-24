@@ -12,7 +12,7 @@ var rootCmd = &cobra.Command{
 	Use:   appinfo.Name,
 	Short: appinfo.DisplayName + " - A local web viewer for AI coding agents",
 	Long: appinfo.DisplayName + ` is a lightweight, zero-token, local tool designed to
-display sessions from AI agents like Claude Code, Gemini CLI, and Codex in a browser.`,
+display sessions from AI agents like Claude Code and Codex in a browser.`,
 }
 
 func Execute() {

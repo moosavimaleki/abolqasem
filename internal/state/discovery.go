@@ -124,25 +124,10 @@ func defaultDiscoveryRoots() []DiscoveryRoot {
 
 	codexHome := firstNonEmptyString(os.Getenv("CODEX_HOME"), filepath.Join(home, ".codex"))
 	claudeHome := firstNonEmptyString(os.Getenv("CLAUDE_CONFIG_DIR"), os.Getenv("CLAUDE_HOME"), filepath.Join(home, ".claude"))
-	geminiHome := geminiConfigDir(home)
-
 	return []DiscoveryRoot{
 		{Agent: "codex", Path: filepath.Join(codexHome, "sessions")},
 		{Agent: "claude", Path: filepath.Join(claudeHome, "projects")},
-		{Agent: "gemini", Path: filepath.Join(geminiHome, "tmp")},
 	}
-}
-
-func geminiConfigDir(home string) string {
-	base := strings.TrimSpace(os.Getenv("GEMINI_CLI_HOME"))
-	if base == "" {
-		return filepath.Join(home, ".gemini")
-	}
-	base = normalizePath(base)
-	if filepath.Base(base) == ".gemini" {
-		return base
-	}
-	return filepath.Join(base, ".gemini")
 }
 
 func upsertDiscoveredSession(appState *AppState, pathIndex map[string]string, root DiscoveryRoot, transcriptPath string, updatedAt time.Time) (SessionMeta, bool, SessionMeta) {
@@ -150,9 +135,6 @@ func upsertDiscoveredSession(appState *AppState, pathIndex map[string]string, ro
 		return existing, true, existing
 	}
 	probe := probeTranscript(transcriptPath)
-	if root.Agent == "gemini" {
-		probe = mergeTranscriptProbes(probe, resolveGeminiTranscriptProbe(transcriptPath))
-	}
 	sessionID := firstNonEmptyString(
 		pathIndex[transcriptPathIndexKey(root.Agent, transcriptPath)],
 		probe.SessionID,
@@ -227,11 +209,6 @@ func isDiscoveryCandidate(root DiscoveryRoot, path string) bool {
 		return ext == ".jsonl" && strings.HasPrefix(base, "rollout-")
 	case "claude":
 		return ext == ".jsonl"
-	case "gemini":
-		if ext == ".jsonl" {
-			return true
-		}
-		return ext == ".json" && strings.HasPrefix(base, "session-") && strings.EqualFold(filepath.Base(filepath.Dir(path)), "chats")
 	default:
 		return ext == ".jsonl"
 	}

@@ -244,8 +244,6 @@ function providerDisplayName(provider: SessionForkOperation["targetProvider"]) {
       return "Claude"
     case "codex":
       return "Codex"
-    case "gemini":
-      return "Gemini"
     default:
       return ""
   }

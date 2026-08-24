@@ -25,7 +25,6 @@ type mcpProviderID string
 const (
 	mcpProviderCodex  mcpProviderID = "codex"
 	mcpProviderClaude mcpProviderID = "claude"
-	mcpProviderGemini mcpProviderID = "gemini"
 )
 
 type mcpServerConfig struct {
@@ -179,7 +178,7 @@ func normalizeMCPServerConfig(server mcpServerConfig) (mcpServerConfig, error) {
 }
 
 func mcpProviderOrder() []mcpProviderID {
-	return []mcpProviderID{mcpProviderCodex, mcpProviderClaude, mcpProviderGemini}
+	return []mcpProviderID{mcpProviderCodex, mcpProviderClaude}
 }
 
 func workspaceMCPConfigPaths() map[mcpProviderID]string {
@@ -188,16 +187,9 @@ func workspaceMCPConfigPaths() map[mcpProviderID]string {
 	if codexHome == "" {
 		codexHome = filepath.Join(home, ".codex")
 	}
-	geminiHome := strings.TrimSpace(os.Getenv("GEMINI_CLI_HOME"))
-	if geminiHome == "" {
-		geminiHome = filepath.Join(home, ".gemini")
-	} else if filepath.Base(filepath.Clean(geminiHome)) != ".gemini" {
-		geminiHome = filepath.Join(geminiHome, ".gemini")
-	}
 	return map[mcpProviderID]string{
 		mcpProviderCodex:  filepath.Join(codexHome, "config.toml"),
 		mcpProviderClaude: filepath.Join(home, ".mcp.json"),
-		mcpProviderGemini: filepath.Join(geminiHome, "settings.json"),
 	}
 }
 
@@ -206,8 +198,6 @@ func readMCPServersForProvider(provider mcpProviderID) ([]mcpServerConfig, error
 	case mcpProviderCodex:
 		return readCodexMCPServers(workspaceMCPConfigPaths()[provider])
 	case mcpProviderClaude:
-		return readJSONMCPServers(workspaceMCPConfigPaths()[provider], provider)
-	case mcpProviderGemini:
 		return readJSONMCPServers(workspaceMCPConfigPaths()[provider], provider)
 	default:
 		return nil, fmt.Errorf("unsupported MCP provider: %s", provider)
@@ -220,8 +210,6 @@ func writeMCPServerForProvider(provider mcpProviderID, server mcpServerConfig) e
 		return writeCodexMCPServer(workspaceMCPConfigPaths()[provider], server)
 	case mcpProviderClaude:
 		return writeJSONMCPServer(workspaceMCPConfigPaths()[provider], provider, server)
-	case mcpProviderGemini:
-		return writeJSONMCPServer(workspaceMCPConfigPaths()[provider], provider, server)
 	default:
 		return fmt.Errorf("unsupported MCP provider: %s", provider)
 	}
@@ -232,8 +220,6 @@ func removeMCPServerFromProvider(provider mcpProviderID, name string) error {
 	case mcpProviderCodex:
 		return removeCodexMCPServer(workspaceMCPConfigPaths()[provider], name)
 	case mcpProviderClaude:
-		return removeJSONMCPServer(workspaceMCPConfigPaths()[provider], name)
-	case mcpProviderGemini:
 		return removeJSONMCPServer(workspaceMCPConfigPaths()[provider], name)
 	default:
 		return fmt.Errorf("unsupported MCP provider: %s", provider)
@@ -295,12 +281,6 @@ func readJSONMCPServers(path string, provider mcpProviderID) ([]mcpServerConfig,
 	for name, raw := range rawServers {
 		rawMap := asMap(raw)
 		server := mcpServerFromMap(name, rawMap)
-		if provider == mcpProviderGemini && server.URL == "" {
-			server.URL = stringFromAny(rawMap["httpUrl"])
-			if server.URL != "" {
-				server.Transport = mcpTransportHTTP
-			}
-		}
 		if server.Name != "" {
 			servers = append(servers, server)
 		}
@@ -381,11 +361,7 @@ func mcpServerToJSONMap(provider mcpProviderID, server mcpServerConfig) map[stri
 	raw := map[string]any{}
 	if server.Transport == mcpTransportHTTP {
 		raw["type"] = "http"
-		if provider == mcpProviderGemini {
-			raw["httpUrl"] = server.URL
-		} else {
-			raw["url"] = server.URL
-		}
+		raw["url"] = server.URL
 		if len(server.Headers) > 0 {
 			raw["headers"] = server.Headers
 		}
@@ -579,7 +555,7 @@ func sortedMCPProviders(providers []mcpProviderID) []mcpProviderID {
 	allowed := map[mcpProviderID]bool{}
 	for _, provider := range providers {
 		switch provider {
-		case mcpProviderCodex, mcpProviderClaude, mcpProviderGemini:
+		case mcpProviderCodex, mcpProviderClaude:
 			allowed[provider] = true
 		}
 	}

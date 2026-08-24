@@ -118,111 +118,9 @@ func TestExportNativeSessionRoundTripCodex(t *testing.T) {
 	}
 }
 
-func TestExportNativeSessionRoundTripGemini(t *testing.T) {
-	home := t.TempDir()
-	setTestHome(t, home)
-	t.Setenv("GEMINI_CLI_HOME", filepath.Join(home, ".gemini"))
-	localPath := "/tmp/project"
-	normalizedLocalPath := normalizeGeminiProjectPath(localPath)
-	entries := []readmodels.TranscriptEntry{
-		transcript.New(transcript.KindCompactSummary, map[string]any{"summary": "older work"}),
-		transcript.New(transcript.KindUserPrompt, map[string]any{"content": "hello"}),
-		transcript.New(transcript.KindToolCall, map[string]any{
-			"tool": map[string]any{
-				"toolKind": "read_file",
-				"toolName": "read_file",
-				"toolId":   "tool-1",
-				"input":    map[string]any{"file_path": "src/app.py"},
-			},
-		}),
-		transcript.New(transcript.KindToolResult, map[string]any{
-			"toolId":  "tool-1",
-			"content": "file contents",
-			"isError": false,
-		}),
-		transcript.New(transcript.KindAssistantText, map[string]any{"text": "world"}),
-	}
-	result, err := ExportNativeSession(ExportArgs{
-		Provider:  "gemini",
-		LocalPath: localPath,
-		Entries:   entries,
-	})
-	if err != nil {
-		t.Fatalf("ExportNativeSession returned error: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(result.ProjectPath, ".project_root")); err != nil {
-		t.Fatalf("expected .project_root marker: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(filepath.Dir(filepath.Dir(result.ProjectPath)), "history", filepath.Base(result.ProjectPath), ".project_root")); err != nil {
-		t.Fatalf("expected gemini history .project_root marker: %v", err)
-	}
-	imported, err := ImportLegacySession(state.SessionMeta{Agent: "gemini", SessionID: result.SessionToken, TranscriptPath: result.TranscriptPath, Cwd: normalizedLocalPath, ProjectName: "project"})
-	if err != nil {
-		t.Fatalf("ImportLegacySession returned error: %v", err)
-	}
-	if len(imported.Entries) < 3 {
-		t.Fatalf("expected imported entries, got %d", len(imported.Entries))
-	}
-	var registry struct {
-		Projects map[string]string `json:"projects"`
-	}
-	data, err := os.ReadFile(filepath.Join(home, ".gemini", "projects.json"))
-	if err != nil {
-		t.Fatalf("read gemini projects registry: %v", err)
-	}
-	if err := json.Unmarshal(data, &registry); err != nil {
-		t.Fatalf("parse gemini projects registry: %v", err)
-	}
-	if registry.Projects[normalizedLocalPath] != filepath.Base(result.ProjectPath) {
-		t.Fatalf("expected registry to point to exported project path, got %#v", registry.Projects)
-	}
-	lines := readJSONLRecords(t, result.TranscriptPath)
-	foundVisibleToolRecord := false
-	for _, line := range lines {
-		if line["type"] != "gemini" {
-			continue
-		}
-		content, _ := line["content"].(string)
-		if strings.Contains(content, "Tool call: read_file") && strings.Contains(content, "file contents") {
-			foundVisibleToolRecord = true
-			break
-		}
-	}
-	if !foundVisibleToolRecord {
-		t.Fatalf("expected gemini export to keep tool context model-visible, got %#v", lines)
-	}
-}
-
-func TestExportNativeSessionGeminiAvoidsSlugCollision(t *testing.T) {
-	home := t.TempDir()
-	setTestHome(t, home)
-	t.Setenv("GEMINI_CLI_HOME", filepath.Join(home, ".gemini"))
-	collidingMarker := filepath.Join(home, ".gemini", "tmp", "project", ".project_root")
-	if err := os.MkdirAll(filepath.Dir(collidingMarker), 0o755); err != nil {
-		t.Fatalf("mkdir colliding marker: %v", err)
-	}
-	if err := os.WriteFile(collidingMarker, []byte("/tmp/other"), 0o644); err != nil {
-		t.Fatalf("write colliding marker: %v", err)
-	}
-	result, err := ExportNativeSession(ExportArgs{
-		Provider:  "gemini",
-		LocalPath: "/tmp/project",
-		Entries: []readmodels.TranscriptEntry{
-			transcript.New(transcript.KindUserPrompt, map[string]any{"content": "hello"}),
-		},
-	})
-	if err != nil {
-		t.Fatalf("ExportNativeSession returned error: %v", err)
-	}
-	if filepath.Base(result.ProjectPath) != "project-1" {
-		t.Fatalf("expected collision-safe gemini slug project-1, got %q", filepath.Base(result.ProjectPath))
-	}
-}
-
 func TestExportNativeSessionPairwiseMatrix(t *testing.T) {
 	home := t.TempDir()
 	setTestHome(t, home)
-	t.Setenv("GEMINI_CLI_HOME", filepath.Join(home, ".gemini"))
 	t.Setenv("CODEX_HOME", filepath.Join(home, ".codex"))
 	t.Setenv("CLAUDE_HOME", filepath.Join(home, ".claude"))
 
@@ -238,17 +136,13 @@ func TestExportNativeSessionPairwiseMatrix(t *testing.T) {
 			provider: "codex",
 			meta:     writeSourceCodexSession(t, home),
 		},
-		{
-			provider: "gemini",
-			meta:     writeSourceGeminiSession(t, home),
-		},
 	}
 	for _, source := range sources {
 		imported, err := ImportLegacySession(source.meta)
 		if err != nil {
 			t.Fatalf("import source %s: %v", source.provider, err)
 		}
-		for _, target := range []string{"claude", "codex", "gemini"} {
+		for _, target := range []string{"claude", "codex"} {
 			if target == source.provider {
 				continue
 			}
@@ -319,8 +213,6 @@ func assertNativeExportShape(t *testing.T, provider string, result ExportResult,
 		assertClaudeNativeShape(t, result)
 	case "codex":
 		assertCodexNativeShape(t, result, cwd)
-	case "gemini":
-		assertGeminiNativeShape(t, result, cwd)
 	default:
 		t.Fatalf("unsupported provider %q", provider)
 	}
@@ -406,50 +298,6 @@ func assertCodexNativeShape(t *testing.T, result ExportResult, cwd string) {
 	}
 }
 
-func assertGeminiNativeShape(t *testing.T, result ExportResult, cwd string) {
-	t.Helper()
-	if _, err := os.Stat(filepath.Join(result.ProjectPath, ".project_root")); err != nil {
-		t.Fatalf("expected gemini project marker: %v", err)
-	}
-	marker, err := os.ReadFile(filepath.Join(result.ProjectPath, ".project_root"))
-	if err != nil {
-		t.Fatalf("read gemini project marker: %v", err)
-	}
-	expectedCWD := normalizeGeminiProjectPath(cwd)
-	if strings.TrimSpace(string(marker)) != expectedCWD {
-		t.Fatalf("gemini project marker cwd mismatch: %q", string(marker))
-	}
-	lines := readJSONLRecords(t, result.TranscriptPath)
-	var foundMeta, foundToolCall, foundFunctionCall, foundFunctionResponse bool
-	for _, line := range lines {
-		if line["sessionId"] == result.SessionToken {
-			foundMeta = true
-		}
-		if line["type"] == "gemini" {
-			if rawCalls, ok := line["toolCalls"].([]any); ok {
-				foundToolCall = true
-				for _, rawCall := range rawCalls {
-					call := rawCall.(map[string]any)
-					if _, ok := call["functionCall"].(map[string]any); ok {
-						foundFunctionCall = true
-					}
-					if results, ok := call["result"].([]any); ok {
-						for _, rawResult := range results {
-							result := rawResult.(map[string]any)
-							if _, ok := result["functionResponse"].(map[string]any); ok {
-								foundFunctionResponse = true
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-	if !foundMeta || !foundToolCall || !foundFunctionCall || !foundFunctionResponse {
-		t.Fatalf("gemini native transcript missing metadata/tool call parts: meta=%v toolCalls=%v functionCall=%v functionResponse=%v lines=%#v", foundMeta, foundToolCall, foundFunctionCall, foundFunctionResponse, lines)
-	}
-}
-
 func writeSourceClaudeSession(t *testing.T, home string) state.SessionMeta {
 	transcriptPath := filepath.Join(home, ".claude", "projects", "-tmp-project", "source-claude.jsonl")
 	body := `{"type":"user","message":{"role":"user","content":"hello from claude"}}` + "\n" +
@@ -479,18 +327,6 @@ func writeSourceCodexSession(t *testing.T, home string) state.SessionMeta {
 	return state.SessionMeta{Agent: "codex", SessionID: "source-codex", TranscriptPath: transcriptPath, Cwd: "/tmp/project", ProjectName: "project"}
 }
 
-func writeSourceGeminiSession(t *testing.T, home string) state.SessionMeta {
-	transcriptPath := filepath.Join(home, ".gemini", "tmp", "project", "chats", "session-source-gemini.json")
-	body := `{"sessionId":"source-gemini","summary":"Earlier compact summary","messages":[{"id":"u1","timestamp":"2025-12-29T04:04:34.450Z","type":"user","content":"hello from gemini"},{"id":"g1","timestamp":"2025-12-29T04:04:37.997Z","type":"gemini","content":"assistant from gemini","toolCalls":[{"id":"call_1","name":"read_file","args":{"file_path":"src/app.py"},"result":"file contents","status":"success"}]},{"id":"i1","timestamp":"2025-12-29T04:04:39.000Z","type":"info","content":"Conversation checkpoint saved with tag: sync."}]}`
-	if err := os.MkdirAll(filepath.Dir(transcriptPath), 0o755); err != nil {
-		t.Fatalf("mkdir gemini source: %v", err)
-	}
-	if err := os.WriteFile(transcriptPath, []byte(body), 0o644); err != nil {
-		t.Fatalf("write gemini source: %v", err)
-	}
-	return state.SessionMeta{Agent: "gemini", SessionID: "source-gemini", TranscriptPath: transcriptPath, Cwd: "/tmp/project", ProjectName: "project"}
-}
-
 func countKinds(entries []readmodels.TranscriptEntry, kind string) int {
 	count := 0
 	for _, entry := range entries {
@@ -507,8 +343,6 @@ func exportDiscoveryRoot(home string, provider string) string {
 		return filepath.Join(home, ".claude", "projects")
 	case "codex":
 		return filepath.Join(home, ".codex", "sessions")
-	case "gemini":
-		return filepath.Join(home, ".gemini", "tmp")
 	default:
 		return home
 	}

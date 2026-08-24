@@ -3,12 +3,9 @@ import {
   DEFAULT_CLAUDE_MODEL_OPTIONS,
   DEFAULT_CODEX_MODEL,
   DEFAULT_CODEX_MODEL_OPTIONS,
-  DEFAULT_GEMINI_MODEL,
-  DEFAULT_GEMINI_MODEL_OPTIONS,
   normalizeClaudeContextWindow,
   normalizeClaudeModelId,
   normalizeCodexModelId,
-  normalizeGeminiModelId,
   isClaudeReasoningEffort,
   isCodexReasoningEffort,
   supportsClaudeMaxReasoningEffort,
@@ -17,7 +14,6 @@ import {
   type ClaudeModelOptions,
   type CodexModelOptions,
   type DefaultProviderPreference,
-  type GeminiModelOptions,
   type ProviderPreference,
   type ProviderModelOptionsByProvider,
 } from "../../shared/types"
@@ -39,12 +35,6 @@ export type ComposerState =
     modelOptions: CodexModelOptions
     planMode: boolean
   }
-  | {
-    provider: "gemini"
-    model: string
-    modelOptions: GeminiModelOptions
-    planMode: boolean
-  }
 
 export const NEW_CHAT_COMPOSER_ID = "__new__"
 
@@ -63,11 +53,6 @@ type LegacyPersistedChatPreferencesState = Partial<{
       modelOptions?: Partial<CodexModelOptions>
       planMode?: boolean
     }
-    gemini?: {
-      model?: string
-      modelOptions?: Partial<GeminiModelOptions>
-      planMode?: boolean
-    }
   }
   composerState: PersistedComposerState
   liveProvider: AgentProvider
@@ -82,11 +67,6 @@ type LegacyPersistedChatPreferencesState = Partial<{
       model?: string
       effort?: string
       modelOptions?: Partial<CodexModelOptions>
-      planMode?: boolean
-    }
-    gemini?: {
-      model?: string
-      modelOptions?: Partial<GeminiModelOptions>
       planMode?: boolean
     }
   }
@@ -107,12 +87,6 @@ type PersistedComposerState =
     modelOptions?: Partial<CodexModelOptions>
     planMode?: boolean
   }
-  | {
-    provider: "gemini"
-    model?: string
-    modelOptions?: Partial<GeminiModelOptions>
-    planMode?: boolean
-  }
 
 type PersistedChatPreferencesState = Pick<
   ChatPreferencesState,
@@ -120,7 +94,7 @@ type PersistedChatPreferencesState = Pick<
 > & LegacyPersistedChatPreferencesState
 
 export function normalizeDefaultProvider(value?: string): DefaultProviderPreference {
-  if (value === "claude" || value === "codex" || value === "gemini") return value
+  if (value === "claude" || value === "codex") return value
   return "last_used"
 }
 
@@ -172,18 +146,6 @@ export function normalizeCodexPreference(value?: {
   }
 }
 
-export function normalizeGeminiPreference(value?: {
-  model?: string
-  modelOptions?: Partial<GeminiModelOptions>
-  planMode?: boolean
-}): ProviderPreference<GeminiModelOptions> {
-  return {
-    model: normalizeGeminiModelId(value?.model),
-    modelOptions: { ...DEFAULT_GEMINI_MODEL_OPTIONS },
-    planMode: Boolean(value?.planMode),
-  }
-}
-
 function forcePersistedCodexCompatiblePreference<T extends {
   model?: string
   effort?: string
@@ -230,11 +192,6 @@ export function createDefaultProviderDefaults(): ChatProviderPreferences {
       modelOptions: { ...DEFAULT_CODEX_MODEL_OPTIONS },
       planMode: false,
     },
-    gemini: {
-      model: DEFAULT_GEMINI_MODEL,
-      modelOptions: { ...DEFAULT_GEMINI_MODEL_OPTIONS },
-      planMode: false,
-    },
   }
 }
 
@@ -251,16 +208,10 @@ export function normalizeProviderDefaults(value?: {
     modelOptions?: Partial<CodexModelOptions>
     planMode?: boolean
   }
-  gemini?: {
-    model?: string
-    modelOptions?: Partial<GeminiModelOptions>
-    planMode?: boolean
-  }
 }): ChatProviderPreferences {
   return {
     claude: normalizeClaudePreference(value?.claude),
     codex: normalizeCodexPreference(value?.codex),
-    gemini: normalizeGeminiPreference(value?.gemini),
   }
 }
 
@@ -271,8 +222,6 @@ function normalizeProviderPreference<TProvider extends AgentProvider>(
   switch (provider) {
     case "claude":
       return normalizeClaudePreference(value as Partial<ProviderPreference<ClaudeModelOptions>> & { effort?: string }) as ProviderPreference<ProviderModelOptionsByProvider[TProvider]>
-    case "gemini":
-      return normalizeGeminiPreference(value as Partial<ProviderPreference<GeminiModelOptions>>) as ProviderPreference<ProviderModelOptionsByProvider[TProvider]>
     case "codex":
     default:
       return normalizeCodexPreference(value as Partial<ProviderPreference<CodexModelOptions>> & { effort?: string }) as ProviderPreference<ProviderModelOptionsByProvider[TProvider]>
@@ -297,15 +246,6 @@ function composerFromProviderDefaults(
       const preference = providerDefaults.claude
       return {
         provider: "claude",
-        model: preference.model,
-        modelOptions: { ...preference.modelOptions },
-        planMode: preference.planMode,
-      }
-    }
-    case "gemini": {
-      const preference = providerDefaults.gemini
-      return {
-        provider: "gemini",
         model: preference.model,
         modelOptions: { ...preference.modelOptions },
         planMode: preference.planMode,
@@ -345,7 +285,7 @@ function sameComposerState(left: ComposerState | undefined, right: ComposerState
       && left.modelOptions.fastMode === right.modelOptions.fastMode
   }
 
-  return left.provider === "gemini" && right.provider === "gemini"
+  return false
 }
 
 function normalizeComposerState(
@@ -374,16 +314,6 @@ function normalizeComposerState(
     }
   }
 
-  if (value?.provider === "gemini") {
-    const preference = normalizeGeminiPreference(value)
-    return {
-      provider: "gemini",
-      model: preference.model,
-      modelOptions: preference.modelOptions,
-      planMode: preference.planMode,
-    }
-  }
-
   if (legacyLiveProvider === "claude") {
     const preference = normalizeClaudePreference(legacyLivePreferences?.claude)
     return {
@@ -398,16 +328,6 @@ function normalizeComposerState(
     const preference = normalizeCodexPreference(legacyLivePreferences?.codex)
     return {
       provider: "codex",
-      model: preference.model,
-      modelOptions: preference.modelOptions,
-      planMode: preference.planMode,
-    }
-  }
-
-  if (legacyLiveProvider === "gemini") {
-    const preference = normalizeGeminiPreference(legacyLivePreferences?.gemini)
-    return {
-      provider: "gemini",
       model: preference.model,
       modelOptions: preference.modelOptions,
       planMode: preference.planMode,
@@ -592,7 +512,7 @@ interface ChatPreferencesState {
   setChatComposerModel: (chatId: string, model: string) => void
   setChatComposerModelOptions: (
     chatId: string,
-    modelOptions: Partial<ClaudeModelOptions> | Partial<CodexModelOptions> | Partial<GeminiModelOptions>
+    modelOptions: Partial<ClaudeModelOptions> | Partial<CodexModelOptions>
   ) => void
   setChatComposerPlanMode: (chatId: string, planMode: boolean) => void
   resetChatComposerFromProvider: (chatId: string, provider: AgentProvider) => void
@@ -681,18 +601,7 @@ export const useChatPreferencesStore = create<ChatPreferencesState>()(
               },
             }
           }
-          return {
-            providerDefaults: {
-              ...state.providerDefaults,
-              gemini: normalizeGeminiPreference({
-                ...state.providerDefaults.gemini,
-                modelOptions: {
-                  ...state.providerDefaults.gemini.modelOptions,
-                  ...modelOptions as Partial<GeminiModelOptions>,
-                },
-              }),
-            },
-          }
+          return state
         }),
       setProviderDefaultPlanMode: (provider, planMode) =>
         set((state) => ({
@@ -785,19 +694,7 @@ export const useChatPreferencesStore = create<ChatPreferencesState>()(
               planMode: composerState.planMode,
             }
           }
-          const preference = normalizeGeminiPreference({
-            ...composerState,
-            modelOptions: {
-              ...composerState.modelOptions,
-              ...modelOptions as Partial<GeminiModelOptions>,
-            },
-          })
-          return {
-            provider: "gemini",
-            model: composerState.model,
-            modelOptions: preference.modelOptions,
-            planMode: composerState.planMode,
-          }
+          return composerState
         })),
       setChatComposerPlanMode: (chatId, planMode) =>
         set((state) => withChatComposerStateAndLastUsed(state, chatId, (composerState) => ({

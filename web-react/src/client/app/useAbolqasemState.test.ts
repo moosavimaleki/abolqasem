@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test"
 import {
-  appendLaunchModelFlag,
   applySidebarProjectOrder,
   countMatchingUserPrompts,
   getActiveChatSnapshot,
@@ -20,9 +19,6 @@ import {
   shouldHandleUiUpdateReloadRequest,
   shouldMarkActiveChatRead,
   shouldAutoFollowTranscript,
-  shouldRefreshActiveTmuxChat,
-  shouldRequestTmuxLaunch,
-  shouldRenderOptimisticWebPrompt,
 } from "./useAbolqasemState"
 import type { ChatAttachment, ChatProviderPreferences, ChatSnapshot, SidebarData, UserPromptEntry } from "../../shared/types"
 
@@ -153,48 +149,6 @@ describe("getComposerStateForActiveProvider", () => {
       modelOptions: { reasoningEffort: "low", fastMode: true },
       planMode: true,
     })
-  })
-})
-
-describe("appendLaunchModelFlag", () => {
-  test("adds the configured model to a provider launch command", () => {
-    expect(appendLaunchModelFlag("codex --sandbox workspace-write", "gpt-5.5")).toBe(
-      "codex --sandbox workspace-write --model gpt-5.5"
-    )
-  })
-
-  test("preserves commands that already select a model", () => {
-    expect(appendLaunchModelFlag("gemini --model gemini-3-pro --approval-mode plan", "gemini-2.5-pro")).toBe(
-      "gemini --model gemini-3-pro --approval-mode plan"
-    )
-  })
-
-  test("quotes unusual model ids safely", () => {
-    expect(appendLaunchModelFlag("claude", "custom model")).toBe("claude --model 'custom model'")
-  })
-})
-
-describe("shouldRequestTmuxLaunch", () => {
-  test("asks for a launch choice when an imported session is not active and has no saved command", () => {
-    expect(shouldRequestTmuxLaunch({
-      tmuxSession: "abolqasem-chat-1",
-      tmuxActive: false,
-    } as ChatSnapshot["runtime"])).toBe(true)
-  })
-
-  test("does not ask while the tmux session is already active", () => {
-    expect(shouldRequestTmuxLaunch({
-      tmuxSession: "abolqasem-chat-1",
-      tmuxActive: true,
-    } as ChatSnapshot["runtime"])).toBe(false)
-  })
-
-  test("does not ask when the session already remembers its launch command", () => {
-    expect(shouldRequestTmuxLaunch({
-      tmuxSession: "abolqasem-chat-1",
-      tmuxActive: false,
-      tmuxCommand: "codex --dangerously-bypass-approvals-and-sandbox",
-    } as ChatSnapshot["runtime"])).toBe(false)
   })
 })
 
@@ -497,39 +451,12 @@ describe("normalizeChatSnapshot", () => {
 })
 
 describe("shouldEnqueueUserPrompt", () => {
-  test("does not queue running tmux chats", () => {
-    expect(shouldEnqueueUserPrompt("chat-1", true, "abolqasem-chat-1")).toBe(false)
-  })
-
-  test("queues running non-tmux chats", () => {
-    expect(shouldEnqueueUserPrompt("chat-1", true, "")).toBe(true)
+  test("queues a running app-server chat", () => {
+    expect(shouldEnqueueUserPrompt("chat-1", true)).toBe(true)
   })
 
   test("does not queue idle chats", () => {
-    expect(shouldEnqueueUserPrompt("chat-1", false, "")).toBe(false)
-  })
-})
-
-describe("shouldRenderOptimisticWebPrompt", () => {
-  test("does not render duplicate optimistic prompts for active tmux chats", () => {
-    expect(shouldRenderOptimisticWebPrompt("chat-1", "abolqasem-chat-1")).toBe(false)
-  })
-
-  test("keeps optimistic prompts for new or non-tmux chats", () => {
-    expect(shouldRenderOptimisticWebPrompt(null, null)).toBe(true)
-    expect(shouldRenderOptimisticWebPrompt("chat-1", "")).toBe(true)
-  })
-})
-
-describe("shouldRefreshActiveTmuxChat", () => {
-  test("refreshes active tmux chats when connected", () => {
-    expect(shouldRefreshActiveTmuxChat("chat-1", "abolqasem-chat-1", "connected")).toBe(true)
-  })
-
-  test("does not refresh without a chat, tmux session, or connection", () => {
-    expect(shouldRefreshActiveTmuxChat(null, "abolqasem-chat-1", "connected")).toBe(false)
-    expect(shouldRefreshActiveTmuxChat("chat-1", "", "connected")).toBe(false)
-    expect(shouldRefreshActiveTmuxChat("chat-1", "abolqasem-chat-1", "disconnected")).toBe(false)
+    expect(shouldEnqueueUserPrompt("chat-1", false)).toBe(false)
   })
 })
 
