@@ -1,5 +1,5 @@
 import { memo, type RefObject } from "react"
-import type { AgentProvider, ModelOptions } from "../../../shared/types"
+import type { AgentProvider, CodexLockStatus, ModelOptions } from "../../../shared/types"
 import { ChatInput, type ChatInputHandle } from "../../components/chat-ui/ChatInput"
 import type { ContextWindowSnapshot } from "../../lib/contextWindow"
 import type { AbolqasemState } from "../useAbolqasemState"
@@ -19,6 +19,12 @@ interface ChatInputDockProps {
   activeProvider: AgentProvider | null
   availableProviders: AbolqasemState["availableProviders"]
   contextWindowSnapshot: ContextWindowSnapshot | null
+  readOnly?: boolean
+  codexLock?: CodexLockStatus | null
+  lockBusy?: boolean
+  onTakeOverSession?: () => void
+  onReleaseSession?: () => void
+  onRefreshSessionLock?: () => void
   onSubmit: AbolqasemState["handleSend"]
   onRuntimePreferenceChange?: (preference: { provider: AgentProvider; model: string; modelOptions: ModelOptions }) => Promise<void>
   onCancel: () => void
@@ -39,6 +45,12 @@ export const ChatInputDock = memo(function ChatInputDock({
   activeProvider,
   availableProviders,
   contextWindowSnapshot,
+  readOnly = false,
+  codexLock = null,
+  lockBusy = false,
+  onTakeOverSession,
+  onReleaseSession,
+  onRefreshSessionLock,
   onSubmit,
   onRuntimePreferenceChange,
   onCancel,
@@ -62,6 +74,12 @@ export const ChatInputDock = memo(function ChatInputDock({
           availableProviders={availableProviders}
           showPreferenceControls
           contextWindowSnapshot={contextWindowSnapshot}
+          readOnly={readOnly}
+          codexLock={codexLock}
+          lockBusy={lockBusy}
+          onTakeOverSession={onTakeOverSession}
+          onReleaseSession={onReleaseSession}
+          onRefreshSessionLock={onRefreshSessionLock}
           previousPrompt={previousPrompt}
           onJumpToPreviousUserPrompt={onJumpToPreviousUserPrompt}
         />

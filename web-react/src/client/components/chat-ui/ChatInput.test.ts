@@ -151,4 +151,58 @@ describe("ChatInput", () => {
     expect(html).toContain("absolute inset-0 cursor-pointer opacity-0")
     expect(html).not.toContain('type="file" multiple="" class="hidden"')
   })
+
+  test("keeps the composer visible and replaces send with takeover while another Codex owns the session", () => {
+    const html = renderToStaticMarkup(createElement(
+      I18nProvider,
+      { locale: "en" },
+      createElement(ChatInput, {
+        onSubmit: async () => undefined,
+        disabled: false,
+        readOnly: true,
+        canCancel: false,
+        activeProvider: "codex",
+        availableProviders: PROVIDERS,
+        codexLock: {
+          state: "owned_elsewhere",
+          canTakeOver: true,
+          canRelease: false,
+          ownerPid: 123,
+        },
+        onTakeOverSession: () => undefined,
+      })
+    ))
+
+    expect(html).toContain('placeholder="Locked by another Codex"')
+    expect(html).toContain('textarea')
+    expect(html).toContain('disabled=""')
+    expect(html).toContain('aria-label="Take over session"')
+    expect(html).toContain('title="Take over session"')
+    expect(html).toContain("Locked by another Codex")
+  })
+
+  test("renders a compact releasable lock control beside model preferences when we own the session", () => {
+    const html = renderToStaticMarkup(createElement(
+      I18nProvider,
+      { locale: "en" },
+      createElement(ChatInput, {
+        onSubmit: async () => undefined,
+        disabled: false,
+        canCancel: false,
+        activeProvider: "codex",
+        availableProviders: PROVIDERS,
+        codexLock: {
+          state: "owned_by_us",
+          canTakeOver: false,
+          canRelease: true,
+        },
+        onReleaseSession: () => undefined,
+      })
+    ))
+
+    expect(html).toContain("Locked by us")
+    expect(html).toContain('title="Release session"')
+    expect(html).toContain('aria-label="Locked by us. Release session"')
+    expect(html).not.toContain("This session is owned by Abolqasem")
+  })
 })

@@ -37,7 +37,6 @@ import type { AbolqasemState } from "../useAbolqasemState"
 import { getNextMeasuredInputHeight, getTranscriptPaddingBottom } from "../useAbolqasemState"
 import type { ChatTranscriptIndexSnapshot, TranscriptIndexItem } from "../../../shared/types"
 import { ChatInputDock } from "./ChatInputDock"
-import { CodexSessionLockNotice } from "./CodexSessionLockNotice"
 import { ChatTranscriptViewport } from "./ChatTranscriptViewport"
 import { TerminalWorkspaceShell } from "./TerminalWorkspaceShell"
 import {
@@ -1962,18 +1961,7 @@ export function ChatPage() {
         )}
       </CardContent>
 
-      {codexLock ? (
-        <CodexSessionLockNotice
-          lock={codexLock}
-          busy={codexLockActionPending}
-          onRefresh={() => { void refreshCodexLock() }}
-          onTakeOver={() => { void takeOverCodexLock() }}
-          onRelease={() => { void releaseCodexLock() }}
-        />
-      ) : null}
-
-      {codexChatReadOnly ? null : (
-        <ChatInputDock
+      <ChatInputDock
           inputRef={inputRef}
           onLayoutChange={syncInputHeight}
           chatInputRef={chatInputRef}
@@ -1988,10 +1976,15 @@ export function ChatPage() {
           activeProvider={state.runtime?.provider ?? null}
           availableProviders={state.availableProviders}
           contextWindowSnapshot={contextWindowSnapshot}
+          readOnly={codexChatReadOnly}
+          codexLock={codexLock}
+          lockBusy={codexLockActionPending}
+          onRefreshSessionLock={() => { void refreshCodexLock() }}
+          onTakeOverSession={() => { void takeOverCodexLock() }}
+          onReleaseSession={() => { void releaseCodexLock() }}
           onSubmit={handleChatSubmit}
           onCancel={handleCancel}
         />
-      )}
     </Card>
   )
 

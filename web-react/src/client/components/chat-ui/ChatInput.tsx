@@ -1,10 +1,11 @@
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react"
-import { ArrowUp, Paperclip } from "lucide-react"
+import { ArrowUp, LoaderCircle, LockKeyhole, Paperclip, RefreshCw } from "lucide-react"
 import {
   type AgentProvider,
   type ChatAttachment,
   type ClaudeContextWindow,
   type ClaudeReasoningEffort,
+  type CodexLockStatus,
   type CodexReasoningEffort,
   type ModelOptions,
   type ProviderCatalogEntry,
@@ -136,6 +137,12 @@ interface Props {
   availableProviders: ProviderCatalogEntry[]
   showPreferenceControls?: boolean
   contextWindowSnapshot?: ContextWindowSnapshot | null
+  readOnly?: boolean
+  codexLock?: CodexLockStatus | null
+  lockBusy?: boolean
+  onTakeOverSession?: () => void
+  onReleaseSession?: () => void
+  onRefreshSessionLock?: () => void
   previousPrompt?: string | null
   onJumpToPreviousUserPrompt?: () => void | Promise<void>
 }
@@ -203,6 +210,12 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
   availableProviders,
   showPreferenceControls = true,
   contextWindowSnapshot = null,
+  readOnly = false,
+  codexLock = null,
+  lockBusy = false,
+  onTakeOverSession,
+  onReleaseSession,
+  onRefreshSessionLock,
   previousPrompt = null,
   onJumpToPreviousUserPrompt,
 }, forwardedRef) {
@@ -262,6 +275,17 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const hasPendingUploads = attachments.some((attachment) => attachment.status === "uploading")
   const hasTextToSend = value.trim().length > 0
   const canSubmit = value.trim().length > 0 || uploadedAttachments.length > 0
+  const inputDisabled = disabled || readOnly
+  const isLockedElsewhere = codexLock?.state === "owned_elsewhere"
+  const isLockUnknown = codexLock?.state === "unknown"
+  const isOwnedByUs = codexLock?.state === "owned_by_us"
+  const lockActionLabel = isLockedElsewhere ? t.composer.takeOverSession : t.composer.checkSessionLock
+  const effectiveLockActionLabel = lockBusy ? t.composer.checkingSessionLock : lockActionLabel
+  const lockedPlaceholder = isLockedElsewhere
+    ? t.composer.lockedElsewhere
+    : isLockUnknown
+      ? t.composer.sessionLockUnknown
+      : t.composer.buildSomething
   const orderedAttachments = [...attachments].sort((left, right) => {
     if (left.kind === right.kind) return 0
     return left.kind === "image" ? -1 : 1
@@ -635,7 +659,7 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
   }), [appendText, enqueueFiles, hasUnsavedDraft, hydrateDraft, insertText])
 
   async function handleSubmit() {
-    if (!canSubmit || hasPendingUploads) return
+    if (inputDisabled || !canSubmit || hasPendingUploads) return
 
     const nextValue = value
     const previousAttachments = attachmentsRef.current
@@ -715,7 +739,7 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
     }
 
     const isTouchDevice = "ontouchstart" in window || navigator.maxTouchPoints > 0
-    if (event.key === "Enter" && !event.shiftKey && !isTouchDevice && !disabled && hasTextToSend && !hasPendingUploads) {
+    if (event.key === "Enter" && !event.shiftKey && !isTouchDevice && !inputDisabled && hasTextToSend && !hasPendingUploads) {
       event.preventDefault()
       void handleSubmit()
     }
@@ -842,20 +866,23 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
             </ScrollArea>
           ) : null}
 
-          <div className="flex items-end max-w-[840px] mx-auto border dark:bg-card/40 backdrop-blur-lg border-border rounded-[29px] px-1.5">
+          <div className={cn(
+            "flex items-end max-w-[840px] mx-auto border dark:bg-card/40 backdrop-blur-lg rounded-[29px] px-1.5 transition-colors duration-200",
+            readOnly ? "border-amber-500/45 bg-amber-500/[0.035]" : "border-border",
+          )}>
             <label
               aria-label={t.composer.addAttachment}
               className={cn(
                 buttonVariants({ variant: "ghost", size: "icon" }),
                 "relative md:hidden flex-shrink-0 mx-1 mb-1 h-10 w-10 rounded-full text-muted-foreground hover:text-foreground",
-                disabled && "pointer-events-none opacity-50",
+                inputDisabled && "pointer-events-none opacity-50",
               )}
             >
               <Paperclip className="h-5 w-5" />
               <input
                 type="file"
                 multiple
-                disabled={disabled}
+                disabled={inputDisabled}
                 aria-label={t.composer.addAttachment}
                 className="absolute inset-0 cursor-pointer opacity-0"
                 onChange={(event) => {
@@ -869,7 +896,7 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
             </label>
             <Textarea
               ref={setTextareaRefs}
-              placeholder={t.composer.buildSomething}
+              placeholder={lockedPlaceholder}
               value={value}
               autoFocus
               {...{ [CHAT_INPUT_ATTRIBUTE]: "" }}
@@ -883,36 +910,64 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
               onDragOver={handleDragOver}
               onDrop={handleDrop}
               onKeyDown={handleKeyDown}
-              disabled={disabled}
-              className="flex-1 text-base px-2 py-3 md:px-4 md:py-4 resize-none max-h-[200px] outline-none bg-transparent border-0 shadow-none"
+              disabled={inputDisabled}
+              className="flex-1 text-base px-2 py-3 md:px-4 md:py-4 resize-none max-h-[200px] outline-none bg-transparent border-0 shadow-none disabled:cursor-not-allowed disabled:opacity-60"
             />
-            <Button
-              type="button"
-              onPointerDown={(event) => {
-                event.preventDefault()
-                if (!disabled && hasTextToSend && !hasPendingUploads) {
-                  void handleSubmit()
-                } else if (canCancel) {
-                  onCancel?.()
-                } else if (!disabled && canSubmit && !hasPendingUploads) {
-                  void handleSubmit()
-                }
-              }}
-              disabled={disabled || (!canCancel && !canSubmit) || hasPendingUploads}
-              size="icon"
-              className={cn(
-                "h-10 w-10 flex-shrink-0 cursor-pointer rounded-full bg-slate-600 text-white touch-manipulation disabled:bg-white/60 disabled:text-slate-700 md:h-11 md:w-11 dark:bg-white dark:text-slate-900",
-                isRtl ? "mb-1 -ml-0.5 md:mb-1.5 md:ml-0" : "mb-1 -mr-0.5 md:mb-1.5 md:mr-0",
-              )}
-            >
-              {hasTextToSend ? (
-                <ArrowUp className="h-5 w-5 md:h-6 md:w-6" />
-              ) : canCancel ? (
-                <div className="h-3 w-3 rounded-xs bg-current md:h-4 md:w-4" />
-              ) : (
-                <ArrowUp className="h-5 w-5 md:h-6 md:w-6" />
-              )}
-            </Button>
+            {readOnly && (isLockedElsewhere || isLockUnknown) ? (
+              <Button
+                type="button"
+                onPointerDown={(event) => {
+                  event.preventDefault()
+                  if (lockBusy) return
+                  if (isLockedElsewhere) onTakeOverSession?.()
+                  else onRefreshSessionLock?.()
+                }}
+                disabled={lockBusy || (isLockedElsewhere ? !codexLock?.canTakeOver || !onTakeOverSession : !onRefreshSessionLock)}
+                size="icon"
+                aria-label={effectiveLockActionLabel}
+                title={effectiveLockActionLabel}
+                className={cn(
+                  "h-10 w-10 flex-shrink-0 cursor-pointer rounded-full bg-amber-500 text-amber-950 touch-manipulation hover:bg-amber-400 disabled:cursor-not-allowed disabled:bg-amber-500/25 disabled:text-amber-100/50 md:h-11 md:w-11",
+                  isRtl ? "mb-1 -ml-0.5 md:mb-1.5 md:ml-0" : "mb-1 -mr-0.5 md:mb-1.5 md:mr-0",
+                )}
+              >
+                {lockBusy ? (
+                  <LoaderCircle className="h-5 w-5 animate-spin md:h-6 md:w-6" aria-hidden="true" />
+                ) : isLockedElsewhere ? (
+                  <LockKeyhole className="h-5 w-5 md:h-6 md:w-6" aria-hidden="true" />
+                ) : (
+                  <RefreshCw className="h-5 w-5 md:h-6 md:w-6" aria-hidden="true" />
+                )}
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                onPointerDown={(event) => {
+                  event.preventDefault()
+                  if (!inputDisabled && hasTextToSend && !hasPendingUploads) {
+                    void handleSubmit()
+                  } else if (canCancel) {
+                    onCancel?.()
+                  } else if (!inputDisabled && canSubmit && !hasPendingUploads) {
+                    void handleSubmit()
+                  }
+                }}
+                disabled={inputDisabled || (!canCancel && !canSubmit) || hasPendingUploads}
+                size="icon"
+                className={cn(
+                  "h-10 w-10 flex-shrink-0 cursor-pointer rounded-full bg-slate-600 text-white touch-manipulation disabled:bg-white/60 disabled:text-slate-700 md:h-11 md:w-11 dark:bg-white dark:text-slate-900",
+                  isRtl ? "mb-1 -ml-0.5 md:mb-1.5 md:ml-0" : "mb-1 -mr-0.5 md:mb-1.5 md:mr-0",
+                )}
+              >
+                {hasTextToSend ? (
+                  <ArrowUp className="h-5 w-5 md:h-6 md:w-6" />
+                ) : canCancel ? (
+                  <div className="h-3 w-3 rounded-xs bg-current md:h-4 md:w-4" />
+                ) : (
+                  <ArrowUp className="h-5 w-5 md:h-6 md:w-6" />
+                )}
+              </Button>
+            )}
           </div>
         </div>
 
@@ -927,6 +982,28 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
         <div className={cn("relative py-3 max-w-[840px] mx-auto", isStandalone && "p-5 pt-3")}>
           <div className="overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden flex flex-row">
             <div className="min-w-3" />
+            {codexLock && codexLock.state !== "available" ? (
+              isOwnedByUs ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={lockBusy || !codexLock.canRelease || !onReleaseSession}
+                  onClick={onReleaseSession}
+                  title={t.composer.releaseSession}
+                  aria-label={`${t.composer.sessionOwnedByUs}. ${t.composer.releaseSession}`}
+                  className="mx-1 h-8 shrink-0 cursor-pointer gap-1.5 rounded-full px-2.5 text-xs text-emerald-600 hover:bg-emerald-500/10 hover:text-emerald-500 disabled:cursor-not-allowed dark:text-emerald-400"
+                >
+                  {lockBusy ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <LockKeyhole className="h-3.5 w-3.5" aria-hidden="true" />}
+                  <span>{t.composer.sessionOwnedByUs}</span>
+                </Button>
+              ) : (
+                <span className="mx-1 inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs text-amber-600 dark:text-amber-400" role="status">
+                  <LockKeyhole className="h-3.5 w-3.5" aria-hidden="true" />
+                  {isLockedElsewhere ? t.composer.lockedElsewhere : t.composer.sessionLockUnknown}
+                </span>
+              )
+            ) : null}
             <ChatPreferenceControls
               availableProviders={availableProviders}
               selectedProvider={selectedProvider}
