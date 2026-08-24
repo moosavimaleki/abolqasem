@@ -16,7 +16,7 @@ import { TextMessage } from "../components/messages/TextMessage"
 import { AskUserQuestionMessage } from "../components/messages/AskUserQuestionMessage"
 import { ExitPlanModeMessage } from "../components/messages/ExitPlanModeMessage"
 import { TodoWriteMessage } from "../components/messages/TodoWriteMessage"
-import { CodexCommandMessage, CodexFileChangeMessage, CodexPlanMessage } from "../components/messages/CodexNativeMessage"
+import { CodexCommandGroup, CodexCommandMessage, CodexFileChangeMessage, CodexPlanMessage } from "../components/messages/CodexNativeMessage"
 import { ToolCallMessage } from "../components/messages/ToolCallMessage"
 import { ResultMessage } from "../components/messages/ResultMessage"
 import { InterruptedMessage } from "../components/messages/InterruptedMessage"
@@ -157,6 +157,11 @@ function isCollapsibleToolCall(message: HydratedTranscriptMessage) {
   return !SPECIAL_TOOL_NAMES.has(toolName)
 }
 
+function getCollapsibleGroupKind(message: HydratedTranscriptMessage) {
+  if (message.kind === "command_execution") return "command"
+  return isCollapsibleToolCall(message) ? "tool" : null
+}
+
 function getTranscriptMessageRenderState(
   message: HydratedTranscriptMessage,
   {
@@ -238,7 +243,8 @@ export function buildTranscriptRenderItems(
   while (index < messages.length) {
     const message = messages[index]
     const renderState = renderStates[index]
-    if (renderState?.shouldRender && isCollapsibleToolCall(message)) {
+    const groupKind = renderState?.shouldRender ? getCollapsibleGroupKind(message) : null
+    if (groupKind) {
       const group: HydratedTranscriptMessage[] = [message]
       const startIndex = index
       index += 1
@@ -250,7 +256,7 @@ export function buildTranscriptRenderItems(
           index += 1
           continue
         }
-        if (!isCollapsibleToolCall(nextMessage)) break
+        if (getCollapsibleGroupKind(nextMessage) !== groupKind) break
         group.push(nextMessage)
         index += 1
       }
@@ -615,18 +621,27 @@ const TranscriptToolGroup = memo(function TranscriptToolGroup({
   expanded,
   onExpandedChange,
 }: TranscriptToolGroupProps) {
+  const commandMessages = messages.every((message) => message.kind === "command_execution")
   return (
     <div
       className="group relative"
       {...{ [CHAT_SELECTION_ZONE_ATTRIBUTE]: "" }}
     >
-      <CollapsedToolGroup
-        messages={messages}
-        isLoading={isLoading}
-        localPath={localPath}
-        expanded={expanded}
-        onExpandedChange={(next) => onExpandedChange(id, next)}
-      />
+      {commandMessages ? (
+        <CodexCommandGroup
+          messages={messages as Extract<HydratedTranscriptMessage, { kind: "command_execution" }>[]}
+          expanded={expanded}
+          onExpandedChange={(next) => onExpandedChange(id, next)}
+        />
+      ) : (
+        <CollapsedToolGroup
+          messages={messages}
+          isLoading={isLoading}
+          localPath={localPath}
+          expanded={expanded}
+          onExpandedChange={(next) => onExpandedChange(id, next)}
+        />
+      )}
     </div>
   )
 }, (prev, next) => (
@@ -663,7 +678,10 @@ export function buildResolvedTranscriptRows(
         id: getTranscriptRenderItemId(item),
         startIndex: item.startIndex,
         messages: item.messages,
-        isLoading: isLoading && item.messages.some((message) => message.kind === "tool" && message.result === undefined),
+        isLoading: isLoading && item.messages.some((message) => (
+          (message.kind === "tool" && message.result === undefined)
+          || (message.kind === "command_execution" && message.status === "inProgress")
+        )),
         localPath,
       })
       continue

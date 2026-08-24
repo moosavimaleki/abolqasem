@@ -46,20 +46,56 @@ function createToolMessage(id: string, toolId = id): HydratedTranscriptMessage {
   }
 }
 
+function createCommandMessage(id: string, command: string, output = "ok"): HydratedTranscriptMessage {
+  return {
+    id,
+    kind: "command_execution",
+    itemId: id,
+    command,
+    cwd: "/work",
+    status: "completed",
+    aggregatedOutput: output,
+    exitCode: 0,
+    timestamp: new Date().toISOString(),
+  }
+}
+
 describe("AbolqasemTranscript", () => {
-  test("renders native Codex command, file-change, and live plan cards", () => {
+  test("renders native Codex command collapsed, plus file-change and live plan cards", () => {
     const html = renderTranscript([
       { id: "cmd", kind: "command_execution", itemId: "cmd-1", command: "go test ./...", cwd: "/work", status: "completed", aggregatedOutput: "ok", exitCode: 0, timestamp: new Date().toISOString() },
       { id: "files", kind: "file_change", itemId: "files-1", status: "completed", changes: [{ path: "main.go", kind: "update", diff: "@@ -1 +1 @@\n-old\n+new" }], output: "", timestamp: new Date().toISOString() },
       { id: "plan", kind: "turn_plan", turnId: "turn-1", explanation: "Implement safely", plan: [{ step: "Run tests", status: "inProgress" }], timestamp: new Date().toISOString() },
     ])
     expect(html).toContain("go test ./...")
-    expect(html).toContain("exit 0")
+    expect(html).toContain("Completed")
+    expect(html).toContain('aria-expanded="false"')
+    expect(html).not.toContain("No output yet")
     expect(html).toContain("1 files changed")
     expect(html).toContain("main.go")
     expect(html).toContain("Updating")
     expect(html).toContain("Implement safely")
     expect(html).toContain("Run tests")
+  })
+
+  test("groups consecutive native commands behind a Codex Mobile style summary", () => {
+    const messages = [
+      createCommandMessage("cmd-1", "/usr/bin/zsh -lc 'rtk git diff --check'", "first private output"),
+      createCommandMessage("cmd-2", "/usr/bin/zsh -lc 'rtk npm test'", "second private output"),
+    ]
+    const rows = buildResolvedTranscriptRows(messages, {
+      isLoading: false,
+      latestToolIds: { AskUserQuestion: null, ExitPlanMode: null, TodoWrite: null },
+    })
+    const html = renderTranscript(messages)
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.kind).toBe("tool-group")
+    expect(html).toContain("2 commands · latest: rtk npm test")
+    expect(html).toContain('data-command-group="true"')
+    expect(html).toContain('aria-expanded="false"')
+    expect(html).not.toContain("first private output")
+    expect(html).not.toContain("second private output")
   })
 
   test("renders user attachment cards outside the user bubble", () => {

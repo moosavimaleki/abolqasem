@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react"
+import { useId, useMemo, useState } from "react"
 import { Check, ChevronDown, ChevronRight, Circle, FileCode2, Loader2, TerminalSquare, X } from "lucide-react"
 import type { CodexFileUpdateChange, HydratedTranscriptMessage } from "../../../shared/types"
+import { formatBashCommandTitle } from "../../lib/formatters"
 import { cn } from "../../lib/utils"
 import { Dialog, DialogContent, DialogTitle } from "../ui/dialog"
 
@@ -14,22 +15,79 @@ function statusIcon(status: CommandMessage["status"]) {
   return <X className="size-3.5 text-red-400" />
 }
 
+function commandStatusLabel(message: CommandMessage) {
+  if (message.status === "inProgress") return "Running"
+  if (message.status === "failed") return message.exitCode == null ? "Failed" : `Exit ${message.exitCode}`
+  if (message.status === "declined") return "Declined"
+  return message.exitCode != null && message.exitCode !== 0 ? `Exit ${message.exitCode}` : "Completed"
+}
+
 export function CodexCommandMessage({ message }: { message: CommandMessage }) {
-  const [expanded, setExpanded] = useState(Boolean(message.aggregatedOutput && message.status !== "completed"))
-  const title = message.command.replace(/^\/usr\/bin\/(?:zsh|bash)\s+-lc\s+['"]?/, "").replace(/['"]$/, "")
+  const [expanded, setExpanded] = useState(false)
+  const detailsId = useId()
+  const title = formatBashCommandTitle(message.command) || "Command"
   return (
     <div className="my-1 w-full overflow-hidden rounded-lg border border-white/10 bg-zinc-900/70 font-mono text-xs" dir="ltr">
-      <button type="button" onClick={() => setExpanded((value) => !value)} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-white/5">
+      <button
+        type="button"
+        aria-expanded={expanded}
+        aria-controls={detailsId}
+        onClick={() => setExpanded((value) => !value)}
+        className="flex min-h-9 w-full cursor-pointer items-center gap-2 px-2.5 py-1.5 text-left transition-colors hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/70"
+        title={title}
+      >
+        {expanded ? <ChevronDown className="size-3.5 shrink-0 text-zinc-400" /> : <ChevronRight className="size-3.5 shrink-0 text-zinc-400" />}
         {statusIcon(message.status)}
-        <span className="shrink-0 text-[11px] text-muted-foreground">{message.status === "inProgress" ? "Running" : message.status}</span>
         <span className="min-w-0 flex-1 truncate text-zinc-200">{title}</span>
-        {message.exitCode !== undefined && message.exitCode !== null ? <span className={cn("shrink-0", message.exitCode === 0 ? "text-emerald-400" : "text-red-400")}>exit {message.exitCode}</span> : null}
-        {expanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+        <span className={cn("shrink-0 text-[11px] font-medium", message.status === "inProgress" ? "text-sky-400" : message.status === "completed" && (message.exitCode == null || message.exitCode === 0) ? "text-emerald-400" : "text-red-400")}>{commandStatusLabel(message)}</span>
       </button>
       {expanded ? (
-        <div className="border-t border-white/10">
+        <div id={detailsId} className="border-t border-white/10">
           {message.cwd ? <div className="border-b border-white/10 px-3 py-1.5 text-zinc-500">cwd: {message.cwd}</div> : null}
           <pre className="max-h-80 overflow-auto whitespace-pre-wrap px-3 py-2 text-zinc-300">{message.aggregatedOutput || "No output yet"}</pre>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+export function CodexCommandGroup({
+  messages,
+  expanded,
+  onExpandedChange,
+}: {
+  messages: CommandMessage[]
+  expanded: boolean
+  onExpandedChange: (next: boolean) => void
+}) {
+  const detailsId = useId()
+  const latest = messages[messages.length - 1]
+  const running = messages.some((message) => message.status === "inProgress")
+  const failed = messages.find((message) => message.status === "failed" || (message.exitCode != null && message.exitCode !== 0))
+  const statusMessage = running
+    ? messages.find((message) => message.status === "inProgress") ?? latest
+    : failed ?? latest
+  const latestTitle = formatBashCommandTitle(latest?.command ?? "") || "Command"
+  const label = `${messages.length} commands · latest: ${latestTitle}`
+
+  return (
+    <div className="my-1 w-full font-mono text-xs" dir="ltr" data-command-group="true">
+      <button
+        type="button"
+        aria-expanded={expanded}
+        aria-controls={detailsId}
+        onClick={() => onExpandedChange(!expanded)}
+        className="flex min-h-9 w-full cursor-pointer items-center gap-2 rounded-lg border border-dashed border-white/15 bg-zinc-800/80 px-2.5 py-1.5 text-left transition-colors hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/70"
+        title={label}
+      >
+        {expanded ? <ChevronDown className="size-3.5 shrink-0 text-zinc-400" /> : <ChevronRight className="size-3.5 shrink-0 text-zinc-400" />}
+        {statusMessage ? statusIcon(statusMessage.status) : null}
+        <span className="min-w-0 flex-1 truncate text-zinc-200">{label}</span>
+        {statusMessage ? <span className={cn("shrink-0 text-[11px] font-medium", running ? "text-sky-400" : failed ? "text-red-400" : "text-emerald-400")}>{commandStatusLabel(statusMessage)}</span> : null}
+      </button>
+      {expanded ? (
+        <div id={detailsId} className="mt-1.5 border-l border-white/10 pl-2">
+          {messages.map((message) => <CodexCommandMessage key={message.id} message={message} />)}
         </div>
       ) : null}
     </div>

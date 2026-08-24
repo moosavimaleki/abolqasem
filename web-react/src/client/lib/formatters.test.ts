@@ -4,6 +4,7 @@ import { formatBashCommandTitle, formatSidebarAgeLabel } from "./formatters"
 describe("formatBashCommandTitle", () => {
   test("unwraps codex zsh -lc commands", () => {
     expect(formatBashCommandTitle("/bin/zsh -lc 'bun test --help'")).toBe("bun test --help")
+    expect(formatBashCommandTitle("/usr/bin/zsh -lc 'rtk npm test'")).toBe("rtk npm test")
   })
 
   test("unwraps unquoted shell wrapper commands", () => {
