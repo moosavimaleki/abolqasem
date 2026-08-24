@@ -105,6 +105,13 @@ function diffCounts(diff: string) {
   return { additions, deletions }
 }
 
+function firstChangedLine(diff: string) {
+  const match = diff.match(/^@@\s+-\d+(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@/m)
+  if (!match) return undefined
+  const line = Number.parseInt(match[1], 10)
+  return Number.isFinite(line) && line > 0 ? line : undefined
+}
+
 function DiffBody({ change }: { change: CodexFileUpdateChange }) {
   return <pre className="min-h-0 flex-1 overflow-auto bg-[#07090c] p-4 font-mono text-xs leading-6" dir="ltr">{change.diff.split("\n").map((line, index) => (
     <div key={index} className={cn("min-w-max px-2", line.startsWith("+") && !line.startsWith("+++") && "bg-emerald-950/60 text-emerald-300", line.startsWith("-") && !line.startsWith("---") && "bg-red-950/60 text-red-300", line.startsWith("@@") && "bg-sky-950/60 text-sky-300")}>{line || " "}</div>
@@ -132,13 +139,14 @@ export function CodexFileChangeMessage({ message }: { message: FileChangeMessage
         {expanded ? <div className="divide-y divide-white/10">{message.changes.map((change) => {
           const counts = diffCounts(change.diff || "")
           const targetPath = change.movedToPath || change.path
+          const targetLine = firstChangedLine(change.diff || "")
           return <div key={change.path} className="flex items-stretch hover:bg-white/5" dir="ltr">
             <button type="button" onClick={() => setSelected(change)} className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left">
               <span className="rounded-full bg-sky-950 px-2 py-0.5 text-[10px] uppercase text-sky-300">{change.kind}</span>
               <span className="min-w-0 flex-1 truncate font-mono text-sky-300">{change.path}{change.movedToPath ? ` → ${change.movedToPath}` : ""}</span>
               <span className="text-emerald-400">+{counts.additions}</span><span className="text-red-400">-{counts.deletions}</span>
             </button>
-            <a href={fileRouteHref(targetPath)} target="_blank" rel="noreferrer" aria-label={`Open ${targetPath} in file manager`} title="Open in file manager" className="flex w-10 shrink-0 items-center justify-center border-s border-white/10 text-sky-300 transition-colors hover:bg-sky-950/60 hover:text-sky-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-500">
+            <a href={fileRouteHref(targetPath, targetLine)} target="_blank" rel="noreferrer" aria-label={`Open ${targetPath}${targetLine ? ` at line ${targetLine}` : ""} in file manager`} title="Open in file manager" className="flex w-10 shrink-0 items-center justify-center border-s border-white/10 text-sky-300 transition-colors hover:bg-sky-950/60 hover:text-sky-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-500">
               <FolderOpen className="size-4" />
             </a>
           </div>
