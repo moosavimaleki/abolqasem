@@ -31,6 +31,7 @@ import { buildAssistantReaderDocument, type AssistantReaderDocument } from "./re
 import type { EditorPreset } from "../../../shared/protocol"
 import type { ChatCheckpointSummary, HydratedTranscriptMessage, TranscriptIndexItem } from "../../../shared/types"
 import { useI18n } from "../../i18n/context"
+import { getProcessingStatus } from "./processingStatus"
 
 const CHECKPOINT_PROMPT_PREVIEW_MAX = 120
 const PROMPT_CHECKPOINT_MAX_DELAY_MS = 30 * 60 * 1000
@@ -516,8 +517,7 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
     </div>
   )
 
-  const latestTurnActivity = [...messages].reverse().find((message) => message.kind === "turn_activity")
-  const processingStatus = latestTurnActivity?.kind === "turn_activity" ? latestTurnActivity.activity : runtimeStatus ?? undefined
+  const processingStatus = getProcessingStatus(messages, runtimeStatus ?? undefined)
   const listFooter = (
     <div className={cn("mx-auto w-full max-w-[800px]", transcriptAppearanceClassName)} dir={direction} style={transcriptAppearanceStyle}>
       {isProcessing && !hasTmuxRuntime ? <ProcessingMessage status={processingStatus} /> : null}

@@ -532,6 +532,8 @@ describe("optimistic user prompts", () => {
         scopeId: "chat-1",
         signature: getUserPromptSignature("same"),
         requiredMatchCount: 1,
+        contentMatchKey: "same",
+        requiredContentMatchCount: 1,
         entry: createUserPrompt("optimistic:1", "same"),
       },
       {
@@ -539,6 +541,8 @@ describe("optimistic user prompts", () => {
         scopeId: "chat-1",
         signature: getUserPromptSignature("same"),
         requiredMatchCount: 2,
+        contentMatchKey: "same",
+        requiredContentMatchCount: 2,
         entry: createUserPrompt("optimistic:2", "same"),
       },
     ]
@@ -556,6 +560,8 @@ describe("optimistic user prompts", () => {
       scopeId: "chat-2",
       signature: getUserPromptSignature("same"),
       requiredMatchCount: 1,
+      contentMatchKey: "same",
+      requiredContentMatchCount: 1,
       entry: createUserPrompt("optimistic:1", "same"),
     }
 
@@ -564,5 +570,35 @@ describe("optimistic user prompts", () => {
       "chat-1",
       [createUserPrompt("server-1", "same")],
     )).toEqual([optimisticPrompt])
+  })
+
+  test("reconciles an attached prompt after Codex expands pasted text into the user message", () => {
+    const attachment: ChatAttachment = {
+      id: "att-1",
+      kind: "file",
+      displayName: "pasted-text.txt",
+      absolutePath: "/tmp/pasted-text.txt",
+      relativePath: "pasted-text.txt",
+      contentUrl: "/uploads/pasted-text.txt",
+      mimeType: "text/plain",
+      size: 5000,
+    }
+    const content = "عدد checkout چند بود؟"
+    const optimisticPrompt = {
+      id: "opt-attached",
+      scopeId: "chat-1",
+      signature: getUserPromptSignature(content, [attachment]),
+      requiredMatchCount: 1,
+      contentMatchKey: content,
+      requiredContentMatchCount: 1,
+      entry: createUserPrompt("optimistic:attached", content, [attachment]),
+    }
+    const expandedServerPrompt = `${content}\n\n[Attached text file: pasted-text.txt]\n\nlong file contents`
+
+    expect(reconcileOptimisticUserPrompts(
+      [optimisticPrompt],
+      "chat-1",
+      [createUserPrompt("server-1", expandedServerPrompt)],
+    )).toEqual([])
   })
 })

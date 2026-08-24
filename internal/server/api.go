@@ -98,7 +98,7 @@ func handleAPISearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	appState, err := state.LoadState()
+	appState, err := workspaceLoadLegacyState()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

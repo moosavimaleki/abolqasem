@@ -767,6 +767,15 @@ func workspaceTranscriptEntryFromSearchable(message parser.SearchableMessage) re
 		entry["createdAt"] = float64(message.CreatedAt.UnixMilli())
 	}
 	text := strings.TrimSpace(message.Text)
+	if message.Kind == transcript.KindCommandExecution {
+		entry["kind"] = transcript.KindCommandExecution
+		for _, key := range []string{"itemId", "command", "cwd", "status", "aggregatedOutput", "exitCode", "durationMs"} {
+			if value, ok := message.Fields[key]; ok {
+				entry[key] = value
+			}
+		}
+		return entry
+	}
 	switch workspaceSearchableTranscriptRole(message) {
 	case "user":
 		entry["kind"] = transcript.KindUserPrompt

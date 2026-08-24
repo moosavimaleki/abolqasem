@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -41,6 +42,7 @@ type SearchableMessage struct {
 	Index     int
 	CreatedAt *time.Time
 	Source    string
+	Fields    map[string]any
 }
 
 type ParseResult struct {
@@ -296,6 +298,7 @@ func StreamSearchableMessages(agent, sessionID, transcriptPath string, visit fun
 	lineIndex := 0
 	emitted := 0
 	var previous *SearchableMessage
+	codexCommandItems := make(map[string]struct{})
 	for {
 		line, readErr := reader.ReadBytes('\n')
 		if len(line) > 0 {
@@ -303,6 +306,9 @@ func StreamSearchableMessages(agent, sessionID, transcriptPath string, visit fun
 			raw := map[string]any{}
 			if decodeErr := json.Unmarshal(bytesTrimSpace(line), &raw); decodeErr == nil {
 				if msg := extractSearchableMessage(agent, raw, sessionID, lineIndex); msg != nil {
+					if !normalizeCodexCommandMessage(agent, msg, codexCommandItems) {
+						continue
+					}
 					if shouldDropSearchableDuplicate(agent, previous, msg) {
 						continue
 					}
@@ -405,6 +411,7 @@ func loadMessages(agent, sessionID, transcriptPath string) ([]Message, error) {
 	messages := make([]Message, 0, 64)
 	lineIndex := 0
 	var previous *SearchableMessage
+	codexCommandItems := make(map[string]struct{})
 	for {
 		line, err := reader.ReadBytes('\n')
 		if len(line) > 0 {
@@ -412,6 +419,9 @@ func loadMessages(agent, sessionID, transcriptPath string) ([]Message, error) {
 			raw := map[string]any{}
 			if decodeErr := json.Unmarshal(bytesTrimSpace(line), &raw); decodeErr == nil {
 				if msg := extractSearchableMessage(agent, raw, sessionID, lineIndex); msg != nil {
+					if !normalizeCodexCommandMessage(agent, msg, codexCommandItems) {
+						continue
+					}
 					if shouldDropSearchableDuplicate(agent, previous, msg) {
 						continue
 					}
@@ -802,6 +812,35 @@ func extractCodexMessage(raw map[string]any, sessionID string, index int) *Searc
 	}
 
 	switch eventType {
+	case "custom_tool_call":
+		if !strings.EqualFold(strings.TrimSpace(stringValue(payload["name"])), "exec") {
+			return nil
+		}
+		command, cwd, ok := extractCodexExecCommand(stringValue(payload["input"]))
+		if !ok {
+			return nil
+		}
+		itemID := firstNonEmpty(stringValue(payload["call_id"]), stringValue(payload["id"]))
+		msg := newCodexSearchableMessage(sessionID, index, "tool", "command_execution", command, extractTimestamp(raw, payload), source)
+		if msg != nil {
+			msg.Fields = map[string]any{"itemId": itemID, "command": command, "cwd": cwd, "status": "inProgress"}
+		}
+		return msg
+	case "custom_tool_call_output":
+		output := firstNonEmpty(flattenText(payload["output"]), flattenText(payload["content"]))
+		msg := newCodexSearchableMessage(sessionID, index, "tool", "custom_tool_call_output", output, extractTimestamp(raw, payload), source)
+		if msg != nil {
+			status, exitCode, hasExitCode := codexCommandCompletion(output)
+			msg.Fields = map[string]any{
+				"itemId":           firstNonEmpty(stringValue(payload["call_id"]), stringValue(payload["id"])),
+				"status":           status,
+				"aggregatedOutput": output,
+			}
+			if hasExitCode {
+				msg.Fields["exitCode"] = exitCode
+			}
+		}
+		return msg
 	case "user_message":
 		return newCodexSearchableMessage(sessionID, index, "user", "message", firstNonEmpty(
 			codexText(payload["message"]),
@@ -836,6 +875,93 @@ func extractCodexMessage(raw map[string]any, sessionID string, index int) *Searc
 		codexText(payload["message"]),
 		codexText(payload["text"]),
 	), extractTimestamp(raw, payload), source)
+}
+
+func normalizeCodexCommandMessage(agent string, message *SearchableMessage, commandItems map[string]struct{}) bool {
+	if !strings.EqualFold(strings.TrimSpace(agent), "codex") || message == nil {
+		return true
+	}
+	itemID := strings.TrimSpace(stringValue(message.Fields["itemId"]))
+	switch message.Kind {
+	case "command_execution":
+		if itemID == "" {
+			return false
+		}
+		commandItems[itemID] = struct{}{}
+		return true
+	case "custom_tool_call_output":
+		if _, ok := commandItems[itemID]; !ok {
+			return false
+		}
+		message.Kind = "command_execution"
+		return true
+	default:
+		return true
+	}
+}
+
+var codexExecCommandFieldPattern = regexp.MustCompile(`(?:^|[,\{]\s*)["']?cmd["']?\s*:\s*("(?:\\.|[^"\\])*")`)
+var codexExecWorkdirFieldPattern = regexp.MustCompile(`(?:^|[,\{]\s*)["']?workdir["']?\s*:\s*("(?:\\.|[^"\\])*")`)
+var codexExitCodePattern = regexp.MustCompile(`(?i)(?:exited with code|exit(?:ed)? code\s*[:=]?)\s*(-?[0-9]+)`)
+
+func extractCodexExecCommand(input string) (string, string, bool) {
+	const marker = "tools.exec_command("
+	commands := make([]string, 0, 1)
+	workdirs := make([]string, 0, 1)
+	for remaining := input; ; {
+		markerIndex := strings.Index(remaining, marker)
+		if markerIndex < 0 {
+			break
+		}
+		remaining = remaining[markerIndex+len(marker):]
+		segment := remaining
+		if nextIndex := strings.Index(segment, marker); nextIndex >= 0 {
+			segment = segment[:nextIndex]
+		}
+		command := extractCodexJSONStringField(segment, codexExecCommandFieldPattern)
+		if strings.TrimSpace(command) != "" {
+			commands = append(commands, command)
+			workdirs = append(workdirs, extractCodexJSONStringField(segment, codexExecWorkdirFieldPattern))
+		}
+	}
+	if len(commands) == 0 {
+		return "", "", false
+	}
+	cwd := workdirs[0]
+	for _, workdir := range workdirs[1:] {
+		if workdir != cwd {
+			cwd = ""
+			break
+		}
+	}
+	return strings.Join(commands, "\n"), cwd, true
+}
+
+func extractCodexJSONStringField(input string, pattern *regexp.Regexp) string {
+	match := pattern.FindStringSubmatch(input)
+	if len(match) != 2 {
+		return ""
+	}
+	var value string
+	if err := json.Unmarshal([]byte(match[1]), &value); err != nil {
+		return ""
+	}
+	return value
+}
+
+func codexCommandCompletion(output string) (string, int, bool) {
+	if match := codexExitCodePattern.FindStringSubmatch(output); len(match) == 2 {
+		if exitCode, err := strconv.Atoi(match[1]); err == nil {
+			if exitCode == 0 {
+				return "completed", exitCode, true
+			}
+			return "failed", exitCode, true
+		}
+	}
+	if strings.Contains(output, "Script completed") {
+		return "completed", 0, true
+	}
+	return "completed", 0, false
 }
 
 func isCodexInterAgentMessage(recordType, eventType string, payload map[string]any) bool {

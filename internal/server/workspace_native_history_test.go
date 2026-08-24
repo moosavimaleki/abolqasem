@@ -19,7 +19,9 @@ func TestWorkspaceNativeHistoryDoesNotReadStoredMessagesStream(t *testing.T) {
 	nativePath := filepath.Join(t.TempDir(), "native.jsonl")
 	body := `{"type":"event_msg","payload":{"type":"user_message","message":"first native prompt"}}` + "\n" +
 		`{"type":"event_msg","payload":{"type":"agent_message","message":"first native answer"}}` + "\n" +
-		`{"type":"event_msg","payload":{"type":"user_message","message":"second native prompt"}}` + "\n"
+		`{"type":"event_msg","payload":{"type":"user_message","message":"second native prompt"}}` + "\n" +
+		`{"type":"response_item","payload":{"type":"custom_tool_call","call_id":"call-native","name":"exec","input":"const r = await tools.exec_command({cmd:\"rtk pwd\",workdir:\"/tmp/project\"}); text(r.output);"}}` + "\n" +
+		`{"type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"call-native","output":[{"type":"input_text","text":"Script completed\nOutput:\n/tmp/project\n"}]}}` + "\n"
 	if err := os.WriteFile(nativePath, []byte(body), 0o644); err != nil {
 		t.Fatalf("write native transcript: %v", err)
 	}
@@ -52,17 +54,20 @@ func TestWorkspaceNativeHistoryDoesNotReadStoredMessagesStream(t *testing.T) {
 		t.Fatalf("workspaceReadChatTranscriptIndex returned error: %v", err)
 	}
 	items := indexSnapshot["items"].([]workspaceTranscriptIndexItem)
-	if len(items) != 3 || items[0].Preview != "first native prompt" {
+	if len(items) != 5 || items[0].Preview != "first native prompt" {
 		t.Fatalf("unexpected native transcript index: %#v", items)
 	}
 
-	history, err := workspaceLoadStoredChatHistory(chat.ID, "", 2)
+	history, err := workspaceLoadStoredChatHistory(chat.ID, "", 4)
 	if err != nil {
 		t.Fatalf("workspaceLoadStoredChatHistory returned error: %v", err)
 	}
 	messages := history["messages"].([]readmodels.TranscriptEntry)
-	if len(messages) != 2 || transcript.Kind(messages[0]) != transcript.KindAssistantText || transcript.Kind(messages[1]) != transcript.KindUserPrompt {
+	if len(messages) != 4 || transcript.Kind(messages[0]) != transcript.KindAssistantText || transcript.Kind(messages[1]) != transcript.KindUserPrompt || transcript.Kind(messages[2]) != transcript.KindCommandExecution || transcript.Kind(messages[3]) != transcript.KindCommandExecution {
 		t.Fatalf("unexpected native history page: %#v", messages)
+	}
+	if messages[2]["command"] != "rtk pwd" || messages[2]["cwd"] != "/tmp/project" || messages[3]["aggregatedOutput"] == "" {
+		t.Fatalf("expected native command details and output, got %#v", messages[2:])
 	}
 	if history["hasOlder"] != true {
 		t.Fatalf("expected native history to report older entries, got %#v", history)

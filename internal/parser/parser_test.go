@@ -146,6 +146,34 @@ func TestParseMessagesCodexCurrentResponseItemFormatKeepsOnlyConversation(t *tes
 		t.Fatalf("unexpected assistant message: %#v", result.Items[1])
 	}
 }
+
+func TestStreamSearchableMessagesCodexKeepsCustomExecEvents(t *testing.T) {
+	path := writeTranscript(t, strings.Join([]string{
+		`{"timestamp":"2026-08-24T12:23:00.756Z","type":"response_item","payload":{"type":"custom_tool_call","call_id":"call_2UlvN95bZTPPJwl0c0cMtOmo","name":"exec","input":"const r = await tools.exec_command({cmd:\"rtk rg -l --hidden --glob '!.git/**' 'سلام' .\",workdir:\"/home/h-mousavi/Projects/Hamed/aistudio-api\",yield_time_ms:10000,max_output_tokens:2000}); text(r.output);"}}`,
+		`{"timestamp":"2026-08-24T12:23:00.927Z","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"call_2UlvN95bZTPPJwl0c0cMtOmo","output":[{"type":"input_text","text":"Script completed\nWall time 0.2 seconds\nOutput:\n"},{"type":"input_text","text":"./examples/text_basic.py\n./artifacts/nct/026-introduction.md\n"}]}}`,
+	}, "\n"))
+
+	messages := []SearchableMessage{}
+	if err := StreamSearchableMessages("codex", "session-1", path, func(message SearchableMessage) bool {
+		messages = append(messages, message)
+		return true
+	}); err != nil {
+		t.Fatalf("StreamSearchableMessages returned error: %v", err)
+	}
+	if len(messages) != 2 {
+		t.Fatalf("expected command start and completion, got %d: %#v", len(messages), messages)
+	}
+	if messages[0].Kind != "command_execution" || messages[1].Kind != "command_execution" {
+		t.Fatalf("expected native command events, got %#v", messages)
+	}
+	if messages[0].Fields["command"] != `rtk rg -l --hidden --glob '!.git/**' 'سلام' .` || messages[0].Fields["cwd"] != "/home/h-mousavi/Projects/Hamed/aistudio-api" {
+		t.Fatalf("expected command and cwd fields, got %#v", messages[0])
+	}
+	if messages[1].Fields["status"] != "completed" || !strings.Contains(stringValue(messages[1].Fields["aggregatedOutput"]), "./examples/text_basic.py") {
+		t.Fatalf("expected completed command output, got %#v", messages[1])
+	}
+}
+
 func TestParseMessagesClaudeArrayContent(t *testing.T) {
 	path := writeTranscript(t, strings.Join([]string{
 		`{"message":{"role":"user","content":[{"type":"text","text":"hello"}]}}`,

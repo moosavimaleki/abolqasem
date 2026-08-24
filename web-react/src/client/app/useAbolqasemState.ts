@@ -231,6 +231,8 @@ export interface OptimisticUserPrompt {
   scopeId: string
   signature: string
   requiredMatchCount: number
+  contentMatchKey: string
+  requiredContentMatchCount: number
   entry: UserPromptEntry
 }
 
@@ -365,6 +367,25 @@ export function getUserPromptSignature(content: string, attachments: ChatAttachm
   })
 }
 
+export function getUserPromptContentMatchKey(content: string) {
+  const normalized = content.trim()
+  const attachmentMarkers = ["\n\n[Attached text file:", "\n[Attached text file:"]
+  let end = normalized.length
+  for (const marker of attachmentMarkers) {
+    const index = normalized.indexOf(marker)
+    if (index >= 0 && index < end) end = index
+  }
+  return normalized.slice(0, end).trim()
+}
+
+export function countMatchingUserPromptContent(entries: TranscriptEntry[], contentMatchKey: string) {
+  if (!contentMatchKey) return 0
+  return entries.reduce((count, entry) => {
+    if (entry.kind !== "user_prompt") return count
+    return count + (getUserPromptContentMatchKey(entry.content) === contentMatchKey ? 1 : 0)
+  }, 0)
+}
+
 export function countMatchingUserPrompts(entries: TranscriptEntry[], signature: string) {
   return entries.reduce((count, entry) => {
     if (entry.kind !== "user_prompt") return count
@@ -378,15 +399,21 @@ export function reconcileOptimisticUserPrompts(
   serverEntries: TranscriptEntry[],
 ) {
   const matchCounts = new Map<string, number>()
+  const contentMatchCounts = new Map<string, number>()
   for (const entry of serverEntries) {
     if (entry.kind !== "user_prompt") continue
     const signature = getUserPromptSignature(entry.content, entry.attachments ?? [])
     matchCounts.set(signature, (matchCounts.get(signature) ?? 0) + 1)
+    const contentMatchKey = getUserPromptContentMatchKey(entry.content)
+    if (contentMatchKey) {
+      contentMatchCounts.set(contentMatchKey, (contentMatchCounts.get(contentMatchKey) ?? 0) + 1)
+    }
   }
 
   return optimisticPrompts.filter((prompt) => {
     if (prompt.scopeId !== scopeId) return true
-    return (matchCounts.get(prompt.signature) ?? 0) < prompt.requiredMatchCount
+    if ((matchCounts.get(prompt.signature) ?? 0) >= prompt.requiredMatchCount) return false
+    return (contentMatchCounts.get(prompt.contentMatchKey) ?? 0) < prompt.requiredContentMatchCount
   })
 }
 
@@ -1807,6 +1834,7 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
     const optimisticId = generateUUID()
     const clientTraceId = generateUUID()
     const signature = getUserPromptSignature(content, attachments)
+    const contentMatchKey = getUserPromptContentMatchKey(content)
     const optimisticScopeId = activeChatId ?? NEW_CHAT_OPTIMISTIC_SCOPE
 	const shouldUseOptimisticWebPrompt = true
     if (shouldUseOptimisticWebPrompt) {
@@ -1836,12 +1864,17 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
       const requiredMatchCount = countMatchingUserPrompts(serverTranscriptEntries, signature)
         + optimisticUserPrompts.filter((prompt) => prompt.scopeId === optimisticScopeId && prompt.signature === signature).length
         + 1
+      const requiredContentMatchCount = countMatchingUserPromptContent(serverTranscriptEntries, contentMatchKey)
+        + optimisticUserPrompts.filter((prompt) => prompt.scopeId === optimisticScopeId && prompt.contentMatchKey === contentMatchKey).length
+        + 1
 
       setOptimisticUserPrompts((current) => [...current, {
         id: optimisticId,
         scopeId: optimisticScopeId,
         signature,
         requiredMatchCount,
+        contentMatchKey,
+        requiredContentMatchCount,
         entry: {
           _id: `optimistic:${optimisticId}`,
           kind: "user_prompt",
