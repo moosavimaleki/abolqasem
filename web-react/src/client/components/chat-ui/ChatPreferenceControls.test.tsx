@@ -52,4 +52,26 @@ describe("ChatPreferenceControls", () => {
     expect(html).toContain("1M")
     expect(html).toContain("Plan Mode")
   })
+
+  test("marks app-server defaults as automatic while keeping overrides available", () => {
+    const html = renderToStaticMarkup(
+      <I18nProvider locale="en">
+        <ChatPreferenceControls
+          availableProviders={PROVIDERS}
+          selectedProvider="codex"
+          model="gpt-5.5"
+          modelMode="auto"
+          reasoningEffortMode="auto"
+          modelOptions={{ reasoningEffort: "high", fastMode: false }}
+          onModelChange={() => {}}
+          onModelOptionChange={() => {}}
+          onModelModeChange={() => {}}
+          onReasoningEffortModeChange={() => {}}
+        />
+      </I18nProvider>
+    )
+
+    expect(html).toContain("Automatic: GPT-5.5")
+    expect(html).toContain("Automatic: High")
+  })
 })

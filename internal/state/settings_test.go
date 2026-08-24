@@ -24,6 +24,7 @@ func TestApplySettingsPatchPersistsAbolqasemSettings(t *testing.T) {
 	noProxy := " localhost,127.0.0.1 "
 	fastMode := true
 	planMode := true
+	manualMode := "manual"
 	commitProvider := "codex"
 	commitModel := "gpt-5.4"
 	codexExecutable := " /home/user/.bun/bin/codex "
@@ -47,7 +48,9 @@ func TestApplySettingsPatchPersistsAbolqasemSettings(t *testing.T) {
 		DefaultProvider: "codex",
 		ProviderDefaults: map[string]ProviderPreferencePatch{
 			"codex": {
-				Model: &codexModel,
+				Model:               &codexModel,
+				ModelMode:           &manualMode,
+				ReasoningEffortMode: &manualMode,
 				ModelOptions: map[string]any{
 					"fastMode": fastMode,
 				},
@@ -91,7 +94,7 @@ func TestApplySettingsPatchPersistsAbolqasemSettings(t *testing.T) {
 		t.Fatalf("unexpected default provider: %q", loaded.DefaultProvider)
 	}
 	codex := loaded.ProviderDefaults["codex"]
-	if codex.Model != "gpt-5.4" || !codex.PlanMode || codex.ModelOptions["fastMode"] != true {
+	if codex.Model != "gpt-5.4" || codex.ModelMode != "manual" || codex.ReasoningEffortMode != "manual" || !codex.PlanMode || codex.ModelOptions["fastMode"] != true {
 		t.Fatalf("unexpected codex defaults: %#v", codex)
 	}
 	if loaded.CommitMessageGenerator.Provider != commitProvider || loaded.CommitMessageGenerator.Model != commitModel {

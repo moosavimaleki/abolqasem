@@ -26,6 +26,8 @@ describe("migrateChatPreferencesState", () => {
 
     expect(migrated.providerDefaults.claude).toEqual({
       model: "claude-opus-4-7",
+      modelMode: "auto",
+      reasoningEffortMode: "auto",
       modelOptions: { reasoningEffort: "max", contextWindow: "1m" },
       planMode: false,
     })
@@ -59,11 +61,15 @@ describe("migrateChatPreferencesState", () => {
       providerDefaults: {
         claude: {
           model: "claude-opus-4-7",
+          modelMode: "auto",
+          reasoningEffortMode: "auto",
           modelOptions: { reasoningEffort: "low", contextWindow: "1m" },
           planMode: true,
         },
         codex: {
           model: "gpt-5.5",
+          modelMode: "auto",
+          reasoningEffortMode: "auto",
           modelOptions: { reasoningEffort: "minimal", fastMode: true },
           planMode: false,
         },
@@ -121,6 +127,8 @@ describe("migrateChatPreferencesState", () => {
 
     expect(migrated.providerDefaults.codex).toEqual({
       model: "gpt-5.5",
+      modelMode: "auto",
+      reasoningEffortMode: "auto",
       modelOptions: { reasoningEffort: "low", fastMode: true },
       planMode: false,
     })
@@ -154,6 +162,8 @@ describe("migrateChatPreferencesState", () => {
 
     expect(migrated.providerDefaults.codex).toEqual({
       model: "gpt-5.5",
+      modelMode: "auto",
+      reasoningEffortMode: "auto",
       modelOptions: { reasoningEffort: "low", fastMode: true },
       planMode: true,
     })
@@ -176,6 +186,8 @@ describe("chat preference store", () => {
   test("starts with gpt-5.5 as the default Codex model", () => {
     expect(INITIAL_STATE.providerDefaults.codex).toEqual({
       model: "gpt-5.5",
+      modelMode: "auto",
+      reasoningEffortMode: "auto",
       modelOptions: { reasoningEffort: "high", fastMode: false },
       planMode: false,
     })

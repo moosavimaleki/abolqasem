@@ -139,6 +139,7 @@ export const en = {
     uploadLimit: (count: number) => `You can upload up to ${count} files at a time.`,
   },
   preferences: {
+    automatic: "Automatic",
     expandedContextWindow: "Expanded context window",
     executionWithoutApproval: "Execution without approval",
     fastMode: "Fast Mode",

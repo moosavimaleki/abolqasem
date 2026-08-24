@@ -2578,7 +2578,13 @@ export function SettingsPage() {
 
   function handleProviderDefaultModelChange(provider: AgentProvider, model: string) {
     setProviderDefaultModel(provider, model)
-    void handleWriteAppSettings({ providerDefaults: { [provider]: { model } } }).catch((error) => {
+    void handleWriteAppSettings({ providerDefaults: { [provider]: { model, modelMode: "manual" } } }).catch((error) => {
+      setAppSettingsError(error instanceof Error ? error.message : "Unable to save provider settings.")
+    })
+  }
+
+  function handleProviderDefaultModelModeChange(provider: AgentProvider, modelMode: "auto" | "manual") {
+    void handleWriteAppSettings({ providerDefaults: { [provider]: { modelMode } } }).catch((error) => {
       setAppSettingsError(error instanceof Error ? error.message : "Unable to save provider settings.")
     })
   }
@@ -2588,7 +2594,13 @@ export function SettingsPage() {
     modelOptions: Partial<typeof providerDefaults[typeof provider]["modelOptions"]>
   ) {
     setProviderDefaultModelOptions(provider, modelOptions)
-    void handleWriteAppSettings({ providerDefaults: { [provider]: { modelOptions } } }).catch((error) => {
+    void handleWriteAppSettings({ providerDefaults: { [provider]: { modelOptions, reasoningEffortMode: "manual" } } }).catch((error) => {
+      setAppSettingsError(error instanceof Error ? error.message : "Unable to save provider settings.")
+    })
+  }
+
+  function handleProviderDefaultReasoningEffortModeChange(provider: AgentProvider, reasoningEffortMode: "auto" | "manual") {
+    void handleWriteAppSettings({ providerDefaults: { [provider]: { reasoningEffortMode } } }).catch((error) => {
       setAppSettingsError(error instanceof Error ? error.message : "Unable to save provider settings.")
     })
   }
@@ -2697,7 +2709,7 @@ export function SettingsPage() {
         [provider]: { catalogModels: nextModels, customModels: [] },
       } as AppSettingsPatch["providerModelCatalog"],
       providerDefaults: {
-        [provider]: { model: modelId },
+        [provider]: { model: modelId, modelMode: "manual" },
       } as AppSettingsPatch["providerDefaults"],
     }).catch((error) => {
       setAppSettingsError(error instanceof Error ? error.message : "Unable to save model catalog.")
@@ -3544,10 +3556,14 @@ export function SettingsPage() {
                           showProviderPicker={false}
                           providerLocked
                           model={providerDefaults.claude.model}
+                          modelMode={providerDefaults.claude.modelMode}
+                          reasoningEffortMode={providerDefaults.claude.reasoningEffortMode}
                           modelOptions={providerDefaults.claude.modelOptions}
                           onModelChange={(_, model) => {
                             handleProviderDefaultModelChange("claude", model)
                           }}
+                          onModelModeChange={(modelMode) => handleProviderDefaultModelModeChange("claude", modelMode)}
+                          onReasoningEffortModeChange={(reasoningEffortMode) => handleProviderDefaultReasoningEffortModeChange("claude", reasoningEffortMode)}
                           onModelOptionChange={(change) => {
                             if (change.type === "claudeReasoningEffort") {
                               handleProviderDefaultModelOptionsChange("claude", { reasoningEffort: change.effort })
@@ -3586,10 +3602,14 @@ export function SettingsPage() {
                           showProviderPicker={false}
                           providerLocked
                           model={providerDefaults.codex.model}
+                          modelMode={providerDefaults.codex.modelMode}
+                          reasoningEffortMode={providerDefaults.codex.reasoningEffortMode}
                           modelOptions={providerDefaults.codex.modelOptions}
                           onModelChange={(_, model) => {
                             handleProviderDefaultModelChange("codex", model)
                           }}
+                          onModelModeChange={(modelMode) => handleProviderDefaultModelModeChange("codex", modelMode)}
+                          onReasoningEffortModeChange={(reasoningEffortMode) => handleProviderDefaultReasoningEffortModeChange("codex", reasoningEffortMode)}
                           onModelOptionChange={(change) => {
                             if (change.type === "codexReasoningEffort") {
                               handleProviderDefaultModelOptionsChange("codex", { reasoningEffort: change.effort })

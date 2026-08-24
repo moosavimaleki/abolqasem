@@ -1270,9 +1270,11 @@ func providerDefaultsSnapshot(defaults map[string]state.ProviderPreference) map[
 	out := map[string]any{}
 	for provider, preference := range defaults {
 		out[provider] = map[string]any{
-			"model":        preference.Model,
-			"modelOptions": preference.ModelOptions,
-			"planMode":     preference.PlanMode,
+			"model":               preference.Model,
+			"modelMode":           preference.ModelMode,
+			"reasoningEffortMode": preference.ReasoningEffortMode,
+			"modelOptions":        preference.ModelOptions,
+			"planMode":            preference.PlanMode,
 		}
 	}
 	return out

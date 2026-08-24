@@ -1,4 +1,4 @@
-import { useState, type ComponentType, type SVGProps } from "react"
+import { Fragment, useState, type ComponentType, type SVGProps } from "react"
 import { Box, Brain, Gauge, ListTodo, LockOpen, SquareMenu, SquareMinus } from "lucide-react"
 import {
   CLAUDE_CONTEXT_WINDOW_OPTIONS,
@@ -150,6 +150,10 @@ interface ChatPreferenceControlsProps {
   onProviderChange?: (provider: AgentProvider) => void
   onModelChange: (provider: AgentProvider, model: string) => void
   onModelOptionChange: (change: ModelOptionChange) => void
+  modelMode?: "auto" | "manual"
+  reasoningEffortMode?: "auto" | "manual"
+  onModelModeChange?: (mode: "auto" | "manual") => void
+  onReasoningEffortModeChange?: (mode: "auto" | "manual") => void
   runtimeMode?: boolean
   onRuntimeShortcut?: (provider: AgentProvider, model: string, effort?: CodexReasoningEffort) => void
   planMode?: boolean
@@ -169,6 +173,10 @@ export function ChatPreferenceControls({
   onProviderChange,
   onModelChange,
   onModelOptionChange,
+  modelMode = "manual",
+  reasoningEffortMode = "manual",
+  onModelModeChange,
+  onReasoningEffortModeChange,
   runtimeMode = false,
   onRuntimeShortcut,
   planMode = false,
@@ -228,20 +236,33 @@ export function ChatPreferenceControls({
         trigger={(
           <>
             <ModelIcon className="h-3.5 w-3.5" />
-            <span>{providerConfig.models.find((candidate) => candidate.id === model)?.label ?? model}</span>
+              <span>{modelMode === "auto" ? `${t.preferences.automatic}: ` : ""}{providerConfig.models.find((candidate) => candidate.id === model)?.label ?? model}</span>
           </>
         )}
       >
         {(close) => providerConfig.models.map((candidate) => {
           const Icon = Box
           return (
+            <Fragment key={candidate.id}>
+              {candidate === providerConfig.models[0] && onModelModeChange ? (
+                <PopoverMenuItem
+                  onClick={() => {
+                    onModelModeChange("auto")
+                    close()
+                  }}
+                  selected={modelMode === "auto"}
+                  icon={<ModelIcon className="h-4 w-4 text-muted-foreground" />}
+                  label={t.preferences.automatic}
+                  description={providerConfig.defaultModel || candidate.label}
+                />
+              ) : null}
             <PopoverMenuItem
               key={candidate.id}
               onClick={() => {
                 onModelChange(selectedProvider, candidate.id)
                 close()
               }}
-              selected={model === candidate.id}
+              selected={modelMode === "manual" && model === candidate.id}
               icon={<Icon className="h-4 w-4 text-muted-foreground" />}
               label={
                 showCodexCliRequirementHints && selectedProvider === "codex" && candidate.id === "gpt-5.5"
@@ -256,6 +277,7 @@ export function ChatPreferenceControls({
                   : candidate.label
               }
             />
+            </Fragment>
           )
         })}
       </InputPopover>
@@ -265,12 +287,25 @@ export function ChatPreferenceControls({
         trigger={(
           <>
             <Brain className="h-3.5 w-3.5" />
-            <span>{reasoningLabel}</span>
+            <span>{reasoningEffortMode === "auto" ? `${t.preferences.automatic}: ` : ""}{reasoningLabel}</span>
           </>
         )}
       >
         {(close) => (
-          selectedProvider === "claude"
+          <>
+          {onReasoningEffortModeChange ? (
+            <PopoverMenuItem
+              onClick={() => {
+                onReasoningEffortModeChange("auto")
+                close()
+              }}
+              selected={reasoningEffortMode === "auto"}
+              icon={<Brain className="h-4 w-4 text-muted-foreground" />}
+              label={t.preferences.automatic}
+              description={providerConfig.defaultEffort || reasoningLabel}
+            />
+          ) : null}
+          {selectedProvider === "claude"
             ? CLAUDE_REASONING_OPTIONS.map((effort) => (
               <PopoverMenuItem
                 key={effort.id}
@@ -278,7 +313,7 @@ export function ChatPreferenceControls({
                   onModelOptionChange({ type: "claudeReasoningEffort", effort: effort.id })
                   close()
                 }}
-                selected={claudeModelOptions?.reasoningEffort === effort.id}
+                selected={reasoningEffortMode === "manual" && claudeModelOptions?.reasoningEffort === effort.id}
                 icon={<Brain className="h-4 w-4 text-muted-foreground" />}
                 label={effort.label}
                 disabled={effort.id === "max" && !supportsClaudeMaxReasoningEffort(model)}
@@ -291,11 +326,12 @@ export function ChatPreferenceControls({
                   onModelOptionChange({ type: "codexReasoningEffort", effort: effort.id })
                   close()
                 }}
-                selected={codexModelOptions?.reasoningEffort === effort.id}
+                selected={reasoningEffortMode === "manual" && codexModelOptions?.reasoningEffort === effort.id}
                 icon={<Brain className="h-4 w-4 text-muted-foreground" />}
                 label={effort.label}
               />
-            ))
+            ))}
+          </>
         )}
       </InputPopover>
       ) : null}

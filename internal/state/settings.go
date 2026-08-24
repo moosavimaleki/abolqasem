@@ -60,9 +60,11 @@ type ProviderProxySettings struct {
 }
 
 type ProviderPreference struct {
-	Model        string         `json:"model"`
-	ModelOptions map[string]any `json:"model_options"`
-	PlanMode     bool           `json:"plan_mode"`
+	Model               string         `json:"model"`
+	ModelMode           string         `json:"model_mode"`
+	ReasoningEffortMode string         `json:"reasoning_effort_mode"`
+	ModelOptions        map[string]any `json:"model_options"`
+	PlanMode            bool           `json:"plan_mode"`
 }
 
 type AppSettingsPatch struct {
@@ -99,9 +101,11 @@ type ProviderProxySettingsPatch struct {
 }
 
 type ProviderPreferencePatch struct {
-	Model        *string        `json:"model"`
-	ModelOptions map[string]any `json:"modelOptions"`
-	PlanMode     *bool          `json:"planMode"`
+	Model               *string        `json:"model"`
+	ModelMode           *string        `json:"modelMode"`
+	ReasoningEffortMode *string        `json:"reasoningEffortMode"`
+	ModelOptions        map[string]any `json:"modelOptions"`
+	PlanMode            *bool          `json:"planMode"`
 }
 
 type ProviderModelInventoryPatch struct {
@@ -142,7 +146,9 @@ func DefaultAppSettings() AppSettings {
 		DefaultProvider: "last_used",
 		ProviderDefaults: map[string]ProviderPreference{
 			"claude": {
-				Model: "claude-sonnet-4-6",
+				Model:               "claude-sonnet-4-6",
+				ModelMode:           "auto",
+				ReasoningEffortMode: "auto",
 				ModelOptions: map[string]any{
 					"reasoningEffort": "none",
 					"contextWindow":   "200k",
@@ -150,9 +156,11 @@ func DefaultAppSettings() AppSettings {
 				PlanMode: false,
 			},
 			"codex": {
-				Model: catalog.CodexRuntimeDefaultModel(),
+				Model:               catalog.CodexRuntimeDefaultModel(),
+				ModelMode:           "auto",
+				ReasoningEffortMode: "auto",
 				ModelOptions: map[string]any{
-					"reasoningEffort": catalog.DefaultCodexReasoningEffort,
+					"reasoningEffort": catalog.CodexRuntimeDefaultReasoningEffort(),
 					"fastMode":        false,
 				},
 				PlanMode: false,
@@ -305,6 +313,12 @@ func ApplySettingsPatch(settings AppSettings, patch AppSettingsPatch) AppSetting
 			current := settings.ProviderDefaults[provider]
 			if providerPatch.Model != nil {
 				current.Model = strings.TrimSpace(*providerPatch.Model)
+			}
+			if providerPatch.ModelMode != nil {
+				current.ModelMode = strings.TrimSpace(*providerPatch.ModelMode)
+			}
+			if providerPatch.ReasoningEffortMode != nil {
+				current.ReasoningEffortMode = strings.TrimSpace(*providerPatch.ReasoningEffortMode)
 			}
 			if providerPatch.ModelOptions != nil {
 				current.ModelOptions = mergeMap(current.ModelOptions, providerPatch.ModelOptions)
@@ -579,17 +593,32 @@ func normalizeProviderDefaults(settings map[string]ProviderPreference, defaults 
 	normalized := map[string]ProviderPreference{}
 	for provider, fallback := range defaults {
 		current := settings[provider]
-		if strings.TrimSpace(current.Model) == "" {
+		current.ModelMode = normalizeProviderSelectionMode(current.ModelMode)
+		current.ReasoningEffortMode = normalizeProviderSelectionMode(current.ReasoningEffortMode)
+		providerCatalog := catalog.GetOrDefaultWithInventory(provider, modelCatalog)
+		if current.ModelMode == "auto" {
+			current.Model = providerCatalog.DefaultModel
+		} else if strings.TrimSpace(current.Model) == "" {
 			current.Model = fallback.Model
 		}
-		if provider == "codex" {
+		if provider == "codex" && current.ModelMode != "manual" {
 			current.Model = normalizeCodexCLIDefaultModel(current.Model)
 		}
 		current.Model = catalog.NormalizeServerModelWithInventory(provider, current.Model, modelCatalog)
 		current.ModelOptions = mergeMap(fallback.ModelOptions, current.ModelOptions)
+		if current.ReasoningEffortMode == "auto" && providerCatalog.DefaultEffort != "" {
+			current.ModelOptions["reasoningEffort"] = providerCatalog.DefaultEffort
+		}
 		normalized[provider] = current
 	}
 	return normalized
+}
+
+func normalizeProviderSelectionMode(value string) string {
+	if strings.EqualFold(strings.TrimSpace(value), "manual") {
+		return "manual"
+	}
+	return "auto"
 }
 
 func normalizeCommitMessageGenerator(generator CommitMessageGeneratorSettings, modelCatalog catalog.ProviderModelInventoryByProvider) CommitMessageGeneratorSettings {

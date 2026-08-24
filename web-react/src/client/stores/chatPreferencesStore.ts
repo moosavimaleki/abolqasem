@@ -98,8 +98,14 @@ export function normalizeDefaultProvider(value?: string): DefaultProviderPrefere
   return "last_used"
 }
 
+function normalizeSelectionMode(value?: string): "auto" | "manual" {
+  return value === "manual" ? "manual" : "auto"
+}
+
 export function normalizeClaudePreference(value?: {
   model?: string
+  modelMode?: string
+  reasoningEffortMode?: string
   effort?: string
   modelOptions?: Partial<ClaudeModelOptions>
   planMode?: boolean
@@ -115,6 +121,8 @@ export function normalizeClaudePreference(value?: {
 
   return {
     model,
+    modelMode: normalizeSelectionMode(value?.modelMode),
+    reasoningEffortMode: normalizeSelectionMode(value?.reasoningEffortMode),
     modelOptions: {
       reasoningEffort: !supportsClaudeMaxReasoningEffort(model) && normalizedEffort === "max" ? "high" : normalizedEffort,
       contextWindow,
@@ -125,6 +133,8 @@ export function normalizeClaudePreference(value?: {
 
 export function normalizeCodexPreference(value?: {
   model?: string
+  modelMode?: string
+  reasoningEffortMode?: string
   effort?: string
   modelOptions?: Partial<CodexModelOptions>
   planMode?: boolean
@@ -132,6 +142,8 @@ export function normalizeCodexPreference(value?: {
   const reasoningEffort = value?.modelOptions?.reasoningEffort
   return {
     model: normalizeCodexModelId(value?.model),
+    modelMode: normalizeSelectionMode(value?.modelMode),
+    reasoningEffortMode: normalizeSelectionMode(value?.reasoningEffortMode),
     modelOptions: {
       reasoningEffort: isCodexReasoningEffort(reasoningEffort)
         ? reasoningEffort
@@ -184,11 +196,15 @@ export function createDefaultProviderDefaults(): ChatProviderPreferences {
   return {
     claude: {
       model: "claude-opus-4-7",
+      modelMode: "auto",
+      reasoningEffortMode: "auto",
       modelOptions: { ...DEFAULT_CLAUDE_MODEL_OPTIONS },
       planMode: false,
     },
     codex: {
       model: DEFAULT_CODEX_MODEL,
+      modelMode: "auto",
+      reasoningEffortMode: "auto",
       modelOptions: { ...DEFAULT_CODEX_MODEL_OPTIONS },
       planMode: false,
     },
@@ -198,12 +214,16 @@ export function createDefaultProviderDefaults(): ChatProviderPreferences {
 export function normalizeProviderDefaults(value?: {
   claude?: {
     model?: string
+    modelMode?: string
+    reasoningEffortMode?: string
     effort?: string
     modelOptions?: Partial<ClaudeModelOptions>
     planMode?: boolean
   }
   codex?: {
     model?: string
+    modelMode?: string
+    reasoningEffortMode?: string
     effort?: string
     modelOptions?: Partial<CodexModelOptions>
     planMode?: boolean
@@ -568,6 +588,7 @@ export const useChatPreferencesStore = create<ChatPreferencesState>()(
             [provider]: normalizeProviderPreference(provider, {
               ...state.providerDefaults[provider],
               model,
+              modelMode: "manual",
             }),
           },
         })),
@@ -579,6 +600,7 @@ export const useChatPreferencesStore = create<ChatPreferencesState>()(
                 ...state.providerDefaults,
                 claude: normalizeClaudePreference({
                   ...state.providerDefaults.claude,
+                  reasoningEffortMode: "manual",
                   modelOptions: {
                     ...state.providerDefaults.claude.modelOptions,
                     ...modelOptions as Partial<ClaudeModelOptions>,
@@ -593,6 +615,7 @@ export const useChatPreferencesStore = create<ChatPreferencesState>()(
                 ...state.providerDefaults,
                 codex: normalizeCodexPreference({
                   ...state.providerDefaults.codex,
+                  reasoningEffortMode: "manual",
                   modelOptions: {
                     ...state.providerDefaults.codex.modelOptions,
                     ...modelOptions as Partial<CodexModelOptions>,

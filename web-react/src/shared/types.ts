@@ -203,6 +203,8 @@ export interface ProviderModelOptionsByProvider {
 
 export interface ProviderPreference<TModelOptions> {
   model: string
+  modelMode: "auto" | "manual"
+  reasoningEffortMode: "auto" | "manual"
   modelOptions: TModelOptions
   planMode: boolean
 }

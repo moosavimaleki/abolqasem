@@ -140,6 +140,7 @@ export const fa: TranslationDictionary = {
     uploadLimit: (count: number) => `حداکثر ${count} فایل را می‌توانید هم‌زمان بارگذاری کنید.`,
   },
   preferences: {
+    automatic: "خودکار",
     expandedContextWindow: "پنجره context گسترده",
     executionWithoutApproval: "اجرا بدون تأیید",
     fastMode: "حالت سریع",
