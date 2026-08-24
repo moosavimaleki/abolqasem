@@ -137,6 +137,8 @@ interface ChatTranscriptViewportProps {
   loadOlderHistory: () => Promise<void>
   onStopDraining: () => void
   onRemoveQueuedMessage: (queuedMessageId: string) => Promise<void>
+  onSteerQueuedMessage: (queuedMessageId: string) => Promise<void>
+  onEditQueuedMessage: (queuedMessageId: string, content: string) => Promise<void>
   onOpenLocalLink: AbolqasemState["handleOpenLocalLink"]
   onAskUserQuestionSubmit: AbolqasemState["handleAskUserQuestion"]
   onExitPlanModeConfirm: AbolqasemState["handleExitPlanMode"]
@@ -178,6 +180,8 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
   loadOlderHistory,
   onStopDraining,
   onRemoveQueuedMessage,
+  onSteerQueuedMessage,
+  onEditQueuedMessage,
   onOpenLocalLink,
   onAskUserQuestionSubmit,
   onExitPlanModeConfirm,
@@ -512,14 +516,18 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
     </div>
   )
 
+  const latestTurnActivity = [...messages].reverse().find((message) => message.kind === "turn_activity")
+  const processingStatus = latestTurnActivity?.kind === "turn_activity" ? latestTurnActivity.activity : runtimeStatus ?? undefined
   const listFooter = (
     <div className={cn("mx-auto w-full max-w-[800px]", transcriptAppearanceClassName)} dir={direction} style={transcriptAppearanceStyle}>
-      {isProcessing && !hasTmuxRuntime ? <ProcessingMessage status={runtimeStatus ?? undefined} /> : null}
+      {isProcessing && !hasTmuxRuntime ? <ProcessingMessage status={processingStatus} /> : null}
       {queuedMessages.map((message) => (
         <QueuedUserMessage
           key={message.id}
           message={message}
           onRemove={() => void onRemoveQueuedMessage(message.id)}
+          onSteer={() => void onSteerQueuedMessage(message.id)}
+          onEdit={(content) => onEditQueuedMessage(message.id, content)}
         />
       ))}
       {!isProcessing && isDraining ? (

@@ -1,25 +1,37 @@
 import Markdown from "react-markdown"
+import { useState } from "react"
 import remarkGfm from "remark-gfm"
 import type { QueuedChatMessage } from "../../../shared/types"
 import { Button } from "../ui/button"
 import { createMarkdownComponents } from "./shared"
-import { X } from "lucide-react"
+import { Check, MessageSquare, Pencil, Send, Trash2, X } from "lucide-react"
 
 interface QueuedUserMessageProps {
   message: QueuedChatMessage
   onRemove: () => void
+  onSteer: () => void
+  onEdit: (content: string) => Promise<void>
 }
 
-export function QueuedUserMessage({ message, onRemove }: QueuedUserMessageProps) {
+export function QueuedUserMessage({ message, onRemove, onSteer, onEdit }: QueuedUserMessageProps) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(message.content)
+  const [saving, setSaving] = useState(false)
+
+  async function saveEdit() {
+    setSaving(true)
+    try { await onEdit(draft); setEditing(false) } finally { setSaving(false) }
+  }
   return (
-    <div className="flex justify-end py-2">
-      <div className="flex max-w-[85%] sm:max-w-[80%] flex-col items-end gap-1.5">
+    <div className="flex w-full justify-center border-b border-border bg-muted/60 px-3 py-2 first:rounded-t-2xl">
+      <div className="flex w-full items-center gap-2 text-sm">
+        <MessageSquare className="size-4 shrink-0 text-muted-foreground" />
         {message.attachments.length > 0 ? (
-          <div className="flex flex-wrap justify-end gap-2">
+          <div className="flex shrink-0 flex-wrap gap-1">
             {message.attachments.map((attachment) => (
               <div
                 key={attachment.id}
-                className="max-w-[220px] rounded-xl border border-dashed border-border bg-transparent px-3 py-2 text-left"
+                className="max-w-[160px] rounded-md border border-border bg-background px-2 py-1 text-left"
               >
                 <div className="truncate text-[13px] font-medium text-foreground">{attachment.displayName}</div>
                 <div className="truncate text-[11px] text-muted-foreground">{attachment.mimeType}</div>
@@ -27,26 +39,22 @@ export function QueuedUserMessage({ message, onRemove }: QueuedUserMessageProps)
             ))}
           </div>
         ) : null}
-        {message.content ? (
-          <div className="relative group">
-            <div className="rounded-[20px] border border-dashed border-border bg-transparent px-3.5 py-1.5 prose prose-sm prose-invert text-left text-primary [&_p]:whitespace-pre-line">
+        {editing ? <textarea autoFocus value={draft} onChange={(event) => setDraft(event.target.value)} className="min-h-9 min-w-0 flex-1 resize-y rounded-md border border-border bg-background px-2 py-1 outline-none focus:ring-2 focus:ring-ring" /> : message.content ? (
+          <div className="min-w-0 flex-1 truncate">
+            <div className="prose prose-sm prose-invert max-w-none truncate text-left text-primary [&_p]:m-0 [&_p]:truncate">
               <div>
                 <Markdown remarkPlugins={[remarkGfm]} components={createMarkdownComponents({ source: message.content })}>
                   {message.content}
                 </Markdown>
               </div>
             </div>
-            <Button
-              type="button"
-              variant="none"
-              size="none"
-              className="opacity-0 scale-[0.1] group-hover:scale-[1.0] group-hover:opacity-100 !p-0.5 border rounded-full text-xs font-medium text-muted-foreground hover:text-foreground gap-0.5 absolute top-0 left-0 bg-background -translate-x-[28%] -translate-y-[28%]"
-              onClick={onRemove}
-            >
-              <X className="size-3"/>
-            </Button>
           </div>
         ) : null}
+        <div className="ml-auto flex shrink-0 items-center gap-1">
+          {editing ? <><Button type="button" variant="outline" size="sm" disabled={saving} onClick={() => void saveEdit()}><Check className="size-3.5" />Save</Button><Button type="button" variant="ghost" size="sm" onClick={() => { setDraft(message.content); setEditing(false) }}><X className="size-3.5" /></Button></> : <Button type="button" variant="outline" size="sm" onClick={() => setEditing(true)}><Pencil className="size-3.5" />Edit</Button>}
+          <Button type="button" variant="outline" size="sm" onClick={onSteer}><Send className="size-3.5" />Steer</Button>
+          <Button type="button" variant="ghost" size="icon" aria-label="Delete queued message" onClick={onRemove}><Trash2 className="size-3.5" /></Button>
+        </div>
       </div>
     </div>
   )

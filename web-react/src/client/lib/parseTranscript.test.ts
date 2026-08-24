@@ -12,6 +12,23 @@ function entry(partial: Omit<TranscriptEntry, "_id" | "createdAt">): TranscriptE
 }
 
 describe("processTranscriptMessages", () => {
+  test("merges native Codex command deltas, file changes, plans, and activity", () => {
+    const messages = processTranscriptMessages([
+      entry({ kind: "command_execution", itemId: "cmd-1", command: "go test ./...", cwd: "/work", status: "inProgress" }),
+      entry({ kind: "command_execution", itemId: "cmd-1", status: "inProgress", outputDelta: "ok one\n" }),
+      entry({ kind: "command_execution", itemId: "cmd-1", command: "go test ./...", cwd: "/work", status: "completed", aggregatedOutput: "ok all\n", exitCode: 0 }),
+      entry({ kind: "file_change", itemId: "file-1", status: "completed", changes: [{ path: "main.go", kind: "update", diff: "@@ -1 +1 @@\n-old\n+new" }] }),
+      entry({ kind: "turn_plan", turnId: "turn-1", explanation: "Implement safely", plan: [{ step: "Test", status: "inProgress" }] }),
+      entry({ kind: "turn_activity", turnId: "turn-1", activity: "thinking" }),
+      entry({ kind: "turn_activity", turnId: "turn-1", activity: "writing_response" }),
+    ])
+    expect(messages).toHaveLength(4)
+    expect(messages[0]).toMatchObject({ kind: "command_execution", status: "completed", aggregatedOutput: "ok all\n", exitCode: 0 })
+    expect(messages[1]).toMatchObject({ kind: "file_change", changes: [{ path: "main.go" }] })
+    expect(messages[2]).toMatchObject({ kind: "turn_plan", explanation: "Implement safely" })
+    expect(messages[3]).toMatchObject({ kind: "turn_activity", activity: "writing_response" })
+  })
+
   test("splits tmux capture entries into readable chat messages", () => {
     const messages = processTranscriptMessages([
       {

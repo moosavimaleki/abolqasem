@@ -439,6 +439,22 @@ func Apply(state StoreState, event events.Event) StoreState {
 		record.UpdatedAt = event.Timestamp
 		state.ChatsByID[data.ChatID] = record
 		state = touchProjectTimestampForChat(state, record, event.Timestamp)
+	case events.TypeQueuedMessageUpdated:
+		var data struct {
+			ChatID          string `json:"chatId"`
+			QueuedMessageID string `json:"queuedMessageId"`
+			Content         string `json:"content"`
+		}
+		if event.DecodeData(&data) != nil || data.ChatID == "" {
+			return state
+		}
+		existing := state.QueuedMessagesByChatID[data.ChatID]
+		for index := range existing {
+			if existing[index].ID == data.QueuedMessageID {
+				existing[index].Content = data.Content
+			}
+		}
+		state.QueuedMessagesByChatID[data.ChatID] = existing
 	case events.TypeQueuedMessageRemoved:
 		var data struct {
 			ChatID          string `json:"chatId"`

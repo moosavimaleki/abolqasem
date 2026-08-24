@@ -43,6 +43,7 @@ const (
 	TypeMessageAppended          = "message_appended"
 	TypeChatRestoredToCheckpoint = "chat_restored_to_checkpoint"
 	TypeQueuedMessageEnqueued    = "queued_message_enqueued"
+	TypeQueuedMessageUpdated     = "queued_message_updated"
 	TypeQueuedMessageRemoved     = "queued_message_removed"
 
 	TypeTurnStarted                = "turn_started"

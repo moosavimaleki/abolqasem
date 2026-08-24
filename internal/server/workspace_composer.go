@@ -416,6 +416,14 @@ func (s *workspaceEventStore) RemoveQueuedMessage(chatID string, queuedMessageID
 	return s.store.Append(events.StreamQueuedMessages, event)
 }
 
+func (s *workspaceEventStore) UpdateQueuedMessage(chatID string, queuedMessageID string, content string) error {
+	event, err := events.New(events.TypeQueuedMessageUpdated, map[string]any{"chatId": chatID, "queuedMessageId": queuedMessageID, "content": content})
+	if err != nil {
+		return err
+	}
+	return s.store.Append(events.StreamQueuedMessages, event)
+}
+
 func (s *workspaceEventStore) appendTurn(eventType string, chatID string, extra map[string]any) error {
 	data := map[string]any{"chatId": chatID}
 	for key, value := range extra {
@@ -637,6 +645,24 @@ func decodeQueuedMessageCommand(raw json.RawMessage) (string, string, error) {
 		return "", "", errors.New("queuedMessageId is required")
 	}
 	return payload.ChatID, payload.QueuedMessageID, nil
+}
+
+func decodeEditQueuedMessageCommand(raw json.RawMessage) (string, string, string, error) {
+	var payload struct {
+		ChatID          string `json:"chatId"`
+		QueuedMessageID string `json:"queuedMessageId"`
+		Content         string `json:"content"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return "", "", "", err
+	}
+	if strings.TrimSpace(payload.ChatID) == "" {
+		return "", "", "", errors.New("chatId is required")
+	}
+	if strings.TrimSpace(payload.QueuedMessageID) == "" {
+		return "", "", "", errors.New("queuedMessageId is required")
+	}
+	return payload.ChatID, payload.QueuedMessageID, payload.Content, nil
 }
 
 func decodeToolResponseCommand(raw json.RawMessage) (agent.ToolResponseCommand, error) {

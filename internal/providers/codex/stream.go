@@ -46,6 +46,14 @@ func (n *StreamNormalizer) HandleNotification(notification codexrpc.Notification
 		return []HarnessEvent{{Type: "transcript", Entry: entry}}
 	case "thread/compacted":
 		return []HarnessEvent{{Type: "transcript", Entry: transcript.New(transcript.KindCompactBoundary, nil)}}
+	case "turn/started":
+		return activityEvents(notification.Params, "thinking")
+	case "turn/plan/updated":
+		return turnPlanEvents(notification.Params)
+	case "item/commandExecution/outputDelta":
+		return commandOutputDeltaEvents(notification.Params)
+	case "item/fileChange/outputDelta":
+		return fileChangeDeltaEvents(notification.Params)
 	case "item/started":
 		return itemStartedEvents(notification.Params)
 	case "item/completed":
@@ -72,35 +80,19 @@ func itemStartedEvents(raw json.RawMessage) []HarnessEvent {
 		if command == "" {
 			return nil
 		}
-		return []HarnessEvent{{
-			Type: "transcript",
-			Entry: transcript.New(transcript.KindToolCall, map[string]any{
-				"tool": map[string]any{
-					"kind":     "tool",
-					"toolKind": "bash",
-					"toolName": "Bash",
-					"toolId":   asString(params.Item["id"]),
-					"input": map[string]any{
-						"command": command,
-					},
-				},
-			}),
-		}}
+		return []HarnessEvent{
+			{Type: "transcript", Entry: transcript.New(transcript.KindCommandExecution, commandExecutionFields(params.Item))},
+			{Type: "transcript", Entry: transcript.New(transcript.KindTurnActivity, map[string]any{"activity": "running_command"})},
+		}
 	case "fileChange":
-		return []HarnessEvent{{
-			Type: "transcript",
-			Entry: transcript.New(transcript.KindToolCall, map[string]any{
-				"tool": map[string]any{
-					"kind":     "tool",
-					"toolKind": "unknown_tool",
-					"toolName": "Codex file changes",
-					"toolId":   asString(params.Item["id"]),
-					"input": map[string]any{
-						"changes": params.Item["changes"],
-					},
-				},
-			}),
-		}}
+		return []HarnessEvent{
+			{Type: "transcript", Entry: transcript.New(transcript.KindFileChange, fileChangeFields(params.Item))},
+			{Type: "transcript", Entry: transcript.New(transcript.KindTurnActivity, map[string]any{"activity": "applying_changes"})},
+		}
+	case "reasoning":
+		return []HarnessEvent{{Type: "transcript", Entry: transcript.New(transcript.KindTurnActivity, map[string]any{"activity": "thinking"})}}
+	case "agentMessage":
+		return []HarnessEvent{{Type: "transcript", Entry: transcript.New(transcript.KindTurnActivity, map[string]any{"activity": "writing_response"})}}
 	default:
 		return nil
 	}
@@ -143,26 +135,71 @@ func itemCompletedEvents(raw json.RawMessage) []HarnessEvent {
 			Entry: transcript.New(transcript.KindAssistantText, map[string]any{"text": text}),
 		}}
 	case "commandExecution":
-		return []HarnessEvent{{
-			Type: "transcript",
-			Entry: transcript.New(transcript.KindToolResult, map[string]any{
-				"toolId":  asString(params.Item["id"]),
-				"content": asString(params.Item["aggregatedOutput"]),
-				"isError": asFloat(params.Item["exitCode"]) != 0,
-			}),
-		}}
+		return []HarnessEvent{{Type: "transcript", Entry: transcript.New(transcript.KindCommandExecution, commandExecutionFields(params.Item))}}
 	case "fileChange":
-		return []HarnessEvent{{
-			Type: "transcript",
-			Entry: transcript.New(transcript.KindToolResult, map[string]any{
-				"toolId":  asString(params.Item["id"]),
-				"content": map[string]any{"changes": params.Item["changes"], "status": asString(params.Item["status"])},
-				"isError": asString(params.Item["status"]) == "failed",
-			}),
-		}}
+		return []HarnessEvent{{Type: "transcript", Entry: transcript.New(transcript.KindFileChange, fileChangeFields(params.Item))}}
 	default:
 		return nil
 	}
+}
+
+func commandExecutionFields(item map[string]any) map[string]any {
+	return map[string]any{
+		"itemId": asString(item["id"]), "command": asString(item["command"]),
+		"cwd": asString(item["cwd"]), "status": asString(item["status"]),
+		"aggregatedOutput": asString(item["aggregatedOutput"]), "exitCode": item["exitCode"],
+		"durationMs": item["durationMs"],
+	}
+}
+
+func fileChangeFields(item map[string]any) map[string]any {
+	return map[string]any{
+		"itemId": asString(item["id"]), "status": asString(item["status"]), "changes": item["changes"],
+	}
+}
+
+func activityEvents(raw json.RawMessage, activity string) []HarnessEvent {
+	var params struct {
+		TurnID string `json:"turnId"`
+	}
+	_ = decodeParams(raw, &params)
+	return []HarnessEvent{{Type: "transcript", Entry: transcript.New(transcript.KindTurnActivity, map[string]any{"turnId": params.TurnID, "activity": activity})}}
+}
+
+func commandOutputDeltaEvents(raw json.RawMessage) []HarnessEvent {
+	var params struct {
+		ItemID string `json:"itemId"`
+		Delta  string `json:"delta"`
+	}
+	if decodeParams(raw, &params) != nil || params.ItemID == "" || params.Delta == "" {
+		return nil
+	}
+	return []HarnessEvent{{Type: "transcript", Entry: transcript.New(transcript.KindCommandExecution, map[string]any{"itemId": params.ItemID, "outputDelta": params.Delta, "status": "inProgress"})}}
+}
+
+func fileChangeDeltaEvents(raw json.RawMessage) []HarnessEvent {
+	var params struct {
+		ItemID string `json:"itemId"`
+		Delta  string `json:"delta"`
+	}
+	if decodeParams(raw, &params) != nil || params.ItemID == "" || params.Delta == "" {
+		return nil
+	}
+	return []HarnessEvent{{Type: "transcript", Entry: transcript.New(transcript.KindFileChange, map[string]any{"itemId": params.ItemID, "outputDelta": params.Delta, "status": "inProgress"})}}
+}
+
+func turnPlanEvents(raw json.RawMessage) []HarnessEvent {
+	var params struct {
+		TurnID      string           `json:"turnId"`
+		Explanation *string          `json:"explanation"`
+		Plan        []map[string]any `json:"plan"`
+	}
+	if decodeParams(raw, &params) != nil || params.TurnID == "" {
+		return nil
+	}
+	return []HarnessEvent{{Type: "transcript", Entry: transcript.New(transcript.KindTurnPlan, map[string]any{
+		"turnId": params.TurnID, "explanation": params.Explanation, "plan": params.Plan,
+	})}}
 }
 
 func turnCompletedEntry(raw json.RawMessage) readmodels.TranscriptEntry {

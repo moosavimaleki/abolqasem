@@ -13,9 +13,11 @@ import (
 
 var (
 	ErrChatAlreadyRunning       = errors.New("chat is already running")
+	ErrChatNotRunning           = errors.New("chat is not running")
 	ErrQueuedNotFound           = errors.New("queued message not found")
 	ErrPendingToolNotFound      = errors.New("pending tool not found")
 	ErrToolResponseUnsupported  = errors.New("active turn does not support tool responses")
+	ErrSteerUnsupported         = errors.New("active turn does not support steering")
 	ErrTurnStarterNotConfigured = errors.New("turn starter is not configured")
 )
 
@@ -34,6 +36,7 @@ type Store interface {
 	EnqueueMessage(chatID string, message QueueMessageInput) (readmodels.QueuedChatMessage, error)
 	GetQueuedMessages(chatID string) []readmodels.QueuedChatMessage
 	GetQueuedMessage(chatID string, queuedMessageID string) (readmodels.QueuedChatMessage, bool)
+	UpdateQueuedMessage(chatID string, queuedMessageID string, content string) error
 	RemoveQueuedMessage(chatID string, queuedMessageID string) error
 }
 
@@ -51,6 +54,10 @@ type TurnEventSource interface {
 
 type ToolResponder interface {
 	RespondTool(ctx context.Context, response ToolResponse) error
+}
+
+type TurnSteerer interface {
+	Steer(ctx context.Context, content string, attachments []readmodels.ChatAttachment) error
 }
 
 type ToolEventRecorder interface {
@@ -356,6 +363,46 @@ func (c *Coordinator) Enqueue(command SendCommand) (string, error) {
 func (c *Coordinator) Dequeue(chatID string, queuedMessageID string) error {
 	if _, ok := c.store.GetQueuedMessage(chatID, queuedMessageID); !ok {
 		return ErrQueuedNotFound
+	}
+	if err := c.store.RemoveQueuedMessage(chatID, queuedMessageID); err != nil {
+		return err
+	}
+	c.emitStateChange(chatID)
+	return nil
+}
+
+func (c *Coordinator) EditQueued(chatID string, queuedMessageID string, content string) error {
+	if _, ok := c.store.GetQueuedMessage(chatID, queuedMessageID); !ok {
+		return ErrQueuedNotFound
+	}
+	if err := c.store.UpdateQueuedMessage(chatID, queuedMessageID, content); err != nil {
+		return err
+	}
+	c.emitStateChange(chatID)
+	return nil
+}
+
+func (c *Coordinator) SteerQueued(ctx context.Context, chatID string, queuedMessageID string) error {
+	message, ok := c.store.GetQueuedMessage(chatID, queuedMessageID)
+	if !ok {
+		return ErrQueuedNotFound
+	}
+	c.mu.Lock()
+	active := c.active[chatID]
+	if active == nil {
+		c.mu.Unlock()
+		return ErrChatNotRunning
+	}
+	steerer, ok := active.Turn.(TurnSteerer)
+	c.mu.Unlock()
+	if !ok {
+		return ErrSteerUnsupported
+	}
+	if err := steerer.Steer(ctx, message.Content, message.Attachments); err != nil {
+		return err
+	}
+	if err := c.store.AppendUserPrompt(chatID, message.Content, message.Attachments, true); err != nil {
+		return err
 	}
 	if err := c.store.RemoveQueuedMessage(chatID, queuedMessageID); err != nil {
 		return err

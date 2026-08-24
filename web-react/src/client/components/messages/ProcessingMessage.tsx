@@ -17,6 +17,10 @@ export function ProcessingMessage({ status }: ProcessingMessageProps) {
     running: t.messages.status.running,
     waiting_for_user: t.messages.status.waitingForUser,
     failed: t.messages.status.failed,
+    thinking: "Thinking",
+    running_command: "Running command",
+    applying_changes: "Applying changes",
+    writing_response: "Writing response",
   }
   const label = (status ? statusLabels[status] : undefined) || t.messages.processing
   const isFailed = status === "failed"

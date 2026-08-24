@@ -47,6 +47,21 @@ function createToolMessage(id: string, toolId = id): HydratedTranscriptMessage {
 }
 
 describe("AbolqasemTranscript", () => {
+  test("renders native Codex command, file-change, and live plan cards", () => {
+    const html = renderTranscript([
+      { id: "cmd", kind: "command_execution", itemId: "cmd-1", command: "go test ./...", cwd: "/work", status: "completed", aggregatedOutput: "ok", exitCode: 0, timestamp: new Date().toISOString() },
+      { id: "files", kind: "file_change", itemId: "files-1", status: "completed", changes: [{ path: "main.go", kind: "update", diff: "@@ -1 +1 @@\n-old\n+new" }], output: "", timestamp: new Date().toISOString() },
+      { id: "plan", kind: "turn_plan", turnId: "turn-1", explanation: "Implement safely", plan: [{ step: "Run tests", status: "inProgress" }], timestamp: new Date().toISOString() },
+    ])
+    expect(html).toContain("go test ./...")
+    expect(html).toContain("exit 0")
+    expect(html).toContain("1 files changed")
+    expect(html).toContain("main.go")
+    expect(html).toContain("Updating")
+    expect(html).toContain("Implement safely")
+    expect(html).toContain("Run tests")
+  })
+
   test("renders user attachment cards outside the user bubble", () => {
     const html = renderTranscript([
       {

@@ -19,6 +19,10 @@ const (
 	KindCompactSummary       = "compact_summary"
 	KindContextCleared       = "context_cleared"
 	KindInterrupted          = "interrupted"
+	KindCommandExecution     = "command_execution"
+	KindFileChange           = "file_change"
+	KindTurnPlan             = "turn_plan"
+	KindTurnActivity         = "turn_activity"
 	KindUnknown              = "unknown"
 )
 

@@ -10,7 +10,29 @@ import (
 	"testing"
 
 	"abolqasem/internal/workspace/agent"
+	"abolqasem/internal/workspace/readmodels"
 )
+
+func TestWorkspaceCodexInputsUseNativeImagesAndInlinePastedText(t *testing.T) {
+	dir := t.TempDir()
+	textPath := filepath.Join(dir, "pasted-text.txt")
+	if err := os.WriteFile(textPath, []byte("long pasted body"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	inputs := workspaceCodexInputs("inspect these", []readmodels.ChatAttachment{
+		{Kind: "image", AbsolutePath: filepath.Join(dir, "shot.png"), DisplayName: "shot.png", MimeType: "image/png"},
+		{Kind: "file", AbsolutePath: textPath, DisplayName: "pasted-text.txt", MimeType: "text/plain"},
+	})
+	if len(inputs) != 3 {
+		t.Fatalf("expected text, native image and pasted text inputs, got %#v", inputs)
+	}
+	if inputs[1].Type != "localImage" || inputs[1].Path == "" {
+		t.Fatalf("expected native localImage input, got %#v", inputs[1])
+	}
+	if inputs[2].Type != "text" || !strings.Contains(inputs[2].Text, "long pasted body") {
+		t.Fatalf("expected pasted file contents, got %#v", inputs[2])
+	}
+}
 
 func TestStartWorkspaceClaudeTurnUsesPendingForkToken(t *testing.T) {
 	binDir := t.TempDir()

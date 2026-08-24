@@ -255,6 +255,31 @@ func TestDequeueRemovesQueuedMessage(t *testing.T) {
 	}
 }
 
+func TestEditAndSteerQueuedMessageUsesActiveTurn(t *testing.T) {
+	store := newFakeStore()
+	turn := &fakeTurn{}
+	coordinator := NewCoordinator(store, TurnStarterFunc(func(context.Context, TurnRequest) (Turn, error) { return turn, nil }), nil)
+	if _, err := coordinator.Send(context.Background(), SendCommand{ChatID: "chat-1", Content: "first"}); err != nil {
+		t.Fatal(err)
+	}
+	queuedID, err := coordinator.Enqueue(SendCommand{ChatID: "chat-1", Content: "old"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := coordinator.EditQueued("chat-1", queuedID, "new"); err != nil {
+		t.Fatal(err)
+	}
+	if err := coordinator.SteerQueued(context.Background(), "chat-1", queuedID); err != nil {
+		t.Fatal(err)
+	}
+	if turn.steeredContent != "new" {
+		t.Fatalf("expected edited content to be steered, got %q", turn.steeredContent)
+	}
+	if len(store.queued["chat-1"]) != 0 {
+		t.Fatalf("expected steered message removed from queue, got %#v", store.queued["chat-1"])
+	}
+}
+
 func TestActiveTurnIncludesProjectAndStartedAt(t *testing.T) {
 	store := newFakeStore()
 	coordinator := NewCoordinator(store, TurnStarterFunc(func(context.Context, TurnRequest) (Turn, error) {
@@ -565,10 +590,26 @@ func (s *fakeStore) RemoveQueuedMessage(chatID string, queuedMessageID string) e
 	return nil
 }
 
+func (s *fakeStore) UpdateQueuedMessage(chatID string, queuedMessageID string, content string) error {
+	for index := range s.queued[chatID] {
+		if s.queued[chatID][index].ID == queuedMessageID {
+			s.queued[chatID][index].Content = content
+			return nil
+		}
+	}
+	return ErrQueuedNotFound
+}
+
 type fakeTurn struct {
-	cancelled    bool
-	toolResponse ToolResponse
-	events       chan TurnEvent
+	cancelled      bool
+	toolResponse   ToolResponse
+	events         chan TurnEvent
+	steeredContent string
+}
+
+func (t *fakeTurn) Steer(_ context.Context, content string, _ []readmodels.ChatAttachment) error {
+	t.steeredContent = content
+	return nil
 }
 
 func (t *fakeTurn) Cancel() error {

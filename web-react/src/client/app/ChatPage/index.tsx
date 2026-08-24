@@ -1921,6 +1921,8 @@ export function ChatPage() {
             loadOlderHistory={state.loadOlderHistory}
             onStopDraining={state.handleStopDraining}
             onRemoveQueuedMessage={state.handleRemoveQueuedMessage}
+            onSteerQueuedMessage={state.handleSteerQueuedMessage}
+            onEditQueuedMessage={state.handleEditQueuedMessage}
             onOpenLocalLink={state.handleOpenLocalLink}
             editorPreset={editorPreset}
             editorCommandTemplate={editorCommandTemplate}

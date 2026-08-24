@@ -16,11 +16,15 @@ describe("QueuedUserMessage", () => {
       <QueuedUserMessage
         message={message}
         onRemove={() => undefined}
+        onSteer={() => undefined}
+        onEdit={() => Promise.resolve()}
       />
     )
 
     expect(html).toContain("Queued follow-up")
     expect(html).toContain("text-left")
     expect(html).not.toContain("text-right")
+    expect(html).toContain("Edit")
+    expect(html).toContain("Steer")
   })
 })

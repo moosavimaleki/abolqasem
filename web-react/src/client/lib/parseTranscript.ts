@@ -417,6 +417,10 @@ function getStructuredToolResultFromDebug(entry: Extract<TranscriptEntry, { kind
 export function processTranscriptMessages(entries: TranscriptEntry[]): HydratedTranscriptMessage[] {
   const pendingToolCalls = new Map<string, { hydrated: HydratedToolCall; normalized: NormalizedToolCall }>()
   const messages: HydratedTranscriptMessage[] = []
+  const commandExecutions = new Map<string, Extract<HydratedTranscriptMessage, { kind: "command_execution" }>>()
+  const fileChanges = new Map<string, Extract<HydratedTranscriptMessage, { kind: "file_change" }>>()
+  const turnPlans = new Map<string, Extract<HydratedTranscriptMessage, { kind: "turn_plan" }>>()
+  const turnActivities = new Map<string, Extract<HydratedTranscriptMessage, { kind: "turn_activity" }>>()
 
   for (const entry of entries) {
     if (entry.kind === "assistant_text" && isTmuxCaptureEntry(entry)) {
@@ -501,6 +505,67 @@ export function processTranscriptMessages(entries: TranscriptEntry[]): HydratedT
           status: entry.status,
         })
         break
+      case "command_execution": {
+        const existing = commandExecutions.get(entry.itemId)
+        if (existing) {
+          if (entry.command !== undefined) existing.command = entry.command
+          if (entry.cwd !== undefined) existing.cwd = entry.cwd
+          existing.status = entry.status
+          if (entry.aggregatedOutput !== undefined) existing.aggregatedOutput = entry.aggregatedOutput
+          else if (entry.outputDelta) existing.aggregatedOutput += entry.outputDelta
+          if (entry.exitCode !== undefined) existing.exitCode = entry.exitCode
+          if (entry.durationMs !== undefined) existing.durationMs = entry.durationMs
+        } else {
+          const command = {
+            ...createBaseMessage(entry), kind: "command_execution" as const, itemId: entry.itemId,
+            command: entry.command ?? "", cwd: entry.cwd ?? "", status: entry.status,
+            aggregatedOutput: entry.aggregatedOutput ?? entry.outputDelta ?? "",
+            exitCode: entry.exitCode, durationMs: entry.durationMs,
+          }
+          commandExecutions.set(entry.itemId, command)
+          messages.push(command)
+        }
+        break
+      }
+      case "file_change": {
+        const existing = fileChanges.get(entry.itemId)
+        if (existing) {
+          existing.status = entry.status
+          if (entry.changes) existing.changes = entry.changes
+          if (entry.outputDelta) existing.output += entry.outputDelta
+        } else {
+          const fileChange = {
+            ...createBaseMessage(entry), kind: "file_change" as const, itemId: entry.itemId,
+            status: entry.status, changes: entry.changes ?? [], output: entry.outputDelta ?? "",
+          }
+          fileChanges.set(entry.itemId, fileChange)
+          messages.push(fileChange)
+        }
+        break
+      }
+      case "turn_plan": {
+        const existing = turnPlans.get(entry.turnId)
+        if (existing) {
+          existing.explanation = entry.explanation
+          existing.plan = entry.plan
+        } else {
+          const plan = { ...createBaseMessage(entry), kind: "turn_plan" as const, turnId: entry.turnId, explanation: entry.explanation, plan: entry.plan }
+          turnPlans.set(entry.turnId, plan)
+          messages.push(plan)
+        }
+        break
+      }
+      case "turn_activity": {
+        const key = entry.turnId || "active"
+        const existing = turnActivities.get(key)
+        if (existing) existing.activity = entry.activity
+        else {
+          const activity = { ...createBaseMessage(entry), kind: "turn_activity" as const, turnId: entry.turnId, activity: entry.activity }
+          turnActivities.set(key, activity)
+          messages.push(activity)
+        }
+        break
+      }
       case "context_window_updated":
         messages.push({
           ...createBaseMessage(entry),

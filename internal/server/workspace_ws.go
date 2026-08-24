@@ -556,13 +556,26 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 		workspaceConnections.broadcast(chatID)
 		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
 		return &response
+	case protocol.CommandMessageEdit:
+		chatID, queuedID, content, err := decodeEditQueuedMessageCommand(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		if err := workspaceAgentCoordinator().EditQueued(chatID, queuedID, content); err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		workspaceConnections.broadcast(chatID)
+		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
+		return &response
 	case protocol.CommandMessageSteer:
 		chatID, queuedID, err := decodeQueuedMessageCommand(envelope.Command)
 		if err != nil {
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
 		}
-		if err := workspaceAgentCoordinator().Dequeue(chatID, queuedID); err != nil {
+		if err := workspaceAgentCoordinator().SteerQueued(context.Background(), chatID, queuedID); err != nil {
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
 		}

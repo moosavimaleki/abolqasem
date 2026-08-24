@@ -254,6 +254,12 @@ export type ClientCommand =
       queuedMessageId: string
     }
   | {
+      type: "message.edit"
+      chatId: string
+      queuedMessageId: string
+      content: string
+    }
+  | {
       type: "message.dequeue"
       chatId: string
       queuedMessageId: string

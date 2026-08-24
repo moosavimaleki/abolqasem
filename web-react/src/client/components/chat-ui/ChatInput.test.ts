@@ -3,7 +3,7 @@ import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { PROVIDERS } from "../../../shared/types"
 import { I18nProvider } from "../../i18n/context"
-import { ChatInput, getClipboardImageFiles, trimTrailingPastedNewlines, willExceedAttachmentLimit } from "./ChatInput"
+import { ChatInput, createPastedTextFile, getClipboardImageFiles, PASTED_TEXT_FILE_THRESHOLD, trimTrailingPastedNewlines, willExceedAttachmentLimit } from "./ChatInput"
 
 function createClipboardItem(args: {
   kind?: string
@@ -101,6 +101,16 @@ describe("getClipboardImageFiles", () => {
       "clipboard-789.png",
       "clipboard-789-1.webp",
     ])
+  })
+})
+
+describe("createPastedTextFile", () => {
+  test("matches Codex Mobile long-paste threshold and attachment filename", async () => {
+    expect(PASTED_TEXT_FILE_THRESHOLD).toBe(2000)
+    const file = createPastedTextFile("long text", new Date(2026, 7, 24, 15, 8, 37))
+    expect(file.name).toBe("pasted-text-2026-08-24-15-08-37.txt")
+    expect(file.type.startsWith("text/plain")).toBe(true)
+    expect(await file.text()).toBe("long text")
   })
 })
 

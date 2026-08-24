@@ -16,6 +16,7 @@ import { TextMessage } from "../components/messages/TextMessage"
 import { AskUserQuestionMessage } from "../components/messages/AskUserQuestionMessage"
 import { ExitPlanModeMessage } from "../components/messages/ExitPlanModeMessage"
 import { TodoWriteMessage } from "../components/messages/TodoWriteMessage"
+import { CodexCommandMessage, CodexFileChangeMessage, CodexPlanMessage } from "../components/messages/CodexNativeMessage"
 import { ToolCallMessage } from "../components/messages/ToolCallMessage"
 import { ResultMessage } from "../components/messages/ResultMessage"
 import { InterruptedMessage } from "../components/messages/InterruptedMessage"
@@ -188,6 +189,9 @@ function getTranscriptMessageRenderState(
       case "status":
         shouldRender = isFinalStatus
         break
+      case "turn_activity":
+        shouldRender = false
+        break
       default:
         shouldRender = true
         break
@@ -340,6 +344,14 @@ function sameMessage(left: HydratedTranscriptMessage, right: HydratedTranscriptM
         && left.costUsd === right.costUsd
     case "status":
       return right.kind === "status" && left.status === right.status
+    case "command_execution":
+      return right.kind === "command_execution" && left.itemId === right.itemId && left.command === right.command && left.cwd === right.cwd && left.status === right.status && left.aggregatedOutput === right.aggregatedOutput && left.exitCode === right.exitCode && left.durationMs === right.durationMs
+    case "file_change":
+      return right.kind === "file_change" && left.itemId === right.itemId && left.status === right.status && left.output === right.output && JSON.stringify(left.changes) === JSON.stringify(right.changes)
+    case "turn_plan":
+      return right.kind === "turn_plan" && left.turnId === right.turnId && left.explanation === right.explanation && JSON.stringify(left.plan) === JSON.stringify(right.plan)
+    case "turn_activity":
+      return right.kind === "turn_activity" && left.turnId === right.turnId && left.activity === right.activity
     case "compact_summary":
       return right.kind === "compact_summary" && left.summary === right.summary
     case "context_window_updated":
@@ -488,6 +500,18 @@ const TranscriptSingleRow = memo(function TranscriptSingleRow({
         break
       case "assistant_text":
         rendered = <TextMessage key={message.id} message={message} />
+        break
+      case "command_execution":
+        rendered = <CodexCommandMessage key={message.id} message={message} />
+        break
+      case "file_change":
+        rendered = <CodexFileChangeMessage key={message.id} message={message} />
+        break
+      case "turn_plan":
+        rendered = <CodexPlanMessage key={message.id} message={message} />
+        break
+      case "turn_activity":
+        rendered = null
         break
       case "tool":
         if (message.toolKind === "ask_user_question") {

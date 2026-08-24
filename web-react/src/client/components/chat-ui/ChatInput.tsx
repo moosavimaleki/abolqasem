@@ -29,6 +29,7 @@ import { useI18n } from "../../i18n/context"
 
 const MAX_FILES_PER_DROP = 50
 const MAX_CONCURRENT_UPLOADS = 3
+export const PASTED_TEXT_FILE_THRESHOLD = 2000
 
 const CLIPBOARD_EXTENSION_BY_MIME_TYPE: Record<string, string> = {
   "image/gif": "gif",
@@ -94,6 +95,14 @@ export function getClipboardImageFiles(items: Iterable<ClipboardFileItem>, times
 
 export function trimTrailingPastedNewlines(text: string) {
   return text.replace(/(?:\r\n|\r|\n)+$/, "")
+}
+
+export function createPastedTextFile(text: string, now = new Date()) {
+  const timestamp = [
+    now.getFullYear(), String(now.getMonth() + 1).padStart(2, "0"), String(now.getDate()).padStart(2, "0"),
+    String(now.getHours()).padStart(2, "0"), String(now.getMinutes()).padStart(2, "0"), String(now.getSeconds()).padStart(2, "0"),
+  ].join("-")
+  return new File([text], `pasted-text-${timestamp}.txt`, { type: "text/plain", lastModified: now.getTime() })
 }
 
 function replaceTextSelection(args: {
@@ -688,6 +697,12 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
     const pastedText = event.clipboardData.getData("text/plain")
     const trimmedText = trimTrailingPastedNewlines(pastedText)
     const shouldTrimTrailingNewlines = pastedText.length > 0 && trimmedText !== pastedText
+
+    if (pastedText.length >= PASTED_TEXT_FILE_THRESHOLD) {
+      event.preventDefault()
+      enqueueFiles([createPastedTextFile(pastedText)])
+      return
+    }
 
     if (files.length === 0 && !shouldTrimTrailingNewlines) return
 

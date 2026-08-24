@@ -172,6 +172,8 @@ function StandaloneTranscriptApp() {
             loadOlderHistory={noopPromise}
             onStopDraining={noop}
             onRemoveQueuedMessage={noopPromise}
+            onSteerQueuedMessage={noopPromise}
+            onEditQueuedMessage={noopPromise}
             onOpenLocalLink={handleOpenLocalLink}
             onAskUserQuestionSubmit={handleAskUserQuestion}
             onExitPlanModeConfirm={handleExitPlanMode}

@@ -847,6 +847,52 @@ export interface StatusEntry extends TranscriptEntryBase {
   status: string
 }
 
+export type CodexExecutionStatus = "inProgress" | "completed" | "failed" | "declined"
+
+export interface CommandExecutionEntry extends TranscriptEntryBase {
+  kind: "command_execution"
+  itemId: string
+  command?: string
+  cwd?: string
+  status: CodexExecutionStatus
+  aggregatedOutput?: string
+  outputDelta?: string
+  exitCode?: number | null
+  durationMs?: number | null
+}
+
+export interface CodexFileUpdateChange {
+  path: string
+  kind: "add" | "delete" | "update" | string
+  diff: string
+}
+
+export interface FileChangeEntry extends TranscriptEntryBase {
+  kind: "file_change"
+  itemId: string
+  status: CodexExecutionStatus
+  changes?: CodexFileUpdateChange[]
+  outputDelta?: string
+}
+
+export interface TurnPlanStep {
+  step: string
+  status: "pending" | "inProgress" | "completed"
+}
+
+export interface TurnPlanEntry extends TranscriptEntryBase {
+  kind: "turn_plan"
+  turnId: string
+  explanation?: string | null
+  plan: TurnPlanStep[]
+}
+
+export interface TurnActivityEntry extends TranscriptEntryBase {
+  kind: "turn_activity"
+  turnId?: string
+  activity: "thinking" | "running_command" | "applying_changes" | "writing_response"
+}
+
 export interface ContextWindowUsageSnapshot {
   usedTokens: number
   totalProcessedTokens?: number
@@ -1106,6 +1152,10 @@ export type TranscriptEntry =
   | ToolResultEntry
   | ResultEntry
   | StatusEntry
+  | CommandExecutionEntry
+  | FileChangeEntry
+  | TurnPlanEntry
+  | TurnActivityEntry
   | ContextWindowUpdatedEntry
   | RateLimitUpdatedEntry
   | CompactBoundaryEntry
@@ -1225,6 +1275,10 @@ export type HydratedTranscriptMessage =
   | ({ kind: "assistant_text"; text: string; id: string; messageId?: string; timestamp: string; hidden?: boolean })
   | ({ kind: "result"; success: boolean; cancelled?: boolean; result: string; durationMs: number; costUsd?: number; id: string; messageId?: string; timestamp: string; hidden?: boolean })
   | ({ kind: "status"; status: string; id: string; messageId?: string; timestamp: string; hidden?: boolean })
+  | ({ kind: "command_execution"; itemId: string; command: string; cwd: string; status: CodexExecutionStatus; aggregatedOutput: string; exitCode?: number | null; durationMs?: number | null; id: string; messageId?: string; timestamp: string; hidden?: boolean })
+  | ({ kind: "file_change"; itemId: string; status: CodexExecutionStatus; changes: CodexFileUpdateChange[]; output: string; id: string; messageId?: string; timestamp: string; hidden?: boolean })
+  | ({ kind: "turn_plan"; turnId: string; explanation?: string | null; plan: TurnPlanStep[]; id: string; messageId?: string; timestamp: string; hidden?: boolean })
+  | ({ kind: "turn_activity"; turnId?: string; activity: TurnActivityEntry["activity"]; id: string; messageId?: string; timestamp: string; hidden?: boolean })
   | ({ kind: "context_window_updated"; usage: ContextWindowUsageSnapshot; id: string; messageId?: string; timestamp: string; hidden?: boolean })
   | ({ kind: "rate_limit_updated"; rateLimits: RateLimitSnapshot; id: string; messageId?: string; timestamp: string; hidden?: boolean })
   | ({ kind: "compact_boundary"; id: string; messageId?: string; timestamp: string; hidden?: boolean })

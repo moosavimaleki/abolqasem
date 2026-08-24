@@ -884,7 +884,7 @@ func eventPriority(eventType string) int {
 		return 2
 	case events.TypeMessageAppended:
 		return 3
-	case events.TypeQueuedMessageEnqueued, events.TypeQueuedMessageRemoved:
+	case events.TypeQueuedMessageEnqueued, events.TypeQueuedMessageUpdated, events.TypeQueuedMessageRemoved:
 		return 4
 	case events.TypeTurnStarted:
 		return 5

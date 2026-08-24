@@ -833,6 +833,7 @@ export interface AbolqasemState {
   handleSignOut: () => Promise<void>
   handleSend: (content: string, options?: { provider?: AgentProvider; model?: string; modelOptions?: ModelOptions; planMode?: boolean; attachments?: ChatAttachment[] }) => Promise<void>
   handleSteerQueuedMessage: (queuedMessageId: string) => Promise<void>
+  handleEditQueuedMessage: (queuedMessageId: string, content: string) => Promise<void>
   handleRemoveQueuedMessage: (queuedMessageId: string) => Promise<void>
   handleCancel: () => Promise<void>
   handleStopDraining: () => Promise<void>
@@ -1945,6 +1946,17 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
     }
   }, [activeChatId, socket])
 
+  const handleEditQueuedMessage = useCallback(async (queuedMessageId: string, content: string) => {
+    if (!activeChatId) return
+    try {
+      await socket.command({ type: "message.edit", chatId: activeChatId, queuedMessageId, content })
+      setCommandError(null)
+    } catch (error) {
+      setCommandError(error instanceof Error ? error.message : String(error))
+      throw error
+    }
+  }, [activeChatId, socket])
+
   const handleRemoveQueuedMessage = useCallback(async (queuedMessageId: string) => {
     if (!activeChatId) return
     try {
@@ -2322,6 +2334,7 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
     handleSignOut,
     handleSend,
     handleSteerQueuedMessage,
+    handleEditQueuedMessage,
     handleRemoveQueuedMessage,
     handleCancel,
     handleStopDraining,

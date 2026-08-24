@@ -1,5 +1,7 @@
 package protocol
 
+import "encoding/json"
+
 type RequestID = string
 
 type InitializeParams struct {
@@ -66,10 +68,50 @@ type ThreadRevertParams struct {
 	BeforeTurnID string `json:"beforeTurnId"`
 }
 
-type TextUserInput struct {
+type UserInput struct {
 	Type         string   `json:"type"`
-	Text         string   `json:"text"`
-	TextElements []string `json:"text_elements"`
+	Text         string   `json:"text,omitempty"`
+	TextElements []string `json:"text_elements,omitempty"`
+	URL          string   `json:"url,omitempty"`
+	Path         string   `json:"path,omitempty"`
+	Name         string   `json:"name,omitempty"`
+}
+
+func (input UserInput) MarshalJSON() ([]byte, error) {
+	switch input.Type {
+	case "text":
+		return json.Marshal(struct {
+			Type         string   `json:"type"`
+			Text         string   `json:"text"`
+			TextElements []string `json:"text_elements"`
+		}{Type: input.Type, Text: input.Text, TextElements: nonNilStrings(input.TextElements)})
+	case "image":
+		return json.Marshal(struct {
+			Type string `json:"type"`
+			URL  string `json:"url"`
+		}{input.Type, input.URL})
+	case "localImage":
+		return json.Marshal(struct {
+			Type string `json:"type"`
+			Path string `json:"path"`
+		}{input.Type, input.Path})
+	case "skill", "mention":
+		return json.Marshal(struct {
+			Type string `json:"type"`
+			Name string `json:"name"`
+			Path string `json:"path"`
+		}{input.Type, input.Name, input.Path})
+	default:
+		type alias UserInput
+		return json.Marshal(alias(input))
+	}
+}
+
+func nonNilStrings(values []string) []string {
+	if values == nil {
+		return []string{}
+	}
+	return values
 }
 
 type CollaborationMode struct {
@@ -85,7 +127,7 @@ type CollaborationModeSettings struct {
 
 type TurnStartParams struct {
 	ThreadID          string             `json:"threadId"`
-	Input             []TextUserInput    `json:"input"`
+	Input             []UserInput        `json:"input"`
 	ApprovalPolicy    *string            `json:"approvalPolicy,omitempty"`
 	Model             *string            `json:"model,omitempty"`
 	Effort            *string            `json:"effort,omitempty"`
@@ -105,6 +147,12 @@ type TurnError struct {
 
 type TurnStartResponse struct {
 	Turn TurnSummary `json:"turn"`
+}
+
+type TurnSteerParams struct {
+	ThreadID       string      `json:"threadId"`
+	Input          []UserInput `json:"input"`
+	ExpectedTurnID string      `json:"expectedTurnId"`
 }
 
 type TurnInterruptParams struct {

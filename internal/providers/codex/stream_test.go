@@ -68,7 +68,7 @@ func TestStreamNormalizerMapsCoreTurnTranscriptEvents(t *testing.T) {
 			kinds = append(kinds, event.Entry["kind"].(string))
 		}
 	}
-	expected := []string{"tool_call", "tool_result", "assistant_text", "result"}
+	expected := []string{"command_execution", "turn_activity", "command_execution", "assistant_text", "result"}
 	if !equalStringSlices(kinds, expected) {
 		t.Fatalf("expected transcript kinds %#v, got %#v", expected, kinds)
 	}
@@ -180,12 +180,11 @@ func TestStreamNormalizerMapsFileChanges(t *testing.T) {
 			"changes": []any{map[string]any{"path": "internal/server/main.go", "kind": "update"}},
 		},
 	}))
-	if len(started) != 1 || started[0].Entry["kind"] != "tool_call" {
+	if len(started) != 2 || started[0].Entry["kind"] != "file_change" || started[1].Entry["kind"] != "turn_activity" {
 		t.Fatalf("unexpected started events: %#v", started)
 	}
-	tool := started[0].Entry["tool"].(map[string]any)
-	if tool["toolName"] != "Codex file changes" || tool["toolId"] != "file-1" {
-		t.Fatalf("unexpected file-change tool: %#v", tool)
+	if started[0].Entry["itemId"] != "file-1" || started[1].Entry["activity"] != "applying_changes" {
+		t.Fatalf("unexpected file-change payload: %#v", started)
 	}
 
 	completed := normalizer.HandleNotification(notification("item/completed", map[string]any{
@@ -196,8 +195,22 @@ func TestStreamNormalizerMapsFileChanges(t *testing.T) {
 			"changes": []any{map[string]any{"path": "internal/server/main.go", "kind": "update"}},
 		},
 	}))
-	if len(completed) != 1 || completed[0].Entry["kind"] != "tool_result" || completed[0].Entry["toolId"] != "file-1" {
+	if len(completed) != 1 || completed[0].Entry["kind"] != "file_change" || completed[0].Entry["itemId"] != "file-1" {
 		t.Fatalf("unexpected completed events: %#v", completed)
+	}
+}
+
+func TestStreamNormalizerMapsNativeDeltasAndTurnPlan(t *testing.T) {
+	normalizer := NewStreamNormalizer()
+	command := normalizer.HandleNotification(notification("item/commandExecution/outputDelta", map[string]any{"itemId": "cmd-1", "delta": "hello\n"}))
+	if len(command) != 1 || command[0].Entry["kind"] != "command_execution" || command[0].Entry["outputDelta"] != "hello\n" {
+		t.Fatalf("unexpected command delta: %#v", command)
+	}
+	plan := normalizer.HandleNotification(notification("turn/plan/updated", map[string]any{
+		"turnId": "turn-1", "explanation": "Ship it", "plan": []any{map[string]any{"step": "Test", "status": "inProgress"}},
+	}))
+	if len(plan) != 1 || plan[0].Entry["kind"] != "turn_plan" || plan[0].Entry["turnId"] != "turn-1" {
+		t.Fatalf("unexpected plan: %#v", plan)
 	}
 }
 

@@ -53,6 +53,7 @@ type workspaceCodexSession struct {
 type workspaceAsyncTurn struct {
 	cancelMu      sync.Mutex
 	cancel        func() error
+	steer         func(context.Context, string, []readmodels.ChatAttachment) error
 	events        chan agent.TurnEvent
 	toolMu        sync.Mutex
 	toolResponses map[string]chan workspaceToolResponse
@@ -269,6 +270,22 @@ func (t *workspaceAsyncTurn) setCancel(cancel func() error) {
 	t.cancel = cancel
 }
 
+func (t *workspaceAsyncTurn) Steer(ctx context.Context, content string, attachments []readmodels.ChatAttachment) error {
+	t.cancelMu.Lock()
+	steer := t.steer
+	t.cancelMu.Unlock()
+	if steer == nil {
+		return agent.ErrSteerUnsupported
+	}
+	return steer(ctx, content, attachments)
+}
+
+func (t *workspaceAsyncTurn) setSteer(steer func(context.Context, string, []readmodels.ChatAttachment) error) {
+	t.cancelMu.Lock()
+	defer t.cancelMu.Unlock()
+	t.steer = steer
+}
+
 func (t *workspaceAsyncTurn) RespondTool(_ context.Context, response agent.ToolResponse) error {
 	if t == nil {
 		return agent.ErrToolResponseUnsupported
@@ -384,6 +401,9 @@ func runWorkspaceCodexTurn(ctx context.Context, turnCancel context.CancelFunc, r
 			return err
 		}
 		return nil
+	})
+	turn.setSteer(func(steerCtx context.Context, content string, attachments []readmodels.ChatAttachment) error {
+		return process.SteerTurn(steerCtx, threadID, turnID, content, attachments)
 	})
 
 	process.ForwardEvents(ctx, turn, threadID, turnID)
@@ -552,14 +572,8 @@ func (p *workspaceCodexProcess) StartTurn(ctx context.Context, threadID string, 
 	}
 
 	params := codexprotocol.TurnStartParams{
-		ThreadID: threadID,
-		Input: []codexprotocol.TextUserInput{
-			{
-				Type:         "text",
-				Text:         workspacePromptText(request.Content, request.Attachments),
-				TextElements: []string{},
-			},
-		},
+		ThreadID:       threadID,
+		Input:          workspaceCodexInputs(request.Content, request.Attachments),
 		ApprovalPolicy: &approvalPolicy,
 		Model:          model,
 		Effort:         effort,
@@ -581,6 +595,54 @@ func (p *workspaceCodexProcess) StartTurn(ctx context.Context, threadID string, 
 	return response.Turn.ID, nil
 }
 
+func workspaceCodexInputs(content string, attachments []readmodels.ChatAttachment) []codexprotocol.UserInput {
+	inputs := make([]codexprotocol.UserInput, 0, len(attachments)+1)
+	if text := strings.TrimSpace(content); text != "" {
+		inputs = append(inputs, codexprotocol.UserInput{Type: "text", Text: text, TextElements: []string{}})
+	}
+	for _, attachment := range attachments {
+		path := strings.TrimSpace(attachment.AbsolutePath)
+		if path == "" {
+			continue
+		}
+		if attachment.Kind == "image" || strings.HasPrefix(strings.ToLower(attachment.MimeType), "image/") {
+			inputs = append(inputs, codexprotocol.UserInput{Type: "localImage", Path: path})
+			continue
+		}
+		if workspaceAttachmentIsText(attachment) {
+			if data, err := os.ReadFile(path); err == nil && len(data) <= 2*1024*1024 {
+				name := attachment.DisplayName
+				if name == "" {
+					name = filepath.Base(path)
+				}
+				inputs = append(inputs, codexprotocol.UserInput{Type: "text", Text: fmt.Sprintf("[Attached text file: %s]\n\n%s", name, string(data)), TextElements: []string{}})
+				continue
+			}
+		}
+		name := attachment.DisplayName
+		if name == "" {
+			name = filepath.Base(path)
+		}
+		inputs = append(inputs, codexprotocol.UserInput{Type: "mention", Name: name, Path: path})
+	}
+	if len(inputs) == 0 {
+		inputs = append(inputs, codexprotocol.UserInput{Type: "text", Text: "Please inspect the attached input.", TextElements: []string{}})
+	}
+	return inputs
+}
+
+func workspaceAttachmentIsText(attachment readmodels.ChatAttachment) bool {
+	if strings.HasPrefix(strings.ToLower(attachment.MimeType), "text/") {
+		return true
+	}
+	switch strings.ToLower(filepath.Ext(attachment.DisplayName)) {
+	case ".txt", ".md", ".json", ".yaml", ".yml", ".csv", ".log", ".xml", ".toml":
+		return true
+	default:
+		return false
+	}
+}
+
 func (p *workspaceCodexProcess) InterruptTurn(ctx context.Context, threadID string, turnID string) error {
 	if p == nil || p.client == nil || threadID == "" || turnID == "" {
 		return nil
@@ -590,6 +652,11 @@ func (p *workspaceCodexProcess) InterruptTurn(ctx context.Context, threadID stri
 		ThreadID: threadID,
 		TurnID:   turnID,
 	}, &result)
+}
+
+func (p *workspaceCodexProcess) SteerTurn(ctx context.Context, threadID string, turnID string, content string, attachments []readmodels.ChatAttachment) error {
+	var result any
+	return p.client.Call(ctx, "turn/steer", codexprotocol.TurnSteerParams{ThreadID: threadID, ExpectedTurnID: turnID, Input: workspaceCodexInputs(content, attachments)}, &result)
 }
 
 func (p *workspaceCodexProcess) Exited() bool {

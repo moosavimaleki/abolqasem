@@ -120,6 +120,7 @@ const (
 	CommandChatLoadHistoryAround           = "chat.loadHistoryAround"
 	CommandChatRespondTool                 = "chat.respondTool"
 	CommandMessageEnqueue                  = "message.enqueue"
+	CommandMessageEdit                     = "message.edit"
 	CommandMessageSteer                    = "message.steer"
 	CommandMessageDequeue                  = "message.dequeue"
 	CommandTerminalCreate                  = "terminal.create"
