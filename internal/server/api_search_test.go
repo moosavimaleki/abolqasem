@@ -113,6 +113,7 @@ func TestHandleAPISearchSearchesCurrentWorkspaceChat(t *testing.T) {
 
 func TestHandleAPISearchSearchesNativeWorkspaceChatWithoutStoredMessages(t *testing.T) {
 	withWorkspaceComposerStore(t)
+	withEmptySearchLegacyState(t)
 	nativePath := writeSearchAPITestTranscript(t, strings.Join([]string{
 		`{"type":"event_msg","payload":{"type":"user_message","message":"native prompt"}}`,
 		`{"type":"event_msg","payload":{"type":"agent_message","message":"native_search_needle answer"}}`,
@@ -171,6 +172,7 @@ func TestHandleAPISearchSearchesNativeWorkspaceChatWithoutStoredMessages(t *test
 
 func TestHandleAPISearchReadsStoredMessagesForLegacyTmuxMetadata(t *testing.T) {
 	withWorkspaceComposerStore(t)
+	withEmptySearchLegacyState(t)
 	project, err := workspaceOpenProject(t.TempDir(), "Project")
 	if err != nil {
 		t.Fatalf("workspaceOpenProject returned error: %v", err)
@@ -250,6 +252,7 @@ func TestSearchWorkspaceEntriesTargetsToolCallForToolResultMatches(t *testing.T)
 
 func TestHandleAPISearchGlobalIncludesWorkspaceChats(t *testing.T) {
 	withWorkspaceComposerStore(t)
+	withEmptySearchLegacyState(t)
 	project, err := workspaceOpenProject("/tmp/project", "Project")
 	if err != nil {
 		t.Fatalf("workspaceOpenProject returned error: %v", err)
@@ -292,6 +295,7 @@ func TestHandleAPISearchGlobalIncludesWorkspaceChats(t *testing.T) {
 
 func TestHandleAPISearchGlobalKeepsStoredWorkspaceChatAfterCompaction(t *testing.T) {
 	withWorkspaceComposerStore(t)
+	withEmptySearchLegacyState(t)
 	project, err := workspaceOpenProject("/tmp/project", "Project")
 	if err != nil {
 		t.Fatalf("workspaceOpenProject returned error: %v", err)
@@ -333,6 +337,15 @@ func TestHandleAPISearchGlobalKeepsStoredWorkspaceChatAfterCompaction(t *testing
 	if payload.Total != 1 || payload.Items[0].ChatID != chatID {
 		t.Fatalf("unexpected compacted workspace result: %#v", payload)
 	}
+}
+
+func withEmptySearchLegacyState(t *testing.T) {
+	t.Helper()
+	previous := workspaceLoadLegacyState
+	workspaceLoadLegacyState = func() (*state.AppState, error) {
+		return &state.AppState{Sessions: map[string]state.SessionMeta{}}, nil
+	}
+	t.Cleanup(func() { workspaceLoadLegacyState = previous })
 }
 
 func performSearchAPIRequest(t *testing.T, target string) *httptest.ResponseRecorder {
