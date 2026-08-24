@@ -7,6 +7,7 @@ import {
   normalizeClaudeModelId,
   normalizeCodexModelId,
   isClaudeReasoningEffort,
+  isCodexExecutionMode,
   isCodexReasoningEffort,
   supportsClaudeMaxReasoningEffort,
   type AgentProvider,
@@ -153,6 +154,9 @@ export function normalizeCodexPreference(value?: {
       fastMode: typeof value?.modelOptions?.fastMode === "boolean"
         ? value.modelOptions.fastMode
         : DEFAULT_CODEX_MODEL_OPTIONS.fastMode,
+      ...(isCodexExecutionMode(value?.modelOptions?.executionMode)
+        ? { executionMode: value.modelOptions.executionMode }
+        : {}),
     },
     planMode: Boolean(value?.planMode),
   }
@@ -303,6 +307,8 @@ function sameComposerState(left: ComposerState | undefined, right: ComposerState
   if (left.provider === "codex" && right.provider === "codex") {
     return left.modelOptions.reasoningEffort === right.modelOptions.reasoningEffort
       && left.modelOptions.fastMode === right.modelOptions.fastMode
+      && (left.modelOptions.executionMode ?? DEFAULT_CODEX_MODEL_OPTIONS.executionMode)
+        === (right.modelOptions.executionMode ?? DEFAULT_CODEX_MODEL_OPTIONS.executionMode)
   }
 
   return false

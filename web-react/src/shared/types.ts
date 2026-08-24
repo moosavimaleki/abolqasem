@@ -183,6 +183,7 @@ export const CODEX_REASONING_OPTIONS = [
 
 export type ClaudeReasoningEffort = (typeof CLAUDE_REASONING_OPTIONS)[number]["id"]
 export type CodexReasoningEffort = (typeof CODEX_REASONING_OPTIONS)[number]["id"]
+export type CodexExecutionMode = "standard" | "dangerous"
 export type ClaudeContextWindow = "200k" | "1m"
 export type ServiceTier = "fast"
 
@@ -194,6 +195,7 @@ export interface ClaudeModelOptions {
 export interface CodexModelOptions {
   reasoningEffort: CodexReasoningEffort
   fastMode: boolean
+  executionMode?: CodexExecutionMode
 }
 
 export interface ProviderModelOptionsByProvider {
@@ -226,7 +228,12 @@ export const DEFAULT_CLAUDE_MODEL_OPTIONS = {
 export const DEFAULT_CODEX_MODEL_OPTIONS = {
   reasoningEffort: "high",
   fastMode: false,
+  executionMode: "dangerous",
 } as const satisfies CodexModelOptions
+
+export function isCodexExecutionMode(value: unknown): value is CodexExecutionMode {
+  return value === "standard" || value === "dangerous"
+}
 
 export function isClaudeReasoningEffort(value: unknown): value is ClaudeReasoningEffort {
   return CLAUDE_REASONING_OPTIONS.some((option) => option.id === value)
@@ -1323,6 +1330,7 @@ export interface CodexLockStatus {
   ownerPid?: number
   ownerCommand?: string
   otherWritableSessions?: number
+  executionMode?: CodexExecutionMode
   canTakeOver: boolean
   canRelease: boolean
   message?: string

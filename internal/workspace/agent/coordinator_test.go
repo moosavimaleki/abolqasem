@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"abolqasem/internal/providers/catalog"
 	"abolqasem/internal/workspace/readmodels"
 	"abolqasem/internal/workspace/transcript"
 )
@@ -45,6 +46,30 @@ func TestSendStartsTurnAndBlocksConcurrentTurn(t *testing.T) {
 	}
 	if len(store.queued["chat-1"]) != 1 {
 		t.Fatalf("expected one queued message, got %#v", store.queued["chat-1"])
+	}
+}
+
+func TestSendPropagatesCodexExecutionMode(t *testing.T) {
+	store := newFakeStore()
+	var started TurnRequest
+	coordinator := NewCoordinator(store, TurnStarterFunc(func(_ context.Context, request TurnRequest) (Turn, error) {
+		started = request
+		return &fakeTurn{}, nil
+	}), nil)
+
+	_, err := coordinator.Send(context.Background(), SendCommand{
+		ChatID:   "chat-1",
+		Content:  "safe change",
+		Provider: "codex",
+		ModelOptions: &catalog.ModelOptions{Codex: &catalog.CodexModelOptionsPatch{
+			ExecutionMode: "standard",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if started.ExecutionMode != "standard" {
+		t.Fatalf("expected standard execution mode, got %#v", started)
 	}
 }
 

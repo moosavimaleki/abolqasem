@@ -162,6 +162,7 @@ func DefaultAppSettings() AppSettings {
 				ModelOptions: map[string]any{
 					"reasoningEffort": catalog.CodexRuntimeDefaultReasoningEffort(),
 					"fastMode":        false,
+					"executionMode":   catalog.DefaultCodexExecutionMode,
 				},
 				PlanMode: false,
 			},

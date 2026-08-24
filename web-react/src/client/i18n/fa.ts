@@ -154,8 +154,12 @@ export const fa: TranslationDictionary = {
     fullAccess: "دسترسی کامل",
     planMode: "حالت برنامه‌ریزی",
     reviewPlanBeforeExecution: "بررسی برنامه قبل از اجرا",
+    sandboxed: "محافظت‌شده",
+    sandboxedDescription: "دسترسی نوشتن به فضای کاری با تأیید برای عملیات حساس",
     standard: "استاندارد",
     standardContextWindow: "پنجره context استاندارد",
+    unrestricted: "بدون محدودیت",
+    unrestrictedDescription: "معادل --dangerously-bypass-approvals-and-sandbox",
   },
   browserPanel: {
     addQuickAction: "افزودن میانبر",

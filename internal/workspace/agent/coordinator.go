@@ -152,6 +152,7 @@ type TurnRequest struct {
 	Model                   string
 	Effort                  string
 	ServiceTier             string
+	ExecutionMode           string
 	PlanMode                bool
 	SessionToken            string
 	PendingForkSessionToken string
@@ -572,6 +573,7 @@ func (c *Coordinator) startTurn(
 		Model:                   settings.model,
 		Effort:                  settings.effort,
 		ServiceTier:             settings.serviceTier,
+		ExecutionMode:           settings.executionMode,
 		PlanMode:                settings.planMode,
 		SessionToken:            derefString(chat.SessionToken),
 		PendingForkSessionToken: derefString(chat.PendingForkSessionToken),
@@ -759,10 +761,11 @@ func (c *Coordinator) emitStateChange(chatID string) {
 }
 
 type resolvedProviderSettings struct {
-	model       string
-	effort      string
-	serviceTier string
-	planMode    bool
+	model         string
+	effort        string
+	serviceTier   string
+	executionMode string
+	planMode      bool
 }
 
 func resolveProvider(requested string, current *string) string {
@@ -790,10 +793,11 @@ func providerSettings(provider string, model string, modelOptions *catalog.Model
 	if entry.ID == "codex" {
 		options := catalog.NormalizeCodexModelOptions(modelOptions, legacyEffort)
 		return resolvedProviderSettings{
-			model:       catalog.NormalizeServerModel(entry.ID, model),
-			effort:      options.ReasoningEffort,
-			serviceTier: catalog.CodexServiceTierFromModelOptions(options),
-			planMode:    entry.SupportsPlanMode && planMode,
+			model:         catalog.NormalizeServerModel(entry.ID, model),
+			effort:        options.ReasoningEffort,
+			serviceTier:   catalog.CodexServiceTierFromModelOptions(options),
+			executionMode: options.ExecutionMode,
+			planMode:      entry.SupportsPlanMode && planMode,
 		}
 	}
 

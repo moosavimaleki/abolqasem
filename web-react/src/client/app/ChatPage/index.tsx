@@ -35,7 +35,7 @@ import { useStickyChatFocus } from "../useStickyChatFocus"
 import { useTerminalToggleAnimation } from "../useTerminalToggleAnimation"
 import type { AbolqasemState } from "../useAbolqasemState"
 import { getNextMeasuredInputHeight, getTranscriptPaddingBottom } from "../useAbolqasemState"
-import type { ChatTranscriptIndexSnapshot, TranscriptIndexItem } from "../../../shared/types"
+import type { ChatTranscriptIndexSnapshot, CodexExecutionMode, TranscriptIndexItem } from "../../../shared/types"
 import { ChatInputDock } from "./ChatInputDock"
 import { ChatTranscriptViewport } from "./ChatTranscriptViewport"
 import { TerminalWorkspaceShell } from "./TerminalWorkspaceShell"
@@ -1533,7 +1533,7 @@ export function ChatPage() {
     }
   }, [dialog, state.activeChatId, state.socket, t.common.cancel, t.common.ok])
 
-  const takeOverCodexLock = useCallback(async () => {
+  const takeOverCodexLock = useCallback(async (executionMode: CodexExecutionMode) => {
     if (!state.activeChatId || !codexLock) return
     const extraWarning = codexLock.otherWritableSessions
       ? ` این process روی ${codexLock.otherWritableSessions} نشست دیگر هم writer دارد و ممکن است آن‌ها نیز قطع شوند.`
@@ -1549,13 +1549,25 @@ export function ChatPage() {
     if (!confirmed) return
     setCodexLockActionPending(true)
     try {
-      await state.socket.command({ type: "chat.takeOverCodexSession", chatId: state.activeChatId, confirm: true })
+      await state.socket.command({ type: "chat.takeOverCodexSession", chatId: state.activeChatId, confirm: true, executionMode })
     } catch (error) {
       await dialog.alert({ title: "گرفتن نشست ناموفق بود", description: error instanceof Error ? error.message : String(error), closeLabel: t.common.ok, dir: "rtl" })
     } finally {
       setCodexLockActionPending(false)
     }
   }, [codexLock, dialog, state.activeChatId, state.socket, t.common.cancel, t.common.ok])
+
+  const changeCodexExecutionMode = useCallback(async (executionMode: CodexExecutionMode) => {
+    if (!state.activeChatId) return
+    setCodexLockActionPending(true)
+    try {
+      await state.socket.command({ type: "chat.setCodexExecutionMode", chatId: state.activeChatId, executionMode })
+    } catch (error) {
+      await dialog.alert({ title: "حالت اجرای Codex تغییر نکرد", description: error instanceof Error ? error.message : String(error), closeLabel: t.common.ok, dir: "rtl" })
+    } finally {
+      setCodexLockActionPending(false)
+    }
+  }, [dialog, state.activeChatId, state.socket, t.common.ok])
 
   useEffect(() => {
     return () => clearShowScrollTimeout()
@@ -1980,8 +1992,9 @@ export function ChatPage() {
           codexLock={codexLock}
           lockBusy={codexLockActionPending}
           onRefreshSessionLock={() => { void refreshCodexLock() }}
-          onTakeOverSession={() => { void takeOverCodexLock() }}
+          onTakeOverSession={(executionMode) => { void takeOverCodexLock(executionMode) }}
           onReleaseSession={() => { void releaseCodexLock() }}
+          onCodexExecutionModeChange={(executionMode) => { void changeCodexExecutionMode(executionMode) }}
           onSubmit={handleChatSubmit}
           onCancel={handleCancel}
         />

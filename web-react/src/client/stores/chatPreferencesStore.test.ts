@@ -188,7 +188,7 @@ describe("chat preference store", () => {
       model: "gpt-5.5",
       modelMode: "auto",
       reasoningEffortMode: "auto",
-      modelOptions: { reasoningEffort: "high", fastMode: false },
+      modelOptions: { reasoningEffort: "high", fastMode: false, executionMode: "dangerous" },
       planMode: false,
     })
   })
@@ -440,13 +440,13 @@ describe("chat preference store", () => {
     expect(useChatPreferencesStore.getState().legacyComposerState).toEqual({
       provider: "codex",
       model: "gpt-5.5",
-      modelOptions: { reasoningEffort: "high", fastMode: false },
+      modelOptions: { reasoningEffort: "high", fastMode: false, executionMode: "dangerous" },
       planMode: false,
     })
     expect(useChatPreferencesStore.getState().getComposerState(NEW_CHAT_COMPOSER_ID)).toEqual({
       provider: "codex",
       model: "gpt-5.5",
-      modelOptions: { reasoningEffort: "high", fastMode: false },
+      modelOptions: { reasoningEffort: "high", fastMode: false, executionMode: "dangerous" },
       planMode: false,
     })
   })

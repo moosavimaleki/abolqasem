@@ -158,6 +158,7 @@ func TestNormalizeCodexModelOptions(t *testing.T) {
 	if got := NormalizeCodexModelOptions(nil, ""); got != (CodexModelOptions{
 		ReasoningEffort: "high",
 		FastMode:        false,
+		ExecutionMode:   "dangerous",
 	}) {
 		t.Fatalf("unexpected default codex options: %#v", got)
 	}
@@ -167,9 +168,10 @@ func TestNormalizeCodexModelOptions(t *testing.T) {
 		Codex: &CodexModelOptionsPatch{
 			ReasoningEffort: "xhigh",
 			FastMode:        &fastMode,
+			ExecutionMode:   "standard",
 		},
 	}, "")
-	if normalized != (CodexModelOptions{ReasoningEffort: "xhigh", FastMode: true}) {
+	if normalized != (CodexModelOptions{ReasoningEffort: "xhigh", FastMode: true, ExecutionMode: "standard"}) {
 		t.Fatalf("unexpected codex options: %#v", normalized)
 	}
 	if got := CodexServiceTierFromModelOptions(normalized); got != "fast" {

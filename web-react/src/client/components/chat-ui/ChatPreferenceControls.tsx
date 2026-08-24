@@ -1,5 +1,5 @@
 import { Fragment, useState, type ComponentType, type SVGProps } from "react"
-import { Box, Brain, Gauge, ListTodo, LockOpen, SquareMenu, SquareMinus } from "lucide-react"
+import { Box, Brain, Gauge, ListTodo, LockOpen, ShieldCheck, ShieldOff, SquareMenu, SquareMinus } from "lucide-react"
 import {
   CLAUDE_CONTEXT_WINDOW_OPTIONS,
   CLAUDE_REASONING_OPTIONS,
@@ -9,6 +9,7 @@ import {
   type ClaudeModelOptions,
   type ClaudeReasoningEffort,
   type CodexModelOptions,
+  type CodexExecutionMode,
   type CodexReasoningEffort,
   type ProviderCatalogEntry,
   supportsClaudeMaxReasoningEffort,
@@ -138,6 +139,7 @@ export type ModelOptionChange =
   | { type: "contextWindow"; contextWindow: ClaudeContextWindow }
   | { type: "codexReasoningEffort"; effort: CodexReasoningEffort }
   | { type: "fastMode"; fastMode: boolean }
+  | { type: "executionMode"; executionMode: CodexExecutionMode }
 
 interface ChatPreferenceControlsProps {
   availableProviders: ProviderCatalogEntry[]
@@ -155,6 +157,7 @@ interface ChatPreferenceControlsProps {
   onModelModeChange?: (mode: "auto" | "manual") => void
   onReasoningEffortModeChange?: (mode: "auto" | "manual") => void
   runtimeMode?: boolean
+  executionModeBusy?: boolean
   onRuntimeShortcut?: (provider: AgentProvider, model: string, effort?: CodexReasoningEffort) => void
   planMode?: boolean
   onPlanModeChange?: (planMode: boolean) => void
@@ -178,6 +181,7 @@ export function ChatPreferenceControls({
   onModelModeChange,
   onReasoningEffortModeChange,
   runtimeMode = false,
+  executionModeBusy = false,
   onRuntimeShortcut,
   planMode = false,
   onPlanModeChange,
@@ -191,6 +195,7 @@ export function ChatPreferenceControls({
   const showPlanMode = includePlanMode && providerConfig?.supportsPlanMode && onPlanModeChange
   const claudeModelOptions = selectedProvider === "claude" ? modelOptions as ClaudeModelOptions : null
   const codexModelOptions = selectedProvider === "codex" ? modelOptions as CodexModelOptions : null
+  const codexExecutionMode = codexModelOptions?.executionMode ?? "dangerous"
   const showReasoningPicker = selectedProvider === "claude" || selectedProvider === "codex"
   const reasoningLabel = selectedProvider === "claude"
     ? CLAUDE_REASONING_OPTIONS.find((effort) => effort.id === claudeModelOptions?.reasoningEffort)?.label ?? claudeModelOptions?.reasoningEffort
@@ -360,6 +365,45 @@ export function ChatPreferenceControls({
                 description={option.id === "1m" ? t.preferences.expandedContextWindow : t.preferences.standardContextWindow}
               />
           ))}
+        </InputPopover>
+      ) : null}
+
+      {selectedProvider === "codex" ? (
+        <InputPopover
+          disabled={executionModeBusy}
+          trigger={(
+            <>
+              {codexExecutionMode === "dangerous"
+                ? <ShieldOff className="h-3.5 w-3.5" />
+                : <ShieldCheck className="h-3.5 w-3.5" />}
+              <span>{codexExecutionMode === "dangerous" ? t.preferences.unrestricted : t.preferences.sandboxed}</span>
+            </>
+          )}
+        >
+          {(close) => (
+            <>
+              <PopoverMenuItem
+                onClick={() => {
+                  onModelOptionChange({ type: "executionMode", executionMode: "standard" })
+                  close()
+                }}
+                selected={codexExecutionMode === "standard"}
+                icon={<ShieldCheck className="h-4 w-4 text-muted-foreground" />}
+                label={t.preferences.sandboxed}
+                description={t.preferences.sandboxedDescription}
+              />
+              <PopoverMenuItem
+                onClick={() => {
+                  onModelOptionChange({ type: "executionMode", executionMode: "dangerous" })
+                  close()
+                }}
+                selected={codexExecutionMode === "dangerous"}
+                icon={<ShieldOff className="h-4 w-4 text-muted-foreground" />}
+                label={t.preferences.unrestricted}
+                description={t.preferences.unrestrictedDescription}
+              />
+            </>
+          )}
         </InputPopover>
       ) : null}
 

@@ -34,6 +34,29 @@ func TestWorkspaceCodexInputsReferenceAttachedTextWithoutInliningIt(t *testing.T
 	}
 }
 
+func TestWorkspaceCodexExecutionPolicy(t *testing.T) {
+	standard := workspaceCodexExecutionPolicyFor("standard")
+	if standard.approvalPolicy != "on-request" || standard.sandbox != "workspace-write" {
+		t.Fatalf("unexpected standard execution policy: %#v", standard)
+	}
+
+	dangerous := workspaceCodexExecutionPolicyFor("dangerous")
+	if dangerous.approvalPolicy != "never" || dangerous.sandbox != "danger-full-access" {
+		t.Fatalf("unexpected dangerous execution policy: %#v", dangerous)
+	}
+
+	if fallback := workspaceCodexExecutionPolicyFor("unknown"); fallback != dangerous {
+		t.Fatalf("unknown execution mode must preserve the existing unrestricted default: %#v", fallback)
+	}
+}
+
+func TestWorkspaceCodexSessionReuseRequiresMatchingExecutionMode(t *testing.T) {
+	session := &workspaceCodexSession{cwd: "/workspace", threadID: "thread", executionMode: "dangerous", process: &workspaceCodexProcess{done: make(chan struct{})}}
+	if session.reusableFor(agent.TurnRequest{LocalPath: "/workspace", ExecutionMode: "standard"}) {
+		t.Fatal("expected execution-mode change to replace the app-server session")
+	}
+}
+
 func TestStartWorkspaceClaudeTurnUsesPendingForkToken(t *testing.T) {
 	binDir := t.TempDir()
 	argsPath := filepath.Join(binDir, "claude.args")

@@ -153,8 +153,12 @@ export const en = {
     fullAccess: "Full Access",
     planMode: "Plan Mode",
     reviewPlanBeforeExecution: "Review a plan before execution",
+    sandboxed: "Sandboxed",
+    sandboxedDescription: "Workspace-write sandbox with approval for sensitive actions",
     standard: "Standard",
     standardContextWindow: "Standard context window",
+    unrestricted: "Unrestricted",
+    unrestrictedDescription: "Equivalent to --dangerously-bypass-approvals-and-sandbox",
   },
   browserPanel: {
     addQuickAction: "Add quick action",

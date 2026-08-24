@@ -70,6 +70,7 @@ type ClaudeModelOptionsPatch struct {
 type CodexModelOptionsPatch struct {
 	ReasoningEffort string `json:"reasoningEffort,omitempty"`
 	FastMode        *bool  `json:"fastMode,omitempty"`
+	ExecutionMode   string `json:"executionMode,omitempty"`
 }
 
 type ClaudeModelOptions struct {
@@ -80,6 +81,7 @@ type ClaudeModelOptions struct {
 type CodexModelOptions struct {
 	ReasoningEffort string `json:"reasoningEffort"`
 	FastMode        bool   `json:"fastMode"`
+	ExecutionMode   string `json:"executionMode"`
 }
 
 const (
@@ -89,6 +91,7 @@ const (
 	CompatibleCodexModel         = "gpt-5.4"
 	MinGPT55CodexCLIVersion      = "0.124.0"
 	DefaultCodexReasoningEffort  = "high"
+	DefaultCodexExecutionMode    = "dangerous"
 	ServiceTierFast              = "fast"
 )
 
@@ -474,10 +477,14 @@ func NormalizeClaudeModelOptions(model string, modelOptions *ModelOptions, legac
 func NormalizeCodexModelOptions(modelOptions *ModelOptions, legacyEffort string) CodexModelOptions {
 	reasoningEffort := ""
 	fastMode := false
+	executionMode := DefaultCodexExecutionMode
 	if modelOptions != nil && modelOptions.Codex != nil {
 		reasoningEffort = modelOptions.Codex.ReasoningEffort
 		if modelOptions.Codex.FastMode != nil {
 			fastMode = *modelOptions.Codex.FastMode
+		}
+		if modelOptions.Codex.ExecutionMode == "standard" || modelOptions.Codex.ExecutionMode == "dangerous" {
+			executionMode = modelOptions.Codex.ExecutionMode
 		}
 	}
 	if !IsCodexReasoningEffort(reasoningEffort) {
@@ -490,6 +497,7 @@ func NormalizeCodexModelOptions(modelOptions *ModelOptions, legacyEffort string)
 	return CodexModelOptions{
 		ReasoningEffort: reasoningEffort,
 		FastMode:        fastMode,
+		ExecutionMode:   executionMode,
 	}
 }
 

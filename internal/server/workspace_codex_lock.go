@@ -67,12 +67,13 @@ func workspaceCodexLockStatus(chat readmodels.ChatRecord) readmodels.CodexLockSt
 	if sessionID == "" {
 		return readmodels.CodexLockStatus{State: codexLockAvailable, Message: "A Codex session will be claimed when the first prompt is sent."}
 	}
-	if workspaceCodexSessions.owns(chat.ID, sessionID) {
+	if executionMode, owned := workspaceCodexSessions.ownedExecutionMode(chat.ID, sessionID); owned {
 		return readmodels.CodexLockStatus{
-			State:      codexLockOwnedByUs,
-			SessionID:  sessionID,
-			CanRelease: true,
-			Message:    "This Abolqasem server owns the Codex session.",
+			State:         codexLockOwnedByUs,
+			SessionID:     sessionID,
+			ExecutionMode: executionMode,
+			CanRelease:    true,
+			Message:       "This Abolqasem server owns the Codex session.",
 		}
 	}
 
@@ -272,6 +273,11 @@ func workspaceReleaseCodexSession(chatID string) (readmodels.CodexLockStatus, er
 }
 
 func workspaceClaimCodexSession(chatID string) (readmodels.CodexLockStatus, error) {
+	return workspaceClaimCodexSessionWithMode(chatID, "dangerous")
+}
+
+func workspaceClaimCodexSessionWithMode(chatID string, executionMode string) (readmodels.CodexLockStatus, error) {
+	executionMode = workspaceCodexExecutionPolicyFor(executionMode).mode
 	chat, err := workspaceChatRequired(chatID)
 	if err != nil {
 		return readmodels.CodexLockStatus{}, err
@@ -291,10 +297,11 @@ func workspaceClaimCodexSession(chatID string) (readmodels.CodexLockStatus, erro
 		return status, err
 	}
 	session, err := workspaceCodexSessions.session(context.Background(), agent.TurnRequest{
-		ChatID:       chat.ID,
-		LocalPath:    project,
-		Provider:     "codex",
-		SessionToken: status.SessionID,
+		ChatID:        chat.ID,
+		LocalPath:     project,
+		Provider:      "codex",
+		SessionToken:  status.SessionID,
+		ExecutionMode: executionMode,
 	})
 	if err != nil {
 		return workspaceCodexLockStatus(chat), err
@@ -303,7 +310,30 @@ func workspaceClaimCodexSession(chatID string) (readmodels.CodexLockStatus, erro
 	return workspaceCodexLockStatus(chat), nil
 }
 
-func workspaceTakeOverCodexSession(chatID string, confirmed bool) (readmodels.CodexLockStatus, error) {
+func workspaceSetCodexExecutionMode(chatID string, executionMode string) (readmodels.CodexLockStatus, error) {
+	if executionMode != "standard" && executionMode != "dangerous" {
+		return readmodels.CodexLockStatus{}, errors.New("invalid Codex execution mode")
+	}
+	chat, err := workspaceChatRequired(chatID)
+	if err != nil {
+		return readmodels.CodexLockStatus{}, err
+	}
+	status := workspaceCodexLockStatus(chat)
+	if status.State != codexLockOwnedByUs {
+		return status, errors.New("this server does not own the Codex session")
+	}
+	if workspaceAgentCoordinator().ActiveStatuses()[chatID] != "" {
+		return status, errors.New("cannot change execution mode while a turn is active")
+	}
+	executionMode = workspaceCodexExecutionPolicyFor(executionMode).mode
+	if status.ExecutionMode == executionMode {
+		return status, nil
+	}
+	workspaceCodexSessions.close(chatID)
+	return workspaceClaimCodexSessionWithMode(chatID, executionMode)
+}
+
+func workspaceTakeOverCodexSession(chatID string, confirmed bool, executionMode string) (readmodels.CodexLockStatus, error) {
 	if !confirmed {
 		return readmodels.CodexLockStatus{}, errors.New("takeover requires explicit confirmation")
 	}
@@ -336,7 +366,7 @@ func workspaceTakeOverCodexSession(chatID string, confirmed bool) (readmodels.Co
 		time.Sleep(100 * time.Millisecond)
 		owners, inspectErr := workspaceCodexWritableOwners(status.SessionPath)
 		if inspectErr == nil && len(owners) == 0 {
-			return workspaceClaimCodexSession(chatID)
+			return workspaceClaimCodexSessionWithMode(chatID, executionMode)
 		}
 	}
 	owners, inspectErr := workspaceCodexWritableOwners(status.SessionPath)
@@ -353,5 +383,5 @@ func workspaceTakeOverCodexSession(chatID string, confirmed bool) (readmodels.Co
 		}
 	}
 	time.Sleep(100 * time.Millisecond)
-	return workspaceClaimCodexSession(chatID)
+	return workspaceClaimCodexSessionWithMode(chatID, executionMode)
 }

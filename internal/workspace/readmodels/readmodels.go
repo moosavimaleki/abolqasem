@@ -121,6 +121,7 @@ type CodexLockStatus struct {
 	OwnerPID              int    `json:"ownerPid,omitempty"`
 	OwnerCommand          string `json:"ownerCommand,omitempty"`
 	OtherWritableSessions int    `json:"otherWritableSessions,omitempty"`
+	ExecutionMode         string `json:"executionMode,omitempty"`
 	CanTakeOver           bool   `json:"canTakeOver"`
 	CanRelease            bool   `json:"canRelease"`
 	Message               string `json:"message,omitempty"`

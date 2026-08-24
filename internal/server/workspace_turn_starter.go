@@ -44,6 +44,7 @@ type workspaceCodexSession struct {
 	chatID          string
 	cwd             string
 	threadID        string
+	executionMode   string
 	process         *workspaceCodexProcess
 	turnMu          sync.Mutex
 	idleDrainCancel context.CancelFunc
@@ -104,10 +105,11 @@ func (m *workspaceCodexSessionManager) session(ctx context.Context, request agen
 		return nil, process.wrapErr(err)
 	}
 	session := &workspaceCodexSession{
-		chatID:   request.ChatID,
-		cwd:      request.LocalPath,
-		threadID: threadID,
-		process:  process,
+		chatID:        request.ChatID,
+		cwd:           request.LocalPath,
+		threadID:      threadID,
+		executionMode: workspaceCodexExecutionPolicyFor(request.ExecutionMode).mode,
+		process:       process,
 	}
 
 	m.mu.Lock()
@@ -143,10 +145,18 @@ func (m *workspaceCodexSessionManager) close(chatID string) {
 }
 
 func (m *workspaceCodexSessionManager) owns(chatID string, threadID string) bool {
+	_, owned := m.ownedExecutionMode(chatID, threadID)
+	return owned
+}
+
+func (m *workspaceCodexSessionManager) ownedExecutionMode(chatID string, threadID string) (string, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	session := m.sessions[chatID]
-	return session != nil && session.process != nil && !session.process.Exited() && session.threadID == threadID
+	if session == nil || session.process == nil || session.process.Exited() || session.threadID != threadID {
+		return "", false
+	}
+	return session.executionMode, true
 }
 
 func (s *workspaceCodexSession) reusableFor(request agent.TurnRequest) bool {
@@ -156,7 +166,20 @@ func (s *workspaceCodexSession) reusableFor(request agent.TurnRequest) bool {
 	if request.PendingForkSessionToken != "" {
 		return false
 	}
-	return s.cwd == request.LocalPath && s.threadID != ""
+	return s.cwd == request.LocalPath && s.threadID != "" && s.executionMode == workspaceCodexExecutionPolicyFor(request.ExecutionMode).mode
+}
+
+type workspaceCodexExecutionPolicy struct {
+	mode           string
+	approvalPolicy string
+	sandbox        string
+}
+
+func workspaceCodexExecutionPolicyFor(mode string) workspaceCodexExecutionPolicy {
+	if mode == "standard" {
+		return workspaceCodexExecutionPolicy{mode: "standard", approvalPolicy: "on-request", sandbox: "workspace-write"}
+	}
+	return workspaceCodexExecutionPolicy{mode: "dangerous", approvalPolicy: "never", sandbox: "danger-full-access"}
 }
 
 func (s *workspaceCodexSession) close() {
@@ -502,8 +525,9 @@ func (p *workspaceCodexProcess) Initialize(ctx context.Context) error {
 }
 
 func (p *workspaceCodexProcess) OpenThread(ctx context.Context, request agent.TurnRequest) (string, error) {
-	approvalPolicy := "never"
-	sandbox := "danger-full-access"
+	executionPolicy := workspaceCodexExecutionPolicyFor(request.ExecutionMode)
+	approvalPolicy := executionPolicy.approvalPolicy
+	sandbox := executionPolicy.sandbox
 	persistExtendedHistory := false
 	model := optionalWorkspaceString(request.Model)
 	cwd := optionalWorkspaceString(request.LocalPath)
@@ -565,7 +589,7 @@ func (p *workspaceCodexProcess) StartTurn(ctx context.Context, threadID string, 
 	model := optionalWorkspaceString(request.Model)
 	effort := optionalWorkspaceString(request.Effort)
 	serviceTier := optionalWorkspaceString(request.ServiceTier)
-	approvalPolicy := "never"
+	approvalPolicy := workspaceCodexExecutionPolicyFor(request.ExecutionMode).approvalPolicy
 	mode := "default"
 	if request.PlanMode {
 		mode = "plan"

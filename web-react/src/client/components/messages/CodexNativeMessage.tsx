@@ -119,7 +119,8 @@ function DiffBody({ change }: { change: CodexFileUpdateChange }) {
 }
 
 export function CodexFileChangeMessage({ message }: { message: FileChangeMessage }) {
-  const [expanded, setExpanded] = useState(true)
+  const [expanded, setExpanded] = useState(false)
+  const detailsId = useId()
   const [selected, setSelected] = useState<CodexFileUpdateChange | null>(null)
   const totals = useMemo(() => message.changes.reduce((sum, change) => {
     const count = diffCounts(change.diff || "")
@@ -128,7 +129,7 @@ export function CodexFileChangeMessage({ message }: { message: FileChangeMessage
   return (
     <>
       <div className="my-2 overflow-hidden rounded-xl border border-white/10 bg-zinc-950/60 text-xs">
-        <button type="button" onClick={() => setExpanded((value) => !value)} className="flex w-full items-center gap-2 bg-zinc-800/80 px-3 py-2 text-left">
+        <button type="button" aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded((value) => !value)} className="flex w-full items-center gap-2 bg-zinc-800/80 px-3 py-2 text-left">
           <FileCode2 className="size-4 text-sky-400" />
           <span className="font-medium text-zinc-200">{message.changes.length} files changed</span>
           <span className="text-emerald-400">+{totals.additions}</span>
@@ -136,7 +137,7 @@ export function CodexFileChangeMessage({ message }: { message: FileChangeMessage
           <span className="ml-auto text-zinc-500">{message.status}</span>
           {expanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
         </button>
-        {expanded ? <div className="divide-y divide-white/10">{message.changes.map((change) => {
+        {expanded ? <div id={detailsId} className="divide-y divide-white/10">{message.changes.map((change) => {
           const counts = diffCounts(change.diff || "")
           const targetPath = change.movedToPath || change.path
           const targetLine = firstChangedLine(change.diff || "")

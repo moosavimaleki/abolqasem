@@ -1,5 +1,5 @@
 import { memo, type RefObject } from "react"
-import type { AgentProvider, CodexLockStatus, ModelOptions } from "../../../shared/types"
+import type { AgentProvider, CodexExecutionMode, CodexLockStatus, ModelOptions } from "../../../shared/types"
 import { ChatInput, type ChatInputHandle } from "../../components/chat-ui/ChatInput"
 import type { ContextWindowSnapshot } from "../../lib/contextWindow"
 import type { AbolqasemState } from "../useAbolqasemState"
@@ -22,9 +22,10 @@ interface ChatInputDockProps {
   readOnly?: boolean
   codexLock?: CodexLockStatus | null
   lockBusy?: boolean
-  onTakeOverSession?: () => void
+  onTakeOverSession?: (executionMode: CodexExecutionMode) => void
   onReleaseSession?: () => void
   onRefreshSessionLock?: () => void
+  onCodexExecutionModeChange?: (executionMode: CodexExecutionMode) => void
   onSubmit: AbolqasemState["handleSend"]
   onRuntimePreferenceChange?: (preference: { provider: AgentProvider; model: string; modelOptions: ModelOptions }) => Promise<void>
   onCancel: () => void
@@ -51,6 +52,7 @@ export const ChatInputDock = memo(function ChatInputDock({
   onTakeOverSession,
   onReleaseSession,
   onRefreshSessionLock,
+  onCodexExecutionModeChange,
   onSubmit,
   onRuntimePreferenceChange,
   onCancel,
@@ -80,6 +82,7 @@ export const ChatInputDock = memo(function ChatInputDock({
           onTakeOverSession={onTakeOverSession}
           onReleaseSession={onReleaseSession}
           onRefreshSessionLock={onRefreshSessionLock}
+          onCodexExecutionModeChange={onCodexExecutionModeChange}
           previousPrompt={previousPrompt}
           onJumpToPreviousUserPrompt={onJumpToPreviousUserPrompt}
         />

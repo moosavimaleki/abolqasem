@@ -7,6 +7,7 @@ import type {
   ChatDiffSnapshot,
   ChatHistoryPage,
   ChatSnapshot,
+  CodexExecutionMode,
   DiffCommitMode,
   KeybindingsSnapshot,
   LlmProviderSnapshot,
@@ -148,7 +149,8 @@ export type ClientCommand =
   | { type: "chat.refresh"; chatId: string }
   | { type: "chat.claimCodexSession"; chatId: string }
   | { type: "chat.releaseCodexSession"; chatId: string }
-  | { type: "chat.takeOverCodexSession"; chatId: string; confirm: boolean }
+  | { type: "chat.takeOverCodexSession"; chatId: string; confirm: boolean; executionMode?: CodexExecutionMode }
+  | { type: "chat.setCodexExecutionMode"; chatId: string; executionMode: CodexExecutionMode }
   | {
       type: "chat.send"
       chatId?: string

@@ -173,12 +173,14 @@ describe("ChatInput", () => {
       })
     ))
 
-    expect(html).toContain('placeholder="Locked by another Codex"')
+    expect(html).toContain('placeholder="Build something..."')
     expect(html).toContain('textarea')
     expect(html).toContain('disabled=""')
     expect(html).toContain('aria-label="Take over session"')
     expect(html).toContain('title="Take over session"')
-    expect(html).toContain("Locked by another Codex")
+    expect(html).not.toContain(">Locked by another Codex<")
+    expect(html).not.toContain("bg-amber")
+    expect(html).not.toContain("text-amber")
   })
 
   test("renders a compact releasable lock control beside model preferences when we own the session", () => {
@@ -200,9 +202,10 @@ describe("ChatInput", () => {
       })
     ))
 
-    expect(html).toContain("Locked by us")
+    expect(html).not.toContain(">Locked by us<")
     expect(html).toContain('title="Release session"')
-    expect(html).toContain('aria-label="Locked by us. Release session"')
+    expect(html).toContain('aria-label="Release session"')
     expect(html).not.toContain("This session is owned by Abolqasem")
+    expect(html).not.toContain("text-emerald")
   })
 })

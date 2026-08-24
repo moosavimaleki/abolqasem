@@ -3615,6 +3615,8 @@ export function SettingsPage() {
                               handleProviderDefaultModelOptionsChange("codex", { reasoningEffort: change.effort })
                             } else if (change.type === "fastMode") {
                               handleProviderDefaultModelOptionsChange("codex", { fastMode: change.fastMode })
+                            } else if (change.type === "executionMode") {
+                              handleProviderDefaultModelOptionsChange("codex", { executionMode: change.executionMode })
                             }
                           }}
                           planMode={providerDefaults.codex.planMode}

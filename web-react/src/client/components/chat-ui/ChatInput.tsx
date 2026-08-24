@@ -1,10 +1,11 @@
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react"
-import { ArrowUp, LoaderCircle, LockKeyhole, Paperclip, RefreshCw } from "lucide-react"
+import { ArrowUp, LoaderCircle, LockKeyhole, LockKeyholeOpen, Paperclip, RefreshCw } from "lucide-react"
 import {
   type AgentProvider,
   type ChatAttachment,
   type ClaudeContextWindow,
   type ClaudeReasoningEffort,
+  type CodexExecutionMode,
   type CodexLockStatus,
   type CodexReasoningEffort,
   type ModelOptions,
@@ -140,9 +141,10 @@ interface Props {
   readOnly?: boolean
   codexLock?: CodexLockStatus | null
   lockBusy?: boolean
-  onTakeOverSession?: () => void
+  onTakeOverSession?: (executionMode: CodexExecutionMode) => void
   onReleaseSession?: () => void
   onRefreshSessionLock?: () => void
+  onCodexExecutionModeChange?: (executionMode: CodexExecutionMode) => void
   previousPrompt?: string | null
   onJumpToPreviousUserPrompt?: () => void | Promise<void>
 }
@@ -216,6 +218,7 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
   onTakeOverSession,
   onReleaseSession,
   onRefreshSessionLock,
+  onCodexExecutionModeChange,
   previousPrompt = null,
   onJumpToPreviousUserPrompt,
 }, forwardedRef) {
@@ -279,13 +282,15 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const isLockedElsewhere = codexLock?.state === "owned_elsewhere"
   const isLockUnknown = codexLock?.state === "unknown"
   const isOwnedByUs = codexLock?.state === "owned_by_us"
+  const selectedCodexExecutionMode = providerPrefs.provider === "codex"
+    ? providerPrefs.modelOptions.executionMode ?? "dangerous"
+    : "dangerous"
+  const effectiveCodexExecutionMode = isOwnedByUs && codexLock?.executionMode
+    ? codexLock.executionMode
+    : selectedCodexExecutionMode
   const lockActionLabel = isLockedElsewhere ? t.composer.takeOverSession : t.composer.checkSessionLock
   const effectiveLockActionLabel = lockBusy ? t.composer.checkingSessionLock : lockActionLabel
-  const lockedPlaceholder = isLockedElsewhere
-    ? t.composer.lockedElsewhere
-    : isLockUnknown
-      ? t.composer.sessionLockUnknown
-      : t.composer.buildSomething
+  const lockedPlaceholder = t.composer.buildSomething
   const orderedAttachments = [...attachments].sort((left, right) => {
     if (left.kind === right.kind) return 0
     return left.kind === "image" ? -1 : 1
@@ -868,7 +873,7 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
           <div className={cn(
             "flex items-end max-w-[840px] mx-auto border dark:bg-card/40 backdrop-blur-lg rounded-[29px] px-1.5 transition-colors duration-200",
-            readOnly ? "border-amber-500/45 bg-amber-500/[0.035]" : "border-border",
+            "border-border",
           )}>
             <label
               aria-label={t.composer.addAttachment}
@@ -919,7 +924,7 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 onPointerDown={(event) => {
                   event.preventDefault()
                   if (lockBusy) return
-                  if (isLockedElsewhere) onTakeOverSession?.()
+                  if (isLockedElsewhere) onTakeOverSession?.(selectedCodexExecutionMode)
                   else onRefreshSessionLock?.()
                 }}
                 disabled={lockBusy || (isLockedElsewhere ? !codexLock?.canTakeOver || !onTakeOverSession : !onRefreshSessionLock)}
@@ -927,7 +932,7 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 aria-label={effectiveLockActionLabel}
                 title={effectiveLockActionLabel}
                 className={cn(
-                  "h-10 w-10 flex-shrink-0 cursor-pointer rounded-full bg-amber-500 text-amber-950 touch-manipulation hover:bg-amber-400 disabled:cursor-not-allowed disabled:bg-amber-500/25 disabled:text-amber-100/50 md:h-11 md:w-11",
+                  "h-10 w-10 flex-shrink-0 cursor-pointer rounded-full bg-muted text-muted-foreground touch-manipulation hover:bg-muted/80 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 md:h-11 md:w-11",
                   isRtl ? "mb-1 -ml-0.5 md:mb-1.5 md:ml-0" : "mb-1 -mr-0.5 md:mb-1.5 md:mr-0",
                 )}
               >
@@ -991,16 +996,19 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   disabled={lockBusy || !codexLock.canRelease || !onReleaseSession}
                   onClick={onReleaseSession}
                   title={t.composer.releaseSession}
-                  aria-label={`${t.composer.sessionOwnedByUs}. ${t.composer.releaseSession}`}
-                  className="mx-1 h-8 shrink-0 cursor-pointer gap-1.5 rounded-full px-2.5 text-xs text-emerald-600 hover:bg-emerald-500/10 hover:text-emerald-500 disabled:cursor-not-allowed dark:text-emerald-400"
+                  aria-label={t.composer.releaseSession}
+                  className="mx-1 h-8 w-8 shrink-0 cursor-pointer rounded-md p-0 text-muted-foreground hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed"
                 >
                   {lockBusy ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <LockKeyhole className="h-3.5 w-3.5" aria-hidden="true" />}
-                  <span>{t.composer.sessionOwnedByUs}</span>
                 </Button>
               ) : (
-                <span className="mx-1 inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs text-amber-600 dark:text-amber-400" role="status">
-                  <LockKeyhole className="h-3.5 w-3.5" aria-hidden="true" />
-                  {isLockedElsewhere ? t.composer.lockedElsewhere : t.composer.sessionLockUnknown}
+                <span
+                  className="mx-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground"
+                  role="img"
+                  aria-label={isLockedElsewhere ? t.composer.lockedElsewhere : t.composer.sessionLockUnknown}
+                  title={isLockedElsewhere ? t.composer.lockedElsewhere : t.composer.sessionLockUnknown}
+                >
+                  {isLockedElsewhere ? <LockKeyholeOpen className="h-3.5 w-3.5" aria-hidden="true" /> : <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />}
                 </span>
               )
             ) : null}
@@ -1010,7 +1018,9 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
               providerLocked={providerLocked}
               showCodexCliRequirementHints
               model={providerPrefs.model}
-              modelOptions={providerPrefs.modelOptions}
+              modelOptions={providerPrefs.provider === "codex"
+                ? { ...providerPrefs.modelOptions, executionMode: effectiveCodexExecutionMode }
+                : providerPrefs.modelOptions}
               onProviderChange={(provider) => {
                 if (providerLocked) return
                 resetChatComposerFromProvider(composerChatId, provider)
@@ -1068,9 +1078,25 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
                         : { ...state, modelOptions: { ...state.modelOptions, fastMode: change.fastMode } }
                     )
                     break
+                  case "executionMode":
+                    if (providerLocked && providerPrefs.provider === "codex") {
+                      applyRuntimeComposerState({
+                        ...providerPrefs,
+                        modelOptions: { ...providerPrefs.modelOptions, executionMode: change.executionMode },
+                      })
+                      onCodexExecutionModeChange?.(change.executionMode)
+                      break
+                    }
+                    updateComposerState(
+                      (state) => state.provider !== "codex"
+                        ? state
+                        : { ...state, modelOptions: { ...state.modelOptions, executionMode: change.executionMode } }
+                    )
+                    break
                 }
               }}
               runtimeMode={providerLocked}
+              executionModeBusy={isOwnedByUs && (lockBusy || Boolean(canCancel))}
               onRuntimeShortcut={(provider, model, effort) => {
                 if (providerPrefs.provider !== provider) return
                 if (provider === "codex" && providerPrefs.provider === "codex" && effort) {

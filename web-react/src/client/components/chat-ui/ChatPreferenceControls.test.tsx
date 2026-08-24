@@ -12,7 +12,7 @@ describe("ChatPreferenceControls", () => {
           availableProviders={PROVIDERS}
           selectedProvider="codex"
           model="gpt-5.3-codex"
-          modelOptions={{ reasoningEffort: "xhigh", fastMode: true }}
+          modelOptions={{ reasoningEffort: "xhigh", fastMode: true, executionMode: "dangerous" }}
           onProviderChange={() => {}}
           onModelChange={() => {}}
           onModelOptionChange={() => {}}
@@ -25,6 +25,7 @@ describe("ChatPreferenceControls", () => {
     expect(html).toContain("GPT-5.3 Codex")
     expect(html).toContain("XHigh")
     expect(html).toContain("Fast Mode")
+    expect(html).toContain("Unrestricted")
     expect(html).not.toContain("Plan Mode")
   })
 
@@ -73,5 +74,23 @@ describe("ChatPreferenceControls", () => {
 
     expect(html).toContain("Automatic: GPT-5.5")
     expect(html).toContain("Automatic: High")
+  })
+
+  test("shows the selected sandboxed Codex execution mode", () => {
+    const html = renderToStaticMarkup(
+      <I18nProvider locale="en">
+        <ChatPreferenceControls
+          availableProviders={PROVIDERS}
+          selectedProvider="codex"
+          model="gpt-5.5"
+          modelOptions={{ reasoningEffort: "high", fastMode: false, executionMode: "standard" }}
+          onModelChange={() => {}}
+          onModelOptionChange={() => {}}
+        />
+      </I18nProvider>
+    )
+
+    expect(html).toContain("Sandboxed")
+    expect(html).not.toContain(">Unrestricted<")
   })
 })

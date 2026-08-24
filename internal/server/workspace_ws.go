@@ -653,14 +653,32 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 		return &response
 	case protocol.CommandChatTakeOverCodexSession:
 		var payload struct {
-			ChatID  string `json:"chatId"`
-			Confirm bool   `json:"confirm"`
+			ChatID        string `json:"chatId"`
+			Confirm       bool   `json:"confirm"`
+			ExecutionMode string `json:"executionMode"`
 		}
 		if err := json.Unmarshal(envelope.Command, &payload); err != nil {
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
 		}
-		status, err := workspaceTakeOverCodexSession(payload.ChatID, payload.Confirm)
+		status, err := workspaceTakeOverCodexSession(payload.ChatID, payload.Confirm, payload.ExecutionMode)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		workspaceConnections.broadcast(payload.ChatID)
+		response := protocol.AckEnvelope(envelope.ID, status)
+		return &response
+	case protocol.CommandChatSetCodexExecutionMode:
+		var payload struct {
+			ChatID        string `json:"chatId"`
+			ExecutionMode string `json:"executionMode"`
+		}
+		if err := json.Unmarshal(envelope.Command, &payload); err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		status, err := workspaceSetCodexExecutionMode(payload.ChatID, payload.ExecutionMode)
 		if err != nil {
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
