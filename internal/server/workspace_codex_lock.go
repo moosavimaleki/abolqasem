@@ -167,12 +167,20 @@ func workspaceCodexWritableOwners(sessionPath string) ([]workspaceCodexLockOwner
 	output, err := exec.Command("lsof", "-nP", "-Fpcfa", "--", sessionPath).Output()
 	if err != nil {
 		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) && len(exitErr.Stderr) == 0 {
-			return nil, nil
+		if errors.As(err, &exitErr) && workspaceCodexLsofExitMeansNoMatch(exitErr.ExitCode()) {
+			// lsof uses exit code 1 when the selected path has no open files.
+			// It may still print unrelated mount warnings (for example Docker
+			// namespaces) to stderr, which must not turn an unlocked chat into
+			// an unknown session-owner state.
+			return workspaceCodexWritableOwnerRecords(string(output)), nil
 		}
 		return nil, err
 	}
 	return workspaceCodexWritableOwnerRecords(string(output)), nil
+}
+
+func workspaceCodexLsofExitMeansNoMatch(exitCode int) bool {
+	return exitCode == 1
 }
 
 func workspaceCodexWritableOwnerRecords(output string) []workspaceCodexLockOwner {

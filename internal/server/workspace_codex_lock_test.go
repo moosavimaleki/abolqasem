@@ -20,3 +20,12 @@ func TestWorkspaceCodexWritableOwnerRecordsIgnoresReadOnlyAccess(t *testing.T) {
 		t.Fatalf("expected no writable owner, got %#v", owners)
 	}
 }
+
+func TestWorkspaceCodexLsofExitMeansNoMatch(t *testing.T) {
+	if !workspaceCodexLsofExitMeansNoMatch(1) {
+		t.Fatal("expected lsof exit code 1 to mean no matching open files")
+	}
+	if workspaceCodexLsofExitMeansNoMatch(2) {
+		t.Fatal("unexpected non-no-match lsof exit code")
+	}
+}
