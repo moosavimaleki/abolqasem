@@ -38,6 +38,40 @@ func TestImportLegacySessionCodexCurrentFormatSkipsInternalAndImageBlocks(t *tes
 	}
 }
 
+func TestImportLegacySessionCodexCustomExecAsCommandExecution(t *testing.T) {
+	root := t.TempDir()
+	transcriptPath := filepath.Join(root, "codex-custom-exec.jsonl")
+	body := strings.Join([]string{
+		`{"timestamp":"2026-08-24T12:23:00.756Z","type":"response_item","payload":{"type":"custom_tool_call","call_id":"call_2UlvN95bZTPPJwl0c0cMtOmo","name":"exec","input":"const r = await tools.exec_command({cmd:\"rtk rg -l --hidden --glob '!.git/**' 'سلام' .\",workdir:\"/home/h-mousavi/Projects/Hamed/aistudio-api\",yield_time_ms:10000,max_output_tokens:2000}); text(r.output);"}}`,
+		`{"timestamp":"2026-08-24T12:23:00.927Z","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"call_2UlvN95bZTPPJwl0c0cMtOmo","output":[{"type":"input_text","text":"Script completed\nWall time 0.2 seconds\nOutput:\n"},{"type":"input_text","text":"./examples/text_basic.py\n./artifacts/nct/026-introduction.md\n"}]}}`,
+	}, "\n")
+	if err := os.WriteFile(transcriptPath, []byte(body), 0o644); err != nil {
+		t.Fatalf("write transcript: %v", err)
+	}
+
+	result, err := ImportLegacySession(state.SessionMeta{Agent: "codex", SessionID: "codex-custom-exec", TranscriptPath: transcriptPath})
+	if err != nil {
+		t.Fatalf("ImportLegacySession returned error: %v", err)
+	}
+	if len(result.Entries) != 2 {
+		t.Fatalf("expected command start and completion entries, got %d: %#v", len(result.Entries), result.Entries)
+	}
+	started := result.Entries[0]
+	if transcript.Kind(started) != transcript.KindCommandExecution || started["itemId"] != "call_2UlvN95bZTPPJwl0c0cMtOmo" {
+		t.Fatalf("unexpected command start entry: %#v", started)
+	}
+	if started["command"] != `rtk rg -l --hidden --glob '!.git/**' 'سلام' .` || started["cwd"] != "/home/h-mousavi/Projects/Hamed/aistudio-api" || started["status"] != "inProgress" {
+		t.Fatalf("command details were not extracted: %#v", started)
+	}
+	completed := result.Entries[1]
+	if transcript.Kind(completed) != transcript.KindCommandExecution || completed["itemId"] != started["itemId"] || completed["status"] != "completed" {
+		t.Fatalf("unexpected command completion entry: %#v", completed)
+	}
+	if !strings.Contains(stringValue(completed["aggregatedOutput"]), "./examples/text_basic.py") {
+		t.Fatalf("expected command output, got %#v", completed)
+	}
+}
+
 func TestImportLegacySessionClaudeDerivesTitleAndPreservesToolBlocks(t *testing.T) {
 	root := t.TempDir()
 	transcriptPath := filepath.Join(root, "1efa1ee2-3f6f-4093-9e3f-cd1e7fa3a699.jsonl")

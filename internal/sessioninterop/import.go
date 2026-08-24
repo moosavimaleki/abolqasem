@@ -7,6 +7,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -69,6 +71,7 @@ func importEntries(agent string, sessionID string, transcriptPath string) ([]rea
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 	entries := make([]readmodels.TranscriptEntry, 0, 128)
+	codexCustomCommands := make(map[string]struct{})
 	index := 0
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -85,7 +88,7 @@ func importEntries(agent string, sessionID string, transcriptPath string) ([]rea
 		case "claude":
 			chunk = importClaudeLine(sessionID, raw, index)
 		case "codex":
-			chunk = importCodexLine(sessionID, raw, index)
+			chunk = importCodexLine(sessionID, raw, index, codexCustomCommands)
 		}
 		entries = append(entries, chunk...)
 	}
@@ -193,7 +196,7 @@ func importClaudeAssistantContent(sessionID string, role string, content any, cr
 	return entries
 }
 
-func importCodexLine(sessionID string, raw map[string]any, index int) []readmodels.TranscriptEntry {
+func importCodexLine(sessionID string, raw map[string]any, index int, customCommands map[string]struct{}) []readmodels.TranscriptEntry {
 	typeName := stringValue(raw["type"])
 	payload := mapValue(raw["payload"])
 	createdAt := parseUnixMilli(raw["timestamp"])
@@ -223,6 +226,42 @@ func importCodexLine(sessionID string, raw map[string]any, index int) []readmode
 		}
 	case "response_item":
 		switch stringValue(payload["type"]) {
+		case "custom_tool_call":
+			if !strings.EqualFold(strings.TrimSpace(stringValue(payload["name"])), "exec") {
+				return nil
+			}
+			command, cwd, ok := extractCodexExecCommand(stringValue(payload["input"]))
+			if !ok {
+				return nil
+			}
+			itemID := firstNonEmptyString(stringValue(payload["call_id"]), stringValue(payload["id"]), fmt.Sprintf("codex-custom-command-%s-%d", sessionID, index))
+			customCommands[itemID] = struct{}{}
+			return []readmodels.TranscriptEntry{newEntryAt(transcript.KindCommandExecution, map[string]any{
+				"_id":       fmt.Sprintf("codex-command-start-%s-%d", sessionID, index),
+				"createdAt": float64(createdAt),
+				"itemId":    itemID,
+				"command":   command,
+				"cwd":       cwd,
+				"status":    "inProgress",
+			})}
+		case "custom_tool_call_output":
+			itemID := firstNonEmptyString(stringValue(payload["call_id"]), stringValue(payload["id"]))
+			if _, ok := customCommands[itemID]; !ok {
+				return nil
+			}
+			output := flattenUnknown(firstNonNil(payload["output"], payload["content"]))
+			status, exitCode, hasExitCode := codexCommandCompletion(output)
+			fields := map[string]any{
+				"_id":              fmt.Sprintf("codex-command-result-%s-%d", sessionID, index),
+				"createdAt":        float64(createdAt),
+				"itemId":           itemID,
+				"status":           status,
+				"aggregatedOutput": output,
+			}
+			if hasExitCode {
+				fields["exitCode"] = float64(exitCode)
+			}
+			return []readmodels.TranscriptEntry{newEntryAt(transcript.KindCommandExecution, fields)}
 		case "function_call":
 			toolName := stringValue(payload["name"])
 			input := parseJSONStringOrRaw(stringValue(payload["arguments"]))
@@ -277,6 +316,70 @@ func importCodexLine(sessionID string, raw map[string]any, index int) []readmode
 		}
 	}
 	return nil
+}
+
+var codexExecCommandFieldPattern = regexp.MustCompile(`(?:^|[,\{]\s*)["']?cmd["']?\s*:\s*("(?:\\.|[^"\\])*")`)
+var codexExecWorkdirFieldPattern = regexp.MustCompile(`(?:^|[,\{]\s*)["']?workdir["']?\s*:\s*("(?:\\.|[^"\\])*")`)
+var codexExitCodePattern = regexp.MustCompile(`(?i)(?:exited with code|exit(?:ed)? code\s*[:=]?)\s*(-?[0-9]+)`)
+
+func extractCodexExecCommand(input string) (string, string, bool) {
+	const marker = "tools.exec_command("
+	commands := make([]string, 0, 1)
+	workdirs := make([]string, 0, 1)
+	for remaining := input; ; {
+		markerIndex := strings.Index(remaining, marker)
+		if markerIndex < 0 {
+			break
+		}
+		remaining = remaining[markerIndex+len(marker):]
+		segment := remaining
+		if nextIndex := strings.Index(segment, marker); nextIndex >= 0 {
+			segment = segment[:nextIndex]
+		}
+		command := extractCodexJSONStringField(segment, codexExecCommandFieldPattern)
+		if strings.TrimSpace(command) != "" {
+			commands = append(commands, command)
+			workdirs = append(workdirs, extractCodexJSONStringField(segment, codexExecWorkdirFieldPattern))
+		}
+	}
+	if len(commands) == 0 {
+		return "", "", false
+	}
+	cwd := workdirs[0]
+	for _, workdir := range workdirs[1:] {
+		if workdir != cwd {
+			cwd = ""
+			break
+		}
+	}
+	return strings.Join(commands, "\n"), cwd, true
+}
+
+func extractCodexJSONStringField(input string, pattern *regexp.Regexp) string {
+	match := pattern.FindStringSubmatch(input)
+	if len(match) != 2 {
+		return ""
+	}
+	var value string
+	if err := json.Unmarshal([]byte(match[1]), &value); err != nil {
+		return ""
+	}
+	return value
+}
+
+func codexCommandCompletion(output string) (string, int, bool) {
+	if match := codexExitCodePattern.FindStringSubmatch(output); len(match) == 2 {
+		if exitCode, err := strconv.Atoi(match[1]); err == nil {
+			if exitCode == 0 {
+				return "completed", exitCode, true
+			}
+			return "failed", exitCode, true
+		}
+	}
+	if strings.Contains(output, "Script completed") {
+		return "completed", 0, true
+	}
+	return "completed", 0, false
 }
 
 func dedupeAdjacentTranscriptEntries(entries []readmodels.TranscriptEntry) []readmodels.TranscriptEntry {
