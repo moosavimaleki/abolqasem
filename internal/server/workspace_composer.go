@@ -222,10 +222,9 @@ func (s *workspaceEventStore) CreateChatWithOptions(projectID string, provider s
 	provider = strings.TrimSpace(provider)
 	tmuxCommand = strings.TrimSpace(tmuxCommand)
 	data := map[string]any{
-		"chatId":      chatID,
-		"projectId":   project.ID,
-		"title":       title,
-		"tmuxSession": workspaceChatTmuxSession(chatID),
+		"chatId":    chatID,
+		"projectId": project.ID,
+		"title":     title,
 	}
 	if provider != "" {
 		data["provider"] = provider
@@ -245,7 +244,6 @@ func (s *workspaceEventStore) CreateChatWithOptions(projectID string, provider s
 		ProjectID:   project.ID,
 		Title:       title,
 		Provider:    optionalString(provider),
-		TmuxSession: workspaceChatTmuxSession(chatID),
 		TmuxCommand: tmuxCommand,
 		CreatedAt:   now,
 		UpdatedAt:   now,
@@ -325,6 +323,20 @@ func (s *workspaceEventStore) RecordCheckpointBeforeUserPrompt(chatID string, co
 		return err
 	}
 	workspaceConnections.broadcastProjectGit(record.ProjectID)
+	return nil
+}
+
+func (s *workspaceEventStore) RecordCheckpointTurnBoundary(chatID string, threadID string, turnID string) error {
+	records := workspaceReadCheckpointRecords()
+	for index := len(records) - 1; index >= 0; index-- {
+		record := records[index]
+		if record.ChatID != chatID || record.Trigger != workspaceCheckpointTriggerPrompt || record.BoundaryTurnID != "" {
+			continue
+		}
+		record.BoundaryThreadID = threadID
+		record.BoundaryTurnID = turnID
+		return workspaceWriteCheckpointRecord(record)
+	}
 	return nil
 }
 

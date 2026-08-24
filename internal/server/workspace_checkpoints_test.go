@@ -121,52 +121,6 @@ func TestWorkspaceCoordinatorCreatesCheckpointBeforePrompt(t *testing.T) {
 	}
 }
 
-func TestWorkspaceCheckpointForTmuxChatSkipsTranscriptSnapshot(t *testing.T) {
-	withWorkspaceComposerStore(t)
-	project, err := workspaceOpenProject(t.TempDir(), "Project")
-	if err != nil {
-		t.Fatal(err)
-	}
-	chat, err := workspaceCreateChat(project.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if chat.TmuxSession == "" {
-		t.Fatalf("expected tmux chat, got %#v", chat)
-	}
-	if err := os.WriteFile(filepath.Join(workspaceDataDir(), "messages.jsonl"), []byte("{bad json\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	checkpoint, err := workspaceCreateCheckpoint(workspaceCreateCheckpointArgs{
-		ChatID:        chat.ID,
-		Trigger:       workspaceCheckpointTriggerPrompt,
-		PromptPreview: "tmux prompt",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if checkpoint.ChatSnapshotPath != "" || checkpoint.ChatMessageCount != 0 || len(checkpoint.ChatMessageIDs) != 0 {
-		t.Fatalf("expected tmux checkpoint to store only metadata/code, got %#v", checkpoint)
-	}
-	if _, err := os.Stat(workspaceCheckpointMessagesPath(checkpoint.ID)); !os.IsNotExist(err) {
-		t.Fatalf("expected no transcript snapshot file, stat err=%v", err)
-	}
-
-	command, _ := json.Marshal(map[string]any{
-		"chatId":       chat.ID,
-		"checkpointId": checkpoint.ID,
-		"mode":         workspaceCheckpointModeChat,
-	})
-	result, _, err := workspaceRestoreCheckpoint(command)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.ChatRestored {
-		t.Fatalf("expected metadata-only checkpoint restore to skip chat transcript restore, got %#v", result)
-	}
-}
-
 func TestWorkspaceFilesystemCheckpointSkipsLocalToolingDirs(t *testing.T) {
 	projectDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(projectDir, "keep.txt"), []byte("keep"), 0o644); err != nil {

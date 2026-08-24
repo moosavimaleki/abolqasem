@@ -64,8 +64,8 @@ func TestWorkspaceComposerCreatesChatAndSendsPrompt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("workspaceCreateChat returned error: %v", err)
 	}
-	if chat.TmuxSession != workspaceChatTmuxSession(chat.ID) {
-		t.Fatalf("expected chat tmux session %q, got %q", workspaceChatTmuxSession(chat.ID), chat.TmuxSession)
+	if chat.TmuxSession != "" {
+		t.Fatalf("new app-server chat must not create a tmux session, got %q", chat.TmuxSession)
 	}
 	result, err := workspaceAgentCoordinator().Send(context.Background(), agent.SendCommand{
 		ChatID:   chat.ID,
@@ -88,8 +88,8 @@ func TestWorkspaceComposerCreatesChatAndSendsPrompt(t *testing.T) {
 	if snapshot.Runtime.Provider == nil || *snapshot.Runtime.Provider != "codex" {
 		t.Fatalf("expected codex provider, got %#v", snapshot.Runtime.Provider)
 	}
-	if snapshot.Runtime.TmuxSession != chat.TmuxSession {
-		t.Fatalf("expected snapshot tmux session %q, got %q", chat.TmuxSession, snapshot.Runtime.TmuxSession)
+	if snapshot.Runtime.TmuxSession != "" {
+		t.Fatalf("snapshot must not expose an active tmux runtime, got %q", snapshot.Runtime.TmuxSession)
 	}
 	if len(snapshot.Messages) != 0 {
 		t.Fatalf("expected tmux chat to avoid eventstore transcript, got %#v", snapshot.Messages)

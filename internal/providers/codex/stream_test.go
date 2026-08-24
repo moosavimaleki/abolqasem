@@ -171,6 +171,36 @@ func TestStreamNormalizerMapsCompaction(t *testing.T) {
 	}
 }
 
+func TestStreamNormalizerMapsFileChanges(t *testing.T) {
+	normalizer := NewStreamNormalizer()
+	started := normalizer.HandleNotification(notification("item/started", map[string]any{
+		"item": map[string]any{
+			"type":    "fileChange",
+			"id":      "file-1",
+			"changes": []any{map[string]any{"path": "internal/server/main.go", "kind": "update"}},
+		},
+	}))
+	if len(started) != 1 || started[0].Entry["kind"] != "tool_call" {
+		t.Fatalf("unexpected started events: %#v", started)
+	}
+	tool := started[0].Entry["tool"].(map[string]any)
+	if tool["toolName"] != "Codex file changes" || tool["toolId"] != "file-1" {
+		t.Fatalf("unexpected file-change tool: %#v", tool)
+	}
+
+	completed := normalizer.HandleNotification(notification("item/completed", map[string]any{
+		"item": map[string]any{
+			"type":    "fileChange",
+			"id":      "file-1",
+			"status":  "completed",
+			"changes": []any{map[string]any{"path": "internal/server/main.go", "kind": "update"}},
+		},
+	}))
+	if len(completed) != 1 || completed[0].Entry["kind"] != "tool_result" || completed[0].Entry["toolId"] != "file-1" {
+		t.Fatalf("unexpected completed events: %#v", completed)
+	}
+}
+
 func notification(method string, params any) codexrpc.Notification {
 	data, err := json.Marshal(params)
 	if err != nil {

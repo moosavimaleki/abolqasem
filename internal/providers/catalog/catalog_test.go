@@ -73,52 +73,6 @@ func TestServerProvidersUsesAbolqasemDefaultForSupportedCodexCLI(t *testing.T) {
 	}
 }
 
-func TestServerProvidersExposeGemini(t *testing.T) {
-	gemini, ok := Get("gemini")
-	if !ok {
-		t.Fatal("expected gemini provider")
-	}
-	if gemini.DefaultModel == "" || len(gemini.Models) == 0 {
-		t.Fatalf("expected gemini defaults, got %#v", gemini)
-	}
-}
-
-func TestServerProvidersWithInventoryUsesEditableCatalogModels(t *testing.T) {
-	withCodexRuntimeProbe(t, CodexRuntimeInfo{})
-
-	providers := ServerProvidersWithInventory(ProviderModelInventoryByProvider{
-		"gemini": {
-			CatalogModels: []ProviderModelOption{
-				{ID: "gemini-custom-a", Label: "Custom A"},
-				{ID: "gemini-custom-b", Label: "Custom B"},
-			},
-			DiscoveredModels: []ProviderModelOption{
-				{ID: "gemini-discovered", Label: "Discovered"},
-			},
-			CustomModels: []ProviderModelOption{
-				{ID: "gemini-extra", Label: "Extra"},
-			},
-		},
-	})
-
-	var gemini ProviderCatalogEntry
-	for _, provider := range providers {
-		if provider.ID == "gemini" {
-			gemini = provider
-			break
-		}
-	}
-	expected := []string{"gemini-custom-a", "gemini-custom-b", "gemini-extra"}
-	if len(gemini.Models) != len(expected) {
-		t.Fatalf("expected models %#v, got %#v", expected, gemini.Models)
-	}
-	for index := range expected {
-		if gemini.Models[index].ID != expected[index] {
-			t.Fatalf("expected models %#v, got %#v", expected, gemini.Models)
-		}
-	}
-}
-
 func TestServerProvidersWithInventoryUsesDiscoveredModelsAfterCatalogReset(t *testing.T) {
 	withCodexRuntimeProbe(t, CodexRuntimeInfo{})
 
@@ -155,9 +109,6 @@ func TestNormalizeModelUsesAliasesAndSafeFallback(t *testing.T) {
 	}
 	if got := NormalizeModel("unknown", "missing"); got != "gpt-5.5" {
 		t.Fatalf("expected safe static codex fallback, got %q", got)
-	}
-	if got := NormalizeModel("gemini", "gemini-custom-pro"); got != "gemini-custom-pro" {
-		t.Fatalf("expected custom gemini model passthrough, got %q", got)
 	}
 }
 

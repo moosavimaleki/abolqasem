@@ -38,6 +38,7 @@ import type { AbolqasemState } from "../useAbolqasemState"
 import { getNextMeasuredInputHeight, getTranscriptPaddingBottom } from "../useAbolqasemState"
 import type { AgentProvider, ChatTranscriptIndexSnapshot, ModelOptions, TranscriptIndexItem } from "../../../shared/types"
 import { ChatInputDock } from "./ChatInputDock"
+import { CodexSessionLockNotice } from "./CodexSessionLockNotice"
 import { ChatTranscriptViewport } from "./ChatTranscriptViewport"
 import { TerminalWorkspaceShell } from "./TerminalWorkspaceShell"
 import {
@@ -918,10 +919,13 @@ export function ChatPage() {
   const [projectFilePreview, setProjectFilePreview] = useState<FilePreviewResponse | null>(null)
   const [projectFilePreviewLoading, setProjectFilePreviewLoading] = useState(false)
   const [projectFilePreviewError, setProjectFilePreviewError] = useState<string | null>(null)
+  const [codexLockActionPending, setCodexLockActionPending] = useState(false)
   const projectPreviewRootRef = useRef<HTMLDivElement | null>(null)
   const showEmptyState = state.messages.length === 0 && state.runtime?.title === "New Chat"
   const transcriptTailVersion = useMemo(() => getTranscriptTailVersion(state.messages), [state.messages])
   const projectId = state.activeProjectId
+  const codexLock = state.runtime?.provider === "codex" ? state.runtime.codexLock : undefined
+  const codexChatReadOnly = codexLock?.state === "owned_elsewhere" || codexLock?.state === "unknown"
   const projectTerminalLayout = useTerminalLayoutStore((store) => (projectId ? store.projects[projectId] : undefined))
   const terminalLayout = projectTerminalLayout ?? DEFAULT_PROJECT_TERMINAL_LAYOUT
   const projectRightSidebarVisibility = useRightSidebarStore((store) => (projectId ? store.projects[projectId] : undefined))
@@ -1540,6 +1544,68 @@ export function ChatPage() {
     await state.handleSend(content, options)
   }, [scrollToTranscriptEnd, state])
 
+  const refreshCodexLock = useCallback(async () => {
+    if (!state.activeChatId) return
+    setCodexLockActionPending(true)
+    try {
+      await state.socket.command({ type: "chat.refresh", chatId: state.activeChatId })
+    } catch (error) {
+      await dialog.alert({
+        title: "بررسی نشست ناموفق بود",
+        description: error instanceof Error ? error.message : String(error),
+        closeLabel: t.common.ok,
+        dir: "rtl",
+      })
+    } finally {
+      setCodexLockActionPending(false)
+    }
+  }, [dialog, state.activeChatId, state.socket, t.common.ok])
+
+  const releaseCodexLock = useCallback(async () => {
+    if (!state.activeChatId) return
+    const confirmed = await dialog.confirm({
+      title: "آزاد کردن نشست Codex؟",
+      description: "Abolqasem از app-server این نشست خارج می‌شود. پس از آن، Codex دیگری می‌تواند آن را باز کند.",
+      confirmLabel: "آزاد کن",
+      cancelLabel: t.common.cancel,
+      confirmVariant: "secondary",
+      dir: "rtl",
+    })
+    if (!confirmed) return
+    setCodexLockActionPending(true)
+    try {
+      await state.socket.command({ type: "chat.releaseCodexSession", chatId: state.activeChatId })
+    } catch (error) {
+      await dialog.alert({ title: "نشست آزاد نشد", description: error instanceof Error ? error.message : String(error), closeLabel: t.common.ok, dir: "rtl" })
+    } finally {
+      setCodexLockActionPending(false)
+    }
+  }, [dialog, state.activeChatId, state.socket, t.common.cancel, t.common.ok])
+
+  const takeOverCodexLock = useCallback(async () => {
+    if (!state.activeChatId || !codexLock) return
+    const extraWarning = codexLock.otherWritableSessions
+      ? ` این process روی ${codexLock.otherWritableSessions} نشست دیگر هم writer دارد و ممکن است آن‌ها نیز قطع شوند.`
+      : ""
+    const confirmed = await dialog.confirm({
+      title: "گرفتن نشست Codex؟",
+      description: `process مالک (PID ${codexLock.ownerPid ?? "نامشخص"}) ابتدا با SIGTERM و فقط در صورت باقی‌ماندن writer با SIGKILL متوقف می‌شود؛ سپس Abolqasem نشست را claim می‌کند.${extraWarning}`,
+      confirmLabel: "گرفتن نشست",
+      cancelLabel: t.common.cancel,
+      confirmVariant: "destructive",
+      dir: "rtl",
+    })
+    if (!confirmed) return
+    setCodexLockActionPending(true)
+    try {
+      await state.socket.command({ type: "chat.takeOverCodexSession", chatId: state.activeChatId, confirm: true })
+    } catch (error) {
+      await dialog.alert({ title: "گرفتن نشست ناموفق بود", description: error instanceof Error ? error.message : String(error), closeLabel: t.common.ok, dir: "rtl" })
+    } finally {
+      setCodexLockActionPending(false)
+    }
+  }, [codexLock, dialog, state.activeChatId, state.socket, t.common.cancel, t.common.ok])
+
   useEffect(() => {
     return () => clearShowScrollTimeout()
   }, [clearShowScrollTimeout])
@@ -1983,7 +2049,17 @@ export function ChatPage() {
         )}
       </CardContent>
 
-      {showChatTmuxTerminal ? null : (
+      {codexLock ? (
+        <CodexSessionLockNotice
+          lock={codexLock}
+          busy={codexLockActionPending}
+          onRefresh={() => { void refreshCodexLock() }}
+          onTakeOver={() => { void takeOverCodexLock() }}
+          onRelease={() => { void releaseCodexLock() }}
+        />
+      ) : null}
+
+      {showChatTmuxTerminal || codexChatReadOnly ? null : (
         <ChatInputDock
           inputRef={inputRef}
           onLayoutChange={syncInputHeight}

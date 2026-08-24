@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	codexprotocol "abolqasem/internal/providers/codex/protocol"
+	"abolqasem/internal/workspace/agent"
 	"abolqasem/internal/workspace/gitservice"
 	"abolqasem/internal/workspace/readmodels"
 )
@@ -50,6 +52,9 @@ type workspaceCheckpointRecord struct {
 	ChatMessageCount int                          `json:"chatMessageCount,omitempty"`
 	ChatSnapshotPath string                       `json:"chatSnapshotPath,omitempty"`
 	FileModes        map[string]uint32            `json:"fileModes,omitempty"`
+	BoundaryThreadID string                       `json:"boundaryThreadId,omitempty"`
+	BoundaryTurnID   string                       `json:"boundaryTurnId,omitempty"`
+	RecoveryThreadID string                       `json:"recoveryThreadId,omitempty"`
 }
 
 type workspaceCheckpointSummary struct {
@@ -234,6 +239,9 @@ func workspaceRestoreCheckpoint(raw json.RawMessage) (workspaceCheckpointRestore
 	if mode == workspaceCheckpointModeChat || mode == workspaceCheckpointModeBoth {
 		restored, err := workspaceRestoreCheckpointChat(record)
 		if err != nil {
+			if codeResult != nil && codeResult.OK {
+				_, _ = workspaceRestoreCheckpointCode(safety)
+			}
 			return workspaceCheckpointRestoreResult{}, "", err
 		}
 		chatRestored = restored
@@ -266,7 +274,50 @@ func workspaceRestoreCheckpointCode(record workspaceCheckpointRecord) (gitservic
 }
 
 func workspaceRestoreCheckpointChat(record workspaceCheckpointRecord) (bool, error) {
-	return false, nil
+	chat, project, err := workspaceChatProjectRequired(record.ChatID)
+	if err != nil {
+		return false, err
+	}
+	if derefWorkspaceString(chat.Provider) != "codex" {
+		// Claude has no matching durable-history mutation in its CLI protocol.
+		return false, nil
+	}
+	if record.BoundaryThreadID == "" || record.BoundaryTurnID == "" {
+		return false, errors.New("checkpoint predates app-server turn boundaries and cannot restore Codex chat history")
+	}
+	if _, err := workspaceClaimCodexSession(chat.ID); err != nil {
+		return false, err
+	}
+	session, err := workspaceCodexSessions.session(context.Background(), agent.TurnRequest{
+		ChatID:       chat.ID,
+		Provider:     "codex",
+		LocalPath:    project.LocalPath,
+		SessionToken: record.BoundaryThreadID,
+	})
+	if err != nil {
+		return false, err
+	}
+	session.stopIdleDrain()
+	defer session.startIdleDrain()
+
+	var fork codexprotocol.ThreadForkResponse
+	if err := session.process.client.Call(context.Background(), "thread/fork", codexprotocol.ThreadForkParams{
+		ThreadID: record.BoundaryThreadID,
+	}, &fork); err != nil {
+		return false, session.process.wrapErr(err)
+	}
+	var result any
+	if err := session.process.client.Call(context.Background(), "thread/revert", codexprotocol.ThreadRevertParams{
+		ThreadID:     record.BoundaryThreadID,
+		BeforeTurnID: record.BoundaryTurnID,
+	}, &result); err != nil {
+		return false, session.process.wrapErr(err)
+	}
+	record.RecoveryThreadID = fork.Thread.ID
+	if err := workspaceWriteCheckpointRecord(record); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func workspaceCheckpointSummaryFromRecord(record workspaceCheckpointRecord) workspaceCheckpointSummary {

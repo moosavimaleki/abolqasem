@@ -3,7 +3,6 @@ package server
 import (
 	"abolqasem/internal/appinfo"
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -142,6 +141,13 @@ func (m *workspaceCodexSessionManager) close(chatID string) {
 	}
 }
 
+func (m *workspaceCodexSessionManager) owns(chatID string, threadID string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	session := m.sessions[chatID]
+	return session != nil && session.process != nil && !session.process.Exited() && session.threadID == threadID
+}
+
 func (s *workspaceCodexSession) reusableFor(request agent.TurnRequest) bool {
 	if s == nil || s.process == nil || s.process.Exited() {
 		return false
@@ -210,8 +216,6 @@ func (s *workspaceTurnStarter) StartTurn(ctx context.Context, request agent.Turn
 		return startWorkspaceCodexTurn(ctx, request), nil
 	case "claude":
 		return startWorkspaceClaudeTurn(ctx, request), nil
-	case "gemini":
-		return startWorkspaceGeminiTurn(ctx, request), nil
 	default:
 		return nil, fmt.Errorf("unsupported provider: %s", request.Provider)
 	}
@@ -330,77 +334,6 @@ func startWorkspaceClaudeTurn(parent context.Context, request agent.TurnRequest)
 	return turn
 }
 
-func startWorkspaceGeminiTurn(parent context.Context, request agent.TurnRequest) agent.Turn {
-	ctx, cancel := context.WithCancel(parent)
-	turn := &workspaceAsyncTurn{
-		cancel: func() error {
-			cancel()
-			return nil
-		},
-		events:        make(chan agent.TurnEvent, 32),
-		toolResponses: map[string]chan workspaceToolResponse{},
-	}
-	go func() {
-		defer close(turn.events)
-		started := time.Now()
-		approvalMode := "yolo"
-		if request.PlanMode {
-			approvalMode = "plan"
-		}
-		args := []string{
-			"--prompt", workspacePromptText(request.Content, request.Attachments),
-			"--output-format", "text",
-			"--approval-mode", approvalMode,
-			"--skip-trust",
-		}
-		if strings.TrimSpace(request.SessionToken) != "" {
-			args = append(args, "--resume", request.SessionToken)
-		}
-		if strings.TrimSpace(request.Model) != "" {
-			args = append(args, "--model", request.Model)
-		}
-		cmd := exec.CommandContext(ctx, "gemini", args...)
-		cmd.Env = state.CurrentProviderProxyEnvWithOverrides(request.Env)
-		if request.LocalPath != "" {
-			cmd.Dir = request.LocalPath
-		}
-		var stdout bytes.Buffer
-		var stderr bytes.Buffer
-		cmd.Stdout = &stdout
-		cmd.Stderr = &stderr
-		if err := cmd.Run(); err != nil {
-			if ctx.Err() != nil {
-				turn.events <- agent.TurnEvent{Type: agent.TurnEventCancelled}
-				return
-			}
-			message := strings.TrimSpace(stderr.String())
-			if message == "" {
-				message = err.Error()
-			}
-			turn.events <- agent.TurnEvent{Type: agent.TurnEventFailed, Message: message}
-			return
-		}
-		output := strings.TrimSpace(stdout.String())
-		if output != "" {
-			turn.events <- agent.TurnEvent{
-				Type:  agent.TurnEventTranscript,
-				Entry: transcript.New(transcript.KindAssistantText, map[string]any{"text": output}),
-			}
-		}
-		turn.events <- agent.TurnEvent{
-			Type: agent.TurnEventTranscript,
-			Entry: transcript.New(transcript.KindResult, map[string]any{
-				"subtype":    "success",
-				"isError":    false,
-				"durationMs": float64(time.Since(started).Milliseconds()),
-				"result":     "gemini completed",
-			}),
-		}
-		turn.events <- agent.TurnEvent{Type: agent.TurnEventFinished}
-	}()
-	return turn
-}
-
 func startWorkspaceCodexTurn(parent context.Context, request agent.TurnRequest) agent.Turn {
 	ctx, cancel := context.WithCancel(parent)
 	turn := &workspaceAsyncTurn{
@@ -439,6 +372,7 @@ func runWorkspaceCodexTurn(ctx context.Context, turnCancel context.CancelFunc, r
 		turn.events <- agent.TurnEvent{Type: agent.TurnEventFailed, Error: process.wrapErr(err)}
 		return
 	}
+	turn.events <- agent.TurnEvent{Type: agent.TurnEventStarted, SessionToken: threadID, TurnID: turnID}
 	turn.setCancel(func() error {
 		cancelCtx, timeoutCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer timeoutCancel()

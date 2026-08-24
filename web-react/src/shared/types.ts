@@ -1286,6 +1286,21 @@ export interface ChatRuntime {
   nativeTranscriptPath?: string
   parentChatId?: string
   lastSummary?: string
+  codexLock?: CodexLockStatus
+}
+
+export type CodexLockState = "available" | "owned_by_us" | "owned_elsewhere" | "unknown"
+
+export interface CodexLockStatus {
+  state: CodexLockState
+  sessionId?: string
+  sessionPath?: string
+  ownerPid?: number
+  ownerCommand?: string
+  otherWritableSessions?: number
+  canTakeOver: boolean
+  canRelease: boolean
+  message?: string
 }
 
 export type TranscriptIndexRole = "user" | "assistant" | "system" | "tool"

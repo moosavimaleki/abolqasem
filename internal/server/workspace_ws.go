@@ -518,13 +518,8 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 			}
 			command.ChatID = chatID
 		}
-		if result, handled, err := workspaceSendTmuxChat(command); handled {
-			if err != nil {
-				response := protocol.ErrorEnvelope(envelope.ID, err.Error())
-				return &response
-			}
-			workspaceConnections.broadcast(result.ChatID)
-			response := protocol.AckEnvelope(envelope.ID, result)
+		if err := workspaceEnsureCodexChatWritable(command.ChatID); err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
 		}
 		result, err := workspaceAgentCoordinator().Send(context.Background(), command)
@@ -581,14 +576,9 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
 		}
-		if handled, err := workspaceCancelTmuxChat(chatID); err != nil {
+		if err := workspaceAgentCoordinator().Cancel(chatID); err != nil {
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
-		} else if !handled {
-			if err := workspaceAgentCoordinator().Cancel(chatID); err != nil {
-				response := protocol.ErrorEnvelope(envelope.ID, err.Error())
-				return &response
-			}
 		}
 		workspaceConnections.broadcast(chatID)
 		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
@@ -627,6 +617,51 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 		}
 		workspaceConnections.broadcast(chatID)
 		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
+		return &response
+	case protocol.CommandChatClaimCodexSession:
+		chatID, err := decodeChatID(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		status, err := workspaceClaimCodexSession(chatID)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		workspaceConnections.broadcast(chatID)
+		response := protocol.AckEnvelope(envelope.ID, status)
+		return &response
+	case protocol.CommandChatReleaseCodexSession:
+		chatID, err := decodeChatID(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		status, err := workspaceReleaseCodexSession(chatID)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		workspaceConnections.broadcast(chatID)
+		response := protocol.AckEnvelope(envelope.ID, status)
+		return &response
+	case protocol.CommandChatTakeOverCodexSession:
+		var payload struct {
+			ChatID  string `json:"chatId"`
+			Confirm bool   `json:"confirm"`
+		}
+		if err := json.Unmarshal(envelope.Command, &payload); err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		status, err := workspaceTakeOverCodexSession(payload.ChatID, payload.Confirm)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		workspaceConnections.broadcast(payload.ChatID)
+		response := protocol.AckEnvelope(envelope.ID, status)
 		return &response
 	case protocol.CommandChatRestartTmux:
 		command, err := decodeRestartTmuxCommand(envelope.Command)

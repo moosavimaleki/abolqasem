@@ -179,19 +179,6 @@ exit /b 1
 		t.Fatalf("expected claude env override, got %#v", lines)
 	}
 
-	geminiTurn := startWorkspaceGeminiTurn(context.Background(), agent.TurnRequest{
-		Content: "hello",
-		Env: []string{
-			"GEMINI_CLI_HOME=" + filepath.Join(home, "isolated-gemini"),
-		},
-	})
-	if events := drainWorkspaceTurnEvents(geminiTurn); !hasTurnEvent(events, agent.TurnEventFinished, "") {
-		t.Fatalf("expected finished gemini turn, got %#v", events)
-	}
-	if lines := readArgsFile(t, geminiEnvFile); len(lines) != 1 || lines[0] != filepath.Join(home, "isolated-gemini") {
-		t.Fatalf("expected gemini env override, got %#v", lines)
-	}
-
 	process, err := startWorkspaceCodexProcess(context.Background(), t.TempDir(), []string{
 		"CODEX_HOME=" + filepath.Join(home, "isolated-codex", ".codex"),
 	})

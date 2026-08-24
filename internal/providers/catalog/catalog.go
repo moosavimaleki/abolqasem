@@ -599,25 +599,6 @@ var serverProviders = []ProviderCatalogEntry{
 		},
 		Efforts: []ProviderEffortOption{},
 	},
-	{
-		ID:               "gemini",
-		Label:            "Gemini",
-		DefaultModel:     DefaultGeminiModel,
-		SupportsPlanMode: true,
-		Models: []ProviderModelOption{
-			{ID: "auto", Label: "Auto", SupportsEffort: false},
-			{ID: "gemini-3.1-pro-preview", Label: "Gemini 3.1 Pro Preview", SupportsEffort: false},
-			{ID: "gemini-3.1-flash-lite-preview", Label: "Gemini 3.1 Flash Lite Preview", SupportsEffort: false},
-			{ID: "gemini-3-pro-preview", Label: "Gemini 3 Pro Preview", SupportsEffort: false},
-			{ID: "gemini-3-flash-preview", Label: "Gemini 3 Flash Preview", SupportsEffort: false},
-			{ID: "gemini-2.5-pro", Label: "Gemini 2.5 Pro", SupportsEffort: false},
-			{ID: "gemini-2.5-flash", Label: "Gemini 2.5 Flash", SupportsEffort: false},
-			{ID: "gemini-2.5-flash-lite", Label: "Gemini 2.5 Flash Lite", SupportsEffort: false},
-			{ID: "gemma-4-31b-it", Label: "gemma-4-31b-it", SupportsEffort: false},
-			{ID: "gemma-4-26b-a4b-it", Label: "gemma-4-26b-a4b-it", SupportsEffort: false},
-		},
-		Efforts: []ProviderEffortOption{},
-	},
 }
 
 func modelAliasMatches(providerID string, modelID string, alias string) bool {

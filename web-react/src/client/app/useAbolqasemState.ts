@@ -40,6 +40,7 @@ function sameRuntime(left: ChatSnapshot["runtime"] | null | undefined, right: Ch
     && left.tmuxActive === right.tmuxActive
     && left.readOnly === right.readOnly
     && left.legacySessionKey === right.legacySessionKey
+    && JSON.stringify(left.codexLock) === JSON.stringify(right.codexLock)
 }
 
 function sameTranscriptEntries(left: ChatSnapshot["messages"] | null | undefined, right: ChatSnapshot["messages"] | null | undefined) {

@@ -56,23 +56,3 @@ func TestDiscoverClaudeModelsUsesGatewayModelsWhenOptedIn(t *testing.T) {
 		t.Fatalf("unexpected gateway models: %#v", models)
 	}
 }
-
-func TestDiscoverGeminiModelsUsesSourceCatalogWithoutAPI(t *testing.T) {
-	t.Setenv("GEMINI_API_KEY", "")
-	t.Setenv("GOOGLE_API_KEY", "")
-
-	models, err := discoverGeminiModels(context.Background())
-	if err != nil {
-		t.Fatalf("expected source catalog models, got error: %v", err)
-	}
-	for _, modelID := range []string{
-		"auto",
-		"gemini-3.1-pro-preview",
-		"gemini-3.1-flash-lite-preview",
-		"gemini-2.5-flash-lite",
-	} {
-		if !hasProviderModel(models, modelID) {
-			t.Fatalf("expected Gemini source catalog model %q, got %#v", modelID, models)
-		}
-	}
-}

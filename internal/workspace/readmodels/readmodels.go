@@ -108,6 +108,22 @@ type ChatRuntime struct {
 	NativeTranscriptPath    string          `json:"nativeTranscriptPath,omitempty"`
 	ParentChatID            string          `json:"parentChatId,omitempty"`
 	LastSummary             string          `json:"lastSummary,omitempty"`
+	CodexLock               CodexLockStatus `json:"codexLock"`
+}
+
+// CodexLockStatus describes whether this server can safely write to a Codex
+// thread. It is deliberately separate from a turn status: a thread can be
+// idle while another Codex process still owns its durable session writer.
+type CodexLockStatus struct {
+	State                 string `json:"state"`
+	SessionID             string `json:"sessionId,omitempty"`
+	SessionPath           string `json:"sessionPath,omitempty"`
+	OwnerPID              int    `json:"ownerPid,omitempty"`
+	OwnerCommand          string `json:"ownerCommand,omitempty"`
+	OtherWritableSessions int    `json:"otherWritableSessions,omitempty"`
+	CanTakeOver           bool   `json:"canTakeOver"`
+	CanRelease            bool   `json:"canRelease"`
+	Message               string `json:"message,omitempty"`
 }
 
 type ChatHistorySnapshot struct {

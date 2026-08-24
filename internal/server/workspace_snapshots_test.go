@@ -126,35 +126,6 @@ func TestWorkspaceChatSnapshotSkipsMessageReplayForEmptyTmuxChat(t *testing.T) {
 	}
 }
 
-func TestWorkspaceChatSnapshotIgnoresStoredMessagesForTmuxChat(t *testing.T) {
-	store := withWorkspaceSnapshotStore(t)
-	appendWorkspaceEvent(t, store, events.StreamProjects, events.TypeProjectOpened, 100, map[string]any{
-		"projectId": "project-1",
-		"localPath": "/tmp/project",
-		"title":     "Project",
-	})
-	appendWorkspaceEvent(t, store, events.StreamChats, events.TypeChatCreated, 200, map[string]any{
-		"chatId":      "chat-1",
-		"projectId":   "project-1",
-		"title":       "Chat",
-		"tmuxSession": "abolqasem-chat-1",
-	})
-	appendWorkspaceEvent(t, store, events.StreamMessages, events.TypeMessageAppended, 300, map[string]any{
-		"chatId": "chat-1",
-		"entry": readmodels.TranscriptEntry{
-			"_id":       "old-message",
-			"kind":      transcript.KindAssistantText,
-			"createdAt": float64(300),
-			"text":      "old eventstore text",
-		},
-	})
-
-	snapshot := workspaceChatSnapshot("chat-1", 200).(*readmodels.ChatSnapshot)
-	if len(snapshot.Messages) != 0 {
-		t.Fatalf("expected tmux snapshot to ignore stored messages, got %#v", snapshot.Messages)
-	}
-}
-
 func TestWorkspaceChatSnapshotPrefersNativeTranscriptForTmuxChat(t *testing.T) {
 	store := withWorkspaceSnapshotStore(t)
 	nativePath := filepath.Join(t.TempDir(), "native.jsonl")

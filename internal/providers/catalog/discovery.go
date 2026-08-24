@@ -22,7 +22,7 @@ type providerModelDiscovery struct {
 }
 
 func DiscoverProviderModelInventory(ctx context.Context) ProviderModelInventoryByProvider {
-	providers := []string{"claude", "codex", "gemini"}
+	providers := []string{"claude", "codex"}
 	out := ProviderModelInventoryByProvider{}
 	var mu sync.Mutex
 	var wg sync.WaitGroup
@@ -60,8 +60,6 @@ func discoverProviderModels(ctx context.Context, provider string) providerModelD
 		models, err = discoverClaudeModels(ctx)
 	case "codex":
 		models, err = discoverCodexModels(ctx)
-	case "gemini":
-		models, err = discoverGeminiModels(ctx)
 	default:
 		err = fmt.Errorf("unsupported provider: %s", provider)
 	}
@@ -113,21 +111,6 @@ func discoverClaudeModels(ctx context.Context) ([]ProviderModelOption, error) {
 	}
 
 	return sourceProviderModels("claude"), nil
-}
-
-func discoverGeminiModels(ctx context.Context) ([]ProviderModelOption, error) {
-	if apiKey := firstEnv("GEMINI_API_KEY", "GOOGLE_API_KEY"); apiKey != "" {
-		models, err := discoverGeminiAPIModels(ctx, apiKey)
-		if len(models) > 0 {
-			return models, nil
-		}
-		if err != nil {
-			return nil, fmt.Errorf("Gemini API: %w", err)
-		}
-		return nil, errors.New("Gemini API returned no models")
-	}
-
-	return sourceProviderModels("gemini"), nil
 }
 
 func discoverAnthropicAPIModels(ctx context.Context, apiKey string) ([]ProviderModelOption, error) {

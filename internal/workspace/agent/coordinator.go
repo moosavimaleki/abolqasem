@@ -66,6 +66,10 @@ type CheckpointRecorder interface {
 	RecordCheckpointBeforeUserPrompt(chatID string, content string, attachments []readmodels.ChatAttachment, steered bool) error
 }
 
+type CheckpointTurnBinder interface {
+	RecordCheckpointTurnBoundary(chatID string, threadID string, turnID string) error
+}
+
 type TurnStarterFunc func(ctx context.Context, request TurnRequest) (Turn, error)
 
 func (fn TurnStarterFunc) StartTurn(ctx context.Context, request TurnRequest) (Turn, error) {
@@ -168,6 +172,7 @@ type TurnEventKind string
 const (
 	TurnEventTranscript   TurnEventKind = "transcript"
 	TurnEventSessionToken TurnEventKind = "session_token"
+	TurnEventStarted      TurnEventKind = "turn_started"
 	TurnEventPendingTool  TurnEventKind = "pending_tool"
 	TurnEventDraining     TurnEventKind = "draining"
 	TurnEventFinished     TurnEventKind = "finished"
@@ -179,6 +184,7 @@ type TurnEvent struct {
 	Type         TurnEventKind
 	Entry        readmodels.TranscriptEntry
 	SessionToken string
+	TurnID       string
 	PendingTool  *PendingToolRequest
 	Draining     bool
 	Error        error
@@ -565,6 +571,13 @@ func (c *Coordinator) handleTurnEvent(chatID string, active *ActiveTurn, event T
 				return true
 			}
 			c.emitStateChange(chatID)
+		}
+	case TurnEventStarted:
+		if binder, ok := c.store.(CheckpointTurnBinder); ok && event.SessionToken != "" && event.TurnID != "" {
+			if err := binder.RecordCheckpointTurnBoundary(chatID, event.SessionToken, event.TurnID); err != nil {
+				_ = c.failFromProvider(chatID, active, err)
+				return true
+			}
 		}
 	case TurnEventPendingTool:
 		if event.PendingTool != nil {

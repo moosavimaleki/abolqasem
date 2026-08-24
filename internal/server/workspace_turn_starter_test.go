@@ -12,38 +12,6 @@ import (
 	"abolqasem/internal/workspace/agent"
 )
 
-func TestStartWorkspaceGeminiTurnPassesResumeToken(t *testing.T) {
-	binDir := t.TempDir()
-	argsPath := filepath.Join(binDir, "gemini.args")
-	writeFakeExecutable(t, filepath.Join(binDir, "gemini"), fmt.Sprintf(`#!/bin/sh
-printf '%%s\n' "$@" > %q
-echo gemini-output
-`, argsPath), fmt.Sprintf(`@echo off
-type nul > "%s"
-:args
-if "%%~1"=="" goto done
->> "%s" echo %%~1
-shift /1
-goto args
-:done
-echo gemini-output
-`, argsPath, argsPath))
-	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
-
-	turn := startWorkspaceGeminiTurn(context.Background(), agent.TurnRequest{
-		Content:      "continue",
-		SessionToken: "gemini-session-1",
-	})
-	events := drainWorkspaceTurnEvents(turn)
-	if !hasTurnEvent(events, agent.TurnEventFinished, "") {
-		t.Fatalf("expected finished event, got %#v", events)
-	}
-	args := readArgsFile(t, argsPath)
-	if !containsArgSequence(args, "--resume", "gemini-session-1") {
-		t.Fatalf("expected gemini --resume args, got %#v", args)
-	}
-}
-
 func TestStartWorkspaceClaudeTurnUsesPendingForkToken(t *testing.T) {
 	binDir := t.TempDir()
 	argsPath := filepath.Join(binDir, "claude.args")

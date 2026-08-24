@@ -61,6 +61,11 @@ type ThreadStartResponse struct {
 type ThreadResumeResponse = ThreadStartResponse
 type ThreadForkResponse = ThreadStartResponse
 
+type ThreadRevertParams struct {
+	ThreadID     string `json:"threadId"`
+	BeforeTurnID string `json:"beforeTurnId"`
+}
+
 type TextUserInput struct {
 	Type         string   `json:"type"`
 	Text         string   `json:"text"`

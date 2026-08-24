@@ -84,6 +84,21 @@ func itemStartedEvents(raw json.RawMessage) []HarnessEvent {
 				},
 			}),
 		}}
+	case "fileChange":
+		return []HarnessEvent{{
+			Type: "transcript",
+			Entry: transcript.New(transcript.KindToolCall, map[string]any{
+				"tool": map[string]any{
+					"kind":     "tool",
+					"toolKind": "unknown_tool",
+					"toolName": "Codex file changes",
+					"toolId":   asString(params.Item["id"]),
+					"input": map[string]any{
+						"changes": params.Item["changes"],
+					},
+				},
+			}),
+		}}
 	default:
 		return nil
 	}
@@ -113,6 +128,15 @@ func itemCompletedEvents(raw json.RawMessage) []HarnessEvent {
 				"toolId":  asString(params.Item["id"]),
 				"content": asString(params.Item["aggregatedOutput"]),
 				"isError": asFloat(params.Item["exitCode"]) != 0,
+			}),
+		}}
+	case "fileChange":
+		return []HarnessEvent{{
+			Type: "transcript",
+			Entry: transcript.New(transcript.KindToolResult, map[string]any{
+				"toolId":  asString(params.Item["id"]),
+				"content": map[string]any{"changes": params.Item["changes"], "status": asString(params.Item["status"])},
+				"isError": asString(params.Item["status"]) == "failed",
 			}),
 		}}
 	default:
