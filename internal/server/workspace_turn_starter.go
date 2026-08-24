@@ -597,7 +597,7 @@ func (p *workspaceCodexProcess) StartTurn(ctx context.Context, threadID string, 
 
 func workspaceCodexInputs(content string, attachments []readmodels.ChatAttachment) []codexprotocol.UserInput {
 	inputs := make([]codexprotocol.UserInput, 0, len(attachments)+1)
-	if text := strings.TrimSpace(content); text != "" {
+	if text := workspacePromptText(content, attachments); text != "" {
 		inputs = append(inputs, codexprotocol.UserInput{Type: "text", Text: text, TextElements: []string{}})
 	}
 	for _, attachment := range attachments {
@@ -607,42 +607,13 @@ func workspaceCodexInputs(content string, attachments []readmodels.ChatAttachmen
 		}
 		if attachment.Kind == "image" || strings.HasPrefix(strings.ToLower(attachment.MimeType), "image/") {
 			inputs = append(inputs, codexprotocol.UserInput{Type: "localImage", Path: path})
-			continue
 		}
-		if workspaceAttachmentIsText(attachment) {
-			if data, err := os.ReadFile(path); err == nil && len(data) <= 2*1024*1024 {
-				name := attachment.DisplayName
-				if name == "" {
-					name = filepath.Base(path)
-				}
-				inputs = append(inputs, codexprotocol.UserInput{Type: "text", Text: fmt.Sprintf("[Attached text file: %s]\n\n%s", name, string(data)), TextElements: []string{}})
-				continue
-			}
-		}
-		name := attachment.DisplayName
-		if name == "" {
-			name = filepath.Base(path)
-		}
-		inputs = append(inputs, codexprotocol.UserInput{Type: "mention", Name: name, Path: path})
 	}
 	if len(inputs) == 0 {
 		inputs = append(inputs, codexprotocol.UserInput{Type: "text", Text: "Please inspect the attached input.", TextElements: []string{}})
 	}
 	return inputs
 }
-
-func workspaceAttachmentIsText(attachment readmodels.ChatAttachment) bool {
-	if strings.HasPrefix(strings.ToLower(attachment.MimeType), "text/") {
-		return true
-	}
-	switch strings.ToLower(filepath.Ext(attachment.DisplayName)) {
-	case ".txt", ".md", ".json", ".yaml", ".yml", ".csv", ".log", ".xml", ".toml":
-		return true
-	default:
-		return false
-	}
-}
-
 func (p *workspaceCodexProcess) InterruptTurn(ctx context.Context, threadID string, turnID string) error {
 	if p == nil || p.client == nil || threadID == "" || turnID == "" {
 		return nil
@@ -998,23 +969,21 @@ func workspacePromptText(content string, attachments []readmodels.ChatAttachment
 	if len(attachments) == 0 {
 		return content
 	}
-	lines := []string{"<abolqasem-attachments>"}
+	lines := []string{"# Files mentioned by the user:"}
 	for _, attachment := range attachments {
-		lines = append(lines, fmt.Sprintf(
-			`<attachment kind="%s" mime_type="%s" path="%s" project_path="%s" size_bytes="%d" display_name="%s" />`,
-			escapeWorkspaceXML(attachment.Kind),
-			escapeWorkspaceXML(attachment.MimeType),
-			escapeWorkspaceXML(attachment.AbsolutePath),
-			escapeWorkspaceXML(attachment.RelativePath),
-			attachment.Size,
-			escapeWorkspaceXML(attachment.DisplayName),
-		))
+		name := strings.TrimSpace(attachment.DisplayName)
+		if name == "" {
+			name = filepath.Base(attachment.AbsolutePath)
+		}
+		path := strings.TrimSpace(attachment.AbsolutePath)
+		if path == "" {
+			path = strings.TrimSpace(attachment.RelativePath)
+		}
+		if name != "" && path != "" {
+			lines = append(lines, fmt.Sprintf("\n## %s: %s", name, path))
+		}
 	}
-	lines = append(lines, "</abolqasem-attachments>")
-	if content == "" {
-		content = "Please inspect the attached files."
-	}
-	return strings.TrimSpace(content + "\n\n" + strings.Join(lines, "\n"))
+	return strings.TrimSpace(strings.Join(lines, "\n") + "\n\n## My request for Codex:\n\n" + content)
 }
 
 func workspacePromptPreview(content string) string {

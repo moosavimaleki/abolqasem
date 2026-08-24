@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"abolqasem/internal/parser"
 	"abolqasem/internal/state"
 	"abolqasem/internal/workspace/events"
 	"abolqasem/internal/workspace/eventstore"
@@ -256,5 +257,39 @@ func appendWorkspaceEvent(t *testing.T, store *eventstore.Store, stream string, 
 	}
 	if err := store.Append(stream, event); err != nil {
 		t.Fatalf("Append returned error: %v", err)
+	}
+}
+
+func TestWorkspaceTranscriptEntryRestoresCodexMobileAttachmentsAndPlan(t *testing.T) {
+	user := workspaceTranscriptEntryFromSearchable(parser.SearchableMessage{
+		ID: "user-1", Role: "user", Kind: "message",
+		Text: "# Files mentioned by the user:\n\n## pasted.txt: /tmp/pasted.txt\n\n## My request for Codex:\n\nInspect this file",
+	})
+	if user["content"] != "Inspect this file" {
+		t.Fatalf("expected request text without attachment protocol, got %#v", user)
+	}
+	attachments, ok := user["attachments"].([]readmodels.ChatAttachment)
+	if !ok || len(attachments) != 1 || attachments[0].DisplayName != "pasted.txt" {
+		t.Fatalf("expected attachment card metadata, got %#v", user)
+	}
+
+	legacy := workspaceTranscriptEntryFromSearchable(parser.SearchableMessage{
+		ID: "user-2", Role: "user", Kind: "message", Text: "Inspect this\n\n[Attached text file: pasted.txt]\n\nvery long body",
+	})
+	if legacy["content"] != "Inspect this" {
+		t.Fatalf("expected legacy pasted body to be hidden, got %#v", legacy)
+	}
+	legacyAttachments, ok := legacy["attachments"].([]readmodels.ChatAttachment)
+	if !ok || len(legacyAttachments) != 1 || legacyAttachments[0].Size != int64(len("very long body")) {
+		t.Fatalf("expected collapsed legacy attachment, got %#v", legacy)
+	}
+
+	plan := workspaceTranscriptEntryFromSearchable(parser.SearchableMessage{
+		ID: "plan-1", Kind: "turn_plan", Fields: map[string]any{
+			"turnId": "turn-1", "explanation": "Ship it", "plan": []map[string]string{{"step": "Test", "status": "completed"}},
+		},
+	})
+	if plan["kind"] != transcript.KindTurnPlan || plan["turnId"] != "turn-1" {
+		t.Fatalf("expected native plan transcript entry, got %#v", plan)
 	}
 }

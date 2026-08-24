@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -776,10 +777,23 @@ func workspaceTranscriptEntryFromSearchable(message parser.SearchableMessage) re
 		}
 		return entry
 	}
+	if message.Kind == transcript.KindTurnPlan {
+		entry["kind"] = transcript.KindTurnPlan
+		for _, key := range []string{"turnId", "explanation", "plan"} {
+			if value, ok := message.Fields[key]; ok {
+				entry[key] = value
+			}
+		}
+		return entry
+	}
 	switch workspaceSearchableTranscriptRole(message) {
 	case "user":
 		entry["kind"] = transcript.KindUserPrompt
-		entry["content"] = text
+		content, attachments := workspaceCodexUserPrompt(text)
+		entry["content"] = content
+		if len(attachments) > 0 {
+			entry["attachments"] = attachments
+		}
 	case "assistant":
 		entry["kind"] = transcript.KindAssistantText
 		entry["text"] = text
@@ -799,6 +813,89 @@ func workspaceTranscriptEntryFromSearchable(message parser.SearchableMessage) re
 		entry["status"] = text
 	}
 	return entry
+}
+
+func workspaceCodexUserPrompt(value string) (string, []readmodels.ChatAttachment) {
+	const filesMarker = "# files mentioned by the user:"
+	const requestMarker = "## my request for codex:"
+	lines := strings.Split(value, "\n")
+	attachments := []readmodels.ChatAttachment{}
+	for index, line := range lines {
+		if !strings.EqualFold(strings.TrimSpace(line), filesMarker) {
+			continue
+		}
+		for _, attachmentLine := range lines[index+1:] {
+			trimmed := strings.TrimSpace(attachmentLine)
+			if !strings.HasPrefix(trimmed, "## ") {
+				continue
+			}
+			if strings.EqualFold(trimmed, requestMarker) {
+				break
+			}
+			parts := strings.SplitN(strings.TrimPrefix(trimmed, "## "), ": ", 2)
+			if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+				continue
+			}
+			path := strings.TrimSpace(parts[1])
+			attachments = append(attachments, readmodels.ChatAttachment{
+				ID:   "native-attachment-" + strconv.Itoa(index) + "-" + strconv.Itoa(len(attachments)),
+				Kind: "file", DisplayName: strings.TrimSpace(parts[0]), AbsolutePath: path,
+				RelativePath: path, MimeType: workspaceAttachmentMimeType(path),
+			})
+		}
+		break
+	}
+	lastRequest := -1
+	for index, line := range lines {
+		if strings.EqualFold(strings.TrimSpace(line), requestMarker) {
+			lastRequest = index
+		}
+	}
+	if lastRequest < 0 {
+		if len(attachments) > 0 {
+			return strings.TrimSpace(value), attachments
+		}
+		return workspaceLegacyInlineAttachmentPrompt(value)
+	}
+	return strings.TrimSpace(strings.Join(lines[lastRequest+1:], "\n")), attachments
+}
+
+func workspaceLegacyInlineAttachmentPrompt(value string) (string, []readmodels.ChatAttachment) {
+	const prefix = "[Attached text file: "
+	start := strings.Index(value, prefix)
+	if start < 0 {
+		return strings.TrimSpace(value), nil
+	}
+	nameStart := start + len(prefix)
+	nameEnd := strings.Index(value[nameStart:], "]")
+	if nameEnd < 0 {
+		return strings.TrimSpace(value), nil
+	}
+	nameEnd += nameStart
+	name := strings.TrimSpace(value[nameStart:nameEnd])
+	bodyStart := nameEnd + 1
+	if strings.HasPrefix(value[bodyStart:], "\r\n\r\n") {
+		bodyStart += len("\r\n\r\n")
+	} else if strings.HasPrefix(value[bodyStart:], "\n\n") {
+		bodyStart += len("\n\n")
+	}
+	if name == "" || bodyStart > len(value) {
+		return strings.TrimSpace(value), nil
+	}
+	body := value[bodyStart:]
+	return strings.TrimSpace(value[:start]), []readmodels.ChatAttachment{{
+		ID: "legacy-inline-attachment-0", Kind: "file", DisplayName: name,
+		MimeType: workspaceAttachmentMimeType(name), Size: int64(len(body)),
+	}}
+}
+
+func workspaceAttachmentMimeType(path string) string {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".txt", ".md", ".log", ".csv", ".json", ".yaml", ".yml", ".toml", ".xml":
+		return "text/plain"
+	default:
+		return "application/octet-stream"
+	}
 }
 
 func workspaceSearchableCursor(message parser.SearchableMessage) string {

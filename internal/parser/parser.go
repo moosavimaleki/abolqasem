@@ -813,6 +813,17 @@ func extractCodexMessage(raw map[string]any, sessionID string, index int) *Searc
 
 	switch eventType {
 	case "custom_tool_call":
+		if explanation, plan, ok := extractCodexPlanUpdate(stringValue(payload["input"])); ok {
+			turnID := codexTurnID(payload)
+			if turnID == "" {
+				turnID = firstNonEmpty(stringValue(payload["call_id"]), stringValue(payload["id"]))
+			}
+			msg := newCodexSearchableMessage(sessionID, index, "tool", "turn_plan", "Plan", extractTimestamp(raw, payload), source)
+			if msg != nil {
+				msg.Fields = map[string]any{"turnId": turnID, "explanation": explanation, "plan": plan}
+			}
+			return msg
+		}
 		if !strings.EqualFold(strings.TrimSpace(stringValue(payload["name"])), "exec") {
 			return nil
 		}
@@ -875,6 +886,91 @@ func extractCodexMessage(raw map[string]any, sessionID string, index int) *Searc
 		codexText(payload["message"]),
 		codexText(payload["text"]),
 	), extractTimestamp(raw, payload), source)
+}
+
+func codexTurnID(payload map[string]any) string {
+	if turnID := firstNonEmpty(stringValue(payload["turn_id"]), stringValue(payload["turnId"])); turnID != "" {
+		return turnID
+	}
+	metadata := asMap(payload["internal_chat_message_metadata_passthrough"])
+	return firstNonEmpty(stringValue(metadata["turn_id"]), stringValue(metadata["turnId"]))
+}
+
+func extractCodexPlanUpdate(input string) (string, []map[string]string, bool) {
+	start := strings.Index(input, "tools.update_plan(")
+	if start < 0 {
+		return "", nil, false
+	}
+	objectStart := strings.Index(input[start:], "{")
+	if objectStart < 0 {
+		return "", nil, false
+	}
+	objectStart += start
+	object, ok := extractBalancedJSONObject(input[objectStart:])
+	if !ok {
+		return "", nil, false
+	}
+	explanation := extractCodexPlanString(object, "explanation")
+	stepMatches := regexp.MustCompile(`(?s)(?:^|[,{]\s*)step\s*:\s*("(?:\\.|[^"\\])*")\s*,\s*status\s*:\s*("(?:\\.|[^"\\])*")`).FindAllStringSubmatch(object, -1)
+	plan := make([]map[string]string, 0, len(stepMatches))
+	for _, match := range stepMatches {
+		if len(match) != 3 {
+			continue
+		}
+		var step, status string
+		if json.Unmarshal([]byte(match[1]), &step) != nil || json.Unmarshal([]byte(match[2]), &status) != nil || strings.TrimSpace(step) == "" {
+			continue
+		}
+		plan = append(plan, map[string]string{"step": strings.TrimSpace(step), "status": strings.TrimSpace(status)})
+	}
+	return explanation, plan, len(plan) > 0
+}
+
+func extractBalancedJSONObject(value string) (string, bool) {
+	depth := 0
+	inString := false
+	escaped := false
+	for index, char := range value {
+		if inString {
+			if escaped {
+				escaped = false
+				continue
+			}
+			if char == '\\' {
+				escaped = true
+				continue
+			}
+			if char == '"' {
+				inString = false
+			}
+			continue
+		}
+		switch char {
+		case '"':
+			inString = true
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return value[:index+1], true
+			}
+		}
+	}
+	return "", false
+}
+
+func extractCodexPlanString(value string, name string) string {
+	pattern := regexp.MustCompile(`(?s)(?:^|[,{]\s*)` + regexp.QuoteMeta(name) + `\s*:\s*("(?:\\.|[^"\\])*")`)
+	match := pattern.FindStringSubmatch(value)
+	if len(match) != 2 {
+		return ""
+	}
+	var result string
+	if json.Unmarshal([]byte(match[1]), &result) != nil {
+		return ""
+	}
+	return strings.TrimSpace(result)
 }
 
 func normalizeCodexCommandMessage(agent string, message *SearchableMessage, commandItems map[string]struct{}) bool {

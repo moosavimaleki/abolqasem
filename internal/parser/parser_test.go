@@ -174,6 +174,24 @@ func TestStreamSearchableMessagesCodexKeepsCustomExecEvents(t *testing.T) {
 	}
 }
 
+func TestStreamSearchableMessagesCodexMapsUpdatePlanToNativePlan(t *testing.T) {
+	path := writeTranscript(t, `{"timestamp":"2026-08-24T12:23:00.756Z","type":"response_item","payload":{"type":"custom_tool_call","call_id":"call-plan","name":"exec","input":"const p = await tools.update_plan({explanation:\"Ship safely\",plan:[{step:\"Inspect\",status:\"completed\"},{step:\"Test\",status:\"inProgress\"}]}); text(p);","internal_chat_message_metadata_passthrough":{"turn_id":"turn-1"}}}`+"\n")
+	messages := []SearchableMessage{}
+	if err := StreamSearchableMessages("codex", "session-1", path, func(message SearchableMessage) bool {
+		messages = append(messages, message)
+		return true
+	}); err != nil {
+		t.Fatalf("StreamSearchableMessages returned error: %v", err)
+	}
+	if len(messages) != 1 || messages[0].Kind != "turn_plan" || messages[0].Fields["turnId"] != "turn-1" {
+		t.Fatalf("expected native plan event, got %#v", messages)
+	}
+	plan, ok := messages[0].Fields["plan"].([]map[string]string)
+	if !ok || len(plan) != 2 || plan[1]["status"] != "inProgress" {
+		t.Fatalf("expected parsed plan steps, got %#v", messages[0].Fields)
+	}
+}
+
 func TestParseMessagesClaudeArrayContent(t *testing.T) {
 	path := writeTranscript(t, strings.Join([]string{
 		`{"message":{"role":"user","content":[{"type":"text","text":"hello"}]}}`,
