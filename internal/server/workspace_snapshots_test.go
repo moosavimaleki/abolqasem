@@ -292,4 +292,14 @@ func TestWorkspaceTranscriptEntryRestoresCodexMobileAttachmentsAndPlan(t *testin
 	if plan["kind"] != transcript.KindTurnPlan || plan["turnId"] != "turn-1" {
 		t.Fatalf("expected native plan transcript entry, got %#v", plan)
 	}
+
+	fileChange := workspaceTranscriptEntryFromSearchable(parser.SearchableMessage{
+		ID: "change-1", Kind: "file_change", Fields: map[string]any{
+			"itemId": "patch-1", "status": "completed",
+			"changes": []map[string]any{{"path": "main.go", "kind": "update", "diff": "@@ -1 +1 @@\n-old\n+new"}},
+		},
+	})
+	if fileChange["kind"] != transcript.KindFileChange || fileChange["itemId"] != "patch-1" {
+		t.Fatalf("expected native file-change transcript entry, got %#v", fileChange)
+	}
 }

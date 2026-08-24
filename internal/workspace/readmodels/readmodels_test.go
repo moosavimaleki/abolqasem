@@ -46,6 +46,26 @@ func TestDeriveSidebarData(t *testing.T) {
 	}
 }
 
+func TestReplayIgnoresDuplicateQueuedMessageEventIDs(t *testing.T) {
+	queued, err := events.NewAt(events.TypeQueuedMessageEnqueued, 100, map[string]any{
+		"chatId": "chat-1",
+		"message": map[string]any{
+			"id":          "queued-1",
+			"content":     "follow up",
+			"attachments": []any{},
+			"createdAt":   int64(100),
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewAt queued message returned error: %v", err)
+	}
+
+	state := Replay([]events.Event{queued, queued})
+	if messages := state.QueuedMessagesByChatID["chat-1"]; len(messages) != 1 || messages[0].ID != "queued-1" {
+		t.Fatalf("expected one queued message after duplicate event replay, got %#v", messages)
+	}
+}
+
 func TestChatRuntimeMetadataFlowsToSnapshot(t *testing.T) {
 	projectEvent, _ := events.NewAt(events.TypeProjectOpened, 100, map[string]any{
 		"projectId": "project-1",

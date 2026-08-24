@@ -867,6 +867,7 @@ export interface CodexFileUpdateChange {
   path: string
   kind: "add" | "delete" | "update" | string
   diff: string
+  movedToPath?: string | null
 }
 
 export interface FileChangeEntry extends TranscriptEntryBase {

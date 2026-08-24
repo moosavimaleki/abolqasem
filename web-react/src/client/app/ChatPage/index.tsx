@@ -1479,6 +1479,23 @@ export function ChatPage() {
     await state.handleSend(content, options)
   }, [scrollToTranscriptEnd, state])
 
+  const handleEditQueuedMessage = useCallback(async (queuedMessageId: string) => {
+    const message = state.queuedMessages.find((queued) => queued.id === queuedMessageId)
+    const composer = chatInputRef.current
+    if (!message || !composer) return
+    if (composer.hasUnsavedDraft()) {
+      const confirmed = await dialog.confirm({
+        title: "Replace current draft?",
+        description: "The queued message will be moved into the composer for editing.",
+        confirmLabel: "Replace",
+        cancelLabel: t.common.cancel,
+      })
+      if (!confirmed) return
+    }
+    await state.handleRemoveQueuedMessage(queuedMessageId)
+    composer.hydrateDraft(message.content, message.attachments)
+  }, [dialog, state.handleRemoveQueuedMessage, state.queuedMessages, t.common.cancel])
+
   const refreshCodexLock = useCallback(async () => {
     if (!state.activeChatId) return
     setCodexLockActionPending(true)
@@ -1922,7 +1939,7 @@ export function ChatPage() {
             onStopDraining={state.handleStopDraining}
             onRemoveQueuedMessage={state.handleRemoveQueuedMessage}
             onSteerQueuedMessage={state.handleSteerQueuedMessage}
-            onEditQueuedMessage={state.handleEditQueuedMessage}
+            onEditQueuedMessage={handleEditQueuedMessage}
             onOpenLocalLink={state.handleOpenLocalLink}
             editorPreset={editorPreset}
             editorCommandTemplate={editorCommandTemplate}

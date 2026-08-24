@@ -192,6 +192,30 @@ func TestStreamSearchableMessagesCodexMapsUpdatePlanToNativePlan(t *testing.T) {
 	}
 }
 
+func TestStreamSearchableMessagesCodexMapsPatchApplyEndToFileChange(t *testing.T) {
+	path := writeTranscript(t, `{"timestamp":"2026-08-24T14:01:29.578Z","type":"event_msg","payload":{"type":"patch_apply_end","call_id":"exec-1","turn_id":"turn-1","success":true,"status":"completed","changes":{"/workspace/renamed.md":{"type":"update","unified_diff":"@@ -1 +1 @@\n-old\n+new\n","move_path":"/workspace/final.md"},"/workspace/new.go":{"type":"add","unified_diff":"@@ -0,0 +1 @@\n+package main\n","move_path":null}}}}`+"\n")
+	messages := []SearchableMessage{}
+	if err := StreamSearchableMessages("codex", "session-1", path, func(message SearchableMessage) bool {
+		messages = append(messages, message)
+		return true
+	}); err != nil {
+		t.Fatalf("StreamSearchableMessages returned error: %v", err)
+	}
+	if len(messages) != 1 || messages[0].Kind != "file_change" {
+		t.Fatalf("expected native file-change event, got %#v", messages)
+	}
+	if messages[0].Fields["itemId"] != "exec-1" || messages[0].Fields["status"] != "completed" {
+		t.Fatalf("expected file-change identity and status, got %#v", messages[0].Fields)
+	}
+	changes, ok := messages[0].Fields["changes"].([]map[string]any)
+	if !ok || len(changes) != 2 || changes[0]["path"] != "/workspace/new.go" || changes[1]["movedToPath"] != "/workspace/final.md" {
+		t.Fatalf("expected sorted changes with diff metadata, got %#v", messages[0].Fields["changes"])
+	}
+	if !strings.Contains(stringValue(changes[1]["diff"]), "+new") {
+		t.Fatalf("expected unified diff, got %#v", changes[1])
+	}
+}
+
 func TestParseMessagesClaudeArrayContent(t *testing.T) {
 	path := writeTranscript(t, strings.Join([]string{
 		`{"message":{"role":"user","content":[{"type":"text","text":"hello"}]}}`,

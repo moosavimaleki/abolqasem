@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -812,6 +813,21 @@ func extractCodexMessage(raw map[string]any, sessionID string, index int) *Searc
 	}
 
 	switch eventType {
+	case "patch_apply_end":
+		changes := extractCodexFileChanges(payload["changes"])
+		if len(changes) == 0 {
+			return nil
+		}
+		status := firstNonEmpty(stringValue(payload["status"]), "completed")
+		if success, ok := payload["success"].(bool); ok && !success {
+			status = "failed"
+		}
+		itemID := firstNonEmpty(stringValue(payload["call_id"]), stringValue(payload["id"]))
+		msg := newCodexSearchableMessage(sessionID, index, "tool", "file_change", fmt.Sprintf("%d files changed", len(changes)), extractTimestamp(raw, payload), source)
+		if msg != nil {
+			msg.Fields = map[string]any{"itemId": itemID, "status": status, "changes": changes}
+		}
+		return msg
 	case "custom_tool_call":
 		if explanation, plan, ok := extractCodexPlanUpdate(stringValue(payload["input"])); ok {
 			turnID := codexTurnID(payload)
@@ -886,6 +902,34 @@ func extractCodexMessage(raw map[string]any, sessionID string, index int) *Searc
 		codexText(payload["message"]),
 		codexText(payload["text"]),
 	), extractTimestamp(raw, payload), source)
+}
+
+func extractCodexFileChanges(value any) []map[string]any {
+	changesByPath := asMap(value)
+	if len(changesByPath) == 0 {
+		return nil
+	}
+	paths := make([]string, 0, len(changesByPath))
+	for path := range changesByPath {
+		if strings.TrimSpace(path) != "" {
+			paths = append(paths, path)
+		}
+	}
+	sort.Strings(paths)
+	changes := make([]map[string]any, 0, len(paths))
+	for _, path := range paths {
+		details := asMap(changesByPath[path])
+		change := map[string]any{
+			"path": strings.TrimSpace(path),
+			"kind": firstNonEmpty(stringValue(details["type"]), stringValue(details["kind"]), "update"),
+			"diff": firstNonEmpty(stringValue(details["unified_diff"]), stringValue(details["diff"])),
+		}
+		if movedToPath := firstNonEmpty(stringValue(details["move_path"]), stringValue(details["movedToPath"])); movedToPath != "" {
+			change["movedToPath"] = movedToPath
+		}
+		changes = append(changes, change)
+	}
+	return changes
 }
 
 func codexTurnID(payload map[string]any) string {

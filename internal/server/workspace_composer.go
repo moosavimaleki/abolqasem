@@ -42,16 +42,45 @@ type workspaceEventStore struct {
 }
 
 type workspaceConnectionRegistry struct {
-	mu          sync.Mutex
-	connections map[*workspaceConnection]struct{}
-	subscribers map[string]map[*workspaceConnection]map[string]struct{}
+	mu               sync.Mutex
+	connections      map[*workspaceConnection]struct{}
+	subscribers      map[string]map[*workspaceConnection]map[string]struct{}
+	broadcastPending map[string]bool
+	broadcastRunning map[string]bool
 }
 
 func newWorkspaceConnectionRegistry() *workspaceConnectionRegistry {
 	return &workspaceConnectionRegistry{
-		connections: map[*workspaceConnection]struct{}{},
-		subscribers: map[string]map[*workspaceConnection]map[string]struct{}{},
+		connections:      map[*workspaceConnection]struct{}{},
+		subscribers:      map[string]map[*workspaceConnection]map[string]struct{}{},
+		broadcastPending: map[string]bool{},
+		broadcastRunning: map[string]bool{},
 	}
+}
+
+func (r *workspaceConnectionRegistry) scheduleBroadcast(chatID string) {
+	r.mu.Lock()
+	r.broadcastPending[chatID] = true
+	if r.broadcastRunning[chatID] {
+		r.mu.Unlock()
+		return
+	}
+	r.broadcastRunning[chatID] = true
+	r.mu.Unlock()
+
+	go func() {
+		for {
+			r.mu.Lock()
+			if !r.broadcastPending[chatID] {
+				delete(r.broadcastRunning, chatID)
+				r.mu.Unlock()
+				return
+			}
+			delete(r.broadcastPending, chatID)
+			r.mu.Unlock()
+			r.broadcast(chatID)
+		}
+	}()
 }
 
 func (r *workspaceConnectionRegistry) add(conn *workspaceConnection) {
@@ -201,7 +230,7 @@ func workspaceAgentCoordinator() *agent.Coordinator {
 	workspaceCoordinatorDir = dir
 	store := eventstore.New(dir)
 	workspaceCoordinator = agent.NewCoordinator(&workspaceEventStore{store: store}, workspaceTurnStarterFactory(store), func(chatID string) {
-		workspaceConnections.broadcast(chatID)
+		workspaceConnections.scheduleBroadcast(chatID)
 	})
 	return workspaceCoordinator
 }

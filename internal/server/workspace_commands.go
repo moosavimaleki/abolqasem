@@ -786,6 +786,15 @@ func workspaceTranscriptEntryFromSearchable(message parser.SearchableMessage) re
 		}
 		return entry
 	}
+	if message.Kind == transcript.KindFileChange {
+		entry["kind"] = transcript.KindFileChange
+		for _, key := range []string{"itemId", "status", "changes", "outputDelta"} {
+			if value, ok := message.Fields[key]; ok {
+				entry[key] = value
+			}
+		}
+		return entry
+	}
 	switch workspaceSearchableTranscriptRole(message) {
 	case "user":
 		entry["kind"] = transcript.KindUserPrompt

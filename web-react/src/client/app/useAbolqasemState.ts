@@ -1976,6 +1976,7 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
       setCommandError(null)
     } catch (error) {
       setCommandError(error instanceof Error ? error.message : String(error))
+      throw error
     }
   }, [activeChatId, socket])
 
@@ -2001,6 +2002,7 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
       setCommandError(null)
     } catch (error) {
       setCommandError(error instanceof Error ? error.message : String(error))
+      throw error
     }
   }, [activeChatId, socket])
 

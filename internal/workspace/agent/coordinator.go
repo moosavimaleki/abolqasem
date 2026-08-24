@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -391,7 +392,7 @@ func (c *Coordinator) SteerQueued(ctx context.Context, chatID string, queuedMess
 	active := c.active[chatID]
 	if active == nil {
 		c.mu.Unlock()
-		return ErrChatNotRunning
+		return c.startQueuedMessageNow(ctx, chatID, message)
 	}
 	steerer, ok := active.Turn.(TurnSteerer)
 	c.mu.Unlock()
@@ -399,7 +400,12 @@ func (c *Coordinator) SteerQueued(ctx context.Context, chatID string, queuedMess
 		return ErrSteerUnsupported
 	}
 	if err := steerer.Steer(ctx, message.Content, message.Attachments); err != nil {
-		return err
+		if !isNoActiveTurnSteerError(err) || !c.detachActive(chatID, active) {
+			return err
+		}
+		_ = c.store.RecordTurnFinished(chatID)
+		c.emitStateChange(chatID)
+		return c.startQueuedMessageNow(ctx, chatID, message)
 	}
 	if err := c.store.AppendUserPrompt(chatID, message.Content, message.Attachments, true); err != nil {
 		return err
@@ -409,6 +415,17 @@ func (c *Coordinator) SteerQueued(ctx context.Context, chatID string, queuedMess
 	}
 	c.emitStateChange(chatID)
 	return nil
+}
+
+func (c *Coordinator) startQueuedMessageNow(ctx context.Context, chatID string, message readmodels.QueuedChatMessage) error {
+	if err := c.store.RemoveQueuedMessage(chatID, message.ID); err != nil {
+		return err
+	}
+	return c.startTurn(ctx, chatID, message.Content, message.Attachments, derefString(message.Provider), message.Model, message.ModelOptions, "", derefBool(message.PlanMode), false)
+}
+
+func isNoActiveTurnSteerError(err error) bool {
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "no active turn to steer")
 }
 
 func (c *Coordinator) Finish(chatID string) error {
@@ -712,6 +729,16 @@ func (c *Coordinator) removeActive(chatID string, active *ActiveTurn) bool {
 	if active.Cancel != nil {
 		active.Cancel()
 	}
+	return true
+}
+
+func (c *Coordinator) detachActive(chatID string, active *ActiveTurn) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.active[chatID] != active {
+		return false
+	}
+	delete(c.active, chatID)
 	return true
 }
 

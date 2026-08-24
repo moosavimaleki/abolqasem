@@ -139,7 +139,7 @@ interface ChatTranscriptViewportProps {
   onStopDraining: () => void
   onRemoveQueuedMessage: (queuedMessageId: string) => Promise<void>
   onSteerQueuedMessage: (queuedMessageId: string) => Promise<void>
-  onEditQueuedMessage: (queuedMessageId: string, content: string) => Promise<void>
+  onEditQueuedMessage: (queuedMessageId: string) => Promise<void>
   onOpenLocalLink: AbolqasemState["handleOpenLocalLink"]
   onAskUserQuestionSubmit: AbolqasemState["handleAskUserQuestion"]
   onExitPlanModeConfirm: AbolqasemState["handleExitPlanMode"]
@@ -525,9 +525,9 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
         <QueuedUserMessage
           key={message.id}
           message={message}
-          onRemove={() => void onRemoveQueuedMessage(message.id)}
-          onSteer={() => void onSteerQueuedMessage(message.id)}
-          onEdit={(content) => onEditQueuedMessage(message.id, content)}
+          onRemove={() => onRemoveQueuedMessage(message.id)}
+          onSteer={() => onSteerQueuedMessage(message.id)}
+          onEdit={() => onEditQueuedMessage(message.id)}
         />
       ))}
       {!isProcessing && isDraining ? (

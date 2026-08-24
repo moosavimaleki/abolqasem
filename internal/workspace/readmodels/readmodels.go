@@ -434,6 +434,11 @@ func Apply(state StoreState, event events.Event) StoreState {
 		if event.DecodeData(&data) != nil || data.ChatID == "" {
 			return state
 		}
+		for _, existing := range state.QueuedMessagesByChatID[data.ChatID] {
+			if existing.ID == data.Message.ID {
+				return state
+			}
+		}
 		state.QueuedMessagesByChatID[data.ChatID] = append(state.QueuedMessagesByChatID[data.ChatID], cloneQueuedMessage(data.Message))
 		record := state.ChatsByID[data.ChatID]
 		record.UpdatedAt = event.Timestamp

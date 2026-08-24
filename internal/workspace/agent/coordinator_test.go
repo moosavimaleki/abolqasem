@@ -280,6 +280,35 @@ func TestEditAndSteerQueuedMessageUsesActiveTurn(t *testing.T) {
 	}
 }
 
+func TestSteerQueuedMessageStartsNewTurnWhenProviderTurnAlreadyEnded(t *testing.T) {
+	store := newFakeStore()
+	staleTurn := &fakeTurn{steerErr: errors.New("codex app-server rpc turn/steer failed: no active turn to steer")}
+	startedContents := []string{}
+	coordinator := NewCoordinator(store, TurnStarterFunc(func(_ context.Context, request TurnRequest) (Turn, error) {
+		startedContents = append(startedContents, request.Content)
+		if len(startedContents) == 1 {
+			return staleTurn, nil
+		}
+		return &fakeTurn{}, nil
+	}), nil)
+	if _, err := coordinator.Send(context.Background(), SendCommand{ChatID: "chat-1", Content: "first"}); err != nil {
+		t.Fatal(err)
+	}
+	queuedID, err := coordinator.Enqueue(SendCommand{ChatID: "chat-1", Content: "queued follow-up"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := coordinator.SteerQueued(context.Background(), "chat-1", queuedID); err != nil {
+		t.Fatalf("expected stale steer to fall back to a new turn, got %v", err)
+	}
+	if len(startedContents) != 2 || startedContents[1] != "queued follow-up" {
+		t.Fatalf("expected queued content to start as a new turn, got %#v", startedContents)
+	}
+	if len(store.queued["chat-1"]) != 0 {
+		t.Fatalf("expected fallback message removed from queue, got %#v", store.queued["chat-1"])
+	}
+}
+
 func TestActiveTurnIncludesProjectAndStartedAt(t *testing.T) {
 	store := newFakeStore()
 	coordinator := NewCoordinator(store, TurnStarterFunc(func(context.Context, TurnRequest) (Turn, error) {
@@ -605,11 +634,12 @@ type fakeTurn struct {
 	toolResponse   ToolResponse
 	events         chan TurnEvent
 	steeredContent string
+	steerErr       error
 }
 
 func (t *fakeTurn) Steer(_ context.Context, content string, _ []readmodels.ChatAttachment) error {
 	t.steeredContent = content
-	return nil
+	return t.steerErr
 }
 
 func (t *fakeTurn) Cancel() error {

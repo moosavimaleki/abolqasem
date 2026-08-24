@@ -526,7 +526,6 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
 		}
-		workspaceConnections.broadcast(result.ChatID)
 		response := protocol.AckEnvelope(envelope.ID, result)
 		return &response
 	case protocol.CommandMessageEnqueue:
@@ -540,7 +539,6 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
 		}
-		workspaceConnections.broadcast(command.ChatID)
 		response := protocol.AckEnvelope(envelope.ID, map[string]any{"queuedMessageId": queuedID})
 		return &response
 	case protocol.CommandMessageDequeue:
@@ -553,7 +551,6 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
 		}
-		workspaceConnections.broadcast(chatID)
 		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
 		return &response
 	case protocol.CommandMessageEdit:
@@ -566,7 +563,6 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
 		}
-		workspaceConnections.broadcast(chatID)
 		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
 		return &response
 	case protocol.CommandMessageSteer:
@@ -579,7 +575,6 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
 		}
-		workspaceConnections.broadcast(chatID)
 		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
 		return &response
 	case protocol.CommandChatCancel:
@@ -592,7 +587,6 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
 		}
-		workspaceConnections.broadcast(chatID)
 		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
 		return &response
 	case protocol.CommandChatRespondTool:
@@ -605,7 +599,6 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
 		}
-		workspaceConnections.broadcast(command.ChatID)
 		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
 		return &response
 	case protocol.CommandChatMarkRead:

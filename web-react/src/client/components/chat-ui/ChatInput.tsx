@@ -144,6 +144,8 @@ export interface ChatInputHandle {
   enqueueFiles: (files: File[]) => void
   insertText: (text: string) => void
   appendText: (text: string) => void
+  hasUnsavedDraft: () => boolean
+  hydrateDraft: (text: string, attachments: ChatAttachment[]) => void
 }
 
 function withNormalizedContextWindow(
@@ -599,11 +601,38 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
     })
   }, [autoResize, chatId, onLayoutChange, setDraft, value])
 
+  const hydrateDraft = useCallback((text: string, draftAttachments: ChatAttachment[]) => {
+    uploadGenerationRef.current += 1
+    uploadQueueRef.current = []
+    activeUploadsRef.current = 0
+    removedAttachmentIdsRef.current.clear()
+    setValue(text)
+    if (chatId) {
+      setDraft(chatId, text)
+      setAttachmentDrafts(chatId, draftAttachments)
+    }
+    setAttachments((current) => {
+      current.forEach(cleanupAttachmentPreview)
+      return hydrateComposerAttachments(draftAttachments)
+    })
+    setSelectedAttachmentId(null)
+    setUploadError(null)
+    requestAnimationFrame(() => {
+      autoResize()
+      onLayoutChange?.()
+      textareaRef.current?.focus()
+    })
+  }, [autoResize, chatId, cleanupAttachmentPreview, onLayoutChange, setAttachmentDrafts, setDraft])
+
+  const hasUnsavedDraft = useCallback(() => value.trim().length > 0 || attachmentsRef.current.length > 0, [value])
+
   useImperativeHandle(forwardedRef, () => ({
     appendText,
     enqueueFiles,
+    hasUnsavedDraft,
+    hydrateDraft,
     insertText,
-  }), [appendText, enqueueFiles, insertText])
+  }), [appendText, enqueueFiles, hasUnsavedDraft, hydrateDraft, insertText])
 
   async function handleSubmit() {
     if (!canSubmit || hasPendingUploads) return

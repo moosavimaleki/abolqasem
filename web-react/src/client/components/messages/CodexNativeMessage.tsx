@@ -132,7 +132,7 @@ export function CodexFileChangeMessage({ message }: { message: FileChangeMessage
           const counts = diffCounts(change.diff || "")
           return <button key={change.path} type="button" onClick={() => setSelected(change)} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-white/5" dir="ltr">
             <span className="rounded-full bg-sky-950 px-2 py-0.5 text-[10px] uppercase text-sky-300">{change.kind}</span>
-            <span className="min-w-0 flex-1 truncate font-mono text-sky-300">{change.path}</span>
+            <span className="min-w-0 flex-1 truncate font-mono text-sky-300">{change.path}{change.movedToPath ? ` → ${change.movedToPath}` : ""}</span>
             <span className="text-emerald-400">+{counts.additions}</span><span className="text-red-400">-{counts.deletions}</span>
           </button>
         })}</div> : null}
