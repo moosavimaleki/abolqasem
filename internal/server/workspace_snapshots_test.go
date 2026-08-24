@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -261,6 +262,7 @@ func appendWorkspaceEvent(t *testing.T, store *eventstore.Store, stream string, 
 }
 
 func TestWorkspaceTranscriptEntryRestoresCodexMobileAttachmentsAndPlan(t *testing.T) {
+	setTestUploadCacheHome(t)
 	user := workspaceTranscriptEntryFromSearchable(parser.SearchableMessage{
 		ID: "user-1", Role: "user", Kind: "message",
 		Text: "# Files mentioned by the user:\n\n## pasted.txt: /tmp/pasted.txt\n\n## My request for Codex:\n\nInspect this file",
@@ -271,6 +273,24 @@ func TestWorkspaceTranscriptEntryRestoresCodexMobileAttachmentsAndPlan(t *testin
 	attachments, ok := user["attachments"].([]readmodels.ChatAttachment)
 	if !ok || len(attachments) != 1 || attachments[0].DisplayName != "pasted.txt" {
 		t.Fatalf("expected attachment card metadata, got %#v", user)
+	}
+
+	imageData := []byte("uploaded image bytes")
+	uploadedImage, err := saveUploadedFile("project-1", "image.png", "image/png", int64(len(imageData)), bytes.NewReader(imageData))
+	if err != nil {
+		t.Fatalf("saveUploadedFile returned error: %v", err)
+	}
+	imagePrompt := workspaceTranscriptEntryFromSearchable(parser.SearchableMessage{
+		ID: "user-image", Role: "user", Kind: "message",
+		Text: "# Files mentioned by the user:\n\n## image.png: " + uploadedImage.AbsolutePath + "\n\n## My request for Codex:\n\nInspect this image",
+	})
+	imageAttachments, ok := imagePrompt["attachments"].([]readmodels.ChatAttachment)
+	if !ok || len(imageAttachments) != 1 {
+		t.Fatalf("expected uploaded image attachment, got %#v", imagePrompt)
+	}
+	imageAttachment := imageAttachments[0]
+	if imageAttachment.Kind != "image" || imageAttachment.MimeType != "image/png" || imageAttachment.Size != int64(len(imageData)) || imageAttachment.ContentURL != uploadedImage.ContentURL {
+		t.Fatalf("expected complete uploaded image metadata, got %#v", imageAttachment)
 	}
 
 	legacy := workspaceTranscriptEntryFromSearchable(parser.SearchableMessage{

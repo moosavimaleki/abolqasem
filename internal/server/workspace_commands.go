@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -846,11 +847,11 @@ func workspaceCodexUserPrompt(value string) (string, []readmodels.ChatAttachment
 				continue
 			}
 			path := strings.TrimSpace(parts[1])
-			attachments = append(attachments, readmodels.ChatAttachment{
-				ID:   "native-attachment-" + strconv.Itoa(index) + "-" + strconv.Itoa(len(attachments)),
-				Kind: "file", DisplayName: strings.TrimSpace(parts[0]), AbsolutePath: path,
-				RelativePath: path, MimeType: workspaceAttachmentMimeType(path),
-			})
+			attachments = append(attachments, workspaceNativeAttachment(
+				"native-attachment-"+strconv.Itoa(index)+"-"+strconv.Itoa(len(attachments)),
+				strings.TrimSpace(parts[0]),
+				path,
+			))
 		}
 		break
 	}
@@ -899,12 +900,49 @@ func workspaceLegacyInlineAttachmentPrompt(value string) (string, []readmodels.C
 }
 
 func workspaceAttachmentMimeType(path string) string {
-	switch strings.ToLower(filepath.Ext(path)) {
-	case ".txt", ".md", ".log", ".csv", ".json", ".yaml", ".yml", ".toml", ".xml":
-		return "text/plain"
-	default:
-		return "application/octet-stream"
+	return detectUploadMime(path, "")
+}
+
+func workspaceNativeAttachment(fallbackID string, displayName string, path string) readmodels.ChatAttachment {
+	cleanPath := filepath.Clean(path)
+	if uploaded, ok := workspaceUploadedAttachment(cleanPath); ok {
+		return uploaded
 	}
+	mimeType := workspaceAttachmentMimeType(cleanPath)
+	attachment := readmodels.ChatAttachment{
+		ID:           fallbackID,
+		Kind:         attachmentKind(mimeType),
+		DisplayName:  displayName,
+		AbsolutePath: cleanPath,
+		RelativePath: cleanPath,
+		MimeType:     mimeType,
+	}
+	if info, err := os.Stat(cleanPath); err == nil && info.Mode().IsRegular() {
+		attachment.Size = info.Size()
+	}
+	return attachment
+}
+
+func workspaceUploadedAttachment(path string) (readmodels.ChatAttachment, bool) {
+	projectID := filepath.Base(filepath.Dir(path))
+	uploadID := filepath.Base(path)
+	if projectID == "." || uploadID == "." || filepath.Clean(filepath.Join(uploadDir(projectID), uploadID)) != path {
+		return readmodels.ChatAttachment{}, false
+	}
+	uploaded, err := loadUploadMetadata(projectID, uploadID)
+	if err != nil || filepath.Clean(uploaded.AbsolutePath) != path {
+		return readmodels.ChatAttachment{}, false
+	}
+	return readmodels.ChatAttachment{
+		ID:           uploaded.ID,
+		Kind:         uploaded.Kind,
+		DisplayName:  uploaded.DisplayName,
+		AbsolutePath: uploaded.AbsolutePath,
+		RelativePath: uploaded.RelativePath,
+		ContentURL:   uploaded.ContentURL,
+		MimeType:     uploaded.MimeType,
+		Size:         uploaded.Size,
+	}, true
 }
 
 func workspaceSearchableCursor(message parser.SearchableMessage) string {

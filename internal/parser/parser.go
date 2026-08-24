@@ -1140,10 +1140,23 @@ func codexContentText(value any) string {
 	case map[string]any:
 		switch stringValue(typed["type"]) {
 		case "input_text", "output_text", "text":
-			return codexText(typed["text"])
+			text := codexText(typed["text"])
+			if isCodexImageBoundaryText(text) {
+				return ""
+			}
+			return text
 		}
 	}
 	return ""
+}
+
+func isCodexImageBoundaryText(value string) bool {
+	value = strings.TrimSpace(value)
+	if strings.EqualFold(value, "</image>") {
+		return true
+	}
+	lower := strings.ToLower(value)
+	return strings.HasPrefix(lower, "<image ") && strings.HasSuffix(lower, ">")
 }
 
 func isEmbeddedDataURL(text string) bool {

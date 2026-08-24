@@ -64,7 +64,7 @@ describe("AbolqasemTranscript", () => {
   test("renders native Codex command collapsed, plus file-change and live plan cards", () => {
     const html = renderTranscript([
       { id: "cmd", kind: "command_execution", itemId: "cmd-1", command: "go test ./...", cwd: "/work", status: "completed", aggregatedOutput: "ok", exitCode: 0, timestamp: new Date().toISOString() },
-      { id: "files", kind: "file_change", itemId: "files-1", status: "completed", changes: [{ path: "main.go", kind: "update", diff: "@@ -1 +1 @@\n-old\n+new" }], output: "", timestamp: new Date().toISOString() },
+      { id: "files", kind: "file_change", itemId: "files-1", status: "completed", changes: [{ path: "/work/main.go", kind: "update", diff: "@@ -1 +1 @@\n-old\n+new" }], output: "", timestamp: new Date().toISOString() },
       { id: "plan", kind: "turn_plan", turnId: "turn-1", explanation: "Implement safely", plan: [{ step: "Run tests", status: "inProgress" }], timestamp: new Date().toISOString() },
     ])
     expect(html).toContain("go test ./...")
@@ -72,7 +72,9 @@ describe("AbolqasemTranscript", () => {
     expect(html).toContain('aria-expanded="false"')
     expect(html).not.toContain("No output yet")
     expect(html).toContain("1 files changed")
-    expect(html).toContain("main.go")
+    expect(html).toContain("/work/main.go")
+    expect(html).toContain('href="/work/main.go"')
+    expect(html).toContain("Open /work/main.go in file manager")
     expect(html).toContain("Updating")
     expect(html).toContain("Implement safely")
     expect(html).toContain("Run tests")

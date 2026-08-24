@@ -63,6 +63,24 @@ func TestParseMessagesCodexDedupesResponseItemEventPairs(t *testing.T) {
 	}
 }
 
+func TestParseMessagesCodexDedupesImageBoundaryResponseItem(t *testing.T) {
+	path := writeTranscript(t, strings.Join([]string{
+		`{"timestamp":"2026-08-24T14:05:07.286Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"# Files mentioned by the user:\n\n## image.png: /tmp/image.png\n\n## My request for Codex:\n\nپادشاه این جاست؟"},{"type":"input_text","text":"<image name=[Image #1] path=\"/tmp/image.png\">"},{"type":"input_image","image_url":"data:image/png;base64,do-not-render"},{"type":"input_text","text":"</image>"}]}}`,
+		`{"timestamp":"2026-08-24T14:05:07.286Z","type":"event_msg","payload":{"type":"user_message","message":"# Files mentioned by the user:\n\n## image.png: /tmp/image.png\n\n## My request for Codex:\n\nپادشاه این جاست؟","local_images":["/tmp/image.png"]}}`,
+	}, "\n"))
+
+	result, err := ParseMessages("codex", "session-1", path, ParseOptions{Limit: 10})
+	if err != nil {
+		t.Fatalf("ParseMessages returned error: %v", err)
+	}
+	if len(result.Items) != 1 {
+		t.Fatalf("expected one deduped image prompt, got %d: %#v", len(result.Items), result.Items)
+	}
+	if strings.Contains(result.Items[0].Text, "<image") || strings.Contains(result.Items[0].Text, "</image>") {
+		t.Fatalf("expected image transport markup hidden, got %#v", result.Items[0])
+	}
+}
+
 func TestParseMessagesCodexKeepsRealRepeatedUserPrompts(t *testing.T) {
 	path := writeTranscript(t, strings.Join([]string{
 		`{"timestamp":"2026-07-04T10:39:08.589Z","type":"event_msg","payload":{"type":"user_message","message":"سلام خوبی؟"}}`,

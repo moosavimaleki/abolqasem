@@ -1,6 +1,7 @@
 import { useId, useMemo, useState } from "react"
-import { Check, ChevronDown, ChevronRight, Circle, FileCode2, Loader2, TerminalSquare, X } from "lucide-react"
+import { Check, ChevronDown, ChevronRight, Circle, FileCode2, FolderOpen, Loader2, TerminalSquare, X } from "lucide-react"
 import type { CodexFileUpdateChange, HydratedTranscriptMessage } from "../../../shared/types"
+import { fileRouteHref } from "../file-preview/FilePreviewPanel"
 import { formatBashCommandTitle } from "../../lib/formatters"
 import { cn } from "../../lib/utils"
 import { Dialog, DialogContent, DialogTitle } from "../ui/dialog"
@@ -130,11 +131,17 @@ export function CodexFileChangeMessage({ message }: { message: FileChangeMessage
         </button>
         {expanded ? <div className="divide-y divide-white/10">{message.changes.map((change) => {
           const counts = diffCounts(change.diff || "")
-          return <button key={change.path} type="button" onClick={() => setSelected(change)} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-white/5" dir="ltr">
-            <span className="rounded-full bg-sky-950 px-2 py-0.5 text-[10px] uppercase text-sky-300">{change.kind}</span>
-            <span className="min-w-0 flex-1 truncate font-mono text-sky-300">{change.path}{change.movedToPath ? ` → ${change.movedToPath}` : ""}</span>
-            <span className="text-emerald-400">+{counts.additions}</span><span className="text-red-400">-{counts.deletions}</span>
-          </button>
+          const targetPath = change.movedToPath || change.path
+          return <div key={change.path} className="flex items-stretch hover:bg-white/5" dir="ltr">
+            <button type="button" onClick={() => setSelected(change)} className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left">
+              <span className="rounded-full bg-sky-950 px-2 py-0.5 text-[10px] uppercase text-sky-300">{change.kind}</span>
+              <span className="min-w-0 flex-1 truncate font-mono text-sky-300">{change.path}{change.movedToPath ? ` → ${change.movedToPath}` : ""}</span>
+              <span className="text-emerald-400">+{counts.additions}</span><span className="text-red-400">-{counts.deletions}</span>
+            </button>
+            <a href={fileRouteHref(targetPath)} target="_blank" rel="noreferrer" aria-label={`Open ${targetPath} in file manager`} title="Open in file manager" className="flex w-10 shrink-0 items-center justify-center border-s border-white/10 text-sky-300 transition-colors hover:bg-sky-950/60 hover:text-sky-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-500">
+              <FolderOpen className="size-4" />
+            </a>
+          </div>
         })}</div> : null}
       </div>
       <Dialog open={selected !== null} onOpenChange={(open) => { if (!open) setSelected(null) }}>
