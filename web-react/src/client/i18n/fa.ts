@@ -63,6 +63,7 @@ export const fa: TranslationDictionary = {
     resume: "ادامه",
     settings: "تنظیمات",
     searchBackspaceHint: "Backspace روی جست‌وجوی خالی این فیلتر را حذف می‌کند",
+    searchClear: "پاک کردن جست‌وجو",
     searchContentPlaceholder: "جست‌وجو در متن همه نشست‌ها",
     searchNamesPlaceholder: "جست‌وجو در نام نشست یا پروژه",
     searchNamesScope: "نام نشست",

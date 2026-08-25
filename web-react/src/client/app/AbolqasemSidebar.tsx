@@ -11,7 +11,7 @@ import { cn } from "../lib/utils"
 import { ChatRow } from "../components/chat-ui/sidebar/ChatRow"
 import { LocalProjectsSection } from "../components/chat-ui/sidebar/LocalProjectsSection"
 import { getResolvedKeybindings } from "../lib/keybindings"
-import type { AgentProvider, KeybindingsSnapshot, SidebarData, SidebarChatRow, UpdateSnapshot } from "../../shared/types"
+import type { AgentProvider, AppLocale, KeybindingsSnapshot, SidebarData, SidebarChatRow, UpdateSnapshot } from "../../shared/types"
 import type { SocketStatus } from "./socket"
 import {
   getSidebarJumpTargetIndex,
@@ -154,13 +154,13 @@ function SidebarSearch({
   }, [globalNextOffset, globalTotal, loading, scope, trimmedQuery])
 
   return (
-    <div className="mb-2 rounded-2xl border border-border/70 bg-card/50 p-2">
-      <div className="flex items-center gap-2 rounded-xl border border-border bg-background px-2 py-1.5">
+    <div data-sidebar-control="search" className="mb-2">
+      <div className="flex h-10 items-center gap-2 rounded-xl border border-border/80 bg-background/70 px-2.5 transition-colors focus-within:border-foreground/25 focus-within:ring-1 focus-within:ring-ring/40">
         <SearchIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         {scope === "names" ? (
           <button
             type="button"
-            className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground"
+            className="inline-flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-md bg-muted/70 px-1.5 text-[10px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             onClick={() => setScope("content")}
             title={t.sidebar.searchBackspaceHint}
           >
@@ -177,17 +177,23 @@ function SidebarSearch({
             }
           }}
           placeholder={scope === "names" ? t.sidebar.searchNamesPlaceholder : t.sidebar.searchContentPlaceholder}
-          className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+          aria-label={scope === "names" ? t.sidebar.searchNamesPlaceholder : t.sidebar.searchContentPlaceholder}
+          className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground/80"
         />
         {query ? (
-          <button type="button" className="text-muted-foreground hover:text-foreground" onClick={() => setQuery("")}>
+          <button
+            type="button"
+            className="flex size-7 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => setQuery("")}
+            aria-label={t.sidebar.searchClear}
+          >
             <X className="h-3.5 w-3.5" />
           </button>
         ) : null}
       </div>
 
       {trimmedQuery ? (
-        <div className="mt-2 max-h-80 space-y-1 overflow-y-auto">
+        <div className="mt-2 max-h-[35vh] space-y-1 overflow-y-auto">
           {scope === "names" ? (
             nameResults.length > 0 ? nameResults.map(({ chat, projectName }) => (
               <button
@@ -250,6 +256,77 @@ function SidebarSearch({
           {t.sidebar.searchReturnToNames}
         </button>
       ) : null}
+    </div>
+  )
+}
+
+export function SidebarPrimaryControls({
+  data,
+  locale,
+  sidebarView,
+  onChangeView,
+  onNewChat,
+  onAddProject,
+  onSelectChat,
+}: {
+  data: SidebarData
+  locale: AppLocale
+  sidebarView: SidebarView
+  onChangeView: (view: SidebarView) => void
+  onNewChat: () => void
+  onAddProject: () => void
+  onSelectChat: (chatId: string) => void
+}) {
+  const isPersian = locale === "fa"
+
+  return (
+    <div className="shrink-0 border-b border-border/60 px-2 py-2">
+      <div data-sidebar-control="actions" className="mb-2 grid grid-cols-2 gap-1.5">
+        <button
+          type="button"
+          onClick={onNewChat}
+          className="flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-border/60 bg-muted/55 px-2 text-xs font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <SquarePen className="size-3.5" />
+          {isPersian ? "چت جدید" : "New chat"}
+        </button>
+        <button
+          type="button"
+          onClick={onAddProject}
+          className="flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-transparent px-2 text-xs text-muted-foreground transition-colors hover:border-border/50 hover:bg-muted/45 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <Plus className="size-3.5" />
+          {isPersian ? "افزودن پروژه" : "Add project"}
+        </button>
+      </div>
+
+      <SidebarSearch data={data} onSelectChat={onSelectChat} />
+
+      <div
+        data-sidebar-control="view-filter"
+        className="grid grid-cols-2 gap-1 rounded-lg bg-muted/35 p-1"
+        role="tablist"
+        aria-label={isPersian ? "نمایش سایدبار" : "Sidebar view"}
+      >
+        {(["chats", "projects"] as const).map((view) => (
+          <button
+            key={view}
+            type="button"
+            role="tab"
+            aria-selected={sidebarView === view}
+            onClick={() => onChangeView(view)}
+            className={cn(
+              "flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-md text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              sidebarView === view
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:bg-background/35 hover:text-foreground",
+            )}
+          >
+            {view === "chats" ? <MessageSquare className="size-3.5" /> : <FolderKanban className="size-3.5" />}
+            {view === "chats" ? (isPersian ? "چت‌ها" : "Chats") : (isPersian ? "پروژه‌ها" : "Projects")}
+          </button>
+        ))}
+      </div>
     </div>
   )
 }
@@ -677,7 +754,7 @@ function AbolqasemSidebarImpl({
         )}
         style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}
       >
-        <div className="px-[5px] h-[47px] md:h-auto md:py-1 border-b grid grid-cols-[40px_minmax(0,1fr)_40px] items-center md:ps-3 md:pe-1 md:flex md:justify-between">
+        <div className="grid h-12 shrink-0 grid-cols-[40px_minmax(0,1fr)_40px] items-center border-b px-1.5 md:flex md:justify-between md:px-2">
           <div className="md:hidden">
             <Button
               variant="ghost"
@@ -689,39 +766,27 @@ function AbolqasemSidebarImpl({
               <X className="h-5 w-5" />
             </Button>
           </div>
-          <div className="flex items-center justify-self-center gap-2 md:justify-self-auto">
+          <div className="flex min-w-0 items-center justify-self-center gap-1.5 md:justify-self-auto">
             <button
               type="button"
               onClick={onCollapse}
               title={t.sidebar.collapseSidebar}
-              className="hidden md:flex group/sidebar-collapse relative items-center justify-center h-5 w-5 sm:h-6 sm:w-6"
+              className="group/sidebar-collapse relative hidden size-8 cursor-pointer items-center justify-center rounded-lg transition-colors hover:bg-muted md:flex"
             >
-              <AbolqasemLogo className="absolute inset-0.5 h-4 w-4 sm:h-5 sm:w-5 text-logo transition-all duration-200 ease-out opacity-100 scale-100 group-hover/sidebar-collapse:opacity-0 group-hover/sidebar-collapse:scale-0" />
+              <AbolqasemLogo className="absolute size-5 text-logo transition-all duration-200 ease-out opacity-100 scale-100 group-hover/sidebar-collapse:opacity-0 group-hover/sidebar-collapse:scale-0" />
               {isRtl ? (
-                <PanelRight className="absolute inset-0 h-4 w-4 sm:h-6 sm:w-6 text-muted-foreground transition-all duration-200 ease-out opacity-0 scale-0 group-hover/sidebar-collapse:opacity-100 group-hover/sidebar-collapse:scale-80 hover:opacity-50" />
+                <PanelRight className="absolute size-5 text-muted-foreground transition-all duration-200 ease-out opacity-0 scale-0 group-hover/sidebar-collapse:opacity-100 group-hover/sidebar-collapse:scale-100" />
               ) : (
-                <PanelLeft className="absolute inset-0 h-4 w-4 sm:h-6 sm:w-6 text-muted-foreground transition-all duration-200 ease-out opacity-0 scale-0 group-hover/sidebar-collapse:opacity-100 group-hover/sidebar-collapse:scale-80 hover:opacity-50" />
+                <PanelLeft className="absolute size-5 text-muted-foreground transition-all duration-200 ease-out opacity-0 scale-0 group-hover/sidebar-collapse:opacity-100 group-hover/sidebar-collapse:scale-100" />
               )}
             </button>
-            <AbolqasemLogo className="h-5 w-5 sm:h-6 sm:w-6 text-logo md:hidden" />
-            <span className="font-logo text-base uppercase sm:text-md text-foreground">{APP_NAME}</span>
+            <AbolqasemLogo className="size-5 text-logo md:hidden" />
+            <span className="truncate font-logo text-sm uppercase text-foreground">{APP_NAME}</span>
           </div>
           <div className="flex items-center justify-self-end md:justify-self-auto">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => {
-                navigate("/")
-                onClose()
-              }}
-              className="size-10 rounded-lg hover:!border-border/0 md:hidden"
-              title={t.sidebar.newProject}
-            >
-              <Plus className="h-5 w-5" />
-            </Button>
             {showDevBadge ? (
               <span
-                className="me-1 hidden md:inline-flex items-center rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] font-bold tracking-wider text-muted-foreground"
+                className="hidden items-center rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-bold tracking-wider text-muted-foreground md:inline-flex"
                 title={t.sidebar.developmentBuild}
               >
                 DEV
@@ -730,7 +795,7 @@ function AbolqasemSidebarImpl({
               <Button
                 variant="outline"
                 size="sm"
-                className="hidden md:inline-flex rounded-full !h-auto me-1 py-0.5 px-2 bg-logo/20 hover:bg-logo text-logo border-logo/20 hover:text-foreground hover:border-logo/20 text-[11px] font-bold tracking-wider"
+                className="hidden rounded-full !h-auto border-logo/20 bg-logo/15 px-2 py-0.5 text-[10px] font-bold tracking-wider text-logo hover:border-logo/20 hover:bg-logo/25 hover:text-foreground md:inline-flex"
                 onClick={onOpenChangelog}
                 disabled={isUpdating}
                 title={updateSnapshot?.latestVersion ? t.sidebar.updateTo(updateSnapshot.latestVersion) : t.sidebar.updateAbolqasem}
@@ -739,20 +804,25 @@ function AbolqasemSidebarImpl({
                 {t.sidebar.update}
               </Button>
             ) : null}
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => {
-                navigate("/")
-                onClose()
-              }}
-              className="hidden md:inline-flex size-10 rounded-lg hover:!border-border/0"
-              title={t.sidebar.newProject}
-            >
-              <Plus className="size-4" />
-            </Button>
           </div>
         </div>
+
+        <SidebarPrimaryControls
+          data={data}
+          locale={locale}
+          sidebarView={sidebarView}
+          onChangeView={changeSidebarView}
+          onNewChat={() => currentProjectId ? onCreateChat(currentProjectId) : onOpenAddProjectModal()}
+          onAddProject={() => {
+            navigate("/")
+            onClose()
+            onOpenAddProjectModal()
+          }}
+          onSelectChat={(chatId) => {
+            navigate(chatRoute(chatId))
+            onClose()
+          }}
+        />
 
         <div
           ref={scrollContainerRef}
@@ -762,46 +832,7 @@ function AbolqasemSidebarImpl({
             touchAction: "pan-y",
           }}
         >
-          <div className="p-[7px]">
-            <div className="mb-2 grid grid-cols-2 gap-1 rounded-xl bg-muted/40 p-1" role="tablist" aria-label="Sidebar view">
-              {(["chats", "projects"] as const).map((view) => (
-                <button
-                  key={view}
-                  type="button"
-                  role="tab"
-                  aria-selected={sidebarView === view}
-                  onClick={() => changeSidebarView(view)}
-                  className={cn("flex h-8 items-center justify-center gap-1.5 rounded-lg text-xs transition-colors", sidebarView === view ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
-                >
-                  {view === "chats" ? <MessageSquare className="size-3.5" /> : <FolderKanban className="size-3.5" />}
-                  {view === "chats" ? (locale === "fa" ? "چت‌ها" : "Chats") : (locale === "fa" ? "پروژه‌ها" : "Projects")}
-                </button>
-              ))}
-            </div>
-            <div className="mb-2 grid grid-cols-2 gap-1">
-              <button
-                type="button"
-                onClick={() => currentProjectId ? onCreateChat(currentProjectId) : onOpenAddProjectModal()}
-                className="flex h-9 items-center gap-2 rounded-lg px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
-              >
-                <SquarePen className="size-3.5" />{locale === "fa" ? "چت جدید" : "New chat"}
-              </button>
-              <button
-                type="button"
-                onClick={() => { navigate("/"); onClose(); onOpenAddProjectModal() }}
-                className="flex h-9 items-center gap-2 rounded-lg px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
-              >
-                <Plus className="size-3.5" />{locale === "fa" ? "افزودن پروژه" : "Add project"}
-              </button>
-            </div>
-            <SidebarSearch
-              data={data}
-              onSelectChat={(chatId) => {
-                navigate(chatRoute(chatId))
-                onClose()
-              }}
-            />
-
+          <div className="px-[7px] py-1.5">
             {!hasVisibleChats && isConnecting ? (
               <div className="space-y-5 px-1 pt-3">
                 {[0, 1, 2].map((section) => (
@@ -830,8 +861,7 @@ function AbolqasemSidebarImpl({
             ) : null}
 
             {sidebarView === "chats" ? (
-              <div className="pt-1">
-                <div className="px-2 pb-1 text-[11px] font-medium text-muted-foreground">{locale === "fa" ? "چت‌ها" : "Chats"}</div>
+              <div>
                 {flatChats.map(({ chat, projectName }) => (
                   <div key={chat.chatId}>
                     <div className="truncate px-3 pt-1 text-[10px] text-muted-foreground/70">{projectName}</div>

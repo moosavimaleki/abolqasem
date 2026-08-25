@@ -62,6 +62,7 @@ export const en = {
     resume: "Resume",
     settings: "Settings",
     searchBackspaceHint: "Backspace on an empty search removes this filter",
+    searchClear: "Clear search",
     searchContentPlaceholder: "Search all session text",
     searchNamesPlaceholder: "Search session or project names",
     searchNamesScope: "Session name",

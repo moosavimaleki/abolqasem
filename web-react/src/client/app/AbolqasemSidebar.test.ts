@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test"
+import { createElement } from "react"
+import { renderToStaticMarkup } from "react-dom/server"
 import type { SidebarChatRow, SidebarData } from "../../shared/types"
-import { getUsageOrderedSidebarChats } from "./AbolqasemSidebar"
+import { I18nProvider } from "../i18n/context"
+import { getUsageOrderedSidebarChats, SidebarPrimaryControls } from "./AbolqasemSidebar"
 
 function chat(chatId: string, lastMessageAt: number, unread: boolean): SidebarChatRow {
   return {
@@ -43,5 +46,32 @@ describe("getUsageOrderedSidebarChats", () => {
     olderUnread.unread = false
     expect(getUsageOrderedSidebarChats(sidebarData([olderUnread, newerRead])).map(({ chat }) => chat.chatId))
       .toEqual(["newer", "older"])
+  })
+})
+
+describe("SidebarPrimaryControls", () => {
+  test("places primary actions and search before the view filter", () => {
+    const html = renderToStaticMarkup(createElement(
+      I18nProvider,
+      { locale: "fa" },
+      createElement(SidebarPrimaryControls, {
+        data: sidebarData([]),
+        locale: "fa",
+        sidebarView: "chats",
+        onChangeView: () => undefined,
+        onNewChat: () => undefined,
+        onAddProject: () => undefined,
+        onSelectChat: () => undefined,
+      }),
+    ))
+
+    const actionsIndex = html.indexOf('data-sidebar-control="actions"')
+    const searchIndex = html.indexOf('data-sidebar-control="search"')
+    const filterIndex = html.indexOf('data-sidebar-control="view-filter"')
+
+    expect(actionsIndex).toBeGreaterThanOrEqual(0)
+    expect(searchIndex).toBeGreaterThan(actionsIndex)
+    expect(filterIndex).toBeGreaterThan(searchIndex)
+    expect(html.match(/>چت‌ها</g)).toHaveLength(1)
   })
 })
