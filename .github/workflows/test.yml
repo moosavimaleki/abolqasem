@@ -94,7 +94,6 @@ jobs:
           grep -q "Service: installed" "$RUNNER_TEMP/abolqasem-status.txt"
           grep -q "abolqasem" "$HOME/.codex/config.toml"
           grep -q "abolqasem" "$HOME/.claude/settings.json"
-          grep -q "abolqasem" "$HOME/.gemini/settings.json"
 
   install-source-windows:
     runs-on: windows-latest
@@ -126,8 +125,7 @@ jobs:
           }
           foreach ($Path in @(
             "$env:USERPROFILE\.codex\config.toml",
-            "$env:USERPROFILE\.claude\settings.json",
-            "$env:USERPROFILE\.gemini\settings.json"
+            "$env:USERPROFILE\.claude\settings.json"
           )) {
             if (!(Test-Path $Path)) { throw "hook config not found: $Path" }
             if (-not (Select-String -Path $Path -Pattern "abolqasem" -SimpleMatch -Quiet)) {
@@ -194,7 +192,6 @@ jobs:
           grep -q "Service: installed" "$RUNNER_TEMP/abolqasem-release-status.txt"
           grep -q "abolqasem" "$HOME/.codex/config.toml"
           grep -q "abolqasem" "$HOME/.claude/settings.json"
-          grep -q "abolqasem" "$HOME/.gemini/settings.json"
 
   install-release-windows:
     runs-on: windows-latest
@@ -274,8 +271,7 @@ jobs:
           }
           foreach ($Path in @(
             "$env:USERPROFILE\.codex\config.toml",
-            "$env:USERPROFILE\.claude\settings.json",
-            "$env:USERPROFILE\.gemini\settings.json"
+            "$env:USERPROFILE\.claude\settings.json"
           )) {
             if (!(Test-Path $Path)) { throw "hook config not found: $Path" }
             if (-not (Select-String -Path $Path -Pattern "abolqasem" -SimpleMatch -Quiet)) {
