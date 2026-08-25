@@ -161,5 +161,28 @@ describe("ChatRow", () => {
 
     expect(html).toContain("aria-label=\"Codex\"")
     expect(html).toContain("Test chat")
+    expect(html).not.toContain("text-emerald")
+  })
+
+  test("reserves the green activity indicator for unread chats", () => {
+    const html = renderToStaticMarkup(
+      <I18nProvider locale="en">
+        <ChatRow
+          chat={{ ...baseChat, unread: true }}
+          activeChatId={null}
+          nowMs={60_000}
+          onSelectChat={() => undefined}
+          onRenameChat={() => undefined}
+          onOpenInFinder={() => undefined}
+          onForkChat={() => undefined}
+          onConvertChat={() => undefined}
+          onArchiveChat={() => undefined}
+          onDeleteChat={() => undefined}
+        />
+      </I18nProvider>
+    )
+
+    expect(html).toContain("aria-label=\"Unread\"")
+    expect(html).toContain("bg-emerald-400")
   })
 })

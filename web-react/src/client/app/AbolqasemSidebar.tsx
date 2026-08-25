@@ -323,6 +323,12 @@ function allSidebarSearchChats(data: SidebarData) {
   })
 }
 
+export function getUsageOrderedSidebarChats(data: SidebarData) {
+  return allSidebarSearchChats(data).sort(
+    (left, right) => getSidebarChatTimestamp(right.chat) - getSidebarChatTimestamp(left.chat),
+  )
+}
+
 function chatIdForSearchResult(data: SidebarData, result: BackendSearchResult) {
   if (result.chat_id) return result.chat_id
   return allSidebarSearchChats(data).find(({ chat }) => chat.legacySessionKey === result.key)?.chat.chatId ?? null
@@ -398,16 +404,8 @@ function AbolqasemSidebarImpl({
     [archivedProjectId, data.projectGroups]
   )
   const flatChats = useMemo(
-    () => allSidebarSearchChats(data).sort((left, right) => getSidebarChatTimestamp(right.chat) - getSidebarChatTimestamp(left.chat)),
+    () => getUsageOrderedSidebarChats(data),
     [data],
-  )
-  const activeFlatChats = useMemo(
-    () => flatChats.filter(({ chat }) => chat.status !== "idle" || chat.unread),
-    [flatChats],
-  )
-  const recentFlatChats = useMemo(
-    () => flatChats.filter(({ chat }) => chat.status === "idle" && !chat.unread),
-    [flatChats],
   )
 
   const changeSidebarView = useCallback((view: SidebarView) => {
@@ -832,17 +830,14 @@ function AbolqasemSidebarImpl({
             ) : null}
 
             {sidebarView === "chats" ? (
-              <div className="space-y-4 pt-1">
-                {activeFlatChats.length ? (
-                  <section>
-                    <div className="px-2 pb-1 text-[11px] font-medium text-muted-foreground">{locale === "fa" ? "فعال" : "Active"}</div>
-                    {activeFlatChats.map(({ chat, projectName }) => <div key={chat.chatId}><div className="px-3 pt-1 text-[10px] text-muted-foreground/70 truncate">{projectName}</div>{renderChatRow(chat)}</div>)}
-                  </section>
-                ) : null}
-                <section>
-                  <div className="px-2 pb-1 text-[11px] font-medium text-muted-foreground">{locale === "fa" ? "اخیر" : "Recent"}</div>
-                  {recentFlatChats.map(({ chat, projectName }) => <div key={chat.chatId}><div className="px-3 pt-1 text-[10px] text-muted-foreground/70 truncate">{projectName}</div>{renderChatRow(chat)}</div>)}
-                </section>
+              <div className="pt-1">
+                <div className="px-2 pb-1 text-[11px] font-medium text-muted-foreground">{locale === "fa" ? "چت‌ها" : "Chats"}</div>
+                {flatChats.map(({ chat, projectName }) => (
+                  <div key={chat.chatId}>
+                    <div className="truncate px-3 pt-1 text-[10px] text-muted-foreground/70">{projectName}</div>
+                    {renderChatRow(chat)}
+                  </div>
+                ))}
               </div>
             ) : <LocalProjectsSection
               projectGroups={data.projectGroups}

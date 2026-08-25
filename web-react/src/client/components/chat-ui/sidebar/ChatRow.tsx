@@ -17,11 +17,6 @@ const providerLabels: Record<AgentProvider, string> = {
   claude: "Claude",
   codex: "Codex",
 }
-const providerIconClasses: Record<AgentProvider, string> = {
-  claude: "text-orange-500 dark:text-orange-300",
-  codex: "text-emerald-600 dark:text-emerald-300",
-}
-
 interface Props {
   chat: SidebarChatRow
   activeChatId: string | null
@@ -105,7 +100,12 @@ function ChatRowImpl({
           </div>
         </div>
       ) : chat.unread ? (
-        <div className="relative ">
+        <div
+          className="relative"
+          role="status"
+          title={locale === "fa" ? "خوانده‌نشده" : "Unread"}
+          aria-label={locale === "fa" ? "خوانده‌نشده" : "Unread"}
+        >
           <div className=" rounded-full z-0 size-3.5 flex items-center justify-center ">
             <div className="absolute rounded-full z-0 size-2.5 bg-emerald-400/80 animate-ping" />
             <div className=" rounded-full z-0 size-2.5 bg-emerald-400 ring-2 ring-muted/50" />
@@ -118,7 +118,7 @@ function ChatRowImpl({
           title={providerLabels[chat.provider]}
           aria-label={providerLabels[chat.provider]}
         >
-          <ProviderIcon className={cn("size-3.5", providerIconClasses[chat.provider])} />
+          <ProviderIcon className="size-3.5" />
         </span>
       ) : null}
       <span dir={direction} className="text-sm text-start truncate flex-1 translate-y-[-0.5px]">
