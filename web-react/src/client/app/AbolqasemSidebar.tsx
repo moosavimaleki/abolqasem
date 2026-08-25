@@ -281,11 +281,17 @@ export function SidebarPrimaryControls({
 
   return (
     <div className="shrink-0 border-b border-border/60 px-2 py-2">
-      <div data-sidebar-control="actions" className="mb-2 grid grid-cols-2 gap-1.5">
+      <div
+        data-sidebar-control="actions"
+        className="mb-2 grid grid-cols-2 gap-1.5"
+        role="group"
+        aria-label={isPersian ? "عملیات پروژه" : "Project actions"}
+      >
         <button
           type="button"
           onClick={onNewChat}
-          className="flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-border/60 bg-muted/55 px-2 text-xs font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          data-sidebar-action="new-chat"
+          className="flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-transparent px-2 text-xs font-medium text-foreground/80 transition-colors hover:border-border/50 hover:bg-muted/45 hover:text-foreground active:bg-muted/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <SquarePen className="size-3.5" />
           {isPersian ? "چت جدید" : "New chat"}
@@ -293,7 +299,8 @@ export function SidebarPrimaryControls({
         <button
           type="button"
           onClick={onAddProject}
-          className="flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-transparent px-2 text-xs text-muted-foreground transition-colors hover:border-border/50 hover:bg-muted/45 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          data-sidebar-action="add-project"
+          className="flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-transparent px-2 text-xs text-muted-foreground transition-colors hover:border-border/50 hover:bg-muted/45 hover:text-foreground active:bg-muted/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <Plus className="size-3.5" />
           {isPersian ? "افزودن پروژه" : "Add project"}

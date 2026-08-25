@@ -73,5 +73,8 @@ describe("SidebarPrimaryControls", () => {
     expect(searchIndex).toBeGreaterThan(actionsIndex)
     expect(filterIndex).toBeGreaterThan(searchIndex)
     expect(html.match(/>چت‌ها</g)).toHaveLength(1)
+    expect(html).toContain('data-sidebar-action="new-chat"')
+    expect(html).toContain('data-sidebar-action="add-project"')
+    expect(html).not.toContain('bg-muted/55')
   })
 })
