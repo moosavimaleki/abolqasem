@@ -159,6 +159,19 @@ func (m *workspaceCodexSessionManager) ownedExecutionMode(chatID string, threadI
 	return session.executionMode, true
 }
 
+// ownedExecutionModeByWriterPID is a recovery path for a live app-server whose
+// persisted thread id has not caught up yet. The writer PID comes from lsof,
+// so this still only recognizes a process started and retained by this server.
+func (m *workspaceCodexSessionManager) ownedExecutionModeByWriterPID(chatID string, pid int) (string, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	session := m.sessions[chatID]
+	if session == nil || session.process == nil || session.process.Exited() || session.process.cmd == nil || session.process.cmd.Process == nil || session.process.cmd.Process.Pid != pid {
+		return "", false
+	}
+	return session.executionMode, true
+}
+
 func (s *workspaceCodexSession) reusableFor(request agent.TurnRequest) bool {
 	if s == nil || s.process == nil || s.process.Exited() {
 		return false

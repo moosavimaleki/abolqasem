@@ -27,6 +27,8 @@ import (
 
 const telegramMessageLimit = 3500
 
+const telegramTakeOverLockCallbackPrefix = "lock:takeover:"
+
 type telegramUpdate struct {
 	UpdateID      int64                  `json:"update_id"`
 	Message       *telegramMessage       `json:"message"`
@@ -382,7 +384,7 @@ func (b *telegramBridge) handleMessage(ctx context.Context, config telegramBridg
 		}
 	}
 	if err := workspaceEnsureCodexChatWritable(target); err != nil {
-		b.sendText(ctx, config.BotToken, chatID, "این chat قفل است: "+err.Error())
+		b.sendTextWithMarkup(ctx, config.BotToken, chatID, "این chat قفل است: "+err.Error(), telegramTakeOverLockMarkup(target))
 		return
 	}
 	result, err := workspaceAgentCoordinator().Send(ctx, agent.SendCommand{ChatID: target, Content: text})
@@ -410,7 +412,26 @@ func (b *telegramBridge) handleCallbackQuery(ctx context.Context, config telegra
 		}
 		return
 	}
-	if chatID == "" || !strings.HasPrefix(callback.Data, "chat:") {
+	if chatID == "" {
+		b.answerCallbackQuery(ctx, config.BotToken, callback.ID, "انتخاب نامعتبر است")
+		return
+	}
+	if target, ok := telegramTakeOverLockChatID(callback.Data); ok {
+		if _, _, err := workspaceChatProjectRequired(target); err != nil {
+			b.answerCallbackQuery(ctx, config.BotToken, callback.ID, "نشست پیدا نشد")
+			return
+		}
+		status, err := workspaceTakeOverCodexSession(target, true, "dangerous")
+		if err != nil {
+			b.answerCallbackQuery(ctx, config.BotToken, callback.ID, "گرفتن نشست ناموفق بود")
+			b.sendTextWithMarkup(ctx, config.BotToken, chatID, "گرفتن قفل نشست ناموفق بود: "+err.Error(), telegramTakeOverLockMarkupForStatus(target, status))
+			return
+		}
+		b.answerCallbackQuery(ctx, config.BotToken, callback.ID, "نشست گرفته شد")
+		b.sendText(ctx, config.BotToken, chatID, "قفل نشست توسط ابوالقاسم گرفته شد. پیام بعدی شما ارسال می‌شود.")
+		return
+	}
+	if !strings.HasPrefix(callback.Data, "chat:") {
 		b.answerCallbackQuery(ctx, config.BotToken, callback.ID, "انتخاب نامعتبر است")
 		return
 	}
@@ -429,6 +450,34 @@ func (b *telegramBridge) handleCallbackQuery(ctx context.Context, config telegra
 	b.answerCallbackQuery(ctx, config.BotToken, callback.ID, "نشست انتخاب شد")
 	b.sendText(ctx, config.BotToken, chatID, "نشست انتخاب شد: `"+target+"`")
 	b.sendText(ctx, config.BotToken, chatID, telegramChatHistoryMarkdown(target))
+}
+
+func telegramTakeOverLockMarkup(chatID string) any {
+	chat, err := workspaceChatRequired(chatID)
+	if err != nil {
+		return nil
+	}
+	return telegramTakeOverLockMarkupForStatus(chatID, workspaceCodexLockStatus(chat))
+}
+
+func telegramTakeOverLockMarkupForStatus(chatID string, status readmodels.CodexLockStatus) any {
+	if status.State != codexLockOwnedElsewhere || !status.CanTakeOver || strings.TrimSpace(chatID) == "" {
+		return nil
+	}
+	return map[string]any{
+		"inline_keyboard": [][]map[string]string{{{
+			"text":          "🔓 گرفتن نشست",
+			"callback_data": telegramTakeOverLockCallbackPrefix + chatID,
+		}}},
+	}
+}
+
+func telegramTakeOverLockChatID(data string) (string, bool) {
+	chatID := strings.TrimSpace(strings.TrimPrefix(data, telegramTakeOverLockCallbackPrefix))
+	if !strings.HasPrefix(data, telegramTakeOverLockCallbackPrefix) || chatID == "" || len([]byte(data)) > 64 {
+		return "", false
+	}
+	return chatID, true
 }
 
 func (b *telegramBridge) rememberChatID(config *telegramBridgeConfig, chatID string) {

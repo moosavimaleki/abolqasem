@@ -212,6 +212,27 @@ func TestTelegramBridgeCommandAndTextHelpers(t *testing.T) {
 	}
 }
 
+func TestTelegramTakeOverLockCallbackIsCompactAndValidated(t *testing.T) {
+	data := telegramTakeOverLockCallbackPrefix + "chat-123"
+	if chatID, ok := telegramTakeOverLockChatID(data); !ok || chatID != "chat-123" {
+		t.Fatalf("takeover callback = %q %v", chatID, ok)
+	}
+	if _, ok := telegramTakeOverLockChatID("chat:chat-123"); ok {
+		t.Fatal("ordinary chat selection must not be treated as a takeover")
+	}
+	if _, ok := telegramTakeOverLockChatID(telegramTakeOverLockCallbackPrefix + strings.Repeat("x", 65)); ok {
+		t.Fatal("oversized callback data must be rejected")
+	}
+	markup := telegramTakeOverLockMarkupForStatus("chat-123", readmodels.CodexLockStatus{State: codexLockOwnedElsewhere, CanTakeOver: true})
+	encoded, err := json.Marshal(markup)
+	if err != nil || !strings.Contains(string(encoded), "گرفتن نشست") || !strings.Contains(string(encoded), data) {
+		t.Fatalf("takeover markup = %s, err=%v", encoded, err)
+	}
+	if markup := telegramTakeOverLockMarkupForStatus("chat-123", readmodels.CodexLockStatus{State: codexLockOwnedByUs, CanTakeOver: true}); markup != nil {
+		t.Fatalf("unexpected takeover markup for owned session: %#v", markup)
+	}
+}
+
 func TestTelegramChatChoicesAreNewestFirstAndRenderable(t *testing.T) {
 	sidebar := readmodels.SidebarData{ProjectGroups: []readmodels.SidebarProjectGroup{
 		{Title: "پروژه *یک*", Chats: []readmodels.SidebarChatRow{{ChatID: "chat-old", Title: "قدیمی", CreationTime: 10}}},

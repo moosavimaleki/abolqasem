@@ -102,6 +102,18 @@ func workspaceCodexLockStatus(chat readmodels.ChatRecord) readmodels.CodexLockSt
 	if len(owners) == 0 {
 		return readmodels.CodexLockStatus{State: codexLockAvailable, SessionID: sessionID, SessionPath: path}
 	}
+	for _, owner := range owners {
+		if executionMode, owned := workspaceCodexSessions.ownedExecutionModeByWriterPID(chat.ID, owner.PID); owned {
+			return readmodels.CodexLockStatus{
+				State:         codexLockOwnedByUs,
+				SessionID:     sessionID,
+				SessionPath:   path,
+				ExecutionMode: executionMode,
+				CanRelease:    true,
+				Message:       "This Abolqasem server owns the Codex session.",
+			}
+		}
+	}
 	status := readmodels.CodexLockStatus{
 		State:        codexLockOwnedElsewhere,
 		SessionID:    sessionID,
