@@ -35,11 +35,16 @@ jobs:
           cache: npm
           cache-dependency-path: web-react/package-lock.json
 
+      - name: Verify release notes
+        run: |
+          test "${GITHUB_REF_TYPE}" = "tag"
+          test -f ".github/release-notes/${GITHUB_REF_NAME}.md"
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
           version: "~> v2"
-          args: release --clean
+          args: release --clean --release-notes=.github/release-notes/${{ github.ref_name }}.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

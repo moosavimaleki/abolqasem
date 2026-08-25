@@ -22,7 +22,7 @@ builds:
       - amd64
       - arm64
     ldflags:
-      - -s -w -X ai-agent-manager/internal/buildinfo.Version={{ .Version }}
+      - -s -w -X abolqasem/internal/buildinfo.Version={{ .Version }}
 
 archives:
   - id: default
