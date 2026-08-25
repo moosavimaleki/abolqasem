@@ -151,6 +151,8 @@ export type ClientCommand =
   | { type: "chat.releaseCodexSession"; chatId: string }
   | { type: "chat.takeOverCodexSession"; chatId: string; confirm: boolean; executionMode?: CodexExecutionMode }
   | { type: "chat.setCodexExecutionMode"; chatId: string; executionMode: CodexExecutionMode }
+  | { type: "chat.setPlanMode"; chatId: string; planMode: boolean }
+  | { type: "chat.reloadCodexAuth"; chatId: string }
   | {
       type: "chat.send"
       chatId?: string

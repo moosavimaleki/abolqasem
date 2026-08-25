@@ -142,6 +142,7 @@ interface ChatTranscriptViewportProps {
   onEditQueuedMessage: (queuedMessageId: string) => Promise<void>
   onOpenLocalLink: AbolqasemState["handleOpenLocalLink"]
   onAskUserQuestionSubmit: AbolqasemState["handleAskUserQuestion"]
+  onApprovalRequestSubmit: AbolqasemState["handleApprovalRequest"]
   onExitPlanModeConfirm: AbolqasemState["handleExitPlanMode"]
   checkpoints?: ChatCheckpointSummary[]
   onRestoreCheckpoint?: AbolqasemState["handleRestoreCheckpoint"]
@@ -185,6 +186,7 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
   onEditQueuedMessage,
   onOpenLocalLink,
   onAskUserQuestionSubmit,
+  onApprovalRequestSubmit,
   onExitPlanModeConfirm,
   checkpoints = [],
   onRestoreCheckpoint,
@@ -492,13 +494,14 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
         toolGroupExpanded={item.kind === "tool-group" ? (toolGroupExpanded[item.id] ?? false) : undefined}
         onToolGroupExpandedChange={handleToolGroupExpandedChange}
         onAskUserQuestionSubmit={onAskUserQuestionSubmit}
+        onApprovalRequestSubmit={onApprovalRequestSubmit}
         onExitPlanModeConfirm={onExitPlanModeConfirm}
         promptCheckpoint={item.kind === "single" && item.message.kind === "user_prompt" ? item.promptCheckpoint : undefined}
         onRestoreCheckpoint={onRestoreCheckpoint}
       />
     </div>
     )
-  }, [direction, handleToolGroupExpandedChange, onAskUserQuestionSubmit, onExitPlanModeConfirm, onRestoreCheckpoint, toolGroupExpanded, transcriptAppearanceClassName, transcriptAppearanceStyle])
+  }, [direction, handleToolGroupExpandedChange, onApprovalRequestSubmit, onAskUserQuestionSubmit, onExitPlanModeConfirm, onRestoreCheckpoint, toolGroupExpanded, transcriptAppearanceClassName, transcriptAppearanceStyle])
 
   const listHeader = (
     <div className="mx-auto w-full max-w-[800px]" dir={direction} style={{ paddingTop: `${headerOffsetPx}px` }}>

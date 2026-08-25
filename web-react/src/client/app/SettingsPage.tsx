@@ -280,6 +280,10 @@ export function shouldPreviewChatSoundChange(
   return previousValue !== nextValue
 }
 
+export function canSendTelegramTest(status: { configured?: boolean; knownChats?: number } | null) {
+  return status?.configured === true && (status.knownChats ?? 0) > 0
+}
+
 export function resetSettingsPageChangelogCache() {
   changelogCache = null
 }
@@ -2239,10 +2243,12 @@ export function SettingsPage() {
   const [llmValidationStatus, setLlmValidationStatus] = useState<"idle" | "valid" | "invalid">("idle")
   const [llmValidationError, setLlmValidationError] = useState<unknown | null>(null)
   const [llmValidationDialogOpen, setLlmValidationDialogOpen] = useState(false)
-  const [telegramDraft, setTelegramDraft] = useState({ botToken: "", allowedUserIds: "" })
-  const [telegramStatus, setTelegramStatus] = useState<{ configured: boolean; active: boolean; mappedChats: number; lastError: string } | null>(null)
+  const [telegramDraft, setTelegramDraft] = useState({ botToken: "", proxyUrl: "", allowedUserIds: "" })
+  const [telegramStatus, setTelegramStatus] = useState<{ configured: boolean; active: boolean; proxyConfigured: boolean; mappedChats: number; knownChats: number; lastError: string } | null>(null)
   const [telegramError, setTelegramError] = useState<string | null>(null)
+  const [telegramNotice, setTelegramNotice] = useState<string | null>(null)
   const [telegramSaving, setTelegramSaving] = useState(false)
+  const [telegramTesting, setTelegramTesting] = useState(false)
   const updateSnapshot = state.updateSnapshot
   const handleWriteAppSettings = state.handleWriteAppSettings
   const handleReadLlmProvider = state.handleReadLlmProvider
@@ -2400,10 +2406,10 @@ export function SettingsPage() {
       fetch("/api/telegram/status", { cache: "no-store" }),
     ])
     if (!configResponse.ok || !statusResponse.ok) throw new Error("Telegram settings could not be loaded")
-    const config = await configResponse.json() as { botToken?: string; allowedUserIds?: string[] }
-    const status = await statusResponse.json() as { configured?: boolean; active?: boolean; mappedChats?: number; lastError?: string }
-    setTelegramDraft({ botToken: config.botToken ?? "", allowedUserIds: (config.allowedUserIds ?? []).join(", ") })
-    setTelegramStatus({ configured: status.configured === true, active: status.active === true, mappedChats: status.mappedChats ?? 0, lastError: status.lastError ?? "" })
+    const config = await configResponse.json() as { botToken?: string; proxyUrl?: string; allowedUserIds?: string[] }
+    const status = await statusResponse.json() as { configured?: boolean; active?: boolean; proxyConfigured?: boolean; mappedChats?: number; knownChats?: number; lastError?: string }
+    setTelegramDraft({ botToken: config.botToken ?? "", proxyUrl: config.proxyUrl ?? "", allowedUserIds: (config.allowedUserIds ?? []).join(", ") })
+    setTelegramStatus({ configured: status.configured === true, active: status.active === true, proxyConfigured: status.proxyConfigured === true, mappedChats: status.mappedChats ?? 0, knownChats: status.knownChats ?? 0, lastError: status.lastError ?? "" })
   }, [])
 
   useEffect(() => {
@@ -2414,12 +2420,14 @@ export function SettingsPage() {
   const saveTelegram = useCallback(async () => {
     setTelegramSaving(true)
     setTelegramError(null)
+    setTelegramNotice(null)
     try {
       const response = await fetch("/api/telegram/configure", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           botToken: telegramDraft.botToken,
+          proxyUrl: telegramDraft.proxyUrl,
           allowedUserIds: telegramDraft.allowedUserIds.split(/[\s,]+/).filter(Boolean),
         }),
       })
@@ -2431,6 +2439,22 @@ export function SettingsPage() {
       setTelegramSaving(false)
     }
   }, [refreshTelegram, telegramDraft])
+
+  const testTelegram = useCallback(async () => {
+    setTelegramTesting(true)
+    setTelegramError(null)
+    setTelegramNotice(null)
+    try {
+      const response = await fetch("/api/telegram/test", { method: "POST" })
+      if (!response.ok) throw new Error(await response.text())
+      setTelegramNotice("Test message sent with Rich Markdown and RTL.")
+      await refreshTelegram()
+    } catch (error) {
+      setTelegramError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setTelegramTesting(false)
+    }
+  }, [refreshTelegram])
 
   function commitScrollback() {
     const nextValue = Number(scrollbackDraft)
@@ -3407,9 +3431,10 @@ export function SettingsPage() {
                 ) : selectedPage === "telegram" ? (
                   <div className="border-b border-border">
                     {telegramError ? <div className="mb-4 rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">{telegramError}</div> : null}
+                    {telegramNotice ? <div className="mb-4 rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm text-foreground">{telegramNotice}</div> : null}
                     <SettingsRow
                       title="Telegram bridge"
-                      description="Only allowlisted user IDs can connect a Telegram conversation to a chat. In Telegram, use /chat &lt;chat-id&gt; once, then send normal messages."
+                      description="Only allowlisted users can use the bridge. In Telegram, use /chats to see and select recent chats, or send a message to create one automatically."
                       bordered={false}
                     >
                       <div className="text-sm text-muted-foreground">{telegramStatus?.active ? "Active" : telegramStatus?.configured ? "Configured; starting" : "Not configured"}</div>
@@ -3420,10 +3445,15 @@ export function SettingsPage() {
                     <SettingsRow title="Allowed user IDs" description="Comma-separated Telegram numeric IDs, or * for all users.">
                       <Input value={telegramDraft.allowedUserIds} onChange={(event) => setTelegramDraft((current) => ({ ...current, allowedUserIds: event.target.value }))} placeholder="123456789" />
                     </SettingsRow>
-                    <SettingsRow title="Mappings" description="Each Telegram chat chooses its destination with /chat &lt;chat-id&gt;.">
-                      <div className="flex items-center gap-3">
+                    <SettingsRow title="Telegram proxy" description="Required for polling and sending. Supports HTTP, HTTPS, SOCKS5, and SOCKS5H.">
+                      <Input dir="ltr" value={telegramDraft.proxyUrl} onChange={(event) => setTelegramDraft((current) => ({ ...current, proxyUrl: event.target.value }))} placeholder="socks5://127.0.0.1:10810" />
+                    </SettingsRow>
+                    <SettingsRow title="Mappings" description="Each Telegram chat chooses its destination from the /chats picker.">
+                      <div className="flex flex-wrap items-center gap-3">
                         <span className="text-sm text-muted-foreground">{telegramStatus?.mappedChats ?? 0} connected</span>
+                        <span className="text-sm text-muted-foreground">{telegramStatus?.proxyConfigured ? "Proxy ready" : "Proxy required"}</span>
                         <Button type="button" size="sm" onClick={() => void saveTelegram()} disabled={telegramSaving}>{telegramSaving ? "Saving…" : "Save and connect"}</Button>
+                        <Button type="button" size="sm" variant="outline" onClick={() => void testTelegram()} disabled={telegramTesting || !canSendTelegramTest(telegramStatus)}>{telegramTesting ? "Sending…" : "Send test"}</Button>
                       </div>
                     </SettingsRow>
                     {telegramStatus?.lastError ? <div className="px-4 pb-4 text-sm text-destructive">{telegramStatus.lastError}</div> : null}

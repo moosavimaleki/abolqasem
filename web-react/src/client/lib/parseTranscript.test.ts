@@ -29,6 +29,15 @@ describe("processTranscriptMessages", () => {
     expect(messages[3]).toMatchObject({ kind: "turn_activity", activity: "writing_response" })
   })
 
+  test("deduplicates native and wrapped proposed-plan records by turn", () => {
+    const messages = processTranscriptMessages([
+      entry({ kind: "proposed_plan", turnId: "turn-1", plan: "# Initial plan" }),
+      entry({ kind: "proposed_plan", turnId: "turn-1", plan: "# Final plan\n\n- Test" }),
+    ])
+    expect(messages).toHaveLength(1)
+    expect(messages[0]).toMatchObject({ kind: "proposed_plan", turnId: "turn-1", plan: "# Final plan\n\n- Test" })
+  })
+
   test("splits tmux capture entries into readable chat messages", () => {
     const messages = processTranscriptMessages([
       {
@@ -489,6 +498,7 @@ describe("getLatestToolIds", () => {
     ])
 
     expect(getLatestToolIds(messages)).toEqual({
+      ApprovalRequest: null,
       AskUserQuestion: messages[0]?.kind === "tool" ? messages[0].id : null,
       ExitPlanMode: null,
       TodoWrite: messages[1]?.kind === "tool" ? messages[1].id : null,
@@ -534,6 +544,7 @@ describe("getLatestToolIds", () => {
     ])
 
     expect(getLatestToolIds(messages)).toEqual({
+      ApprovalRequest: null,
       AskUserQuestion: null,
       ExitPlanMode: null,
       TodoWrite: null,

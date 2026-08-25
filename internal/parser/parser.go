@@ -813,6 +813,44 @@ func extractCodexMessage(raw map[string]any, sessionID string, index int) *Searc
 	}
 
 	switch eventType {
+	case "item_completed":
+		item := asMap(payload["item"])
+		if !strings.EqualFold(strings.TrimSpace(stringValue(item["type"])), "plan") {
+			return nil
+		}
+		plan := strings.TrimSpace(stringValue(item["text"]))
+		if plan == "" {
+			return nil
+		}
+		turnID := codexTurnID(payload)
+		if turnID == "" {
+			turnID = strings.TrimSuffix(strings.TrimSpace(stringValue(item["id"])), "-plan")
+		}
+		msg := newCodexSearchableMessage(sessionID, index, "assistant", "proposed_plan", plan, extractTimestamp(raw, payload), source)
+		if msg != nil {
+			msg.Fields = map[string]any{"turnId": turnID, "plan": plan}
+		}
+		return msg
+	case "task_complete":
+		// A failed Codex turn is recorded as task_complete with the actual
+		// provider error nested under error.message.  Keep that error in the
+		// transcript: otherwise the user only sees their prompt and an idle
+		// composer, with no indication that reauthentication (or another
+		// recovery action) is required.
+		errorPayload := asMap(payload["error"])
+		errorMessage := strings.TrimSpace(stringValue(errorPayload["message"]))
+		if errorMessage == "" {
+			return nil
+		}
+		msg := newCodexSearchableMessage(sessionID, index, "system", "result", errorMessage, extractTimestamp(raw, payload), source)
+		if msg != nil {
+			msg.Fields = map[string]any{
+				"subtype":    "error",
+				"isError":    true,
+				"durationMs": payload["duration_ms"],
+			}
+		}
+		return msg
 	case "patch_apply_end":
 		changes := extractCodexFileChanges(payload["changes"])
 		if len(changes) == 0 {
@@ -876,11 +914,15 @@ func extractCodexMessage(raw map[string]any, sessionID string, index int) *Searc
 			codexText(raw["message"]),
 		), extractTimestamp(raw, payload), source)
 	case "agent_message":
-		return newCodexSearchableMessage(sessionID, index, "assistant", "message", firstNonEmpty(
+		text := firstNonEmpty(
 			codexText(payload["message"]),
 			codexText(payload["text"]),
 			codexContentText(payload["content"]),
-		), extractTimestamp(raw, payload), source)
+		)
+		if plan, ok := extractCodexProposedPlan(text); ok {
+			return newCodexProposedPlanMessage(sessionID, index, payload, plan, extractTimestamp(raw, payload), source)
+		}
+		return newCodexSearchableMessage(sessionID, index, "assistant", "message", text, extractTimestamp(raw, payload), source)
 	case "tool_call", "command_output", "tool_result":
 		return newCodexSearchableMessage(sessionID, index, "tool", "tool", firstNonEmpty(
 			flattenText(payload["output"]),
@@ -897,11 +939,46 @@ func extractCodexMessage(raw map[string]any, sessionID string, index int) *Searc
 	if role != "user" && role != "assistant" {
 		return nil
 	}
-	return newCodexSearchableMessage(sessionID, index, role, "message", firstNonEmpty(
+	text := firstNonEmpty(
 		codexContentText(payload["content"]),
 		codexText(payload["message"]),
 		codexText(payload["text"]),
-	), extractTimestamp(raw, payload), source)
+	)
+	if role == "assistant" {
+		if plan, ok := extractCodexProposedPlan(text); ok {
+			return newCodexProposedPlanMessage(sessionID, index, payload, plan, extractTimestamp(raw, payload), source)
+		}
+	}
+	return newCodexSearchableMessage(sessionID, index, role, "message", text, extractTimestamp(raw, payload), source)
+}
+
+func extractCodexProposedPlan(text string) (string, bool) {
+	const openTag = "<proposed_plan>"
+	const closeTag = "</proposed_plan>"
+	trimmed := strings.TrimSpace(text)
+	start := strings.Index(trimmed, openTag)
+	if start < 0 {
+		return "", false
+	}
+	planStart := start + len(openTag)
+	endOffset := strings.Index(trimmed[planStart:], closeTag)
+	if endOffset < 0 {
+		return "", false
+	}
+	plan := strings.TrimSpace(trimmed[planStart : planStart+endOffset])
+	return plan, plan != ""
+}
+
+func newCodexProposedPlanMessage(sessionID string, index int, payload map[string]any, plan string, createdAt *time.Time, source string) *SearchableMessage {
+	turnID := codexTurnID(payload)
+	if turnID == "" {
+		turnID = firstNonEmpty(stringValue(payload["id"]), fmt.Sprintf("plan-%d", index))
+	}
+	msg := newCodexSearchableMessage(sessionID, index, "assistant", "proposed_plan", plan, createdAt, source)
+	if msg != nil {
+		msg.Fields = map[string]any{"turnId": turnID, "plan": plan}
+	}
+	return msg
 }
 
 func extractCodexFileChanges(value any) []map[string]any {
@@ -955,7 +1032,11 @@ func extractCodexPlanUpdate(input string) (string, []map[string]string, bool) {
 		return "", nil, false
 	}
 	explanation := extractCodexPlanString(object, "explanation")
-	stepMatches := regexp.MustCompile(`(?s)(?:^|[,{]\s*)step\s*:\s*("(?:\\.|[^"\\])*")\s*,\s*status\s*:\s*("(?:\\.|[^"\\])*")`).FindAllStringSubmatch(object, -1)
+	// update_plan is emitted by Codex as JavaScript. Depending on the client
+	// version, its object keys are either bare (`step:`) or JSON-quoted
+	// (`"step":`). Accept both forms; real session files commonly use the
+	// latter, which previously made the whole plan silently disappear.
+	stepMatches := regexp.MustCompile(`(?s)(?:^|[,{]\s*)["']?step["']?\s*:\s*("(?:\\.|[^"\\])*")\s*,\s*["']?status["']?\s*:\s*("(?:\\.|[^"\\])*")`).FindAllStringSubmatch(object, -1)
 	plan := make([]map[string]string, 0, len(stepMatches))
 	for _, match := range stepMatches {
 		if len(match) != 3 {
@@ -965,9 +1046,20 @@ func extractCodexPlanUpdate(input string) (string, []map[string]string, bool) {
 		if json.Unmarshal([]byte(match[1]), &step) != nil || json.Unmarshal([]byte(match[2]), &status) != nil || strings.TrimSpace(step) == "" {
 			continue
 		}
-		plan = append(plan, map[string]string{"step": strings.TrimSpace(step), "status": strings.TrimSpace(status)})
+		plan = append(plan, map[string]string{"step": strings.TrimSpace(step), "status": normalizeCodexPlanStatus(status)})
 	}
 	return explanation, plan, len(plan) > 0
+}
+
+func normalizeCodexPlanStatus(status string) string {
+	switch strings.ToLower(strings.ReplaceAll(strings.TrimSpace(status), "-", "_")) {
+	case "in_progress", "inprogress":
+		return "inProgress"
+	case "completed", "complete", "done":
+		return "completed"
+	default:
+		return "pending"
+	}
 }
 
 func extractBalancedJSONObject(value string) (string, bool) {

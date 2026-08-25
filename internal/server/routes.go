@@ -33,6 +33,7 @@ func setupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/telegram/config", handleAPITelegramConfig)
 	mux.HandleFunc("/api/telegram/status", handleAPITelegramStatus)
 	mux.HandleFunc("/api/telegram/configure", handleAPITelegramConfigure)
+	mux.HandleFunc("/api/telegram/test", handleAPITelegramTest)
 	mux.HandleFunc("/api/hook", handleAPIHook)
 	mux.HandleFunc("/api/session/", handleAPISessionMessages)
 	mux.HandleFunc("/api/file-preview", handleAPIFilePreview)

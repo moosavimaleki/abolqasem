@@ -177,7 +177,7 @@ type workspaceCodexExecutionPolicy struct {
 
 func workspaceCodexExecutionPolicyFor(mode string) workspaceCodexExecutionPolicy {
 	if mode == "standard" {
-		return workspaceCodexExecutionPolicy{mode: "standard", approvalPolicy: "on-request", sandbox: "workspace-write"}
+		return workspaceCodexExecutionPolicy{mode: "standard", approvalPolicy: "on-request", sandbox: "read-only"}
 	}
 	return workspaceCodexExecutionPolicy{mode: "dangerous", approvalPolicy: "never", sandbox: "danger-full-access"}
 }
@@ -769,8 +769,13 @@ func (p *workspaceCodexProcess) handleServerRequest(ctx context.Context, turn *w
 		OnToolRequest: func(request codexprovider.ToolRequest) (map[string]any, error) {
 			return turn.waitForToolResponse(ctx, request)
 		},
-		OnApprovalRequest: func(codexprovider.ApprovalRequest) (string, error) {
-			return "decline", nil
+		OnApprovalRequest: func(request codexprovider.ApprovalRequest) (string, error) {
+			result, err := turn.waitForToolResponse(ctx, codexprovider.ToolRequest{Tool: request.Tool})
+			if err != nil {
+				return "decline", err
+			}
+			decision, _ := result["decision"].(string)
+			return decision, nil
 		},
 	})
 	if err != nil {
@@ -848,9 +853,11 @@ func (p *workspaceCodexProcess) Close() {
 	if p.cmd != nil && p.cmd.Process != nil {
 		_ = p.cmd.Process.Kill()
 	}
-	select {
-	case <-p.done:
-	default:
+	if p.done != nil {
+		select {
+		case <-p.done:
+		case <-time.After(2 * time.Second):
+		}
 	}
 	p.logf("closed codex app-server")
 	if p.logFile != nil {

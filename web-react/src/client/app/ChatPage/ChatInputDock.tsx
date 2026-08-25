@@ -26,6 +26,9 @@ interface ChatInputDockProps {
   onReleaseSession?: () => void
   onRefreshSessionLock?: () => void
   onCodexExecutionModeChange?: (executionMode: CodexExecutionMode) => void
+  runtimePlanMode?: boolean
+  onRuntimePlanModeChange?: (planMode: boolean) => Promise<void>
+  onReloadCodexAuth?: () => void
   onSubmit: AbolqasemState["handleSend"]
   onRuntimePreferenceChange?: (preference: { provider: AgentProvider; model: string; modelOptions: ModelOptions }) => Promise<void>
   onCancel: () => void
@@ -53,6 +56,9 @@ export const ChatInputDock = memo(function ChatInputDock({
   onReleaseSession,
   onRefreshSessionLock,
   onCodexExecutionModeChange,
+  runtimePlanMode,
+  onRuntimePlanModeChange,
+  onReloadCodexAuth,
   onSubmit,
   onRuntimePreferenceChange,
   onCancel,
@@ -67,6 +73,8 @@ export const ChatInputDock = memo(function ChatInputDock({
           key={activeChatId ?? "new-chat"}
           onSubmit={onSubmit}
           onRuntimePreferenceChange={onRuntimePreferenceChange}
+          runtimePlanMode={runtimePlanMode}
+          onRuntimePlanModeChange={onRuntimePlanModeChange}
           onCancel={onCancel}
           disabled={!hasSelectedProject}
           canCancel={canCancel}
@@ -83,6 +91,7 @@ export const ChatInputDock = memo(function ChatInputDock({
           onReleaseSession={onReleaseSession}
           onRefreshSessionLock={onRefreshSessionLock}
           onCodexExecutionModeChange={onCodexExecutionModeChange}
+          onReloadCodexAuth={onReloadCodexAuth}
           previousPrompt={previousPrompt}
           onJumpToPreviousUserPrompt={onJumpToPreviousUserPrompt}
         />

@@ -107,6 +107,14 @@ export function createPastedTextFile(text: string, now = new Date()) {
   return new File([text], `pasted-text-${timestamp}.txt`, { type: "text/plain", lastModified: now.getTime() })
 }
 
+export function shouldApplyCodexExecutionModeToRuntime(
+  providerLocked: boolean,
+  provider: AgentProvider,
+  lockState: CodexLockStatus["state"] | undefined,
+) {
+  return providerLocked && provider === "codex" && lockState === "owned_by_us"
+}
+
 function replaceTextSelection(args: {
   value: string
   insertedText: string
@@ -127,6 +135,8 @@ interface Props {
     options?: { provider?: AgentProvider; model?: string; modelOptions?: ModelOptions; planMode?: boolean; attachments?: ChatAttachment[] }
   ) => Promise<void>
   onRuntimePreferenceChange?: (preference: { provider: AgentProvider; model: string; modelOptions: ModelOptions }) => Promise<void>
+  runtimePlanMode?: boolean
+  onRuntimePlanModeChange?: (planMode: boolean) => Promise<void>
   onLayoutChange?: () => void
   onCancel?: () => void
   disabled: boolean
@@ -145,6 +155,7 @@ interface Props {
   onReleaseSession?: () => void
   onRefreshSessionLock?: () => void
   onCodexExecutionModeChange?: (executionMode: CodexExecutionMode) => void
+  onReloadCodexAuth?: () => void
   previousPrompt?: string | null
   onJumpToPreviousUserPrompt?: () => void | Promise<void>
 }
@@ -201,6 +212,8 @@ function getEffectiveComposerState(
 const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
   onSubmit,
   onRuntimePreferenceChange,
+  runtimePlanMode,
+  onRuntimePlanModeChange,
   onLayoutChange,
   onCancel,
   disabled,
@@ -219,6 +232,7 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
   onReleaseSession,
   onRefreshSessionLock,
   onCodexExecutionModeChange,
+  onReloadCodexAuth,
   previousPrompt = null,
   onJumpToPreviousUserPrompt,
 }, forwardedRef) {
@@ -378,6 +392,11 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
   }, [composerChatId, initializeComposerForChat])
 
   useEffect(() => {
+    if (!chatId || runtimePlanMode === undefined) return
+    setChatComposerPlanMode(composerChatId, runtimePlanMode)
+  }, [chatId, composerChatId, runtimePlanMode, setChatComposerPlanMode])
+
+  useEffect(() => {
     uploadGenerationRef.current += 1
     uploadQueueRef.current = []
     activeUploadsRef.current = 0
@@ -450,7 +469,12 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
   }
 
   function setEffectivePlanMode(planMode: boolean) {
+    const previousPlanMode = providerPrefs.planMode
     setChatComposerPlanMode(composerChatId, planMode)
+    if (!providerLocked || !chatId || !onRuntimePlanModeChange) return
+    void onRuntimePlanModeChange(planMode).catch(() => {
+      setChatComposerPlanMode(composerChatId, previousPlanMode)
+    })
   }
 
   function toggleEffectivePlanMode() {
@@ -1012,6 +1036,20 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 </span>
               )
             ) : null}
+            {providerPrefs.provider === "codex" && isOwnedByUs && onReloadCodexAuth ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={lockBusy || Boolean(canCancel)}
+                onClick={onReloadCodexAuth}
+                title={t.composer.reloadCodexAccount}
+                aria-label={t.composer.reloadCodexAccount}
+                className="mx-1 h-8 w-8 shrink-0 cursor-pointer rounded-md p-0 text-muted-foreground hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed"
+              >
+                {lockBusy ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />}
+              </Button>
+            ) : null}
             <ChatPreferenceControls
               availableProviders={availableProviders}
               selectedProvider={selectedProvider}
@@ -1079,7 +1117,7 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     )
                     break
                   case "executionMode":
-                    if (providerLocked && providerPrefs.provider === "codex") {
+                    if (providerPrefs.provider === "codex" && shouldApplyCodexExecutionModeToRuntime(providerLocked, providerPrefs.provider, codexLock?.state)) {
                       applyRuntimeComposerState({
                         ...providerPrefs,
                         modelOptions: { ...providerPrefs.modelOptions, executionMode: change.executionMode },
@@ -1087,6 +1125,9 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
                       onCodexExecutionModeChange?.(change.executionMode)
                       break
                     }
+                    // Without ownership this is the mode to use on the next
+                    // claim/takeover, not a command for the currently owning
+                    // Codex process.
                     updateComposerState(
                       (state) => state.provider !== "codex"
                         ? state

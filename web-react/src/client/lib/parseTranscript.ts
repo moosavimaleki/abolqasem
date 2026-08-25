@@ -420,6 +420,7 @@ export function processTranscriptMessages(entries: TranscriptEntry[]): HydratedT
   const commandExecutions = new Map<string, Extract<HydratedTranscriptMessage, { kind: "command_execution" }>>()
   const fileChanges = new Map<string, Extract<HydratedTranscriptMessage, { kind: "file_change" }>>()
   const turnPlans = new Map<string, Extract<HydratedTranscriptMessage, { kind: "turn_plan" }>>()
+  const proposedPlans = new Map<string, Extract<HydratedTranscriptMessage, { kind: "proposed_plan" }>>()
   const turnActivities = new Map<string, Extract<HydratedTranscriptMessage, { kind: "turn_activity" }>>()
 
   for (const entry of entries) {
@@ -476,6 +477,7 @@ export function processTranscriptMessages(entries: TranscriptEntry[]): HydratedT
         if (pendingCall) {
           const rawResult = (
             pendingCall.normalized.toolKind === "ask_user_question" ||
+            pendingCall.normalized.toolKind === "approval_request" ||
             pendingCall.normalized.toolKind === "exit_plan_mode"
           )
             ? getStructuredToolResultFromDebug(entry) ?? entry.content
@@ -551,6 +553,17 @@ export function processTranscriptMessages(entries: TranscriptEntry[]): HydratedT
         } else {
           const plan = { ...createBaseMessage(entry), kind: "turn_plan" as const, turnId: entry.turnId, explanation: entry.explanation, plan: entry.plan }
           turnPlans.set(entry.turnId, plan)
+          messages.push(plan)
+        }
+        break
+      }
+      case "proposed_plan": {
+        const existing = proposedPlans.get(entry.turnId)
+        if (existing) {
+          existing.plan = entry.plan
+        } else {
+          const plan = { ...createBaseMessage(entry), kind: "proposed_plan" as const, turnId: entry.turnId, plan: entry.plan }
+          proposedPlans.set(entry.turnId, plan)
           messages.push(plan)
         }
         break

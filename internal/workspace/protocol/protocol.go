@@ -96,6 +96,8 @@ const (
 	CommandChatReleaseCodexSession         = "chat.releaseCodexSession"
 	CommandChatTakeOverCodexSession        = "chat.takeOverCodexSession"
 	CommandChatSetCodexExecutionMode       = "chat.setCodexExecutionMode"
+	CommandChatSetPlanMode                 = "chat.setPlanMode"
+	CommandChatReloadCodexAuth             = "chat.reloadCodexAuth"
 	CommandChatSend                        = "chat.send"
 	CommandChatRefreshDiffs                = "chat.refreshDiffs"
 	CommandChatInitGit                     = "chat.initGit"

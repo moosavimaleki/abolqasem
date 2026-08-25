@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"abolqasem/internal/state"
@@ -103,6 +104,31 @@ func TestWorkspaceComposerCreatesChatAndSendsPrompt(t *testing.T) {
 	}
 }
 
+func TestWorkspaceSetChatPlanModePersistsRuntimeState(t *testing.T) {
+	withWorkspaceComposerStore(t)
+
+	project, err := workspaceOpenProject("/tmp/plan-mode-project", "Plan mode")
+	if err != nil {
+		t.Fatal(err)
+	}
+	chat, err := workspaceCreateChat(project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := json.RawMessage(`{"chatId":"` + chat.ID + `","planMode":true}`)
+	chatID, err := workspaceSetChatPlanMode(raw)
+	if err != nil {
+		t.Fatalf("workspaceSetChatPlanMode returned error: %v", err)
+	}
+	if chatID != chat.ID {
+		t.Fatalf("expected chat %q, got %q", chat.ID, chatID)
+	}
+	snapshot := workspaceChatSnapshot(chat.ID, 1).(*readmodels.ChatSnapshot)
+	if !snapshot.Runtime.PlanMode {
+		t.Fatal("expected persisted runtime plan mode")
+	}
+}
+
 func TestWorkspaceComposerQueuesAndCancels(t *testing.T) {
 	withWorkspaceComposerStore(t)
 
@@ -163,6 +189,7 @@ func TestWorkspaceRuntimeEventsUpdateSnapshots(t *testing.T) {
 	if err := workspaceAgentCoordinator().SetPendingTool(chatID, agent.PendingToolRequest{
 		ToolUseID: "tool-1",
 		ToolKind:  "ask_user_question",
+		ToolName:  "AskUserQuestion",
 		Input: map[string]any{
 			"questions": []any{},
 		},
@@ -174,8 +201,8 @@ func TestWorkspaceRuntimeEventsUpdateSnapshots(t *testing.T) {
 	if snapshot.Runtime.Status != readmodels.StatusWaitingForUser {
 		t.Fatalf("expected waiting_for_user status, got %q", snapshot.Runtime.Status)
 	}
-	if len(snapshot.Messages) != 0 {
-		t.Fatalf("expected runtime events to avoid message storage, got %#v", snapshot.Messages)
+	if len(snapshot.Messages) != 1 || transcript.Kind(snapshot.Messages[0]) != transcript.KindToolCall {
+		t.Fatalf("expected one live pending-tool card without persistent message storage, got %#v", snapshot.Messages)
 	}
 
 	if err := workspaceAgentCoordinator().RespondTool(context.Background(), agent.ToolResponseCommand{

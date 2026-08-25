@@ -787,6 +787,15 @@ func workspaceTranscriptEntryFromSearchable(message parser.SearchableMessage) re
 		}
 		return entry
 	}
+	if message.Kind == transcript.KindProposedPlan {
+		entry["kind"] = transcript.KindProposedPlan
+		for _, key := range []string{"turnId", "plan"} {
+			if value, ok := message.Fields[key]; ok {
+				entry[key] = value
+			}
+		}
+		return entry
+	}
 	if message.Kind == transcript.KindFileChange {
 		entry["kind"] = transcript.KindFileChange
 		for _, key := range []string{"itemId", "status", "changes", "outputDelta"} {
@@ -794,6 +803,15 @@ func workspaceTranscriptEntryFromSearchable(message parser.SearchableMessage) re
 				entry[key] = value
 			}
 		}
+		return entry
+	}
+	if message.Kind == transcript.KindResult {
+		entry["kind"] = transcript.KindResult
+		entry["subtype"] = firstNonEmpty(stringValue(message.Fields["subtype"]), "error")
+		isError, _ := message.Fields["isError"].(bool)
+		entry["isError"] = isError
+		entry["durationMs"] = message.Fields["durationMs"]
+		entry["result"] = text
 		return entry
 	}
 	switch workspaceSearchableTranscriptRole(message) {

@@ -119,6 +119,9 @@ type PendingToolRequest struct {
 type PendingToolSnapshot struct {
 	ToolUseID string `json:"toolUseId"`
 	ToolKind  string `json:"toolKind"`
+	ToolName  string `json:"toolName"`
+	Input     any    `json:"input"`
+	CreatedAt int64  `json:"createdAt"`
 }
 
 type SendCommand struct {
@@ -252,6 +255,9 @@ func (c *Coordinator) PendingTool(chatID string) *PendingToolSnapshot {
 	return &PendingToolSnapshot{
 		ToolUseID: active.PendingTool.ToolUseID,
 		ToolKind:  active.PendingTool.ToolKind,
+		ToolName:  active.PendingTool.ToolName,
+		Input:     active.PendingTool.Input,
+		CreatedAt: active.StartedAt.UnixMilli(),
 	}
 }
 

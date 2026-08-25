@@ -22,6 +22,7 @@ const (
 	KindCommandExecution     = "command_execution"
 	KindFileChange           = "file_change"
 	KindTurnPlan             = "turn_plan"
+	KindProposedPlan         = "proposed_plan"
 	KindTurnActivity         = "turn_activity"
 	KindUnknown              = "unknown"
 )

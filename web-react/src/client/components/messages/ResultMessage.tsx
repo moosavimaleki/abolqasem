@@ -31,7 +31,7 @@ export function ResultMessage({ message }: Props) {
 
   if (!message.success) {
     return (
-      <div className="px-4 py-3 mx-2 my-1 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm">
+      <div role="alert" className="px-4 py-3 mx-2 my-1 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm">
         {message.result || t.messages.unknownError}
       </div>
     )

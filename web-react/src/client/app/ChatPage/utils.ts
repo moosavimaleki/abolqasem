@@ -76,6 +76,7 @@ export function isInteractiveTranscriptRow(row: ResolvedTranscriptRow) {
     && row.message.kind === "tool"
     && (
       row.message.toolKind === "ask_user_question"
+      || row.message.toolKind === "approval_request"
       || row.message.toolKind === "exit_plan_mode"
       || row.message.toolKind === "todo_write"
     )

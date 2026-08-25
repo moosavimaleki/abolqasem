@@ -333,6 +333,47 @@ func workspaceSetCodexExecutionMode(chatID string, executionMode string) (readmo
 	return workspaceClaimCodexSessionWithMode(chatID, executionMode)
 }
 
+func workspaceReloadCodexAuth(chatID string) (readmodels.CodexLockStatus, error) {
+	chat, err := workspaceChatRequired(chatID)
+	if err != nil {
+		return readmodels.CodexLockStatus{}, err
+	}
+	if derefWorkspaceString(chat.Provider) != "codex" {
+		return readmodels.CodexLockStatus{}, errors.New("account reload is only available for Codex chats")
+	}
+	status := workspaceCodexLockStatus(chat)
+	if status.State != codexLockOwnedByUs {
+		return status, errors.New("this server does not own the Codex session")
+	}
+	if workspaceAgentCoordinator().ActiveStatuses()[chatID] != "" {
+		return status, errors.New("cannot reload Codex authentication while a turn is active")
+	}
+
+	executionMode := workspaceCodexExecutionPolicyFor(status.ExecutionMode).mode
+	projectPath, err := workspaceProjectLocalPathRequired(chat.ProjectID)
+	if err != nil {
+		return status, err
+	}
+	sessionID := status.SessionID
+	if sessionID == "" {
+		sessionID = derefWorkspaceString(chat.SessionToken)
+	}
+
+	workspaceCodexSessions.close(chatID)
+	session, err := workspaceCodexSessions.session(context.Background(), agent.TurnRequest{
+		ChatID:        chat.ID,
+		LocalPath:     projectPath,
+		Provider:      "codex",
+		SessionToken:  sessionID,
+		ExecutionMode: executionMode,
+	})
+	if err != nil {
+		return workspaceCodexLockStatus(chat), fmt.Errorf("reload Codex authentication: %w", err)
+	}
+	session.startIdleDrain()
+	return workspaceCodexLockStatus(chat), nil
+}
+
 func workspaceTakeOverCodexSession(chatID string, confirmed bool, executionMode string) (readmodels.CodexLockStatus, error) {
 	if !confirmed {
 		return readmodels.CodexLockStatus{}, errors.New("takeover requires explicit confirmation")

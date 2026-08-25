@@ -165,6 +165,27 @@ func TestParseMessagesCodexCurrentResponseItemFormatKeepsOnlyConversation(t *tes
 	}
 }
 
+func TestStreamSearchableMessagesCodexExposesTaskCompleteError(t *testing.T) {
+	path := writeTranscript(t, `{"timestamp":"2026-08-25T05:31:50.204Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"turn-1","error":{"message":"Your access token could not be refreshed because your refresh token was revoked. Please log out and sign in again.","codex_error_info":"unauthorized"},"duration_ms":4028}}`+"\n")
+	messages := []SearchableMessage{}
+	if err := StreamSearchableMessages("codex", "session-1", path, func(message SearchableMessage) bool {
+		messages = append(messages, message)
+		return true
+	}); err != nil {
+		t.Fatalf("StreamSearchableMessages returned error: %v", err)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("expected task failure to be visible, got %#v", messages)
+	}
+	message := messages[0]
+	if message.Kind != "result" || message.Role != "system" || !strings.Contains(message.Text, "refresh token was revoked") {
+		t.Fatalf("unexpected task failure message: %#v", message)
+	}
+	if message.Fields["subtype"] != "error" || message.Fields["isError"] != true || message.Fields["durationMs"] != float64(4028) {
+		t.Fatalf("expected result metadata, got %#v", message.Fields)
+	}
+}
+
 func TestStreamSearchableMessagesCodexKeepsCustomExecEvents(t *testing.T) {
 	path := writeTranscript(t, strings.Join([]string{
 		`{"timestamp":"2026-08-24T12:23:00.756Z","type":"response_item","payload":{"type":"custom_tool_call","call_id":"call_2UlvN95bZTPPJwl0c0cMtOmo","name":"exec","input":"const r = await tools.exec_command({cmd:\"rtk rg -l --hidden --glob '!.git/**' 'سلام' .\",workdir:\"/home/h-mousavi/Projects/Hamed/aistudio-api\",yield_time_ms:10000,max_output_tokens:2000}); text(r.output);"}}`,
@@ -207,6 +228,64 @@ func TestStreamSearchableMessagesCodexMapsUpdatePlanToNativePlan(t *testing.T) {
 	plan, ok := messages[0].Fields["plan"].([]map[string]string)
 	if !ok || len(plan) != 2 || plan[1]["status"] != "inProgress" {
 		t.Fatalf("expected parsed plan steps, got %#v", messages[0].Fields)
+	}
+}
+
+func TestStreamSearchableMessagesCodexMapsProposedPlanWithoutRawTags(t *testing.T) {
+	path := writeTranscript(t, strings.Join([]string{
+		`{"timestamp":"2026-08-25T07:51:40.284Z","type":"event_msg","payload":{"type":"item_completed","turn_id":"turn-1","item":{"type":"Plan","id":"turn-1-plan","text":"# Native plan\n\n- Test"}}}`,
+		`{"timestamp":"2026-08-25T07:51:40.286Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Plan ready:\n\n<proposed_plan>\n# Native plan\n\n- Test\n</proposed_plan>"}],"internal_chat_message_metadata_passthrough":{"turn_id":"turn-1"}}}`,
+	}, "\n"))
+	messages := []SearchableMessage{}
+	if err := StreamSearchableMessages("codex", "session-1", path, func(message SearchableMessage) bool {
+		messages = append(messages, message)
+		return true
+	}); err != nil {
+		t.Fatalf("StreamSearchableMessages returned error: %v", err)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("expected the native and wrapped records to dedupe, got %d: %#v", len(messages), messages)
+	}
+	for _, message := range messages {
+		if message.Kind != "proposed_plan" || message.Role != "assistant" || message.Fields["turnId"] != "turn-1" {
+			t.Fatalf("expected proposed-plan semantics, got %#v", message)
+		}
+		plan := stringValue(message.Fields["plan"])
+		if plan != "# Native plan\n\n- Test" || strings.Contains(plan, "proposed_plan") {
+			t.Fatalf("expected clean plan Markdown, got %q", plan)
+		}
+	}
+}
+
+func TestExtractCodexProposedPlanRequiresCompleteWrapper(t *testing.T) {
+	if plan, ok := extractCodexProposedPlan(" <proposed_plan>\n# Plan\n</proposed_plan> "); !ok || plan != "# Plan" {
+		t.Fatalf("expected complete wrapper to parse, got %q %v", plan, ok)
+	}
+	if plan, ok := extractCodexProposedPlan("Plan ready:\n\n<proposed_plan>\n# Plan\n</proposed_plan>"); !ok || plan != "# Plan" {
+		t.Fatalf("expected a wrapper after introductory prose to parse, got %q %v", plan, ok)
+	}
+	if _, ok := extractCodexProposedPlan("mention <proposed_plan> in prose"); ok {
+		t.Fatal("expected an incomplete prose mention to remain normal text")
+	}
+}
+
+func TestStreamSearchableMessagesCodexMapsJSONKeyedUpdatePlanToNativePlan(t *testing.T) {
+	// This is the form written by recent Codex sessions: JSON-quoted keys and
+	// snake_case progress values inside a JavaScript update_plan call.
+	path := writeTranscript(t, `{"timestamp":"2026-08-25T09:00:00.000Z","type":"response_item","payload":{"type":"custom_tool_call","call_id":"call-plan","name":"exec","input":"const p = await tools.update_plan({\"explanation\":\"Ship safely\",\"plan\":[{\"step\":\"Inspect\",\"status\":\"completed\"},{\"step\":\"Test\",\"status\":\"in_progress\"}]}); text(p);","internal_chat_message_metadata_passthrough":{"turn_id":"turn-1"}}}`+"\n")
+	messages := []SearchableMessage{}
+	if err := StreamSearchableMessages("codex", "session-1", path, func(message SearchableMessage) bool {
+		messages = append(messages, message)
+		return true
+	}); err != nil {
+		t.Fatalf("StreamSearchableMessages returned error: %v", err)
+	}
+	if len(messages) != 1 || messages[0].Kind != "turn_plan" {
+		t.Fatalf("expected native plan event, got %#v", messages)
+	}
+	plan, ok := messages[0].Fields["plan"].([]map[string]string)
+	if !ok || len(plan) != 2 || plan[1]["status"] != "inProgress" {
+		t.Fatalf("expected normalized JSON-keyed plan steps, got %#v", messages[0].Fields)
 	}
 }
 

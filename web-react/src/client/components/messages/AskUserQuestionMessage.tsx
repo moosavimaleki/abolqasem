@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Check, ChevronLeft, MessageCircleQuestion } from "lucide-react"
+import { ArrowLeft, Check, MessageCircleQuestion, X } from "lucide-react"
 import type { ProcessedToolCall, AskUserQuestionItem, AskUserQuestionOption } from "./types"
 import type { AskUserQuestionAnswerMap } from "../../../shared/types"
 import { Button } from "../ui/button"
@@ -16,12 +16,14 @@ interface Props {
 // Local components for DRY
 
 function QuestionCard({
+  header,
   question,
   currentIndex,
   totalQuestions,
   onBack,
   children
 }: {
+  header?: string
   question: string
   currentIndex: number
   totalQuestions: number
@@ -31,71 +33,78 @@ function QuestionCard({
   const showBackButton = onBack && currentIndex > 0
 
   return (
-    <div className="rounded-2xl border border-border overflow-hidden">
-      <div className="relative">
-        <h3 className="font-medium text-foreground text-sm p-3 px-4 bg-card border-b border-border text-foreground flex flex-row items-center gap-2">
+    <section className="overflow-hidden rounded-2xl border border-border/80 bg-card/60 shadow-sm">
+      <div className="relative border-b border-border/70 bg-muted/25 px-4 py-3.5">
+        <div className="flex items-start gap-3">
           {showBackButton ? (
             <button
+              type="button"
               onClick={onBack}
-              className=" text-muted-foreground hover:opacity-60 transition-all flex items-center"
+              aria-label="Back to previous question"
+              className="-ms-1 mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <ChevronLeft className="h-4 w-4 -ml-0.5" strokeWidth={3} />
+              <ArrowLeft className="size-4 rtl:rotate-180" />
             </button>
-          ) : totalQuestions > 1 ? (
-            <span className="font-bold text-muted-foreground whitespace-nowrap">{currentIndex + 1} / {totalQuestions}</span>
           ) : null}
-          {question}
-        </h3>
-        {/* Progress bar */}
+          <div className="min-w-0 flex-1">
+            <div className="mb-1.5 flex items-center justify-between gap-3">
+              {header ? (
+                <span className="rounded-md bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                  {header}
+                </span>
+              ) : <span />}
+              {totalQuestions > 1 ? (
+                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{currentIndex + 1} / {totalQuestions}</span>
+              ) : null}
+            </div>
+            <h3 className="text-pretty text-[15px] font-semibold leading-6 text-foreground">{question}</h3>
+          </div>
+        </div>
         {totalQuestions > 1 && (
-          <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-border">
+          <div className="absolute inset-x-0 bottom-0 h-px bg-border/60">
             <div
-              className="h-full bg-muted-foreground/40 transition-all duration-300"
-              style={{ width: `${(currentIndex / (totalQuestions)) * 100}%` }}
+              className="h-full bg-primary/70 transition-[width] duration-200 motion-reduce:transition-none"
+              style={{ width: `${((currentIndex + 1) / totalQuestions) * 100}%` }}
             />
           </div>
         )}
       </div>
       {children}
-    </div>
+    </section>
   )
 }
 
 function OptionContent({ label, description }: { label: string; description?: string }) {
   return (
-    <>
-      <span className="text-foreground text-sm">{label}</span>
+    <div className="min-w-0 flex-1">
+      <span className="block text-sm font-medium leading-5 text-foreground">{label}</span>
       {description && (
-        <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
+        <p className="mt-1 text-pretty text-xs leading-5 text-muted-foreground">{description}</p>
       )}
-    </>
+    </div>
   )
 }
 
-function Checkbox({
+function SelectionIndicator({
   selected,
   multiSelect,
-  onClick
 }: {
   selected: boolean
   multiSelect?: boolean
-  onClick?: () => void
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
+    <span
+      aria-hidden="true"
       className={cn(
-        "flex-shrink-0 w-5 h-5 border-1 flex items-center justify-center",
+        "flex size-5 shrink-0 items-center justify-center border transition-colors duration-150",
         multiSelect ? "rounded" : "rounded-full",
         selected
-          ? "border-slate-500/0 bg-foreground"
-          : "border-muted-foreground/50 bg-background",
-        onClick && selected && "cursor-pointer"
+          ? "border-primary bg-primary text-primary-foreground"
+          : "border-muted-foreground/45 bg-background text-transparent"
       )}
     >
-      {selected && <Check strokeWidth={3} className="translate-y-[0.5px] h-3 w-3 text-white dark:text-background" />}
-    </button>
+      <Check strokeWidth={3} className="size-3" />
+    </span>
   )
 }
 
@@ -104,35 +113,34 @@ function OptionRow({
   selected,
   multiSelect,
   onClick,
-  isLast
 }: {
   option: AskUserQuestionOption
   selected: boolean
   multiSelect?: boolean
   onClick?: () => void
-  isLast?: boolean
 }) {
-  const baseClasses = "w-full text-left p-3 pt-2.5 pl-4 pr-5 bg-background"
-  const borderClass = !isLast ? "border-b border-border" : ""
-
   if (onClick) {
     return (
       <button
+        type="button"
         onClick={onClick}
-        className={cn(baseClasses, borderClass, "transition-all cursor-pointer")}
+        role={multiSelect ? "checkbox" : "radio"}
+        aria-checked={selected}
+        className={cn(
+          "group flex min-h-14 w-full cursor-pointer items-center gap-3 rounded-xl border px-3.5 py-3 text-start transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+          selected
+            ? "border-primary/55 bg-primary/10"
+            : "border-border/75 bg-background/55 hover:border-border hover:bg-muted/35",
+        )}
       >
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex-1 min-w-0">
-            <OptionContent label={option.label} description={option.description} />
-          </div>
-          <Checkbox selected={selected} multiSelect={multiSelect} />
-        </div>
+        <SelectionIndicator selected={selected} multiSelect={multiSelect} />
+        <OptionContent label={option.label} description={option.description} />
       </button>
     )
   }
 
   return (
-    <div className={cn(baseClasses, borderClass)}>
+    <div className="rounded-xl border border-border/70 bg-background/55 px-3.5 py-3">
       <OptionContent label={option.label} description={option.description} />
     </div>
   )
@@ -268,9 +276,9 @@ export function AskUserQuestionMessage({ message, onSubmit, isLatest }: Props) {
     const displayAnswers = savedAnswers || submittedAnswers || {}
 
     return (
-      <div className="w-full">
-        <div className="rounded-2xl border border-border overflow-hidden">
-          <div className="font-medium text-sm p-3 px-4 pr-5 bg-muted  border-b border-border flex flex-row items-center justify-between">
+      <div className="mx-auto w-full max-w-2xl">
+        <div className="overflow-hidden rounded-2xl border border-border/80 bg-card/60 shadow-sm">
+          <div className="flex items-center justify-between border-b border-border/70 bg-muted/25 px-4 py-3 text-sm font-medium">
             <p>{questions.length !== 1 ? t.messages.questions : t.messages.question}</p>
             <p className="">{isDiscarded ? t.messages.discarded : t.messages.answers}</p>
           </div>
@@ -282,7 +290,7 @@ export function AskUserQuestionMessage({ message, onSubmit, isLatest }: Props) {
               <div
                 key={getQuestionKey(question)}
                 className={cn(
-                  "w-full p-3 pt-2.5 pl-4 pr-5 bg-background flex items-center justify-between gap-3",
+                  "flex w-full items-center justify-between gap-4 bg-background/45 px-4 py-3",
                   !isLast && "border-b border-border"
                 )}
               >
@@ -303,9 +311,9 @@ export function AskUserQuestionMessage({ message, onSubmit, isLatest }: Props) {
 
   if (renderOptions.readonly) {
     return (
-      <div className="w-full">
-        <div className="rounded-2xl border border-border overflow-hidden">
-          <div className="font-medium text-sm p-3 px-4 pr-5 bg-muted border-b border-border flex flex-row items-center justify-between gap-3">
+      <div className="mx-auto w-full max-w-2xl">
+        <div className="overflow-hidden rounded-2xl border border-border/80 bg-card/60 shadow-sm">
+          <div className="flex items-center justify-between gap-3 border-b border-border/70 bg-muted/25 px-4 py-3 text-sm font-medium">
             <p>{questions.length !== 1 ? t.messages.questions : t.messages.question}</p>
             <p className="text-muted-foreground">{t.messages.awaitingResponse}</p>
           </div>
@@ -313,7 +321,7 @@ export function AskUserQuestionMessage({ message, onSubmit, isLatest }: Props) {
             <div
               key={getQuestionKey(question)}
               className={cn(
-                "w-full p-3 pt-2.5 pl-4 pr-5 bg-background flex items-center justify-between gap-3",
+                "flex w-full items-center justify-between gap-4 bg-background/45 px-4 py-3",
                 index < questions.length - 1 && "border-b border-border",
               )}
             >
@@ -347,60 +355,76 @@ export function AskUserQuestionMessage({ message, onSubmit, isLatest }: Props) {
   const customInput = customInputs[getQuestionKey(currentQuestion)] || ""
 
   return (
-    <div className="w-full space-y-3">
+    <div className="mx-auto w-full max-w-2xl">
       <QuestionCard
+        header={currentQuestion.header}
         question={currentQuestion.question}
         currentIndex={currentIndex}
         totalQuestions={questions.length}
         onBack={currentIndex > 0 ? handleBack : undefined}
       >
-        {currentQuestion.options?.map((option) => (
-          <OptionRow
-            key={option.label}
-            option={option}
-            selected={selectedOptions.includes(option.label)}
-            multiSelect={currentQuestion.multiSelect}
-            onClick={() => handleOptionSelect(currentQuestion, option.label)}
-          />
-        ))}
+        <div className="space-y-2 p-3">
+          <div
+            className="space-y-2"
+            role={currentQuestion.multiSelect ? "group" : "radiogroup"}
+            aria-label={currentQuestion.question}
+          >
+            {currentQuestion.options?.map((option) => (
+              <OptionRow
+                key={option.label}
+                option={option}
+                selected={selectedOptions.includes(option.label)}
+                multiSelect={currentQuestion.multiSelect}
+                onClick={() => handleOptionSelect(currentQuestion, option.label)}
+              />
+            ))}
+          </div>
 
-        {/* Custom input */}
-        <div className="transition-all bg-background">
-          <div className="flex pr-5 items-center justify-between gap-3">
+          <div className={cn(
+            "flex min-h-14 items-center gap-3 rounded-xl border bg-background/55 px-3.5 transition-colors duration-150 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background",
+            customInput ? "border-primary/55 bg-primary/10" : "border-border/75",
+          )}>
+            <SelectionIndicator selected={!!customInput} multiSelect={currentQuestion.multiSelect} />
             <input
               type="text"
               value={customInput}
               onChange={(e) => handleCustomInputChange(currentQuestion, e.target.value)}
               onKeyDown={handleCustomInputEnter}
               placeholder={t.messages.other}
-              className="flex-1 px-3 !py-1 pl-4 min-h-[55px] min-w-0 text-sm bg-transparent outline-none text-foreground placeholder:text-muted-foreground"
+              aria-label={t.messages.other}
+              className="min-w-0 flex-1 bg-transparent py-3 text-sm text-foreground outline-none placeholder:text-muted-foreground"
             />
-            <Checkbox
-              selected={!!customInput}
-              multiSelect={currentQuestion.multiSelect}
-              onClick={currentQuestion.multiSelect && customInput ? () => clearCustomInput(currentQuestion) : undefined}
-            />
+            {currentQuestion.multiSelect && customInput ? (
+              <button
+                type="button"
+                onClick={() => clearCustomInput(currentQuestion)}
+                className="rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <X className="size-3.5" />
+              </button>
+            ) : null}
           </div>
         </div>
-      </QuestionCard>
 
-      <div className="flex justify-end gap-2 mx-2">
-        {!isLastQuestion && currentHasAnswer && (currentQuestion.multiSelect || !!customInput) && (
-          <Button size="sm" onClick={handleNext}>
-            {t.common.next}
-          </Button>
-        )}
-        {isLastQuestion && (
-          <Button
-            size="sm"
-            onClick={handleSubmit}
-            disabled={!allQuestionsAnswered}
-            className={cn(!allQuestionsAnswered && "opacity-50 cursor-not-allowed", "rounded-full")}
-          >
-            {t.common.submit}
-          </Button>
-        )}
-      </div>
+        <div className="flex items-center justify-end gap-2 border-t border-border/70 bg-muted/15 px-3 py-2.5">
+          {!isLastQuestion && currentHasAnswer && (currentQuestion.multiSelect || !!customInput) ? (
+            <Button size="sm" onClick={handleNext} className="min-w-20 gap-1.5">
+              {t.common.next}
+              <ArrowLeft className="size-3.5 rtl:rotate-180" />
+            </Button>
+          ) : null}
+          {isLastQuestion ? (
+            <Button
+              size="sm"
+              onClick={handleSubmit}
+              disabled={!allQuestionsAnswered}
+              className="min-w-20"
+            >
+              {t.common.submit}
+            </Button>
+          ) : null}
+        </div>
+      </QuestionCard>
     </div>
   )
 }

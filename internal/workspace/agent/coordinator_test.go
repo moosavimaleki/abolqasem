@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -150,6 +151,8 @@ func TestPendingToolSnapshot(t *testing.T) {
 	if err := coordinator.SetPendingTool("chat-1", PendingToolRequest{
 		ToolUseID: "tool-1",
 		ToolKind:  "ask_user_question",
+		ToolName:  "AskUserQuestion",
+		Input:     map[string]any{"questions": []string{"Choose one"}},
 	}); err != nil {
 		t.Fatalf("SetPendingTool returned error: %v", err)
 	}
@@ -157,8 +160,11 @@ func TestPendingToolSnapshot(t *testing.T) {
 	if pending == nil {
 		t.Fatal("expected pending tool")
 	}
-	if pending.ToolUseID != "tool-1" || pending.ToolKind != "ask_user_question" {
+	if pending.ToolUseID != "tool-1" || pending.ToolKind != "ask_user_question" || pending.ToolName != "AskUserQuestion" {
 		t.Fatalf("unexpected pending tool: %#v", pending)
+	}
+	if pending.CreatedAt <= 0 || !reflect.DeepEqual(pending.Input, map[string]any{"questions": []string{"Choose one"}}) {
+		t.Fatalf("expected pending tool details, got %#v", pending)
 	}
 	if got := coordinator.ActiveStatuses()["chat-1"]; got != readmodels.StatusWaitingForUser {
 		t.Fatalf("expected waiting_for_user status, got %q", got)

@@ -3,12 +3,15 @@ package server
 import (
 	"path/filepath"
 	"strings"
+	"time"
 
 	"abolqasem/internal/state"
+	"abolqasem/internal/workspace/agent"
 	"abolqasem/internal/workspace/events"
 	"abolqasem/internal/workspace/eventstore"
 	"abolqasem/internal/workspace/protocol"
 	"abolqasem/internal/workspace/readmodels"
+	"abolqasem/internal/workspace/transcript"
 )
 
 var workspaceDataDir = func() string {
@@ -79,6 +82,9 @@ func workspaceChatSnapshot(chatID string, recentLimit int) any {
 		coordinator := workspaceAgentCoordinator()
 		snapshot := readmodels.DeriveChatSnapshot(storeState, coordinator.ActiveStatuses(), coordinator.DrainingChatIDs(), chatID, transcript)
 		if snapshot != nil {
+			if pendingTool := coordinator.PendingTool(chatID); pendingTool != nil {
+				snapshot.Messages = append(snapshot.Messages, workspacePendingToolTranscriptEntry(pendingTool))
+			}
 			snapshot.AvailableProviders = workspaceAvailableProviders()
 			lock := workspaceCodexLockStatus(chat)
 			snapshot.Runtime.CodexLock = lock
@@ -95,6 +101,30 @@ func workspaceChatSnapshot(chatID string, recentLimit int) any {
 		return snapshot
 	}
 	return nil
+}
+
+// Native Codex session JSONL does not persist item/tool/requestUserInput as a
+// transcript item. Keep it in the live chat snapshot while the turn waits, so
+// the existing AskUserQuestion card remains available in Plan Mode.
+func workspacePendingToolTranscriptEntry(pending *agent.PendingToolSnapshot) readmodels.TranscriptEntry {
+	toolID := strings.TrimSpace(pending.ToolUseID)
+	createdAt := pending.CreatedAt
+	if createdAt <= 0 {
+		createdAt = time.Now().UnixMilli()
+	}
+	return readmodels.TranscriptEntry{
+		"_id":       "pending-tool-" + toolID,
+		"messageId": toolID,
+		"createdAt": float64(createdAt),
+		"kind":      transcript.KindToolCall,
+		"tool": map[string]any{
+			"kind":     "tool",
+			"toolKind": pending.ToolKind,
+			"toolName": pending.ToolName,
+			"toolId":   toolID,
+			"input":    pending.Input,
+		},
+	}
 }
 
 func workspaceNativeTranscriptSnapshot(chat readmodels.ChatRecord, recentLimit int) (readmodels.ChatTranscriptSnapshot, bool) {

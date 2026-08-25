@@ -52,7 +52,7 @@ func TestHandleUserInputRequest(t *testing.T) {
 }
 
 func TestHandleApprovalRequest(t *testing.T) {
-	_, response, err := HandleServerRequest(ServerRequest{
+	events, response, err := HandleServerRequest(ServerRequest{
 		ID:     "approval-1",
 		Method: "item/commandExecution/requestApproval",
 		Params: mustJSON(map[string]any{
@@ -67,6 +67,13 @@ func TestHandleApprovalRequest(t *testing.T) {
 			if request.Kind != "command_execution" {
 				t.Fatalf("expected command_execution, got %q", request.Kind)
 			}
+			if request.Tool["toolKind"] != "approval_request" || request.Tool["toolId"] != "approval-1" {
+				t.Fatalf("unexpected approval tool: %#v", request.Tool)
+			}
+			input, _ := request.Tool["input"].(map[string]any)
+			if input["command"] != "rm -rf ." || input["cwd"] != "/tmp/project" {
+				t.Fatalf("approval preview was not preserved: %#v", input)
+			}
 			return "accept", nil
 		},
 	})
@@ -75,6 +82,25 @@ func TestHandleApprovalRequest(t *testing.T) {
 	}
 	if response.ID != "approval-1" || response.Result["decision"] != "accept" {
 		t.Fatalf("unexpected response: %#v", response)
+	}
+	if len(events) != 1 || events[0].Entry["kind"] != "tool_call" {
+		t.Fatalf("expected approval tool transcript event, got %#v", events)
+	}
+}
+
+func TestHandleApprovalRejectsUnknownDecision(t *testing.T) {
+	_, response, err := HandleServerRequest(ServerRequest{
+		ID:     "approval-invalid",
+		Method: "item/fileChange/requestApproval",
+		Params: mustJSON(map[string]any{"itemId": "file-1"}),
+	}, RequestHandlers{
+		OnApprovalRequest: func(ApprovalRequest) (string, error) { return "anything", nil },
+	})
+	if err != nil {
+		t.Fatalf("HandleServerRequest returned error: %v", err)
+	}
+	if response.Result["decision"] != "decline" {
+		t.Fatalf("expected fail-closed decline, got %#v", response)
 	}
 }
 

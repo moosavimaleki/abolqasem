@@ -1,6 +1,7 @@
 import React, { memo, useCallback, useContext, useMemo, useRef, useState } from "react"
 import type { AskUserQuestionItem, ProcessedToolCall } from "../components/messages/types"
 import type {
+  ApprovalDecision,
   AskUserQuestionAnswerMap,
   ChatAttachment,
   ChatCheckpointSummary,
@@ -14,9 +15,10 @@ import { SystemMessage } from "../components/messages/SystemMessage"
 import { AccountInfoMessage } from "../components/messages/AccountInfoMessage"
 import { TextMessage } from "../components/messages/TextMessage"
 import { AskUserQuestionMessage } from "../components/messages/AskUserQuestionMessage"
+import { ApprovalRequestMessage } from "../components/messages/ApprovalRequestMessage"
 import { ExitPlanModeMessage } from "../components/messages/ExitPlanModeMessage"
 import { TodoWriteMessage } from "../components/messages/TodoWriteMessage"
-import { CodexCommandGroup, CodexCommandMessage, CodexFileChangeMessage, CodexPlanMessage } from "../components/messages/CodexNativeMessage"
+import { CodexCommandGroup, CodexCommandMessage, CodexFileChangeMessage, CodexPlanMessage, CodexProposedPlanMessage } from "../components/messages/CodexNativeMessage"
 import { ToolCallMessage } from "../components/messages/ToolCallMessage"
 import { ResultMessage } from "../components/messages/ResultMessage"
 import { InterruptedMessage } from "../components/messages/InterruptedMessage"
@@ -27,7 +29,7 @@ import { CollapsedToolGroup } from "../components/messages/CollapsedToolGroup"
 import { OpenLocalLinkProvider, type OpenLocalLinkTarget } from "../components/messages/shared"
 import { CHAT_SELECTION_ZONE_ATTRIBUTE } from "./chatFocusPolicy"
 
-const SPECIAL_TOOL_NAMES = new Set(["AskUserQuestion", "ExitPlanMode", "TodoWrite"])
+const SPECIAL_TOOL_NAMES = new Set(["AskUserQuestion", "ApprovalRequest", "ExitPlanMode", "TodoWrite"])
 const EMPTY_PROMPT_CHECKPOINTS = new Map<string, ChatCheckpointSummary>()
 
 interface PromptCheckpointContextValue {
@@ -356,6 +358,8 @@ function sameMessage(left: HydratedTranscriptMessage, right: HydratedTranscriptM
       return right.kind === "file_change" && left.itemId === right.itemId && left.status === right.status && left.output === right.output && JSON.stringify(left.changes) === JSON.stringify(right.changes)
     case "turn_plan":
       return right.kind === "turn_plan" && left.turnId === right.turnId && left.explanation === right.explanation && JSON.stringify(left.plan) === JSON.stringify(right.plan)
+    case "proposed_plan":
+      return right.kind === "proposed_plan" && left.turnId === right.turnId && left.plan === right.plan
     case "turn_activity":
       return right.kind === "turn_activity" && left.turnId === right.turnId && left.activity === right.activity
     case "compact_summary":
@@ -457,6 +461,7 @@ interface TranscriptSingleRowProps {
     questions: AskUserQuestionItem[],
     answers: AskUserQuestionAnswerMap
   ) => void
+  onApprovalRequestSubmit: (toolUseId: string, decision: ApprovalDecision) => void | Promise<void>
   onExitPlanModeConfirm: (toolUseId: string, confirmed: boolean, clearContext?: boolean, message?: string) => void
 }
 
@@ -475,6 +480,7 @@ const TranscriptSingleRow = memo(function TranscriptSingleRow({
   promptCheckpoint,
   onRestoreCheckpoint,
   onAskUserQuestionSubmit,
+  onApprovalRequestSubmit,
   onExitPlanModeConfirm,
 }: TranscriptSingleRowProps) {
   const promptCheckpointContext = useContext(PromptCheckpointContext)
@@ -516,10 +522,23 @@ const TranscriptSingleRow = memo(function TranscriptSingleRow({
       case "turn_plan":
         rendered = <CodexPlanMessage key={message.id} message={message} />
         break
+      case "proposed_plan":
+        rendered = <CodexProposedPlanMessage key={message.id} message={message} />
+        break
       case "turn_activity":
         rendered = null
         break
       case "tool":
+        if (message.toolKind === "approval_request") {
+          rendered = (
+            <ApprovalRequestMessage
+              key={message.id}
+              message={message}
+              onSubmit={onApprovalRequestSubmit}
+            />
+          )
+          break
+        }
         if (message.toolKind === "ask_user_question") {
           rendered = (
             <AskUserQuestionMessage
@@ -598,6 +617,7 @@ const TranscriptSingleRow = memo(function TranscriptSingleRow({
   && prev.hideResult === next.hideResult
   && prev.isFinalStatus === next.isFinalStatus
   && prev.onAskUserQuestionSubmit === next.onAskUserQuestionSubmit
+  && prev.onApprovalRequestSubmit === next.onApprovalRequestSubmit
   && prev.onExitPlanModeConfirm === next.onExitPlanModeConfirm
   && sameMessage(prev.message, next.message)
 ))
@@ -724,6 +744,7 @@ interface AbolqasemTranscriptProps {
     questions: AskUserQuestionItem[],
     answers: AskUserQuestionAnswerMap
   ) => void
+  onApprovalRequestSubmit: (toolUseId: string, decision: ApprovalDecision) => void | Promise<void>
   onExitPlanModeConfirm: (toolUseId: string, confirmed: boolean, clearContext?: boolean, message?: string) => void
 }
 
@@ -742,6 +763,7 @@ interface AbolqasemTranscriptRowProps {
     questions: AskUserQuestionItem[],
     answers: AskUserQuestionAnswerMap
   ) => void
+  onApprovalRequestSubmit: (toolUseId: string, decision: ApprovalDecision) => void | Promise<void>
   onExitPlanModeConfirm: (toolUseId: string, confirmed: boolean, clearContext?: boolean, message?: string) => void
 }
 
@@ -750,6 +772,7 @@ export const AbolqasemTranscriptRow = memo(function AbolqasemTranscriptRow({
   toolGroupExpanded,
   onToolGroupExpandedChange,
   onAskUserQuestionSubmit,
+  onApprovalRequestSubmit,
   onExitPlanModeConfirm,
   promptCheckpoint,
   onRestoreCheckpoint,
@@ -784,6 +807,7 @@ export const AbolqasemTranscriptRow = memo(function AbolqasemTranscriptRow({
       promptCheckpoint={promptCheckpoint}
       onRestoreCheckpoint={onRestoreCheckpoint}
       onAskUserQuestionSubmit={onAskUserQuestionSubmit}
+      onApprovalRequestSubmit={onApprovalRequestSubmit}
       onExitPlanModeConfirm={onExitPlanModeConfirm}
     />
   )
@@ -791,6 +815,7 @@ export const AbolqasemTranscriptRow = memo(function AbolqasemTranscriptRow({
   if (prev.toolGroupExpanded !== next.toolGroupExpanded) return false
   if (prev.onToolGroupExpandedChange !== next.onToolGroupExpandedChange) return false
   if (prev.onAskUserQuestionSubmit !== next.onAskUserQuestionSubmit) return false
+  if (prev.onApprovalRequestSubmit !== next.onApprovalRequestSubmit) return false
   if (prev.onExitPlanModeConfirm !== next.onExitPlanModeConfirm) return false
   if (prev.promptCheckpoint !== next.promptCheckpoint) return false
   if (prev.onRestoreCheckpoint !== next.onRestoreCheckpoint) return false
@@ -831,6 +856,7 @@ function AbolqasemTranscriptImpl({
   latestToolIds,
   onOpenLocalLink,
   onAskUserQuestionSubmit,
+  onApprovalRequestSubmit,
   onExitPlanModeConfirm,
 }: AbolqasemTranscriptProps) {
   const [toolGroupExpanded, setToolGroupExpanded] = useState<Record<string, boolean>>({})
@@ -862,6 +888,7 @@ function AbolqasemTranscriptImpl({
             toolGroupExpanded={row.kind === "tool-group" ? (toolGroupExpanded[row.id] ?? false) : undefined}
             onToolGroupExpandedChange={handleToolGroupExpandedChange}
             onAskUserQuestionSubmit={onAskUserQuestionSubmit}
+            onApprovalRequestSubmit={onApprovalRequestSubmit}
             onExitPlanModeConfirm={onExitPlanModeConfirm}
           />
         </div>

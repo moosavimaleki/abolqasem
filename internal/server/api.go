@@ -428,6 +428,8 @@ func workspaceEntrySearchText(entry readmodels.TranscriptEntry) (kind string, ro
 		return kind, "user", workspaceEntryString(entry, "content")
 	case transcript.KindAssistantText:
 		return kind, "assistant", workspaceEntryString(entry, "text")
+	case transcript.KindProposedPlan:
+		return kind, "assistant", workspaceEntryString(entry, "plan")
 	case transcript.KindStatus:
 		return kind, "status", workspaceEntryString(entry, "status")
 	case transcript.KindResult:

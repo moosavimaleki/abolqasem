@@ -1,14 +1,18 @@
 import { useId, useMemo, useState } from "react"
-import { Check, ChevronDown, ChevronRight, Circle, FileCode2, FolderOpen, Loader2, TerminalSquare, X } from "lucide-react"
+import { Check, ChevronDown, ChevronRight, Circle, ClipboardList, FileCode2, FolderOpen, Loader2, TerminalSquare, X } from "lucide-react"
+import Markdown from "react-markdown"
+import remarkGfm from "remark-gfm"
 import type { CodexFileUpdateChange, HydratedTranscriptMessage } from "../../../shared/types"
 import { fileRouteHref } from "../file-preview/FilePreviewPanel"
 import { formatBashCommandTitle } from "../../lib/formatters"
 import { cn } from "../../lib/utils"
 import { Dialog, DialogContent, DialogTitle } from "../ui/dialog"
+import { createMarkdownComponents } from "./shared"
 
 type CommandMessage = Extract<HydratedTranscriptMessage, { kind: "command_execution" }>
 type FileChangeMessage = Extract<HydratedTranscriptMessage, { kind: "file_change" }>
 type PlanMessage = Extract<HydratedTranscriptMessage, { kind: "turn_plan" }>
+type ProposedPlanMessage = Extract<HydratedTranscriptMessage, { kind: "proposed_plan" }>
 
 function statusIcon(status: CommandMessage["status"]) {
   if (status === "inProgress") return <Loader2 className="size-3.5 animate-spin text-sky-400" />
@@ -176,6 +180,24 @@ export function CodexPlanMessage({ message }: { message: PlanMessage }) {
       <span className="flex-1">{step.step}</span>
     </div>)}</div>
   </div>
+}
+
+export function CodexProposedPlanMessage({ message }: { message: ProposedPlanMessage }) {
+  const [expanded, setExpanded] = useState(false)
+  const detailsId = useId()
+  const title = message.plan.match(/^#{1,6}\s+(.+)$/m)?.[1]?.trim() || "Plan"
+
+  return <section className="mx-auto my-2 w-full max-w-[640px] overflow-hidden rounded-xl border border-border/80 bg-card/50" data-proposed-plan="true">
+    <button type="button" aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded((value) => !value)} className="flex min-h-10 w-full cursor-pointer items-center gap-2 px-3 text-start text-sm text-foreground transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
+        {expanded ? <ChevronDown className="size-4 text-muted-foreground" /> : <ChevronRight className="size-4 text-muted-foreground" />}
+        <ClipboardList className="size-4 text-muted-foreground" />
+        <span className="shrink-0 font-medium">Plan</span>
+        {title !== "Plan" ? <span className="min-w-0 flex-1 truncate text-muted-foreground" dir="auto">{title}</span> : null}
+    </button>
+    {expanded ? <div id={detailsId} className="prose prose-sm mx-auto max-w-prose overflow-x-hidden border-t border-border/80 px-4 py-3 text-sm leading-6 text-foreground dark:prose-invert [&_h1]:!mb-2 [&_h1]:!mt-0 [&_h1]:!text-base [&_h2]:!mb-2 [&_h2]:!mt-4 [&_h2]:!text-sm [&_h3]:!mb-2 [&_h3]:!mt-4 [&_h3]:!text-sm [&_li]:!my-0.5 [&_ol]:!my-2 [&_p]:!my-2 [&_ul]:!my-2" dir="auto">
+      <Markdown remarkPlugins={[remarkGfm]} components={createMarkdownComponents({ source: message.plan })}>{message.plan}</Markdown>
+    </div> : null}
+  </section>
 }
 
 export function CodexActivityLabel({ activity }: { activity: Extract<HydratedTranscriptMessage, { kind: "turn_activity" }>["activity"] }) {

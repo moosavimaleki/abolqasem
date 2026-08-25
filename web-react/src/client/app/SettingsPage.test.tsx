@@ -16,6 +16,7 @@ import {
   resolveSettingsAppVersion,
   setCachedChangelog,
   shouldPreviewChatSoundChange,
+  canSendTelegramTest,
   McpSection,
   SkillsSection,
 } from "./SettingsPage"
@@ -268,6 +269,15 @@ describe("shouldPreviewChatSoundChange", () => {
     expect(shouldPreviewChatSoundChange("always", "never")).toBe(true)
     expect(shouldPreviewChatSoundChange("never", "unfocused")).toBe(true)
     expect(shouldPreviewChatSoundChange("funk", "glass")).toBe(true)
+  })
+})
+
+describe("canSendTelegramTest", () => {
+  test("enables the Telegram test only after the bot has seen a destination chat", () => {
+    expect(canSendTelegramTest(null)).toBe(false)
+    expect(canSendTelegramTest({ configured: true, knownChats: 0 })).toBe(false)
+    expect(canSendTelegramTest({ configured: false, knownChats: 1 })).toBe(false)
+    expect(canSendTelegramTest({ configured: true, knownChats: 1 })).toBe(true)
   })
 })
 

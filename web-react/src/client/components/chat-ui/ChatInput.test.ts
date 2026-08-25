@@ -3,7 +3,7 @@ import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { PROVIDERS } from "../../../shared/types"
 import { I18nProvider } from "../../i18n/context"
-import { ChatInput, createPastedTextFile, getClipboardImageFiles, PASTED_TEXT_FILE_THRESHOLD, trimTrailingPastedNewlines, willExceedAttachmentLimit } from "./ChatInput"
+import { ChatInput, createPastedTextFile, getClipboardImageFiles, PASTED_TEXT_FILE_THRESHOLD, shouldApplyCodexExecutionModeToRuntime, trimTrailingPastedNewlines, willExceedAttachmentLimit } from "./ChatInput"
 
 function createClipboardItem(args: {
   kind?: string
@@ -45,6 +45,20 @@ describe("willExceedAttachmentLimit", () => {
       queuedAttachmentCount: 0,
       incomingAttachmentCount: pastedFiles.length,
     })).toBe(false)
+  })
+})
+
+describe("shouldApplyCodexExecutionModeToRuntime", () => {
+  test("changes the live app-server session only while this server owns it", () => {
+    expect(shouldApplyCodexExecutionModeToRuntime(true, "codex", "owned_by_us")).toBe(true)
+    expect(shouldApplyCodexExecutionModeToRuntime(true, "codex", "owned_elsewhere")).toBe(false)
+    expect(shouldApplyCodexExecutionModeToRuntime(true, "codex", "available")).toBe(false)
+    expect(shouldApplyCodexExecutionModeToRuntime(true, "codex", "unknown")).toBe(false)
+  })
+
+  test("stages the mode for new chats and non-Codex providers", () => {
+    expect(shouldApplyCodexExecutionModeToRuntime(false, "codex", undefined)).toBe(false)
+    expect(shouldApplyCodexExecutionModeToRuntime(true, "claude", "owned_by_us")).toBe(false)
   })
 })
 
@@ -207,5 +221,28 @@ describe("ChatInput", () => {
     expect(html).toContain('aria-label="Release session"')
     expect(html).not.toContain("This session is owned by Abolqasem")
     expect(html).not.toContain("text-emerald")
+  })
+
+  test("shows a compact Codex account reload action only for a session owned by this server", () => {
+    const html = renderToStaticMarkup(createElement(
+      I18nProvider,
+      { locale: "en" },
+      createElement(ChatInput, {
+        onSubmit: async () => undefined,
+        disabled: false,
+        canCancel: false,
+        activeProvider: "codex",
+        availableProviders: PROVIDERS,
+        codexLock: {
+          state: "owned_by_us",
+          canTakeOver: false,
+          canRelease: true,
+        },
+        onReloadCodexAuth: () => undefined,
+      })
+    ))
+
+    expect(html).toContain('title="Reload Codex account"')
+    expect(html).toContain('aria-label="Reload Codex account"')
   })
 })

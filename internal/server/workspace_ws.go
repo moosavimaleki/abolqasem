@@ -686,6 +686,29 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 		workspaceConnections.broadcast(payload.ChatID)
 		response := protocol.AckEnvelope(envelope.ID, status)
 		return &response
+	case protocol.CommandChatSetPlanMode:
+		chatID, err := workspaceSetChatPlanMode(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		workspaceConnections.broadcast(chatID)
+		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
+		return &response
+	case protocol.CommandChatReloadCodexAuth:
+		chatID, err := decodeChatID(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		status, err := workspaceReloadCodexAuth(chatID)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		workspaceConnections.broadcast(chatID)
+		response := protocol.AckEnvelope(envelope.ID, status)
+		return &response
 	case protocol.CommandChatRefreshDiffs:
 		snapshot, projectID, changed, err := workspaceRefreshDiffs(envelope.Command)
 		if err != nil {

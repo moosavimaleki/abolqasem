@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useShallow } from "zustand/react/shallow"
-import { PROVIDERS, type AgentProvider, type AppSettingsPatch, type AppSettingsSnapshot, type AskUserQuestionAnswerMap, type ChatAttachment, type ChatConversionPreview, type ChatDiffSnapshot, type ChatHistoryPage, type ChatHistorySnapshot, type ChatProviderPreferences, type CheckpointRestoreMode, type CheckpointRestoreResult, type KeybindingsSnapshot, type LlmProviderSnapshot, type LlmProviderValidationResult, type ModelOptions, type ProviderCatalogEntry, type QueuedChatMessage, type TranscriptEntry, type UpdateInstallResult, type UpdateSnapshot, type UserPromptEntry } from "../../shared/types"
+import { PROVIDERS, type AgentProvider, type ApprovalDecision, type AppSettingsPatch, type AppSettingsSnapshot, type AskUserQuestionAnswerMap, type ChatAttachment, type ChatConversionPreview, type ChatDiffSnapshot, type ChatHistoryPage, type ChatHistorySnapshot, type ChatProviderPreferences, type CheckpointRestoreMode, type CheckpointRestoreResult, type KeybindingsSnapshot, type LlmProviderSnapshot, type LlmProviderValidationResult, type ModelOptions, type ProviderCatalogEntry, type QueuedChatMessage, type TranscriptEntry, type UpdateInstallResult, type UpdateSnapshot, type UserPromptEntry } from "../../shared/types"
 import { NEW_CHAT_COMPOSER_ID, type ComposerState, useChatPreferencesStore } from "../stores/chatPreferencesStore"
 import { useRightSidebarStore } from "../stores/rightSidebarStore"
 import { useTerminalLayoutStore } from "../stores/terminalLayoutStore"
@@ -881,6 +881,7 @@ export interface AbolqasemState {
     questions: AskUserQuestionItem[],
     answers: AskUserQuestionAnswerMap
   ) => Promise<void>
+  handleApprovalRequest: (toolUseId: string, decision: ApprovalDecision) => Promise<void>
   handleExitPlanMode: (
     toolUseId: string,
     confirmed: boolean,
@@ -2286,12 +2287,28 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
     }
   }, [activeChatId, socket])
 
+  const handleApprovalRequest = useCallback(async (toolUseId: string, decision: ApprovalDecision) => {
+    if (!activeChatId) throw new Error("No active chat")
+    try {
+      await socket.command({
+        type: "chat.respondTool",
+        chatId: activeChatId,
+        toolUseId,
+        result: { decision },
+      })
+    } catch (error) {
+      setCommandError(error instanceof Error ? error.message : String(error))
+      throw error
+    }
+  }, [activeChatId, socket])
+
   const handleExitPlanMode = useCallback(async (toolUseId: string, confirmed: boolean, clearContext?: boolean, message?: string) => {
     if (!activeChatId) return
-    if (confirmed) {
-      useChatPreferencesStore.getState().setChatComposerPlanMode(activeChatId, false)
-    }
     try {
+      if (confirmed) {
+        await socket.command({ type: "chat.setPlanMode", chatId: activeChatId, planMode: false })
+        useChatPreferencesStore.getState().setChatComposerPlanMode(activeChatId, false)
+      }
       await socket.command({
         type: "chat.respondTool",
         chatId: activeChatId,
@@ -2386,6 +2403,7 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
     handleOpenLocalLink,
     handleCompose,
     handleAskUserQuestion,
+    handleApprovalRequest,
     handleExitPlanMode,
     handleRestoreCheckpoint,
   }

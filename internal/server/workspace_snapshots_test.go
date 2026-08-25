@@ -10,6 +10,7 @@ import (
 
 	"abolqasem/internal/parser"
 	"abolqasem/internal/state"
+	"abolqasem/internal/workspace/agent"
 	"abolqasem/internal/workspace/events"
 	"abolqasem/internal/workspace/eventstore"
 	"abolqasem/internal/workspace/readmodels"
@@ -313,6 +314,15 @@ func TestWorkspaceTranscriptEntryRestoresCodexMobileAttachmentsAndPlan(t *testin
 		t.Fatalf("expected native plan transcript entry, got %#v", plan)
 	}
 
+	proposedPlan := workspaceTranscriptEntryFromSearchable(parser.SearchableMessage{
+		ID: "proposed-plan-1", Role: "assistant", Kind: "proposed_plan", Text: "# Plan", Fields: map[string]any{
+			"turnId": "turn-1", "plan": "# Plan",
+		},
+	})
+	if proposedPlan["kind"] != transcript.KindProposedPlan || proposedPlan["turnId"] != "turn-1" || proposedPlan["plan"] != "# Plan" {
+		t.Fatalf("expected native proposed-plan transcript entry, got %#v", proposedPlan)
+	}
+
 	fileChange := workspaceTranscriptEntryFromSearchable(parser.SearchableMessage{
 		ID: "change-1", Kind: "file_change", Fields: map[string]any{
 			"itemId": "patch-1", "status": "completed",
@@ -321,5 +331,34 @@ func TestWorkspaceTranscriptEntryRestoresCodexMobileAttachmentsAndPlan(t *testin
 	})
 	if fileChange["kind"] != transcript.KindFileChange || fileChange["itemId"] != "patch-1" {
 		t.Fatalf("expected native file-change transcript entry, got %#v", fileChange)
+	}
+
+	turnError := workspaceTranscriptEntryFromSearchable(parser.SearchableMessage{
+		ID: "failure-1", Role: "system", Kind: transcript.KindResult, Text: "Please sign in again", Fields: map[string]any{
+			"subtype": "error", "isError": true, "durationMs": float64(4028),
+		},
+	})
+	if turnError["kind"] != transcript.KindResult || turnError["result"] != "Please sign in again" || turnError["isError"] != true {
+		t.Fatalf("expected native turn error transcript entry, got %#v", turnError)
+	}
+}
+
+func TestWorkspacePendingToolTranscriptEntryPreservesPlanQuestions(t *testing.T) {
+	entry := workspacePendingToolTranscriptEntry(&agent.PendingToolSnapshot{
+		ToolUseID: "ask-1",
+		ToolKind:  "ask_user_question",
+		ToolName:  "AskUserQuestion",
+		CreatedAt: 123,
+		Input: map[string]any{"questions": []map[string]any{{
+			"id": "scope", "header": "Scope", "question": "Which scope?",
+			"options": []map[string]any{{"label": "Small", "description": "Only the focused file"}},
+		}}},
+	})
+	if entry["_id"] != "pending-tool-ask-1" || entry["kind"] != transcript.KindToolCall || entry["createdAt"] != float64(123) {
+		t.Fatalf("unexpected pending tool entry: %#v", entry)
+	}
+	tool, ok := entry["tool"].(map[string]any)
+	if !ok || tool["toolName"] != "AskUserQuestion" || tool["toolId"] != "ask-1" {
+		t.Fatalf("expected ask-user-question tool payload, got %#v", entry)
 	}
 }

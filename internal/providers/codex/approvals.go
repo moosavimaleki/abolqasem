@@ -26,6 +26,7 @@ type ApprovalRequest struct {
 	RequestID string
 	Kind      string
 	Params    json.RawMessage
+	Tool      map[string]any
 }
 
 type RequestHandlers struct {
@@ -122,24 +123,71 @@ func handleUserInputRequest(request ServerRequest, handlers RequestHandlers) ([]
 }
 
 func handleApprovalRequest(request ServerRequest, handlers RequestHandlers, kind string) ([]HarnessEvent, ServerResponse, error) {
+	tool, err := approvalRequestTool(request, kind)
+	if err != nil {
+		return nil, ServerResponse{}, err
+	}
+	events := []HarnessEvent{{
+		Type: "transcript",
+		Entry: transcript.New(transcript.KindToolCall, map[string]any{
+			"tool": tool,
+		}),
+	}}
 	decision := "decline"
 	if handlers.OnApprovalRequest != nil {
-		var err error
 		decision, err = handlers.OnApprovalRequest(ApprovalRequest{
 			RequestID: request.ID,
 			Kind:      kind,
 			Params:    request.Params,
+			Tool:      tool,
 		})
 		if err != nil {
-			return nil, ServerResponse{}, err
+			return events, ServerResponse{}, err
 		}
 	}
-	return nil, ServerResponse{
+	decision = normalizeApprovalDecision(decision)
+	return events, ServerResponse{
 		ID: request.ID,
 		Result: map[string]any{
 			"decision": decision,
 		},
 	}, nil
+}
+
+func approvalRequestTool(request ServerRequest, kind string) (map[string]any, error) {
+	params := map[string]any{}
+	if len(request.Params) > 0 {
+		if err := json.Unmarshal(request.Params, &params); err != nil {
+			return nil, err
+		}
+	}
+	input := map[string]any{"approvalKind": kind}
+	for _, key := range []string{"command", "cwd", "reason", "grantRoot", "availableDecisions"} {
+		if value, ok := params[key]; ok && value != nil {
+			input[key] = value
+		}
+	}
+	toolID := request.ID
+	if itemID, ok := params["itemId"].(string); ok && itemID != "" {
+		input["itemId"] = itemID
+	}
+	return map[string]any{
+		"kind":     "tool",
+		"toolKind": "approval_request",
+		"toolName": "ApprovalRequest",
+		"toolId":   toolID,
+		"input":    input,
+		"rawInput": params,
+	}, nil
+}
+
+func normalizeApprovalDecision(decision string) string {
+	switch decision {
+	case "accept", "acceptForSession", "decline", "cancel":
+		return decision
+	default:
+		return "decline"
+	}
 }
 
 func normalizeUserInputAnswers(result map[string]any, questions []struct {

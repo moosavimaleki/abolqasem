@@ -231,6 +231,7 @@ func workspaceAgentCoordinator() *agent.Coordinator {
 	store := eventstore.New(dir)
 	workspaceCoordinator = agent.NewCoordinator(&workspaceEventStore{store: store}, workspaceTurnStarterFactory(store), func(chatID string) {
 		workspaceConnections.scheduleBroadcast(chatID)
+		workspaceTelegramBridge.chatStateChanged(chatID)
 	})
 	return workspaceCoordinator
 }
@@ -316,6 +317,28 @@ func (s *workspaceEventStore) SetPlanMode(chatID string, planMode bool) error {
 		return err
 	}
 	return s.store.Append(events.StreamChats, event)
+}
+
+func workspaceSetChatPlanMode(raw json.RawMessage) (string, error) {
+	var payload struct {
+		ChatID   string `json:"chatId"`
+		PlanMode bool   `json:"planMode"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return "", err
+	}
+	payload.ChatID = strings.TrimSpace(payload.ChatID)
+	if payload.ChatID == "" {
+		return "", errors.New("chatId is required")
+	}
+	store := &workspaceEventStore{store: workspaceStore()}
+	if _, err := store.RequireChat(payload.ChatID); err != nil {
+		return "", err
+	}
+	if err := store.SetPlanMode(payload.ChatID, payload.PlanMode); err != nil {
+		return "", err
+	}
+	return payload.ChatID, nil
 }
 
 func (s *workspaceEventStore) SetSessionToken(chatID string, sessionToken string) error {

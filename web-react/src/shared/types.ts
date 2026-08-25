@@ -718,6 +718,18 @@ export interface AskUserQuestionItem {
 
 export type AskUserQuestionAnswerMap = Record<string, string[]>
 
+export type ApprovalDecision = "accept" | "acceptForSession" | "decline" | "cancel"
+
+export interface ApprovalRequestInput {
+  approvalKind: "command_execution" | "file_change"
+  itemId?: string
+  command?: string
+  cwd?: string
+  reason?: string
+  grantRoot?: string
+  availableDecisions?: unknown[]
+}
+
 export interface TodoItem {
   content: string
   status: "pending" | "in_progress" | "completed"
@@ -743,6 +755,9 @@ interface ToolCallBase<TKind extends string, TInput> {
 
 export interface AskUserQuestionToolCall
   extends ToolCallBase<"ask_user_question", { questions: AskUserQuestionItem[] }> { }
+
+export interface ApprovalRequestToolCall
+  extends ToolCallBase<"approval_request", ApprovalRequestInput> { }
 
 export interface ExitPlanModeToolCall
   extends ToolCallBase<"exit_plan_mode", { plan?: string; summary?: string }> { }
@@ -788,6 +803,7 @@ export interface UnknownToolCall
 
 export type NormalizedToolCall =
   | AskUserQuestionToolCall
+  | ApprovalRequestToolCall
   | ExitPlanModeToolCall
   | TodoWriteToolCall
   | SkillToolCall
@@ -895,6 +911,12 @@ export interface TurnPlanEntry extends TranscriptEntryBase {
   turnId: string
   explanation?: string | null
   plan: TurnPlanStep[]
+}
+
+export interface ProposedPlanEntry extends TranscriptEntryBase {
+  kind: "proposed_plan"
+  turnId: string
+  plan: string
 }
 
 export interface TurnActivityEntry extends TranscriptEntryBase {
@@ -1165,6 +1187,7 @@ export type TranscriptEntry =
   | CommandExecutionEntry
   | FileChangeEntry
   | TurnPlanEntry
+  | ProposedPlanEntry
   | TurnActivityEntry
   | ContextWindowUpdatedEntry
   | RateLimitUpdatedEntry
@@ -1193,6 +1216,10 @@ export interface AskUserQuestionToolResult {
   discarded?: boolean
 }
 
+export interface ApprovalRequestToolResult {
+  decision: ApprovalDecision
+}
+
 export interface ExitPlanModeToolResult {
   confirmed?: boolean
   clearContext?: boolean
@@ -1202,6 +1229,9 @@ export interface ExitPlanModeToolResult {
 
 export type HydratedAskUserQuestionToolCall =
   HydratedToolCallBase<"ask_user_question", AskUserQuestionToolCall["input"], AskUserQuestionToolResult>
+
+export type HydratedApprovalRequestToolCall =
+  HydratedToolCallBase<"approval_request", ApprovalRequestToolCall["input"], ApprovalRequestToolResult>
 
 export type HydratedExitPlanModeToolCall =
   HydratedToolCallBase<"exit_plan_mode", ExitPlanModeToolCall["input"], ExitPlanModeToolResult>
@@ -1263,6 +1293,7 @@ export type HydratedUnknownToolCall =
 
 export type HydratedToolCall =
   | HydratedAskUserQuestionToolCall
+  | HydratedApprovalRequestToolCall
   | HydratedExitPlanModeToolCall
   | HydratedTodoWriteToolCall
   | HydratedSkillToolCall
@@ -1288,6 +1319,7 @@ export type HydratedTranscriptMessage =
   | ({ kind: "command_execution"; itemId: string; command: string; cwd: string; status: CodexExecutionStatus; aggregatedOutput: string; exitCode?: number | null; durationMs?: number | null; id: string; messageId?: string; timestamp: string; hidden?: boolean })
   | ({ kind: "file_change"; itemId: string; status: CodexExecutionStatus; changes: CodexFileUpdateChange[]; output: string; id: string; messageId?: string; timestamp: string; hidden?: boolean })
   | ({ kind: "turn_plan"; turnId: string; explanation?: string | null; plan: TurnPlanStep[]; id: string; messageId?: string; timestamp: string; hidden?: boolean })
+  | ({ kind: "proposed_plan"; turnId: string; plan: string; id: string; messageId?: string; timestamp: string; hidden?: boolean })
   | ({ kind: "turn_activity"; turnId?: string; activity: TurnActivityEntry["activity"]; id: string; messageId?: string; timestamp: string; hidden?: boolean })
   | ({ kind: "context_window_updated"; usage: ContextWindowUsageSnapshot; id: string; messageId?: string; timestamp: string; hidden?: boolean })
   | ({ kind: "rate_limit_updated"; rateLimits: RateLimitSnapshot; id: string; messageId?: string; timestamp: string; hidden?: boolean })

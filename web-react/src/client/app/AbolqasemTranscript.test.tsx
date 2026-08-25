@@ -12,15 +12,19 @@ import {
 
 const ROW_WRAPPER_CLASS = "mx-auto max-w-[800px] pb-5"
 
-function renderTranscript(messages: HydratedTranscriptMessage[]) {
+function renderTranscript(
+  messages: HydratedTranscriptMessage[],
+  latestToolIds = { AskUserQuestion: null, ExitPlanMode: null, TodoWrite: null },
+) {
   return renderToStaticMarkup(
     <I18nProvider locale="en">
       <AbolqasemTranscript
         messages={messages}
         isLoading={false}
-        latestToolIds={{ AskUserQuestion: null, ExitPlanMode: null, TodoWrite: null }}
+        latestToolIds={latestToolIds}
         onOpenLocalLink={() => undefined}
         onAskUserQuestionSubmit={() => undefined}
+        onApprovalRequestSubmit={() => undefined}
         onExitPlanModeConfirm={() => undefined}
       />
     </I18nProvider>
@@ -77,6 +81,44 @@ describe("AbolqasemTranscript", () => {
     expect(html).toContain("Updating")
     expect(html).toContain("Implement safely")
     expect(html).toContain("Run tests")
+  })
+
+  test("renders a pending Codex approval with explicit one-time and session choices", () => {
+    const html = renderTranscript([
+      {
+        id: "approval-1",
+        kind: "tool",
+        toolKind: "approval_request",
+        toolName: "ApprovalRequest",
+        toolId: "rpc-17",
+        input: {
+          approvalKind: "command_execution",
+          command: "printf changed > README.md",
+          cwd: "/work",
+          reason: "Write the requested note",
+        },
+        timestamp: new Date().toISOString(),
+      },
+    ], { AskUserQuestion: null, ApprovalRequest: "approval-1", ExitPlanMode: null, TodoWrite: null })
+
+    expect(html).toContain('data-approval-request="true"')
+    expect(html).toContain("Run this command?")
+    expect(html).toContain("printf changed &gt; README.md")
+    expect(html).toContain("Allow once")
+    expect(html).toContain("Allow for session")
+    expect(html).toContain("Deny")
+  })
+
+  test("renders proposed plans as compact collapsed cards without protocol tags", () => {
+    const html = renderTranscript([
+      { id: "proposed", kind: "proposed_plan", turnId: "turn-1", plan: "# Refactor plan\n\n- Run tests", timestamp: new Date().toISOString() },
+    ])
+    expect(html).toContain('data-proposed-plan="true"')
+    expect(html).toContain('aria-expanded="false"')
+    expect(html).toContain("max-w-[640px]")
+    expect(html).toContain("Refactor plan")
+    expect(html).not.toContain("Run tests")
+    expect(html).not.toContain("proposed_plan")
   })
 
   test("groups consecutive native commands behind a Codex Mobile style summary", () => {
@@ -206,6 +248,50 @@ Please check the latest error first.`,
     expect(html).not.toContain("The user would like you to know the following.")
     expect(html).toContain("Please check the latest error first.")
     expect(html).toContain('aria-label="Sent mid-turn"')
+  })
+
+  test("renders native Codex turn failures as an accessible inline error", () => {
+    const html = renderTranscript([
+      {
+        id: "turn-error-1",
+        kind: "result",
+        success: false,
+        result: "Your access token could not be refreshed because your refresh token was revoked. Please log out and sign in again.",
+        durationMs: 4028,
+        timestamp: new Date().toISOString(),
+      },
+    ])
+
+    expect(html).toContain('role="alert"')
+    expect(html).toContain("refresh token was revoked")
+  })
+
+  test("renders a live Plan Mode question from the native tool request", () => {
+    const html = renderTranscript([
+      {
+        id: "pending-plan-question",
+        kind: "tool",
+        toolKind: "ask_user_question",
+        toolName: "AskUserQuestion",
+        toolId: "ask-1",
+        input: {
+          questions: [{
+            id: "scope",
+            header: "Scope",
+            question: "Which refactor scope should I use?",
+            options: [{ label: "Focused", description: "Only the targeted package" }],
+          }],
+        },
+        timestamp: new Date().toISOString(),
+      },
+    ], { AskUserQuestion: "pending-plan-question", ExitPlanMode: null, TodoWrite: null })
+
+    expect(html).toContain("Which refactor scope should I use?")
+    expect(html).toContain("Focused")
+    expect(html).toContain("Scope")
+    expect(html).toContain('role="radiogroup"')
+    expect(html).toContain('role="radio"')
+    expect(html).toContain('aria-checked="false"')
   })
 
   test("does not render wrappers for context window updates", () => {

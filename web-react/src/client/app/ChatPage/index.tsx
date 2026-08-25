@@ -1558,12 +1558,49 @@ export function ChatPage() {
   }, [codexLock, dialog, state.activeChatId, state.socket, t.common.cancel, t.common.ok])
 
   const changeCodexExecutionMode = useCallback(async (executionMode: CodexExecutionMode) => {
-    if (!state.activeChatId) return
+    if (!state.activeChatId || codexLock?.state !== "owned_by_us") return
     setCodexLockActionPending(true)
     try {
       await state.socket.command({ type: "chat.setCodexExecutionMode", chatId: state.activeChatId, executionMode })
     } catch (error) {
-      await dialog.alert({ title: "حالت اجرای Codex تغییر نکرد", description: error instanceof Error ? error.message : String(error), closeLabel: t.common.ok, dir: "rtl" })
+      const message = error instanceof Error ? error.message : String(error)
+      if (message.includes("does not own the Codex session")) {
+        await state.socket.command({ type: "chat.refresh", chatId: state.activeChatId }).catch(() => undefined)
+        return
+      }
+      await dialog.alert({ title: "حالت اجرای Codex تغییر نکرد", description: message, closeLabel: t.common.ok, dir: "rtl" })
+    } finally {
+      setCodexLockActionPending(false)
+    }
+  }, [codexLock?.state, dialog, state.activeChatId, state.socket, t.common.ok])
+
+  const changeRuntimePlanMode = useCallback(async (planMode: boolean) => {
+    if (!state.activeChatId) return
+    try {
+      await state.socket.command({ type: "chat.setPlanMode", chatId: state.activeChatId, planMode })
+    } catch (error) {
+      await dialog.alert({
+        title: "حالت برنامه‌ریزی تغییر نکرد",
+        description: error instanceof Error ? error.message : String(error),
+        closeLabel: t.common.ok,
+        dir: "rtl",
+      })
+      throw error
+    }
+  }, [dialog, state.activeChatId, state.socket, t.common.ok])
+
+  const reloadCodexAuth = useCallback(async () => {
+    if (!state.activeChatId) return
+    setCodexLockActionPending(true)
+    try {
+      await state.socket.command({ type: "chat.reloadCodexAuth", chatId: state.activeChatId })
+    } catch (error) {
+      await dialog.alert({
+        title: "حساب Codex بارگذاری نشد",
+        description: error instanceof Error ? error.message : String(error),
+        closeLabel: t.common.ok,
+        dir: "rtl",
+      })
     } finally {
       setCodexLockActionPending(false)
     }
@@ -1956,6 +1993,7 @@ export function ChatPage() {
             editorCommandTemplate={editorCommandTemplate}
             platform={state.localProjects?.machine.platform}
             onAskUserQuestionSubmit={state.handleAskUserQuestion}
+            onApprovalRequestSubmit={state.handleApprovalRequest}
             onExitPlanModeConfirm={state.handleExitPlanMode}
             checkpoints={state.chatDiffSnapshot?.checkpoints ?? []}
             onRestoreCheckpoint={state.handleRestoreCheckpoint}
@@ -1995,6 +2033,9 @@ export function ChatPage() {
           onTakeOverSession={(executionMode) => { void takeOverCodexLock(executionMode) }}
           onReleaseSession={() => { void releaseCodexLock() }}
           onCodexExecutionModeChange={(executionMode) => { void changeCodexExecutionMode(executionMode) }}
+          runtimePlanMode={state.runtime?.planMode}
+          onRuntimePlanModeChange={changeRuntimePlanMode}
+          onReloadCodexAuth={() => { void reloadCodexAuth() }}
           onSubmit={handleChatSubmit}
           onCancel={handleCancel}
         />

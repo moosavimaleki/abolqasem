@@ -2,13 +2,16 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
+	codexprovider "abolqasem/internal/providers/codex"
 	"abolqasem/internal/workspace/agent"
 	"abolqasem/internal/workspace/readmodels"
 )
@@ -36,7 +39,7 @@ func TestWorkspaceCodexInputsReferenceAttachedTextWithoutInliningIt(t *testing.T
 
 func TestWorkspaceCodexExecutionPolicy(t *testing.T) {
 	standard := workspaceCodexExecutionPolicyFor("standard")
-	if standard.approvalPolicy != "on-request" || standard.sandbox != "workspace-write" {
+	if standard.approvalPolicy != "on-request" || standard.sandbox != "read-only" {
 		t.Fatalf("unexpected standard execution policy: %#v", standard)
 	}
 
@@ -54,6 +57,60 @@ func TestWorkspaceCodexSessionReuseRequiresMatchingExecutionMode(t *testing.T) {
 	session := &workspaceCodexSession{cwd: "/workspace", threadID: "thread", executionMode: "dangerous", process: &workspaceCodexProcess{done: make(chan struct{})}}
 	if session.reusableFor(agent.TurnRequest{LocalPath: "/workspace", ExecutionMode: "standard"}) {
 		t.Fatal("expected execution-mode change to replace the app-server session")
+	}
+}
+
+func TestWorkspaceCodexApprovalWaitsForExplicitToolResponse(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	turn := &workspaceAsyncTurn{
+		events:        make(chan agent.TurnEvent, 1),
+		toolResponses: map[string]chan workspaceToolResponse{},
+	}
+	resultCh := make(chan map[string]any, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		result, err := turn.waitForToolResponse(ctx, codexprovider.ToolRequest{Tool: map[string]any{
+			"toolId":   "approval-1",
+			"toolKind": "approval_request",
+			"toolName": "ApprovalRequest",
+			"input": map[string]any{
+				"approvalKind": "file_change",
+				"itemId":       "patch-1",
+			},
+		}})
+		if err != nil {
+			errCh <- err
+			return
+		}
+		resultCh <- result
+	}()
+
+	pending := <-turn.events
+	if pending.Type != agent.TurnEventPendingTool || pending.PendingTool == nil || pending.PendingTool.ToolUseID != "approval-1" {
+		t.Fatalf("expected a pending approval event, got %#v", pending)
+	}
+	select {
+	case result := <-resultCh:
+		t.Fatalf("approval returned before the user responded: %#v", result)
+	default:
+	}
+
+	if err := turn.RespondTool(context.Background(), agent.ToolResponse{
+		ToolUseID: "approval-1",
+		Result:    map[string]any{"decision": "accept"},
+	}); err != nil {
+		t.Fatalf("RespondTool returned error: %v", err)
+	}
+
+	select {
+	case err := <-errCh:
+		t.Fatal(err)
+	case result := <-resultCh:
+		encoded, _ := json.Marshal(result)
+		if string(encoded) != `{"decision":"accept"}` {
+			t.Fatalf("unexpected approval result: %s", encoded)
+		}
 	}
 }
 
