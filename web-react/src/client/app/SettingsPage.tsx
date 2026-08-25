@@ -5,6 +5,7 @@ import {
   Code,
   ExternalLink,
   Info,
+  Gauge,
   Loader2,
   Menu,
   MessageSquareQuote,
@@ -94,6 +95,7 @@ import type { AbolqasemState } from "./useAbolqasemState"
 import { getDictionary, getLocaleDirection, LOCALE_OPTIONS, normalizeLocale } from "../i18n"
 import { useI18n } from "../i18n/context"
 import { HOOK_NOTIFICATION_SETTINGS_HASH, settingsRoute } from "./routes"
+import { UsageSettingsSection } from "./UsageSettingsSection"
 
 const sidebarItems = [
   {
@@ -131,6 +133,12 @@ const sidebarItems = [
     label: "Telegram",
     icon: MessageSquareQuote,
     subtitle: "Connect an allowlisted Telegram bot to existing Codex chats.",
+  },
+  {
+    id: "usage",
+    label: "Usage",
+    icon: Gauge,
+    subtitle: "Review Codex limits and local cache usage.",
   },
   {
     id: "keybindings",
@@ -2164,11 +2172,12 @@ export function SettingsPage() {
       providers: { label: dictionary.settings.providers, subtitle: dictionary.settings.providersSubtitle },
       proxy: { label: dictionary.settings.proxy, subtitle: dictionary.settings.proxySubtitle },
       telegram: { label: "Telegram", subtitle: "Connect an allowlisted Telegram bot to existing Codex chats." },
+      usage: { label: locale === "fa" ? "مصرف" : "Usage", subtitle: locale === "fa" ? "محدودیت‌های Codex و فضای کش محلی." : "Review Codex limits and local cache usage." },
       keybindings: { label: dictionary.settings.keybindings, subtitle: dictionary.settings.keybindingsSubtitle },
       changelog: { label: dictionary.settings.changelog, subtitle: dictionary.settings.changelogSubtitle },
     } satisfies Record<SidebarPageId, { label: string; subtitle: string }>
     return { ...item, ...sections[item.id] }
-  }), [dictionary])
+  }), [dictionary, locale])
   const localizedChatSoundPreferenceOptions = useMemo(() => [
     { value: "never" as ChatSoundPreference, label: dictionary.settings.options.never },
     { value: "unfocused" as ChatSoundPreference, label: dictionary.settings.options.unfocused },
@@ -3842,6 +3851,8 @@ export function SettingsPage() {
                       )
                     })}
                   </div>
+                ) : selectedPage === "usage" ? (
+                  <UsageSettingsSection locale={locale} />
                 ) : selectedPage === "skills" ? (
                   <SkillsSection state={state} />
                 ) : selectedPage === "mcp" ? (

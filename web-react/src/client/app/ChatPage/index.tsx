@@ -18,6 +18,7 @@ import { getAppearanceThemeClassName, useReaderAppearanceSettings } from "../../
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "../../components/ui/resizable"
 import { actionMatchesEvent, getResolvedKeybindings } from "../../lib/keybindings"
 import { deriveLatestContextWindowSnapshot } from "../../lib/contextWindow"
+import { deriveLatestRateLimitSnapshot } from "../../lib/usage"
 import { cn } from "../../lib/utils"
 import {
   DEFAULT_RIGHT_SIDEBAR_SIZE,
@@ -953,6 +954,10 @@ export function ChatPage() {
     baseContextWindowSnapshotRef.current = derivedSnapshot
     return derivedSnapshot
   }, [state.chatSnapshot?.messages])
+  const rateLimitSnapshot = useMemo(
+    () => deriveLatestRateLimitSnapshot(state.chatSnapshot?.messages ?? []),
+    [state.chatSnapshot?.messages],
+  )
   useLayoutEffect(() => {
     messagesRef.current = state.messages
   }, [state.messages])
@@ -2026,6 +2031,7 @@ export function ChatPage() {
           activeProvider={state.runtime?.provider ?? null}
           availableProviders={state.availableProviders}
           contextWindowSnapshot={contextWindowSnapshot}
+          rateLimitSnapshot={rateLimitSnapshot}
           readOnly={codexChatReadOnly}
           codexLock={codexLock}
           lockBusy={codexLockActionPending}

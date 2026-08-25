@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
-import { Loader2, PanelLeft, PanelRight, X, Menu, Plus, Settings, Search as SearchIcon } from "lucide-react"
+import { FolderKanban, Loader2, MessageSquare, PanelLeft, PanelRight, X, Menu, Plus, Settings, Search as SearchIcon, SquarePen } from "lucide-react"
 import { useLocation, useNavigate } from "react-router-dom"
 import { APP_NAME } from "../../shared/branding"
 import { AbolqasemLogo } from "../components/AbolqasemLogo"
@@ -24,6 +24,8 @@ import { useI18n } from "../i18n/context"
 import { chatRoute, settingsRoute } from "./routes"
 
 const SIDEBAR_WIDTH_STORAGE_KEY = "abolqasem:sidebar-width"
+const SIDEBAR_VIEW_STORAGE_KEY = "abolqasem:sidebar-view"
+type SidebarView = "chats" | "projects"
 export const DEFAULT_SIDEBAR_WIDTH = 275
 export const MIN_SIDEBAR_WIDTH = 220
 export const MAX_SIDEBAR_WIDTH = 520
@@ -42,6 +44,11 @@ function readStoredSidebarWidth() {
 function persistSidebarWidth(width: number) {
   if (typeof window === "undefined") return
   window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(clampSidebarWidth(width)))
+}
+
+function readStoredSidebarView(): SidebarView {
+  if (typeof window === "undefined") return "chats"
+  return window.localStorage.getItem(SIDEBAR_VIEW_STORAGE_KEY) === "projects" ? "projects" : "chats"
 }
 
 function SidebarSearch({
@@ -368,6 +375,7 @@ function AbolqasemSidebarImpl({
   const [sidebarWidth, setSidebarWidth] = useState(readStoredSidebarWidth)
   const [isResizingSidebar, setIsResizingSidebar] = useState(false)
   const [archivedProjectId, setArchivedProjectId] = useState<string | null>(null)
+  const [sidebarView, setSidebarView] = useState<SidebarView>(readStoredSidebarView)
   const resolvedKeybindings = useMemo(() => getResolvedKeybindings(keybindings), [keybindings])
   const visibleChats = useMemo(
     () => getVisibleSidebarChats(data.projectGroups, collapsedSections, expandedGroups),
@@ -389,6 +397,23 @@ function AbolqasemSidebarImpl({
     () => data.projectGroups.find((group) => group.groupKey === archivedProjectId) ?? null,
     [archivedProjectId, data.projectGroups]
   )
+  const flatChats = useMemo(
+    () => allSidebarSearchChats(data).sort((left, right) => getSidebarChatTimestamp(right.chat) - getSidebarChatTimestamp(left.chat)),
+    [data],
+  )
+  const activeFlatChats = useMemo(
+    () => flatChats.filter(({ chat }) => chat.status !== "idle" || chat.unread),
+    [flatChats],
+  )
+  const recentFlatChats = useMemo(
+    () => flatChats.filter(({ chat }) => chat.status === "idle" && !chat.unread),
+    [flatChats],
+  )
+
+  const changeSidebarView = useCallback((view: SidebarView) => {
+    setSidebarView(view)
+    window.localStorage.setItem(SIDEBAR_VIEW_STORAGE_KEY, view)
+  }, [])
 
   useEffect(() => {
     visibleChatsRef.current = visibleChats
@@ -598,7 +623,7 @@ function AbolqasemSidebarImpl({
     }
   }, [isResizingSidebar, isRtl])
 
-  const hasVisibleChats = activeVisibleCount > 0
+  const hasVisibleChats = sidebarView === "chats" ? flatChats.length > 0 : activeVisibleCount > 0
   const isLocalProjectsActive = location.pathname === "/"
   const isSettingsActive = location.pathname.startsWith("/_/settings") || location.pathname.startsWith("/settings")
   const isUtilityPageActive = isLocalProjectsActive || isSettingsActive
@@ -740,6 +765,37 @@ function AbolqasemSidebarImpl({
           }}
         >
           <div className="p-[7px]">
+            <div className="mb-2 grid grid-cols-2 gap-1 rounded-xl bg-muted/40 p-1" role="tablist" aria-label="Sidebar view">
+              {(["chats", "projects"] as const).map((view) => (
+                <button
+                  key={view}
+                  type="button"
+                  role="tab"
+                  aria-selected={sidebarView === view}
+                  onClick={() => changeSidebarView(view)}
+                  className={cn("flex h-8 items-center justify-center gap-1.5 rounded-lg text-xs transition-colors", sidebarView === view ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
+                >
+                  {view === "chats" ? <MessageSquare className="size-3.5" /> : <FolderKanban className="size-3.5" />}
+                  {view === "chats" ? (locale === "fa" ? "چت‌ها" : "Chats") : (locale === "fa" ? "پروژه‌ها" : "Projects")}
+                </button>
+              ))}
+            </div>
+            <div className="mb-2 grid grid-cols-2 gap-1">
+              <button
+                type="button"
+                onClick={() => currentProjectId ? onCreateChat(currentProjectId) : onOpenAddProjectModal()}
+                className="flex h-9 items-center gap-2 rounded-lg px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <SquarePen className="size-3.5" />{locale === "fa" ? "چت جدید" : "New chat"}
+              </button>
+              <button
+                type="button"
+                onClick={() => { navigate("/"); onClose(); onOpenAddProjectModal() }}
+                className="flex h-9 items-center gap-2 rounded-lg px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <Plus className="size-3.5" />{locale === "fa" ? "افزودن پروژه" : "Add project"}
+              </button>
+            </div>
             <SidebarSearch
               data={data}
               onSelectChat={(chatId) => {
@@ -775,7 +831,20 @@ function AbolqasemSidebarImpl({
               <p className="text-sm text-muted-foreground p-2 mt-6 text-center">{t.sidebar.noConversations}</p>
             ) : null}
 
-            <LocalProjectsSection
+            {sidebarView === "chats" ? (
+              <div className="space-y-4 pt-1">
+                {activeFlatChats.length ? (
+                  <section>
+                    <div className="px-2 pb-1 text-[11px] font-medium text-muted-foreground">{locale === "fa" ? "فعال" : "Active"}</div>
+                    {activeFlatChats.map(({ chat, projectName }) => <div key={chat.chatId}><div className="px-3 pt-1 text-[10px] text-muted-foreground/70 truncate">{projectName}</div>{renderChatRow(chat)}</div>)}
+                  </section>
+                ) : null}
+                <section>
+                  <div className="px-2 pb-1 text-[11px] font-medium text-muted-foreground">{locale === "fa" ? "اخیر" : "Recent"}</div>
+                  {recentFlatChats.map(({ chat, projectName }) => <div key={chat.chatId}><div className="px-3 pt-1 text-[10px] text-muted-foreground/70 truncate">{projectName}</div>{renderChatRow(chat)}</div>)}
+                </section>
+              </div>
+            ) : <LocalProjectsSection
               projectGroups={data.projectGroups}
               editorLabel={editorLabel}
               onReorderGroups={onReorderProjectGroups}
@@ -797,7 +866,7 @@ function AbolqasemSidebarImpl({
               onHideProject={onHideProject}
               isConnected={connectionStatus === "connected"}
               creatingChatProjectId={creatingChatProjectId}
-            />
+            />}
           </div>
         </div>
 

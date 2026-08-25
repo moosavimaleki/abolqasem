@@ -176,7 +176,7 @@ function StandaloneTranscriptApp() {
             onEditQueuedMessage={noopPromise}
             onOpenLocalLink={handleOpenLocalLink}
             onAskUserQuestionSubmit={handleAskUserQuestion}
-            onApprovalRequestSubmit={noop}
+            onApprovalRequestSubmit={noopPromise}
             onExitPlanModeConfirm={handleExitPlanMode}
             showUnreadDot={false}
             showScrollButton={!isAtEnd && messages.length > 0}

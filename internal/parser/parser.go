@@ -143,6 +143,16 @@ func Stats() CacheStats {
 	}
 }
 
+// ClearCache releases only derived in-memory parser data. Session transcripts
+// remain untouched and will be parsed again on demand.
+func ClearCache() {
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
+	cache = map[string]cacheEntry{}
+	summaryCache = map[string]summaryCacheEntry{}
+	cacheBytes = 0
+}
+
 func ParseMessages(agent, sessionID, transcriptPath string, opts ParseOptions) (*ParseResult, error) {
 	if strings.TrimSpace(transcriptPath) == "" {
 		return &ParseResult{
@@ -907,12 +917,16 @@ func extractCodexMessage(raw map[string]any, sessionID string, index int) *Searc
 		}
 		return msg
 	case "user_message":
-		return newCodexSearchableMessage(sessionID, index, "user", "message", firstNonEmpty(
+		text := firstNonEmpty(
 			codexText(payload["message"]),
 			codexText(payload["text"]),
 			codexContentText(payload["content"]),
 			codexText(raw["message"]),
-		), extractTimestamp(raw, payload), source)
+		)
+		if isCodexEnvironmentContext(text) {
+			return nil
+		}
+		return newCodexSearchableMessage(sessionID, index, "user", "message", text, extractTimestamp(raw, payload), source)
 	case "agent_message":
 		text := firstNonEmpty(
 			codexText(payload["message"]),
@@ -949,7 +963,15 @@ func extractCodexMessage(raw map[string]any, sessionID string, index int) *Searc
 			return newCodexProposedPlanMessage(sessionID, index, payload, plan, extractTimestamp(raw, payload), source)
 		}
 	}
+	if role == "user" && isCodexEnvironmentContext(text) {
+		return nil
+	}
 	return newCodexSearchableMessage(sessionID, index, role, "message", text, extractTimestamp(raw, payload), source)
+}
+
+func isCodexEnvironmentContext(text string) bool {
+	trimmed := strings.TrimSpace(text)
+	return strings.HasPrefix(trimmed, "<environment_context>") && strings.HasSuffix(trimmed, "</environment_context>")
 }
 
 func extractCodexProposedPlan(text string) (string, bool) {

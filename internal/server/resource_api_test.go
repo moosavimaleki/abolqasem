@@ -1,6 +1,9 @@
 package server
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -65,5 +68,49 @@ func TestResourceStorageStatsReportsArchivesNativeTranscriptsAndIndexes(t *testi
 	}
 	if stats.NativeTranscripts.Count != 1 || stats.NativeTranscripts.Bytes != int64(len("native")) || stats.NativeTranscripts.Missing != 0 {
 		t.Fatalf("unexpected native transcript stats: %#v", stats.NativeTranscripts)
+	}
+}
+
+func TestHandleAPIResourceCacheClearsOnlyDerivedSearchData(t *testing.T) {
+	withWorkspaceComposerStore(t)
+	dataDir := workspaceDataDir()
+	searchFile := filepath.Join(dataDir, "search", "sessions-v1", "index.bin")
+	messageFile := filepath.Join(dataDir, events.StreamMessages+".jsonl")
+	checkpointFile := filepath.Join(workspaceCheckpointsDir(), "checkpoint-1", "checkpoint.json")
+	for path, content := range map[string]string{
+		searchFile:     "derived",
+		messageFile:    "message",
+		checkpointFile: "checkpoint",
+	} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", path, err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
+
+	request := httptest.NewRequest(http.MethodDelete, "/api/resources/cache", nil)
+	recorder := httptest.NewRecorder()
+	handleAPIResourceCache(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var response struct {
+		ClearedBytes int64 `json:"cleared_bytes"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.ClearedBytes != int64(len("derived")) {
+		t.Fatalf("expected cleared bytes %d, got %d", len("derived"), response.ClearedBytes)
+	}
+	if _, err := os.Stat(searchFile); !os.IsNotExist(err) {
+		t.Fatalf("expected search index to be removed, stat err=%v", err)
+	}
+	for _, path := range []string{messageFile, checkpointFile} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("expected durable data %s to remain: %v", path, err)
+		}
 	}
 }

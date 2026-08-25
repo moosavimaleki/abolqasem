@@ -1,5 +1,5 @@
 import { memo, type RefObject } from "react"
-import type { AgentProvider, CodexExecutionMode, CodexLockStatus, ModelOptions } from "../../../shared/types"
+import type { AgentProvider, CodexExecutionMode, CodexLockStatus, ModelOptions, RateLimitSnapshot } from "../../../shared/types"
 import { ChatInput, type ChatInputHandle } from "../../components/chat-ui/ChatInput"
 import type { ContextWindowSnapshot } from "../../lib/contextWindow"
 import type { AbolqasemState } from "../useAbolqasemState"
@@ -19,6 +19,7 @@ interface ChatInputDockProps {
   activeProvider: AgentProvider | null
   availableProviders: AbolqasemState["availableProviders"]
   contextWindowSnapshot: ContextWindowSnapshot | null
+  rateLimitSnapshot: RateLimitSnapshot | null
   readOnly?: boolean
   codexLock?: CodexLockStatus | null
   lockBusy?: boolean
@@ -49,6 +50,7 @@ export const ChatInputDock = memo(function ChatInputDock({
   activeProvider,
   availableProviders,
   contextWindowSnapshot,
+  rateLimitSnapshot,
   readOnly = false,
   codexLock = null,
   lockBusy = false,
@@ -84,6 +86,7 @@ export const ChatInputDock = memo(function ChatInputDock({
           availableProviders={availableProviders}
           showPreferenceControls
           contextWindowSnapshot={contextWindowSnapshot}
+          rateLimitSnapshot={rateLimitSnapshot}
           readOnly={readOnly}
           codexLock={codexLock}
           lockBusy={lockBusy}

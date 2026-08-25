@@ -307,7 +307,7 @@ Please check the latest error first.`,
     expect(countRowWrappers(html)).toBe(0)
   })
 
-  test("renders wrappers for rate limit updates", () => {
+  test("does not render wrappers for rate limit updates", () => {
     const html = renderTranscript([
       {
         id: "rate-limit-1",
@@ -322,10 +322,7 @@ Please check the latest error first.`,
       },
     ])
 
-    expect(countRowWrappers(html)).toBe(1)
-    expect(html).toContain("Primary 50% / 5h")
-    expect(html).toContain("Secondary 10% / 7d")
-    expect(html).toContain("Credits 12.5")
+    expect(countRowWrappers(html)).toBe(0)
   })
 
   test("renders only the final status row", () => {

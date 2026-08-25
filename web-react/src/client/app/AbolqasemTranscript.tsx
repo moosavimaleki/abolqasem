@@ -45,52 +45,6 @@ const PromptCheckpointContext = React.createContext<PromptCheckpointContextValue
   checkpointByMessageId: EMPTY_PROMPT_CHECKPOINTS,
 })
 
-function formatRateLimitWindowLabel(window: { usedPercent: number; windowDurationMins?: number | null }) {
-  const usage = `${Math.round(window.usedPercent)}%`
-  if (!window.windowDurationMins || window.windowDurationMins <= 0) {
-    return usage
-  }
-  if (window.windowDurationMins >= 1440 && window.windowDurationMins % 1440 === 0) {
-    return `${usage} / ${window.windowDurationMins / 1440}d`
-  }
-  if (window.windowDurationMins >= 60 && window.windowDurationMins % 60 === 0) {
-    return `${usage} / ${window.windowDurationMins / 60}h`
-  }
-  return `${usage} / ${window.windowDurationMins}m`
-}
-
-const RateLimitUpdateMessage = memo(function RateLimitUpdateMessage({
-  message,
-}: {
-  message: Extract<HydratedTranscriptMessage, { kind: "rate_limit_updated" }>
-}) {
-  const primary = message.rateLimits.primary
-  const secondary = message.rateLimits.secondary
-  const credits = message.rateLimits.credits
-  const limitName = message.rateLimits.limitName || message.rateLimits.limitId || "Rate limit"
-  const reachedType = message.rateLimits.rateLimitReachedType
-
-  return (
-    <div className="rounded-2xl border border-amber-500/20 bg-amber-500/8 px-4 py-3 text-sm text-foreground">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <span className="font-medium">{limitName}</span>
-        {primary ? <span className="text-muted-foreground">Primary {formatRateLimitWindowLabel(primary)}</span> : null}
-        {secondary ? <span className="text-muted-foreground">Secondary {formatRateLimitWindowLabel(secondary)}</span> : null}
-        {credits ? (
-          <span className="text-muted-foreground">
-            Credits {credits.unlimited ? "unlimited" : (credits.balance ?? (credits.hasCredits === false ? "empty" : "available"))}
-          </span>
-        ) : null}
-      </div>
-      {reachedType ? (
-        <div className="mt-2 text-xs text-muted-foreground">
-          {reachedType}
-        </div>
-      ) : null}
-    </div>
-  )
-})
-
 export function PromptCheckpointProvider({
   checkpointByMessageId,
   onRestoreCheckpoint,
@@ -191,6 +145,7 @@ function getTranscriptMessageRenderState(
         shouldRender = !hideResult && (!message.success || message.durationMs > 60000)
         break
       case "context_window_updated":
+      case "rate_limit_updated":
         shouldRender = false
         break
       case "status":
@@ -574,7 +529,7 @@ const TranscriptSingleRow = memo(function TranscriptSingleRow({
         rendered = null
         break
       case "rate_limit_updated":
-        rendered = <RateLimitUpdateMessage key={message.id} message={message} />
+        rendered = null
         break
       case "interrupted":
         rendered = <InterruptedMessage key={message.id} message={message} />

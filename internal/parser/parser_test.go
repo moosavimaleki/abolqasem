@@ -32,6 +32,22 @@ func TestParseMessagesCodex(t *testing.T) {
 	}
 }
 
+func TestParseMessagesCodexHidesEnvironmentContext(t *testing.T) {
+	path := writeTranscript(t, strings.Join([]string{
+		`{"type":"event_msg","payload":{"type":"user_message","message":"<environment_context>\n<current_date>2026-08-25</current_date>\n</environment_context>"}}`,
+		`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<environment_context><timezone>Asia/Tehran</timezone></environment_context>"}]}}`,
+		`{"type":"event_msg","payload":{"type":"user_message","message":"environment_context یعنی چه؟"}}`,
+	}, "\n"))
+
+	result, err := ParseMessages("codex", "session-1", path, ParseOptions{Limit: 10})
+	if err != nil {
+		t.Fatalf("ParseMessages returned error: %v", err)
+	}
+	if len(result.Items) != 1 || result.Items[0].Text != "environment_context یعنی چه؟" {
+		t.Fatalf("expected only the real user prompt, got %#v", result.Items)
+	}
+}
+
 func TestParseMessagesCodexDedupesResponseItemEventPairs(t *testing.T) {
 	path := writeTranscript(t, strings.Join([]string{
 		`{"timestamp":"2026-07-04T10:39:08.589Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"سلام خوبی؟"}]}}`,

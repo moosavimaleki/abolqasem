@@ -10,6 +10,7 @@ import {
   type CodexReasoningEffort,
   type ModelOptions,
   type ProviderCatalogEntry,
+  type RateLimitSnapshot,
   normalizeClaudeContextWindow,
   resolveClaudeContextWindowTokens,
 } from "../../../shared/types"
@@ -23,6 +24,7 @@ import { NEW_CHAT_COMPOSER_ID, type ComposerState, useChatPreferencesStore } fro
 import { CHAT_INPUT_ATTRIBUTE, focusNextChatInput } from "../../app/chatFocusPolicy"
 import { ChatPreferenceControls } from "./ChatPreferenceControls"
 import { ContextWindowMeter } from "./ContextWindowMeter"
+import { UsageLimitMeter } from "./UsageLimitMeter"
 import { AttachmentFileCard, AttachmentImageCard } from "../messages/AttachmentCard"
 import { AttachmentPreviewModal } from "../messages/AttachmentPreviewModal"
 import { classifyAttachmentPreview } from "../messages/attachmentPreview"
@@ -148,6 +150,7 @@ interface Props {
   availableProviders: ProviderCatalogEntry[]
   showPreferenceControls?: boolean
   contextWindowSnapshot?: ContextWindowSnapshot | null
+  rateLimitSnapshot?: RateLimitSnapshot | null
   readOnly?: boolean
   codexLock?: CodexLockStatus | null
   lockBusy?: boolean
@@ -225,6 +228,7 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
   availableProviders,
   showPreferenceControls = true,
   contextWindowSnapshot = null,
+  rateLimitSnapshot = null,
   readOnly = false,
   codexLock = null,
   lockBusy = false,
@@ -1158,22 +1162,24 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
               includePlanMode={showPlanMode}
               className="max-w-[840px] mx-auto"
             />
-            {activeContextWindow ? (
-              <div className="flex items-center md:hidden mx-[13px]">
-                <ContextWindowMeter usage={activeContextWindow} />
+            {activeContextWindow || rateLimitSnapshot ? (
+              <div className="flex items-center gap-1 md:hidden mx-[13px]">
+                {rateLimitSnapshot ? <UsageLimitMeter snapshot={rateLimitSnapshot} /> : null}
+                {activeContextWindow ? <ContextWindowMeter usage={activeContextWindow} /> : null}
               </div>
             ) : null}
             <div className="min-w-3" />
           </div>
 
-          {activeContextWindow ? (
+          {activeContextWindow || rateLimitSnapshot ? (
             <div
               className={cn(
-                "absolute top-1/2 -translate-y-1/2 hidden md:block",
+                "absolute top-1/2 -translate-y-1/2 hidden items-center gap-1 md:flex",
                 isRtl ? "left-[29px] -translate-x-1/2" : "right-[29px] translate-x-1/2"
               )}
             >
-              <ContextWindowMeter usage={activeContextWindow} />
+              {rateLimitSnapshot ? <UsageLimitMeter snapshot={rateLimitSnapshot} /> : null}
+              {activeContextWindow ? <ContextWindowMeter usage={activeContextWindow} /> : null}
             </div>
           ) : null}
         </div>

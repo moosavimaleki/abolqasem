@@ -1,6 +1,7 @@
 package server
 
 import (
+	"abolqasem/internal/appinfo"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -43,6 +44,9 @@ type resourceSearchStatsResponse struct {
 }
 
 type resourceStorageStatsResponse struct {
+	TotalBytes              int64                         `json:"total_bytes"`
+	CacheBytes              int64                         `json:"cache_bytes"`
+	UploadBytes             int64                         `json:"upload_bytes"`
 	WorkspaceBytes          int64                         `json:"workspace_bytes"`
 	DataBytes               int64                         `json:"data_bytes"`
 	EventStreams            map[string]int64              `json:"event_streams"`
@@ -71,10 +75,14 @@ func handleAPIResources(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	writeJSON(w, currentResourceUsage())
+}
+
+func currentResourceUsage() resourceUsageResponse {
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)
 	checkpoints := checkpointStorageStats()
-	writeJSON(w, resourceUsageResponse{
+	return resourceUsageResponse{
 		Memory: runtimeMemStatsResponse{
 			Alloc:      mem.Alloc,
 			TotalAlloc: mem.TotalAlloc,
@@ -97,6 +105,30 @@ func handleAPIResources(w http.ResponseWriter, r *http.Request) {
 		},
 		Storage:     resourceStorageStats(checkpoints),
 		Checkpoints: checkpoints,
+	}
+}
+
+func handleAPIResourceCache(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	searchDir := filepath.Join(workspaceDataDir(), "search")
+	clearedBytes := directorySize(searchDir)
+	if err := os.RemoveAll(searchDir); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := os.MkdirAll(searchDir, 0o755); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	resetWorkspaceSearchCaches()
+	parser.ClearCache()
+	writeJSON(w, map[string]any{
+		"status":        "ok",
+		"cleared_bytes": clearedBytes,
+		"resources":     currentResourceUsage(),
 	})
 }
 
@@ -134,8 +166,12 @@ func eventStreamSizes() map[string]int64 {
 func resourceStorageStats(checkpoints resourceCheckpointStats) resourceStorageStatsResponse {
 	dataBytes := directorySize(workspaceDataDir())
 	searchBytes := directorySize(filepath.Join(workspaceDataDir(), "search"))
+	uploadBytes := directorySize(resourceUploadRoot())
 	archives := eventStreamArchiveSizes()
 	return resourceStorageStatsResponse{
+		TotalBytes:              dataBytes + uploadBytes,
+		CacheBytes:              searchBytes,
+		UploadBytes:             uploadBytes,
 		WorkspaceBytes:          dataBytes,
 		DataBytes:               dataBytes,
 		EventStreams:            eventStreamSizes(),
@@ -146,6 +182,27 @@ func resourceStorageStats(checkpoints resourceCheckpointStats) resourceStorageSt
 		CheckpointBytes:         checkpoints.Bytes,
 		NativeTranscripts:       nativeTranscriptStorageStats(),
 	}
+}
+
+func resourceUploadRoot() string {
+	base, err := os.UserCacheDir()
+	if err != nil {
+		base = os.TempDir()
+	}
+	return filepath.Join(base, appinfo.Name, "uploads")
+}
+
+func resetWorkspaceSearchCaches() {
+	sessionSearchIndex.Lock()
+	sessionSearchIndex.indexPath = filepath.Join(workspaceDataDir(), "search", sessionSearchIndexPathPrefix)
+	sessionSearchIndex.signature = ""
+	sessionSearchIndex.indexedSessions = 0
+	sessionSearchIndex.indexedDocs = 0
+	sessionSearchIndex.Unlock()
+
+	projectFileSearchIndexes.Lock()
+	projectFileSearchIndexes.items = map[string]*projectFileSearchIndexState{}
+	projectFileSearchIndexes.Unlock()
 }
 
 func eventStreamArchiveSizes() map[string]int64 {

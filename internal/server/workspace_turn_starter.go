@@ -947,6 +947,9 @@ func forwardWorkspaceHarnessEvent(event codexprovider.HarnessEvent, out chan<- a
 		}
 	case "transcript":
 		if event.Entry != nil {
+			if transcript.Kind(event.Entry) == transcript.KindRateLimitUpdated {
+				workspaceStoreCodexUsage(event.Entry["rateLimits"])
+			}
 			out <- agent.TurnEvent{Type: agent.TurnEventTranscript, Entry: event.Entry}
 		}
 	}
