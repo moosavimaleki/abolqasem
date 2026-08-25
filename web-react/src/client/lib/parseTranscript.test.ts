@@ -236,6 +236,17 @@ describe("processTranscriptMessages", () => {
     expect(messages[1].content).toBe("environment_context یعنی چه؟")
   })
 
+  test("deduplicates repeated internal system payloads while retaining one collapsed record", () => {
+    const content = "<turn_aborted>\nThe user interrupted the previous turn.\n</turn_aborted>"
+    const messages = processTranscriptMessages([
+      entry({ kind: "user_prompt", content, attachments: [] }),
+      entry({ kind: "user_prompt", content: `context before\n${content}\ncontext after`, attachments: [] }),
+    ])
+
+    expect(messages).toHaveLength(1)
+    expect(messages[0]).toMatchObject({ kind: "user_prompt", content })
+  })
+
   test("preserves structured Claude ask-user-question results when a later echoed tool result arrives", () => {
     const messages = processTranscriptMessages([
       entry({

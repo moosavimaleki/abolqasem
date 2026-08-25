@@ -9,6 +9,7 @@ import { AttachmentFileCard, AttachmentImageCard } from "./AttachmentCard"
 import { AttachmentPreviewModal } from "./AttachmentPreviewModal"
 import { useTranscriptRenderOptions } from "./render-context"
 import { useI18n } from "../../i18n/context"
+import { extractInternalSystemPayload } from "../../lib/parseTranscript"
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover"
 
 interface Props {
@@ -68,17 +69,18 @@ function getCollapsedSystemPayload(content: string, wrappedSystemMessage: string
     }
   }
 
-  if (trimmed.startsWith("<environment_context>") && trimmed.endsWith("</environment_context>")) {
+  const internalPayload = extractInternalSystemPayload(trimmed)
+  if (internalPayload?.kind === "environment_context") {
     return {
       label: isPersian ? "زمینهٔ محیط اجرا" : "Environment context",
-      content: trimmed,
+      content: internalPayload.payload,
     }
   }
 
-  if (trimmed.startsWith("<turn_aborted>") && trimmed.endsWith("</turn_aborted>")) {
+  if (internalPayload?.kind === "turn_aborted") {
     return {
       label: isPersian ? "رخداد سیستمی: توقف turn" : "System event: turn aborted",
-      content: trimmed,
+      content: internalPayload.payload,
     }
   }
 

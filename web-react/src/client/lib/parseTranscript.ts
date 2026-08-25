@@ -422,6 +422,7 @@ export function processTranscriptMessages(entries: TranscriptEntry[]): HydratedT
   const turnPlans = new Map<string, Extract<HydratedTranscriptMessage, { kind: "turn_plan" }>>()
   const proposedPlans = new Map<string, Extract<HydratedTranscriptMessage, { kind: "proposed_plan" }>>()
   const turnActivities = new Map<string, Extract<HydratedTranscriptMessage, { kind: "turn_activity" }>>()
+  const internalSystemPayloads = new Set<string>()
 
   for (const entry of entries) {
     if (entry.kind === "assistant_text" && isTmuxCaptureEntry(entry)) {
@@ -431,6 +432,13 @@ export function processTranscriptMessages(entries: TranscriptEntry[]): HydratedT
 
     switch (entry.kind) {
       case "user_prompt":
+        {
+          const systemPayload = extractInternalSystemPayload(entry.content)
+          if (systemPayload) {
+            if (internalSystemPayloads.has(systemPayload.dedupeKey)) break
+            internalSystemPayloads.add(systemPayload.dedupeKey)
+          }
+        }
         messages.push({
           ...createBaseMessage(entry),
           kind: "user_prompt",
@@ -629,4 +637,17 @@ export function processTranscriptMessages(entries: TranscriptEntry[]): HydratedT
   }
 
   return messages
+}
+
+export function extractInternalSystemPayload(content: string) {
+  const match = content.match(/<(environment_context|turn_aborted)>\s*([\s\S]*?)\s*<\/\1>/i)
+  if (!match) return null
+
+  const kind = match[1]!.toLowerCase()
+  const payload = match[0].trim()
+  return {
+    kind,
+    payload,
+    dedupeKey: `${kind}:${payload.replace(/\s+/g, " ")}`,
+  }
 }
