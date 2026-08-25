@@ -306,8 +306,8 @@ func TestEditAndSteerQueuedMessageUsesActiveTurn(t *testing.T) {
 	if turn.steeredContent != "new" {
 		t.Fatalf("expected edited content to be steered, got %q", turn.steeredContent)
 	}
-	if len(store.queued["chat-1"]) != 0 {
-		t.Fatalf("expected steered message removed from queue, got %#v", store.queued["chat-1"])
+	if len(store.queued["chat-1"]) != 1 || store.queued["chat-1"][0].DeliveryState != "steering" {
+		t.Fatalf("expected steered message to remain queued until the native transcript confirms delivery, got %#v", store.queued["chat-1"])
 	}
 }
 
@@ -654,6 +654,18 @@ func (s *fakeStore) UpdateQueuedMessage(chatID string, queuedMessageID string, c
 	for index := range s.queued[chatID] {
 		if s.queued[chatID][index].ID == queuedMessageID {
 			s.queued[chatID][index].Content = content
+			return nil
+		}
+	}
+	return ErrQueuedNotFound
+}
+
+func (s *fakeStore) MarkQueuedMessageSteered(chatID string, queuedMessageID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for index := range s.queued[chatID] {
+		if s.queued[chatID][index].ID == queuedMessageID {
+			s.queued[chatID][index].DeliveryState = "steering"
 			return nil
 		}
 	}

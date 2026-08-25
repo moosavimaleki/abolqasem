@@ -221,16 +221,19 @@ describe("processTranscriptMessages", () => {
     expect(messages[0].hidden).toBe(true)
   })
 
-  test("hides machine-generated environment context prompts", () => {
+  test("preserves machine-generated environment context prompts for collapsed rendering", () => {
     const messages = processTranscriptMessages([
       entry({ kind: "user_prompt", content: "<environment_context>\n<timezone>Asia/Tehran</timezone>\n</environment_context>", attachments: [] }),
       entry({ kind: "user_prompt", content: "environment_context یعنی چه؟", attachments: [] }),
     ])
 
-    expect(messages).toHaveLength(1)
+    expect(messages).toHaveLength(2)
     expect(messages[0]?.kind).toBe("user_prompt")
     if (messages[0]?.kind !== "user_prompt") throw new Error("unexpected message")
-    expect(messages[0].content).toBe("environment_context یعنی چه؟")
+    expect(messages[0].content).toContain("<environment_context>")
+    expect(messages[1]?.kind).toBe("user_prompt")
+    if (messages[1]?.kind !== "user_prompt") throw new Error("unexpected message")
+    expect(messages[1].content).toBe("environment_context یعنی چه؟")
   })
 
   test("preserves structured Claude ask-user-question results when a later echoed tool result arrives", () => {

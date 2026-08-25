@@ -476,6 +476,14 @@ func (s *workspaceEventStore) UpdateQueuedMessage(chatID string, queuedMessageID
 	return s.store.Append(events.StreamQueuedMessages, event)
 }
 
+func (s *workspaceEventStore) MarkQueuedMessageSteered(chatID string, queuedMessageID string) error {
+	event, err := events.New(events.TypeQueuedMessageSteered, map[string]any{"chatId": chatID, "queuedMessageId": queuedMessageID})
+	if err != nil {
+		return err
+	}
+	return s.store.Append(events.StreamQueuedMessages, event)
+}
+
 func (s *workspaceEventStore) appendTurn(eventType string, chatID string, extra map[string]any) error {
 	data := map[string]any{"chatId": chatID}
 	for key, value := range extra {

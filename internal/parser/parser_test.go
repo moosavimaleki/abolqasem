@@ -32,7 +32,7 @@ func TestParseMessagesCodex(t *testing.T) {
 	}
 }
 
-func TestParseMessagesCodexHidesEnvironmentContext(t *testing.T) {
+func TestParseMessagesCodexPreservesEnvironmentContext(t *testing.T) {
 	path := writeTranscript(t, strings.Join([]string{
 		`{"type":"event_msg","payload":{"type":"user_message","message":"<environment_context>\n<current_date>2026-08-25</current_date>\n</environment_context>"}}`,
 		`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<environment_context><timezone>Asia/Tehran</timezone></environment_context>"}]}}`,
@@ -43,8 +43,8 @@ func TestParseMessagesCodexHidesEnvironmentContext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseMessages returned error: %v", err)
 	}
-	if len(result.Items) != 1 || result.Items[0].Text != "environment_context یعنی چه؟" {
-		t.Fatalf("expected only the real user prompt, got %#v", result.Items)
+	if len(result.Items) != 3 || !strings.Contains(result.Items[0].Text, "<environment_context>") || !strings.Contains(result.Items[1].Text, "<environment_context>") || result.Items[2].Text != "environment_context یعنی چه؟" {
+		t.Fatalf("expected environment context records and the user message, got %#v", result.Items)
 	}
 }
 

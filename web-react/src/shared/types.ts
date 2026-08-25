@@ -139,6 +139,7 @@ export interface QueuedChatMessage {
   model?: string
   modelOptions?: ModelOptions
   planMode?: boolean
+  deliveryState?: "steering"
 }
 
 export interface InternalUserAttachmentsData {

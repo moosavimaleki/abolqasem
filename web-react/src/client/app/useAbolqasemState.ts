@@ -82,6 +82,7 @@ function sameQueuedMessage(left: QueuedChatMessage, right: QueuedChatMessage) {
     && left.provider === right.provider
     && left.model === right.model
     && left.planMode === right.planMode
+    && left.deliveryState === right.deliveryState
     && JSON.stringify(left.modelOptions) === JSON.stringify(right.modelOptions)
     && sameAttachmentArray(left.attachments, right.attachments)
 }
@@ -934,6 +935,7 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
   const creatingChatProjectIdRef = useRef<string | null>(null)
   const sendToStartingProfilesRef = useRef<Map<string, SendToStartingTrace>>(new Map())
   const pendingArchiveChatIdsRef = useRef<Set<string>>(new Set())
+  const deliveryReconciliationsRef = useRef<Set<string>>(new Set())
   const draftChatIds = useChatInputStore(useShallow((state) => Object.keys(state.drafts).sort()))
   const attachmentDraftChatIds = useChatInputStore(
     useShallow((state) => Object.keys(state.attachmentDrafts).sort())
@@ -1381,6 +1383,26 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
   const optimisticScopeId = activeChatId ?? NEW_CHAT_OPTIMISTIC_SCOPE
   const runtime = activeChatSnapshot?.runtime ?? null
   const queuedMessages = activeChatSnapshot?.queuedMessages ?? []
+
+  useEffect(() => {
+    if (!activeChatId) return
+    for (const message of queuedMessages) {
+      if (message.deliveryState !== "steering") continue
+      const reconciliationKey = `${activeChatId}:${message.id}`
+      if (deliveryReconciliationsRef.current.has(reconciliationKey)) continue
+      const delivered = serverTranscriptEntries.some((entry) => (
+        entry.kind === "user_prompt"
+        && entry.createdAt >= message.createdAt
+        && getUserPromptContentMatchKey(entry.content) === getUserPromptContentMatchKey(message.content)
+      ))
+      if (!delivered) continue
+      deliveryReconciliationsRef.current.add(reconciliationKey)
+      void socket.command({ type: "message.dequeue", chatId: activeChatId, queuedMessageId: message.id })
+        .catch(() => {
+          deliveryReconciliationsRef.current.delete(reconciliationKey)
+        })
+    }
+  }, [activeChatId, queuedMessages, serverTranscriptEntries, socket])
 	const shouldShowOptimisticWebPrompts = true
   const optimisticTranscriptEntries = useMemo(
     () => {

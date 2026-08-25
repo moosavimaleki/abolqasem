@@ -923,9 +923,6 @@ func extractCodexMessage(raw map[string]any, sessionID string, index int) *Searc
 			codexContentText(payload["content"]),
 			codexText(raw["message"]),
 		)
-		if isCodexEnvironmentContext(text) {
-			return nil
-		}
 		return newCodexSearchableMessage(sessionID, index, "user", "message", text, extractTimestamp(raw, payload), source)
 	case "agent_message":
 		text := firstNonEmpty(
@@ -963,15 +960,7 @@ func extractCodexMessage(raw map[string]any, sessionID string, index int) *Searc
 			return newCodexProposedPlanMessage(sessionID, index, payload, plan, extractTimestamp(raw, payload), source)
 		}
 	}
-	if role == "user" && isCodexEnvironmentContext(text) {
-		return nil
-	}
 	return newCodexSearchableMessage(sessionID, index, role, "message", text, extractTimestamp(raw, payload), source)
-}
-
-func isCodexEnvironmentContext(text string) bool {
-	trimmed := strings.TrimSpace(text)
-	return strings.HasPrefix(trimmed, "<environment_context>") && strings.HasSuffix(trimmed, "</environment_context>")
 }
 
 func extractCodexProposedPlan(text string) (string, bool) {

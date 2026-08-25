@@ -38,6 +38,7 @@ type Store interface {
 	GetQueuedMessages(chatID string) []readmodels.QueuedChatMessage
 	GetQueuedMessage(chatID string, queuedMessageID string) (readmodels.QueuedChatMessage, bool)
 	UpdateQueuedMessage(chatID string, queuedMessageID string, content string) error
+	MarkQueuedMessageSteered(chatID string, queuedMessageID string) error
 	RemoveQueuedMessage(chatID string, queuedMessageID string) error
 }
 
@@ -395,6 +396,9 @@ func (c *Coordinator) SteerQueued(ctx context.Context, chatID string, queuedMess
 	if !ok {
 		return ErrQueuedNotFound
 	}
+	if message.DeliveryState == "steering" {
+		return nil
+	}
 	c.mu.Lock()
 	active := c.active[chatID]
 	if active == nil {
@@ -414,10 +418,7 @@ func (c *Coordinator) SteerQueued(ctx context.Context, chatID string, queuedMess
 		c.emitStateChange(chatID)
 		return c.startQueuedMessageNow(ctx, chatID, message)
 	}
-	if err := c.store.AppendUserPrompt(chatID, message.Content, message.Attachments, true); err != nil {
-		return err
-	}
-	if err := c.store.RemoveQueuedMessage(chatID, queuedMessageID); err != nil {
+	if err := c.store.MarkQueuedMessageSteered(chatID, queuedMessageID); err != nil {
 		return err
 	}
 	c.emitStateChange(chatID)

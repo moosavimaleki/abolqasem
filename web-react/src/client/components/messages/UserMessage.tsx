@@ -2,7 +2,7 @@ import { useMemo, useState, type ComponentType } from "react"
 import type { ChatAttachment, ChatCheckpointSummary, CheckpointRestoreMode, CheckpointRestoreResult } from "../../../shared/types"
 import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-import { Code2, CornerUpLeft, FileText, Layers2, Loader2, RotateCcw } from "lucide-react"
+import { Braces, ChevronRight, Code2, CornerUpLeft, FileText, Layers2, Loader2, RotateCcw } from "lucide-react"
 import { createMarkdownComponents, MessageCopyButton } from "./shared"
 import { classifyAttachmentPreview } from "./attachmentPreview"
 import { AttachmentFileCard, AttachmentImageCard } from "./AttachmentCard"
@@ -59,6 +59,51 @@ function parseSystemMessage(content: string) {
   }
 }
 
+function getCollapsedSystemPayload(content: string, wrappedSystemMessage: string | null, isPersian: boolean) {
+  const trimmed = content.trim()
+  if (wrappedSystemMessage) {
+    return {
+      label: isPersian ? "پیام سیستمی" : "System message",
+      content: wrappedSystemMessage,
+    }
+  }
+
+  if (trimmed.startsWith("<environment_context>") && trimmed.endsWith("</environment_context>")) {
+    return {
+      label: isPersian ? "زمینهٔ محیط اجرا" : "Environment context",
+      content: trimmed,
+    }
+  }
+
+  if (trimmed.startsWith("<turn_aborted>") && trimmed.endsWith("</turn_aborted>")) {
+    return {
+      label: isPersian ? "رخداد سیستمی: توقف turn" : "System event: turn aborted",
+      content: trimmed,
+    }
+  }
+
+  return null
+}
+
+function CollapsedSystemPayload({ label, content, direction }: { label: string; content: string; direction: "ltr" | "rtl" }) {
+  return (
+    <details className="group w-full max-w-[85%] overflow-hidden rounded-xl border border-border/70 bg-muted/25 text-xs text-muted-foreground sm:max-w-[80%]">
+      <summary
+        dir={direction}
+        className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-start transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <ChevronRight className="size-3.5 shrink-0 transition-transform duration-200 group-open:rotate-90 rtl:rotate-180 rtl:group-open:rotate-90" />
+        <Braces className="size-3.5 shrink-0" />
+        <span className="font-medium">{label}</span>
+        <span className="ms-auto text-[11px] text-muted-foreground/70">{direction === "rtl" ? "نمایش" : "Show"}</span>
+      </summary>
+      <pre dir="ltr" className="max-h-80 overflow-auto border-t border-border/60 bg-background/20 px-3 py-2.5 text-left text-[11px] leading-5 whitespace-pre-wrap break-words text-muted-foreground">
+        {content}
+      </pre>
+    </details>
+  )
+}
+
 export function UserMessage({ content, attachments = [], steered = false, checkpoint, onRestoreCheckpoint }: Props) {
   const { t, direction } = useI18n()
   const [selectedAttachmentId, setSelectedAttachmentId] = useState<string | null>(null)
@@ -66,6 +111,10 @@ export function UserMessage({ content, attachments = [], steered = false, checkp
   const [pendingRestoreMode, setPendingRestoreMode] = useState<CheckpointRestoreMode | null>(null)
   const renderOptions = useTranscriptRenderOptions()
   const parsedContent = useMemo(() => parseSystemMessage(content), [content])
+  const collapsedSystemPayload = useMemo(
+    () => getCollapsedSystemPayload(content, parsedContent.systemMessage, direction === "rtl"),
+    [content, direction, parsedContent.systemMessage],
+  )
   const shouldShowImagePlaceholders = renderOptions.attachmentMode === "metadata"
   const canInteractWithAttachments = !renderOptions.readonly || renderOptions.attachmentMode === "bundle"
   const canShowRestoreControl = Boolean(checkpoint && onRestoreCheckpoint)
@@ -156,6 +205,9 @@ export function UserMessage({ content, attachments = [], steered = false, checkp
   return (
     <>
       <div className="flex flex-col items-end gap-2">
+        {collapsedSystemPayload ? (
+          <CollapsedSystemPayload {...collapsedSystemPayload} direction={direction} />
+        ) : null}
         {imageAttachments.length > 0 ? (
           <div className="flex max-w-[85%] sm:max-w-[80%] flex-wrap justify-end gap-3">
             {imageAttachments.map((attachment) => (

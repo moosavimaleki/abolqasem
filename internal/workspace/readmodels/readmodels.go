@@ -76,14 +76,15 @@ type ChatAttachment struct {
 }
 
 type QueuedChatMessage struct {
-	ID           string                `json:"id"`
-	Content      string                `json:"content"`
-	Attachments  []ChatAttachment      `json:"attachments"`
-	CreatedAt    int64                 `json:"createdAt"`
-	Provider     *string               `json:"provider,omitempty"`
-	Model        string                `json:"model,omitempty"`
-	ModelOptions *catalog.ModelOptions `json:"modelOptions,omitempty"`
-	PlanMode     *bool                 `json:"planMode,omitempty"`
+	ID            string                `json:"id"`
+	Content       string                `json:"content"`
+	Attachments   []ChatAttachment      `json:"attachments"`
+	CreatedAt     int64                 `json:"createdAt"`
+	Provider      *string               `json:"provider,omitempty"`
+	Model         string                `json:"model,omitempty"`
+	ModelOptions  *catalog.ModelOptions `json:"modelOptions,omitempty"`
+	PlanMode      *bool                 `json:"planMode,omitempty"`
+	DeliveryState string                `json:"deliveryState,omitempty"`
 }
 
 type TranscriptEntry = transcript.Entry
@@ -458,6 +459,21 @@ func Apply(state StoreState, event events.Event) StoreState {
 		for index := range existing {
 			if existing[index].ID == data.QueuedMessageID {
 				existing[index].Content = data.Content
+			}
+		}
+		state.QueuedMessagesByChatID[data.ChatID] = existing
+	case events.TypeQueuedMessageSteered:
+		var data struct {
+			ChatID          string `json:"chatId"`
+			QueuedMessageID string `json:"queuedMessageId"`
+		}
+		if event.DecodeData(&data) != nil || data.ChatID == "" {
+			return state
+		}
+		existing := state.QueuedMessagesByChatID[data.ChatID]
+		for index := range existing {
+			if existing[index].ID == data.QueuedMessageID {
+				existing[index].DeliveryState = "steering"
 			}
 		}
 		state.QueuedMessagesByChatID[data.ChatID] = existing

@@ -29,4 +29,20 @@ describe("QueuedUserMessage", () => {
     expect(html).toContain("Edit")
     expect(html).toContain("Steer")
   })
+
+  test("keeps a steered message visible until the native transcript confirms it", () => {
+    const html = renderToStaticMarkup(
+      <QueuedUserMessage
+        message={{ id: "queued-steering", content: "Steered follow-up", attachments: [], createdAt: Date.now(), deliveryState: "steering" }}
+        onRemove={() => Promise.resolve()}
+        onSteer={() => Promise.resolve()}
+        onEdit={() => Promise.resolve()}
+      />
+    )
+
+    expect(html).toContain('data-delivery-state="steering"')
+    expect(html).toContain("Steered follow-up")
+    expect(html).toContain("Delivering")
+    expect(html).not.toContain(">Steer<")
+  })
 })

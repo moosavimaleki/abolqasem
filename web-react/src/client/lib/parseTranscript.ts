@@ -431,7 +431,6 @@ export function processTranscriptMessages(entries: TranscriptEntry[]): HydratedT
 
     switch (entry.kind) {
       case "user_prompt":
-        if (isEnvironmentContext(entry.content)) break
         messages.push({
           ...createBaseMessage(entry),
           kind: "user_prompt",
@@ -630,9 +629,4 @@ export function processTranscriptMessages(entries: TranscriptEntry[]): HydratedT
   }
 
   return messages
-}
-
-export function isEnvironmentContext(content: string) {
-  const trimmed = content.trim()
-  return trimmed.startsWith("<environment_context>") && trimmed.endsWith("</environment_context>")
 }
