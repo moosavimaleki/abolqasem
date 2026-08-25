@@ -169,17 +169,22 @@ export function CodexFileChangeMessage({ message }: { message: FileChangeMessage
 
 export function CodexPlanMessage({ message }: { message: PlanMessage }) {
   const updating = message.plan.some((step) => step.status === "inProgress")
-  return <div className="my-3 overflow-hidden rounded-2xl border border-sky-700 bg-slate-950/60">
-    <div className="flex items-center justify-between border-b border-sky-900/70 px-4 py-3">
-      <span className="rounded-full bg-sky-700 px-2.5 py-0.5 text-[11px] text-white">{updating ? "Updating" : "Plan"}</span>
-      <span className="font-medium text-sky-100">Plan</span>
+  return <section className="my-3 overflow-hidden rounded-xl border border-border bg-card/50" data-live-plan="true">
+    <div className="flex min-h-10 items-center gap-2 border-b border-border/80 px-3">
+      <ClipboardList className="size-4 shrink-0 text-muted-foreground" />
+      <span className="text-sm font-medium text-foreground">Plan</span>
+      <span className="ms-auto text-xs text-muted-foreground" aria-live="polite">{updating ? "Updating" : "Complete"}</span>
     </div>
-    {message.explanation ? <p className="px-4 pt-3 text-sm leading-7 text-slate-300">{message.explanation}</p> : null}
-    <div className="space-y-2 p-4">{message.plan.map((step, index) => <div key={`${index}:${step.step}`} className={cn("flex items-center gap-3 rounded-xl border px-3 py-2.5 text-sm", step.status === "inProgress" ? "border-amber-700 bg-amber-950/30 text-amber-100" : "border-white/10 bg-white/5 text-slate-200")}>
-      {step.status === "completed" ? <Check className="size-4 shrink-0 text-emerald-400" /> : step.status === "inProgress" ? <Loader2 className="size-4 shrink-0 animate-spin text-amber-400" /> : <Circle className="size-4 shrink-0 text-slate-500" />}
-      <span className="flex-1">{step.step}</span>
-    </div>)}</div>
-  </div>
+    {message.explanation ? <p className="border-b border-border/60 px-3 py-2.5 text-sm leading-6 text-muted-foreground" dir="auto">{message.explanation}</p> : null}
+    <ol className="space-y-1.5 p-3">{message.plan.map((step, index) => {
+      const statusLabel = step.status === "completed" ? "Completed" : step.status === "inProgress" ? "In progress" : "Pending"
+      return <li key={`${index}:${step.step}`} className={cn("flex min-w-0 items-start gap-2.5 rounded-lg border border-border/70 bg-muted/20 px-3 py-2 text-sm", step.status === "inProgress" && "bg-muted/45")}>
+        {step.status === "completed" ? <Check className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" /> : step.status === "inProgress" ? <Loader2 className="mt-0.5 size-4 shrink-0 animate-spin text-foreground" aria-hidden="true" /> : <Circle className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />}
+        <span className={cn("min-w-0 flex-1 leading-6 text-foreground", step.status === "completed" && "text-muted-foreground")} dir="auto">{step.step}</span>
+        <span className="sr-only">{statusLabel}</span>
+      </li>
+    })}</ol>
+  </section>
 }
 
 export function CodexProposedPlanMessage({ message }: { message: ProposedPlanMessage }) {
@@ -187,8 +192,8 @@ export function CodexProposedPlanMessage({ message }: { message: ProposedPlanMes
   const detailsId = useId()
   const title = message.plan.match(/^#{1,6}\s+(.+)$/m)?.[1]?.trim() || "Plan"
 
-  return <section className="mx-auto my-2 w-full max-w-[640px] overflow-hidden rounded-xl border border-border/80 bg-card/50" data-proposed-plan="true">
-    <button type="button" aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded((value) => !value)} className="flex min-h-10 w-full cursor-pointer items-center gap-2 px-3 text-start text-sm text-foreground transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
+  return <section className="my-3 w-full overflow-hidden rounded-xl border border-border bg-card/50" data-proposed-plan="true">
+    <button type="button" aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded((value) => !value)} className="flex min-h-10 w-full cursor-pointer items-center gap-2 px-3 text-start text-sm text-foreground transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
         {expanded ? <ChevronDown className="size-4 text-muted-foreground" /> : <ChevronRight className="size-4 text-muted-foreground" />}
         <ClipboardList className="size-4 text-muted-foreground" />
         <span className="shrink-0 font-medium">Plan</span>
