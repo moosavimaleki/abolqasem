@@ -2591,6 +2591,12 @@ export function SettingsPage() {
     })
   }
 
+  function handleQueueDeliveryModeChange(nextValue: "queue" | "steer") {
+    void handleWriteAppSettings({ queueDeliveryMode: nextValue }).catch((error) => {
+      setAppSettingsError(error instanceof Error ? error.message : "Unable to save message delivery settings.")
+    })
+  }
+
   function handleCommitMessageProviderChange(provider: AgentProvider) {
     const providerConfig = providerCatalogEntry(provider)
     const model = providerConfig.defaultModel || providerConfig.models[0]?.id || ""
@@ -3492,6 +3498,26 @@ export function SettingsPage() {
                               </SelectItem>
                             ))}
                           </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                    </SettingsRow>
+
+                    <SettingsRow
+                      title={locale === "fa" ? "پیام هنگام اجرای turn" : "Message during an active turn"}
+                      description={locale === "fa"
+                        ? "صف، ترتیب پیام‌ها را حفظ می‌کند. Steer تلاش می‌کند پیام تازه را فوراً به turn فعال تحویل دهد؛ اگر ممکن نباشد در صف می‌ماند. صف پس از خطا ادامه پیدا می‌کند."
+	                        : "Queue preserves message order. Steer tries to deliver the new message to the active turn immediately; if unavailable, it remains queued. Queued messages continue after errors."}
+                    >
+                      <Select
+                        value={appSettings?.queueDeliveryMode ?? "queue"}
+                        onValueChange={(value) => handleQueueDeliveryModeChange(value as "queue" | "steer")}
+                      >
+                        <SelectTrigger className="min-w-[180px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="queue">{locale === "fa" ? "همیشه صف" : "Always queue"}</SelectItem>
+                          <SelectItem value="steer">{locale === "fa" ? "Steer فوری" : "Steer immediately"}</SelectItem>
                         </SelectContent>
                       </Select>
                     </SettingsRow>

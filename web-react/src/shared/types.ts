@@ -488,6 +488,7 @@ export interface AppSettingsSnapshot {
   providerExecutables: Partial<Record<AgentProvider, string>>
   tmuxCommands: Partial<Record<AgentProvider, string>>
   defaultProvider: DefaultProviderPreference
+  queueDeliveryMode: "queue" | "steer"
   providerDefaults: ChatProviderPreferences
   providerModelCatalog: ProviderModelCatalog
   commitMessageGenerator: CommitMessageGeneratorSettings
@@ -536,6 +537,7 @@ export interface AppSettingsPatch {
   providerProxy?: Partial<AppSettingsSnapshot["providerProxy"]>
   providerExecutables?: Partial<Record<AgentProvider, string>>
   defaultProvider?: DefaultProviderPreference
+  queueDeliveryMode?: "queue" | "steer"
   providerDefaults?: {
     claude?: Partial<ProviderPreference<ClaudeModelOptions>>
     codex?: Partial<ProviderPreference<CodexModelOptions>>

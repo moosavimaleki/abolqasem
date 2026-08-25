@@ -27,6 +27,7 @@ func TestApplySettingsPatchPersistsAbolqasemSettings(t *testing.T) {
 	manualMode := "manual"
 	commitProvider := "codex"
 	commitModel := "gpt-5.4"
+	queueDeliveryMode := "steer"
 	codexExecutable := " /home/user/.bun/bin/codex "
 	settings = ApplySettingsPatch(settings, AppSettingsPatch{
 		Locale:      "fa",
@@ -45,7 +46,8 @@ func TestApplySettingsPatchPersistsAbolqasemSettings(t *testing.T) {
 			HTTPProxy: &httpProxy,
 			NoProxy:   &noProxy,
 		},
-		DefaultProvider: "codex",
+		DefaultProvider:   "codex",
+		QueueDeliveryMode: queueDeliveryMode,
 		ProviderDefaults: map[string]ProviderPreferencePatch{
 			"codex": {
 				Model:               &codexModel,
@@ -70,6 +72,9 @@ func TestApplySettingsPatchPersistsAbolqasemSettings(t *testing.T) {
 			Model:    commitModel,
 		},
 	})
+	if settings.QueueDeliveryMode != "steer" {
+		t.Fatalf("expected steer queue delivery mode, got %q", settings.QueueDeliveryMode)
+	}
 	if err := SaveSettings(settings); err != nil {
 		t.Fatalf("SaveSettings returned error: %v", err)
 	}
@@ -92,6 +97,9 @@ func TestApplySettingsPatchPersistsAbolqasemSettings(t *testing.T) {
 	}
 	if loaded.DefaultProvider != "codex" {
 		t.Fatalf("unexpected default provider: %q", loaded.DefaultProvider)
+	}
+	if loaded.QueueDeliveryMode != "steer" {
+		t.Fatalf("unexpected queue delivery mode: %q", loaded.QueueDeliveryMode)
 	}
 	codex := loaded.ProviderDefaults["codex"]
 	if codex.Model != "gpt-5.4" || codex.ModelMode != "manual" || codex.ReasoningEffortMode != "manual" || !codex.PlanMode || codex.ModelOptions["fastMode"] != true {

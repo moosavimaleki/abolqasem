@@ -1273,6 +1273,7 @@ func workspaceAppSettingsSnapshot() map[string]any {
 		"providerExecutables":  providerExecutableSnapshot(settings.ProviderExecutables),
 		"tmuxCommands":         settings.TmuxCommands,
 		"defaultProvider":      settings.DefaultProvider,
+		"queueDeliveryMode":    settings.QueueDeliveryMode,
 		"providerDefaults":     providerDefaultsSnapshot(settings.ProviderDefaults),
 		"providerModelCatalog": providerModelCatalogSnapshot(settings.ProviderModelCatalog),
 		"commitMessageGenerator": map[string]any{

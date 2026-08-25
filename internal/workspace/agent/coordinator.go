@@ -279,7 +279,7 @@ func (c *Coordinator) SetPendingTool(chatID string, request PendingToolRequest) 
 		}
 	}
 	c.emitStateChange(chatID)
-	return nil
+	return c.maybeStartNextQueuedMessage(context.Background(), chatID)
 }
 
 func (c *Coordinator) RespondTool(ctx context.Context, command ToolResponseCommand) error {
@@ -590,6 +590,9 @@ func (c *Coordinator) startTurn(
 		c.clearActive(chatID)
 		_ = c.store.RecordTurnFailed(chatID, err.Error())
 		c.emitStateChange(chatID)
+		// A provider can reject a turn before it creates an event stream. That is
+		// still a terminal failure: do not leave durable queued messages stranded.
+		_ = c.maybeStartNextQueuedMessage(context.Background(), chatID)
 		return fmt.Errorf("start turn: %w", err)
 	}
 
@@ -697,7 +700,7 @@ func (c *Coordinator) failFromProvider(chatID string, active *ActiveTurn, err er
 		return err
 	}
 	c.emitStateChange(chatID)
-	return nil
+	return c.maybeStartNextQueuedMessage(context.Background(), chatID)
 }
 
 func (c *Coordinator) cancelFromProvider(chatID string, active *ActiveTurn) error {

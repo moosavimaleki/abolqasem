@@ -271,6 +271,61 @@ func TestFinishStartsNextQueuedMessage(t *testing.T) {
 	}
 }
 
+func TestFailedTurnStartsNextQueuedMessage(t *testing.T) {
+	store := newFakeStore()
+	var startedContents []string
+	coordinator := NewCoordinator(store, TurnStarterFunc(func(_ context.Context, request TurnRequest) (Turn, error) {
+		startedContents = append(startedContents, request.Content)
+		return &fakeTurn{}, nil
+	}), nil)
+	if _, err := coordinator.Send(context.Background(), SendCommand{ChatID: "chat-1", Content: "first"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := coordinator.Send(context.Background(), SendCommand{ChatID: "chat-1", Content: "next"}); err != nil {
+		t.Fatal(err)
+	}
+	active := coordinator.active["chat-1"]
+	if err := coordinator.failFromProvider("chat-1", active, errors.New("provider failed")); err != nil {
+		t.Fatal(err)
+	}
+	if store.failed != 1 || len(startedContents) != 2 || startedContents[1] != "next" {
+		t.Fatalf("expected failed turn to advance the queue, failed=%d started=%#v", store.failed, startedContents)
+	}
+}
+
+func TestQueuedMessagesAdvanceWhenTheirStartFails(t *testing.T) {
+	store := newFakeStore()
+	var startedContents []string
+	coordinator := NewCoordinator(store, TurnStarterFunc(func(_ context.Context, request TurnRequest) (Turn, error) {
+		startedContents = append(startedContents, request.Content)
+		if request.Content == "second" {
+			return nil, errors.New("provider unavailable")
+		}
+		return &fakeTurn{}, nil
+	}), nil)
+	if _, err := coordinator.Send(context.Background(), SendCommand{ChatID: "chat-1", Content: "first"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, content := range []string{"second", "third"} {
+		if _, err := coordinator.Send(context.Background(), SendCommand{ChatID: "chat-1", Content: content}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := coordinator.Finish("chat-1"); err == nil {
+		t.Fatal("expected the failed queued start to be reported")
+	}
+	if !reflect.DeepEqual(startedContents, []string{"first", "second", "third"}) {
+		t.Fatalf("expected queue to advance past failed start, got %#v", startedContents)
+	}
+	if len(store.queued["chat-1"]) != 0 {
+		t.Fatalf("expected queue to be empty, got %#v", store.queued["chat-1"])
+	}
+	if coordinator.ActiveStatuses()["chat-1"] == "" {
+		t.Fatal("expected third queued turn to be active")
+	}
+}
+
 func TestDequeueRemovesQueuedMessage(t *testing.T) {
 	store := newFakeStore()
 	coordinator := NewCoordinator(store, nil, nil)

@@ -1383,6 +1383,7 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
   const optimisticScopeId = activeChatId ?? NEW_CHAT_OPTIMISTIC_SCOPE
   const runtime = activeChatSnapshot?.runtime ?? null
   const queuedMessages = activeChatSnapshot?.queuedMessages ?? []
+  const queueDeliveryMode = appSettings?.queueDeliveryMode ?? "queue"
 
   useEffect(() => {
     if (!activeChatId) return
@@ -1836,7 +1837,7 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
       const queueChatId = activeChatId
       if (!queueChatId) return
       try {
-        await socket.command<{ queuedMessageId: string }>({
+		const queued = await socket.command<{ queuedMessageId: string }>({
           type: "message.enqueue",
           chatId: queueChatId,
           content,
@@ -1845,7 +1846,10 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
           model: options?.model,
           modelOptions: options?.modelOptions,
           planMode: options?.planMode,
-        })
+		})
+		if (queueDeliveryMode === "steer" && queued.queuedMessageId) {
+			await socket.command({ type: "message.steer", chatId: queueChatId, queuedMessageId: queued.queuedMessageId })
+		}
         setCommandError(null)
         return
       } catch (error) {
@@ -1986,7 +1990,7 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
       setCommandError(error instanceof Error ? error.message : String(error))
       throw error
     }
-	}, [activeChatId, fallbackLocalProjectPath, isProcessing, navigate, optimisticUserPrompts, selectedProjectId, serverTranscriptEntries, sidebarProjectGroups, socket])
+	}, [activeChatId, fallbackLocalProjectPath, isProcessing, navigate, optimisticUserPrompts, queueDeliveryMode, selectedProjectId, serverTranscriptEntries, sidebarProjectGroups, socket])
 
   const handleSteerQueuedMessage = useCallback(async (queuedMessageId: string) => {
     if (!activeChatId) return

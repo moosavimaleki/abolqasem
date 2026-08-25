@@ -34,6 +34,7 @@ type AppSettings struct {
 	Editor                          EditorSettings                           `json:"editor"`
 	ProviderProxy                   ProviderProxySettings                    `json:"provider_proxy"`
 	DefaultProvider                 string                                   `json:"default_provider"`
+	QueueDeliveryMode               string                                   `json:"queue_delivery_mode"`
 	ProviderDefaults                map[string]ProviderPreference            `json:"provider_defaults"`
 	ProviderModelCatalog            catalog.ProviderModelInventoryByProvider `json:"provider_model_catalog"`
 	ProviderExecutables             map[string]string                        `json:"provider_executables"`
@@ -77,6 +78,7 @@ type AppSettingsPatch struct {
 	Editor                  *EditorSettingsPatch                   `json:"editor"`
 	ProviderProxy           *ProviderProxySettingsPatch            `json:"providerProxy"`
 	DefaultProvider         string                                 `json:"defaultProvider"`
+	QueueDeliveryMode       string                                 `json:"queueDeliveryMode"`
 	ProviderDefaults        map[string]ProviderPreferencePatch     `json:"providerDefaults"`
 	ProviderModelCatalog    map[string]ProviderModelInventoryPatch `json:"providerModelCatalog"`
 	ProviderExecutables     map[string]string                      `json:"providerExecutables"`
@@ -142,8 +144,9 @@ func DefaultAppSettings() AppSettings {
 			Preset:          "custom",
 			CommandTemplate: "",
 		},
-		ProviderProxy:   defaultProviderProxySettings(),
-		DefaultProvider: "last_used",
+		ProviderProxy:     defaultProviderProxySettings(),
+		DefaultProvider:   "last_used",
+		QueueDeliveryMode: "queue",
 		ProviderDefaults: map[string]ProviderPreference{
 			"claude": {
 				Model:               "claude-sonnet-4-6",
@@ -247,6 +250,7 @@ func NormalizeSettings(settings AppSettings) AppSettings {
 	settings.Editor = normalizeEditorSettings(settings.Editor, defaults.Editor)
 	settings.ProviderProxy = normalizeProviderProxySettings(settings.ProviderProxy)
 	settings.DefaultProvider = normalizeDefaultProvider(settings.DefaultProvider, defaults.DefaultProvider)
+	settings.QueueDeliveryMode = normalizeChoice(settings.QueueDeliveryMode, defaults.QueueDeliveryMode, "queue", "steer")
 	settings.ProviderModelCatalog = normalizeProviderModelCatalog(settings.ProviderModelCatalog)
 	settings.ProviderExecutables = normalizeProviderExecutables(settings.ProviderExecutables)
 	settings.TmuxCommands = normalizeTmuxCommands(settings.TmuxCommands)
@@ -301,6 +305,9 @@ func ApplySettingsPatch(settings AppSettings, patch AppSettingsPatch) AppSetting
 	}
 	if patch.DefaultProvider != "" {
 		settings.DefaultProvider = patch.DefaultProvider
+	}
+	if patch.QueueDeliveryMode != "" {
+		settings.QueueDeliveryMode = patch.QueueDeliveryMode
 	}
 	if len(patch.ProviderDefaults) > 0 {
 		if settings.ProviderDefaults == nil {
