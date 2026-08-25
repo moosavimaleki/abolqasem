@@ -28,6 +28,7 @@ import (
 const telegramMessageLimit = 3500
 
 const telegramTakeOverLockCallbackPrefix = "lock:takeover:"
+const telegramProjectCallbackPrefix = "project:"
 
 type telegramUpdate struct {
 	UpdateID      int64                  `json:"update_id"`
@@ -320,9 +321,8 @@ func (b *telegramBridge) handleMessage(ctx context.Context, config telegramBridg
 		status := b.Status(config)
 		b.sendText(ctx, config.BotToken, chatID, fmt.Sprintf("وضعیت پل تلگرام:\n\n- فعال: `%v`\n- اتصال‌ها: `%v`\n- آخرین خطا: `%v`", status["active"], status["mappedChats"], status["lastError"]))
 		return
-	case "chats", "threads":
-		page, _ := strconv.Atoi(argument)
-		b.sendChatPickerPage(ctx, config, chatID, page)
+	case "chats", "threads", "projects":
+		b.sendProjectPicker(ctx, config, chatID)
 		return
 	case "newchat", "newthread":
 		target, err := createTelegramChat(&config, chatID)
@@ -431,6 +431,15 @@ func (b *telegramBridge) handleCallbackQuery(ctx context.Context, config telegra
 		b.sendText(ctx, config.BotToken, chatID, "قفل نشست توسط ابوالقاسم گرفته شد. پیام بعدی شما ارسال می‌شود.")
 		return
 	}
+	if projectID, ok := telegramProjectCallbackProjectID(callback.Data); ok {
+		if len(telegramChatChoicesForProject(projectID)) == 0 {
+			b.answerCallbackQuery(ctx, config.BotToken, callback.ID, "پروژه یا چت‌های آن پیدا نشد")
+			return
+		}
+		b.answerCallbackQuery(ctx, config.BotToken, callback.ID, "پروژه انتخاب شد")
+		b.sendProjectChatPicker(ctx, config, chatID, projectID)
+		return
+	}
 	if !strings.HasPrefix(callback.Data, "chat:") {
 		b.answerCallbackQuery(ctx, config.BotToken, callback.ID, "انتخاب نامعتبر است")
 		return
@@ -498,8 +507,16 @@ func (b *telegramBridge) rememberChatID(config *telegramBridgeConfig, chatID str
 type telegramChatChoice struct {
 	ChatID       string
 	ChatTitle    string
+	ProjectID    string
 	ProjectTitle string
 	UpdatedAt    int64
+}
+
+type telegramProjectChoice struct {
+	ProjectID string
+	Title     string
+	UpdatedAt int64
+	ChatCount int
 }
 
 func telegramChatChoices(limit int) []telegramChatChoice {
@@ -519,6 +536,7 @@ func telegramChatChoicesFromSidebar(sidebar readmodels.SidebarData, limit int) [
 			choices = append(choices, telegramChatChoice{
 				ChatID:       chat.ChatID,
 				ChatTitle:    firstNonEmptyString(chat.Title, "بدون عنوان"),
+				ProjectID:    group.GroupKey,
 				ProjectTitle: firstNonEmptyString(group.SidebarTitle, group.Title, group.RealTitle, "بدون پروژه"),
 				UpdatedAt:    sidebarChatTimestamp(chat),
 			})
@@ -529,6 +547,52 @@ func telegramChatChoicesFromSidebar(sidebar readmodels.SidebarData, limit int) [
 		choices = choices[:limit]
 	}
 	return choices
+}
+
+func telegramProjectChoices(limit int) []telegramProjectChoice {
+	sidebar, _ := workspaceSidebarSnapshot().(readmodels.SidebarData)
+	return telegramProjectChoicesFromSidebar(sidebar, limit)
+}
+
+func telegramProjectChoicesFromSidebar(sidebar readmodels.SidebarData, limit int) []telegramProjectChoice {
+	choices := make([]telegramProjectChoice, 0, len(sidebar.ProjectGroups))
+	for _, group := range sidebar.ProjectGroups {
+		if strings.TrimSpace(group.GroupKey) == "" || len(group.Chats) == 0 {
+			continue
+		}
+		choice := telegramProjectChoice{
+			ProjectID: group.GroupKey,
+			Title:     firstNonEmptyString(group.SidebarTitle, group.Title, group.RealTitle, "بدون پروژه"),
+			ChatCount: len(group.Chats),
+		}
+		for _, chat := range group.Chats {
+			choice.UpdatedAt = max(choice.UpdatedAt, sidebarChatTimestamp(chat))
+		}
+		choices = append(choices, choice)
+	}
+	sort.SliceStable(choices, func(i, j int) bool { return choices[i].UpdatedAt > choices[j].UpdatedAt })
+	if limit > 0 && len(choices) > limit {
+		choices = choices[:limit]
+	}
+	return choices
+}
+
+func telegramChatChoicesForProject(projectID string) []telegramChatChoice {
+	return telegramChatChoicesForProjectFromChoices(projectID, telegramChatChoices(0))
+}
+
+func telegramChatChoicesForProjectFromChoices(projectID string, choices []telegramChatChoice) []telegramChatChoice {
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" {
+		return nil
+	}
+	filtered := make([]telegramChatChoice, 0, len(choices))
+	for _, choice := range choices {
+		if choice.ProjectID == projectID {
+			filtered = append(filtered, choice)
+		}
+	}
+	return filtered
 }
 
 func telegramChatListMarkdown(currentChatID string, page int) string {
@@ -562,32 +626,78 @@ func telegramChatListMarkdown(currentChatID string, page int) string {
 }
 
 func (b *telegramBridge) sendChatPicker(ctx context.Context, config telegramBridgeConfig, telegramChatID string) {
-	b.sendChatPickerPage(ctx, config, telegramChatID, 1)
+	b.sendProjectPicker(ctx, config, telegramChatID)
 }
 
-func (b *telegramBridge) sendChatPickerPage(ctx context.Context, config telegramBridgeConfig, telegramChatID string, page int) {
-	if page < 1 {
-		page = 1
-	}
-	markdown := telegramChatListMarkdown(config.Mappings[telegramChatID], page)
-	markup := telegramChatPickerMarkup(config.Mappings[telegramChatID], page)
+func (b *telegramBridge) sendProjectPicker(ctx context.Context, config telegramBridgeConfig, telegramChatID string) {
+	markdown := telegramProjectListMarkdown()
+	markup := telegramProjectPickerMarkup()
 	b.sendTextWithMarkup(ctx, config.BotToken, telegramChatID, markdown, markup)
 }
 
-func telegramChatPickerMarkup(currentChatID string, page int) any {
-	const pageSize = 10
-	choices := telegramChatChoices(0)
-	if page < 1 {
-		page = 1
+func telegramProjectListMarkdown() string {
+	choices := telegramProjectChoices(0)
+	if len(choices) == 0 {
+		return "هنوز پروژه‌ای با chat قابل انتخاب وجود ندارد. ابتدا در ابوالقاسم یک chat بسازید."
 	}
-	start := (page - 1) * pageSize
-	if start >= len(choices) {
+	var result strings.Builder
+	result.WriteString("# انتخاب پروژه\n\nبرای دیدن chatهای هر پروژه، روی نام پروژه بزنید.\n\n")
+	for _, choice := range choices {
+		fmt.Fprintf(&result, "- **%s** · %d chat\n", telegramMarkdownInline(choice.Title), choice.ChatCount)
+	}
+	return result.String()
+}
+
+func telegramProjectPickerMarkup() any {
+	choices := telegramProjectChoices(0)
+	if len(choices) == 0 {
 		return nil
 	}
-	end := min(start+pageSize, len(choices))
-	rows := make([][]map[string]string, 0, end-start)
-	for _, choice := range choices[start:end] {
-		label := choice.ProjectTitle + " / " + choice.ChatTitle
+	rows := make([][]map[string]string, 0, len(choices))
+	for _, choice := range choices {
+		callbackData := telegramProjectCallbackPrefix + choice.ProjectID
+		if len([]byte(callbackData)) > 64 {
+			continue
+		}
+		rows = append(rows, []map[string]string{{
+			"text":          truncateTelegramButtonLabel(choice.Title+" · "+strconv.Itoa(choice.ChatCount), 60),
+			"callback_data": callbackData,
+		}})
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+	return map[string]any{"inline_keyboard": rows}
+}
+
+func (b *telegramBridge) sendProjectChatPicker(ctx context.Context, config telegramBridgeConfig, telegramChatID string, projectID string) {
+	choices := telegramChatChoicesForProject(projectID)
+	if len(choices) == 0 {
+		b.sendText(ctx, config.BotToken, telegramChatID, "برای این پروژه chat قابل انتخابی پیدا نشد.")
+		return
+	}
+	markdown := telegramProjectChatListMarkdown(config.Mappings[telegramChatID], choices)
+	markup := telegramProjectChatPickerMarkup(config.Mappings[telegramChatID], choices)
+	b.sendTextWithMarkup(ctx, config.BotToken, telegramChatID, markdown, markup)
+}
+
+func telegramProjectChatListMarkdown(currentChatID string, choices []telegramChatChoice) string {
+	var result strings.Builder
+	fmt.Fprintf(&result, "# %s\n\nchat موردنظر را انتخاب کنید:\n\n", telegramMarkdownInline(choices[0].ProjectTitle))
+	for _, choice := range choices {
+		marker := ""
+		if choice.ChatID == currentChatID {
+			marker = " ← نشست فعلی"
+		}
+		fmt.Fprintf(&result, "- **%s**%s\n", telegramMarkdownInline(choice.ChatTitle), marker)
+	}
+	return result.String()
+}
+
+func telegramProjectChatPickerMarkup(currentChatID string, choices []telegramChatChoice) any {
+	rows := make([][]map[string]string, 0, len(choices))
+	for _, choice := range choices {
+		label := choice.ChatTitle
 		if choice.ChatID == currentChatID {
 			label = "✓ " + label
 		}
@@ -597,6 +707,14 @@ func telegramChatPickerMarkup(currentChatID string, page int) any {
 		}})
 	}
 	return map[string]any{"inline_keyboard": rows}
+}
+
+func telegramProjectCallbackProjectID(data string) (string, bool) {
+	projectID := strings.TrimSpace(strings.TrimPrefix(data, telegramProjectCallbackPrefix))
+	if !strings.HasPrefix(data, telegramProjectCallbackPrefix) || projectID == "" || len([]byte(data)) > 64 {
+		return "", false
+	}
+	return projectID, true
 }
 
 func truncateTelegramButtonLabel(value string, limit int) string {
@@ -611,7 +729,7 @@ func truncateTelegramButtonLabel(value string, limit int) string {
 func telegramHelpMarkdown() string {
 	return "# راهنمای پل تلگرام\n\n" +
 		"پیام عادی به نشست انتخاب‌شده فرستاده می‌شود و اگر هنوز نشستی انتخاب نشده باشد، یک نشست تازه به‌صورت خودکار ساخته می‌شود.\n\n" +
-		"- `/chats` — انتخاب از نشست‌های اخیر\n" +
+		"- `/chats` یا `/projects` — انتخاب پروژه و سپس chat\n" +
 		"- `/newchat` — ساخت و انتخاب نشست تازه\n" +
 		"- `/chat <id>` — انتخاب مستقیم یک نشست\n" +
 		"- `/current` — نمایش نشست فعلی\n" +

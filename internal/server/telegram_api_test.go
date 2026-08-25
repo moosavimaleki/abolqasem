@@ -235,15 +235,50 @@ func TestTelegramTakeOverLockCallbackIsCompactAndValidated(t *testing.T) {
 
 func TestTelegramChatChoicesAreNewestFirstAndRenderable(t *testing.T) {
 	sidebar := readmodels.SidebarData{ProjectGroups: []readmodels.SidebarProjectGroup{
-		{Title: "پروژه *یک*", Chats: []readmodels.SidebarChatRow{{ChatID: "chat-old", Title: "قدیمی", CreationTime: 10}}},
-		{Title: "پروژه دو", Chats: []readmodels.SidebarChatRow{{ChatID: "chat-new", Title: "جدید", CreationTime: 20}}},
+		{GroupKey: "project-one", Title: "پروژه *یک*", Chats: []readmodels.SidebarChatRow{{ChatID: "chat-old", Title: "قدیمی", CreationTime: 10}}},
+		{GroupKey: "project-two", Title: "پروژه دو", Chats: []readmodels.SidebarChatRow{{ChatID: "chat-new", Title: "جدید", CreationTime: 20}}},
 	}}
 	choices := telegramChatChoicesFromSidebar(sidebar, 0)
 	if len(choices) != 2 || choices[0].ChatID != "chat-new" || choices[1].ChatID != "chat-old" {
 		t.Fatalf("unexpected Telegram choices: %#v", choices)
 	}
+	if choices[0].ProjectID != "project-two" {
+		t.Fatalf("chat project id = %q", choices[0].ProjectID)
+	}
 	if got := telegramMarkdownInline("پروژه *یک*"); got != `پروژه \*یک\*` {
 		t.Fatalf("escaped title = %q", got)
+	}
+}
+
+func TestTelegramProjectPickerSeparatesChatsByProject(t *testing.T) {
+	sidebar := readmodels.SidebarData{ProjectGroups: []readmodels.SidebarProjectGroup{
+		{GroupKey: "project-old", Title: "قدیمی", Chats: []readmodels.SidebarChatRow{{ChatID: "chat-old", Title: "کهنه", CreationTime: 10}}},
+		{GroupKey: "project-active", Title: "فعال", Chats: []readmodels.SidebarChatRow{
+			{ChatID: "chat-new", Title: "جدید", CreationTime: 30},
+			{ChatID: "chat-middle", Title: "میانی", CreationTime: 20},
+		}},
+	}}
+	projects := telegramProjectChoicesFromSidebar(sidebar, 0)
+	if len(projects) != 2 || projects[0].ProjectID != "project-active" || projects[0].ChatCount != 2 {
+		t.Fatalf("unexpected project choices: %#v", projects)
+	}
+	allChats := telegramChatChoicesFromSidebar(sidebar, 0)
+	projectChats := telegramChatChoicesForProjectFromChoices("project-active", allChats)
+	if len(projectChats) != 2 || projectChats[0].ChatID != "chat-new" || projectChats[1].ChatID != "chat-middle" {
+		t.Fatalf("project chats = %#v", projectChats)
+	}
+	if markdown := telegramProjectChatListMarkdown("chat-middle", projectChats); !strings.Contains(markdown, "فعال") || !strings.Contains(markdown, "نشست فعلی") || strings.Contains(markdown, "کهنه") {
+		t.Fatalf("project chat markdown = %q", markdown)
+	}
+	markup, err := json.Marshal(telegramProjectChatPickerMarkup("chat-middle", projectChats))
+	if err != nil || !strings.Contains(string(markup), "chat:chat-new") || !strings.Contains(string(markup), "chat:chat-middle") || strings.Contains(string(markup), "chat:chat-old") {
+		t.Fatalf("project chat markup = %s err=%v", markup, err)
+	}
+	if projectID, ok := telegramProjectCallbackProjectID("project:project-active"); !ok || projectID != "project-active" {
+		t.Fatalf("project callback = %q %v", projectID, ok)
+	}
+	if _, ok := telegramProjectCallbackProjectID("project:" + strings.Repeat("x", 65)); ok {
+		t.Fatal("oversized project callback must be rejected")
 	}
 }
 
