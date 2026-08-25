@@ -31,6 +31,10 @@ jobs:
         if: runner.os == 'Windows'
       - run: go vet ./...
       - run: go test ./...
+        if: runner.os != 'Windows'
+      - name: Compile Go test packages
+        run: go test -run '^$' ./...
+        if: runner.os == 'Windows'
       - run: go build -trimpath -o dist/abolqasem ./cmd/abolqasem
 
   web:
