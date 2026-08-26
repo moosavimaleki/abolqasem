@@ -30,7 +30,9 @@ import { I18nProvider } from "../i18n/context"
 const VERSION_SEEN_STORAGE_KEY = "abolqasem:last-seen-version"
 const AUTH_STATUS_RETRY_DELAY_MS = 500
 const SPLASH_MIN_VISIBLE_MS = 420
-const STARTUP_SPLASH_MIN_VISIBLE_MS = 1200
+// Keep a very short floor to avoid a single-frame flash, but never hold the UI
+// after the sidebar and active chat are ready.
+const STARTUP_SPLASH_MIN_VISIBLE_MS = 160
 const HOOK_TOAST_TIMEOUT_MS = 8000
 
 interface AuthStatusResponse {

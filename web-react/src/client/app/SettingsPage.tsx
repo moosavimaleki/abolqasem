@@ -2290,6 +2290,8 @@ export function SettingsPage() {
   const [llmValidationDialogOpen, setLlmValidationDialogOpen] = useState(false)
   const [telegramDraft, setTelegramDraft] = useState<{ botToken: string; proxyUrl: string; allowedUserIds: string; customCommands: TelegramCustomCommandDraft[] }>({ botToken: "", proxyUrl: "", allowedUserIds: "", customCommands: [] })
   const [telegramStatus, setTelegramStatus] = useState<{ configured: boolean; active: boolean; proxyConfigured: boolean; mappedChats: number; knownChats: number; lastError: string } | null>(null)
+  const [telegramLoaded, setTelegramLoaded] = useState(false)
+  const [telegramLoading, setTelegramLoading] = useState(false)
   const [telegramError, setTelegramError] = useState<string | null>(null)
   const [telegramNotice, setTelegramNotice] = useState<string | null>(null)
   const [telegramSaving, setTelegramSaving] = useState(false)
@@ -2446,30 +2448,37 @@ export function SettingsPage() {
   }, [isConnecting, selectedPage])
 
   const refreshTelegram = useCallback(async () => {
-    const [configResponse, statusResponse] = await Promise.all([
-      fetch("/api/telegram/config", { cache: "no-store" }),
-      fetch("/api/telegram/status", { cache: "no-store" }),
-    ])
-    if (!configResponse.ok || !statusResponse.ok) throw new Error(locale === "fa" ? "تنظیمات تلگرام بارگیری نشد." : "Telegram settings could not be loaded")
-    const config = await configResponse.json() as { botToken?: string; proxyUrl?: string; allowedUserIds?: string[]; customCommands?: TelegramCustomCommandDraft[] }
-    const status = await statusResponse.json() as { configured?: boolean; active?: boolean; proxyConfigured?: boolean; mappedChats?: number; knownChats?: number; lastError?: string }
-    setTelegramDraft({
-      botToken: config.botToken ?? "",
-      proxyUrl: config.proxyUrl ?? "",
-      allowedUserIds: (config.allowedUserIds ?? []).join(", "),
-      customCommands: (config.customCommands ?? []).map((command) => ({
-        name: command.name ?? "",
-        description: command.description ?? "",
-        command: command.command ?? "",
-        workingDirectory: command.workingDirectory ?? "",
-        timeoutSeconds: command.timeoutSeconds ?? 30,
-      })),
-    })
-    setTelegramStatus({ configured: status.configured === true, active: status.active === true, proxyConfigured: status.proxyConfigured === true, mappedChats: status.mappedChats ?? 0, knownChats: status.knownChats ?? 0, lastError: status.lastError ?? "" })
+    setTelegramLoading(true)
+    try {
+      const [configResponse, statusResponse] = await Promise.all([
+        fetch("/api/telegram/config", { cache: "no-store" }),
+        fetch("/api/telegram/status", { cache: "no-store" }),
+      ])
+      if (!configResponse.ok || !statusResponse.ok) throw new Error(locale === "fa" ? "تنظیمات تلگرام بارگیری نشد." : "Telegram settings could not be loaded")
+      const config = await configResponse.json() as { botToken?: string; proxyUrl?: string; allowedUserIds?: string[]; customCommands?: TelegramCustomCommandDraft[] }
+      const status = await statusResponse.json() as { configured?: boolean; active?: boolean; proxyConfigured?: boolean; mappedChats?: number; knownChats?: number; lastError?: string }
+      setTelegramDraft({
+        botToken: config.botToken ?? "",
+        proxyUrl: config.proxyUrl ?? "",
+        allowedUserIds: (config.allowedUserIds ?? []).join(", "),
+        customCommands: (config.customCommands ?? []).map((command) => ({
+          name: command.name ?? "",
+          description: command.description ?? "",
+          command: command.command ?? "",
+          workingDirectory: command.workingDirectory ?? "",
+          timeoutSeconds: command.timeoutSeconds ?? 30,
+        })),
+      })
+      setTelegramStatus({ configured: status.configured === true, active: status.active === true, proxyConfigured: status.proxyConfigured === true, mappedChats: status.mappedChats ?? 0, knownChats: status.knownChats ?? 0, lastError: status.lastError ?? "" })
+      setTelegramLoaded(true)
+    } finally {
+      setTelegramLoading(false)
+    }
   }, [locale])
 
   useEffect(() => {
     if (selectedPage !== "telegram" || isConnecting) return
+    setTelegramError(null)
     void refreshTelegram().catch((error: unknown) => setTelegramError(error instanceof Error ? error.message : String(error)))
   }, [isConnecting, refreshTelegram, selectedPage])
 
@@ -3525,6 +3534,12 @@ export function SettingsPage() {
 
                     </div>
                   </>
+                ) : selectedPage === "telegram" && !telegramLoaded ? (
+                  <div className="flex min-h-52 flex-col items-center justify-center gap-3 text-sm text-muted-foreground" dir={direction}>
+                    {telegramLoading ? <Loader2 className="size-4 animate-spin" /> : null}
+                    <span>{telegramLoading ? (locale === "fa" ? "در حال بازیابی تنظیمات تلگرام…" : "Restoring Telegram settings…") : (telegramError ?? (locale === "fa" ? "تنظیمات تلگرام بارگیری نشد." : "Telegram settings could not be loaded"))}</span>
+                    {!telegramLoading ? <Button type="button" size="sm" variant="outline" onClick={() => { setTelegramError(null); void refreshTelegram().catch((error: unknown) => setTelegramError(error instanceof Error ? error.message : String(error))) }}>{locale === "fa" ? "تلاش دوباره" : "Retry"}</Button> : null}
+                  </div>
                 ) : selectedPage === "telegram" ? (
                   <div className="border-b border-border" dir={direction}>
                     {telegramError ? <div className="mb-4 rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">{telegramError}</div> : null}

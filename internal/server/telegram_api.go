@@ -1,6 +1,7 @@
 package server
 
 import (
+	"abolqasem/internal/appinfo"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -101,17 +102,40 @@ func telegramBridgeConfigPath() string {
 	if err != nil {
 		return "telegram-bridge.json"
 	}
+	return filepath.Join(home, ".config", appinfo.Name, "telegram-bridge.json")
+}
+
+func legacyTelegramBridgeConfigPaths() []string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
 	codexHome := strings.TrimSpace(os.Getenv("CODEX_HOME"))
 	if codexHome == "" {
 		codexHome = filepath.Join(home, ".codex")
 	}
-	return filepath.Join(codexHome, "telegram-bridge.json")
+	return []string{filepath.Join(codexHome, "telegram-bridge.json")}
 }
 
 func loadTelegramBridgeConfig() (telegramBridgeConfig, error) {
-	data, err := os.ReadFile(telegramBridgeConfigPath())
+	path := telegramBridgeConfigPath()
+	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return telegramBridgeConfig{}, nil
+		for _, legacyPath := range legacyTelegramBridgeConfigPaths() {
+			if filepath.Clean(legacyPath) == filepath.Clean(path) {
+				continue
+			}
+			data, err = os.ReadFile(legacyPath)
+			if err == nil {
+				break
+			}
+			if !errors.Is(err, os.ErrNotExist) {
+				return telegramBridgeConfig{}, err
+			}
+		}
+		if errors.Is(err, os.ErrNotExist) {
+			return telegramBridgeConfig{}, nil
+		}
 	}
 	if err != nil {
 		return telegramBridgeConfig{}, err
@@ -127,6 +151,11 @@ func loadTelegramBridgeConfig() (telegramBridgeConfig, error) {
 	config.Mappings = normalizeTelegramMappings(config.Mappings)
 	config.Preferences = normalizeTelegramPreferences(config.Preferences)
 	config.CustomCommands = normalizeTelegramCustomCommands(config.CustomCommands)
+	if _, statErr := os.Stat(path); errors.Is(statErr, os.ErrNotExist) {
+		if writeErr := writeTelegramBridgeConfig(path, config); writeErr != nil {
+			return telegramBridgeConfig{}, writeErr
+		}
+	}
 	return config, nil
 }
 
@@ -147,7 +176,10 @@ func saveTelegramBridgeConfig(config telegramBridgeConfig) error {
 	if _, err := telegramHTTPClient(config.ProxyURL); err != nil {
 		return err
 	}
-	path := telegramBridgeConfigPath()
+	return writeTelegramBridgeConfig(telegramBridgeConfigPath(), config)
+}
+
+func writeTelegramBridgeConfig(path string, config telegramBridgeConfig) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}

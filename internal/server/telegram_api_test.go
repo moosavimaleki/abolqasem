@@ -50,6 +50,35 @@ func TestTelegramConfigAPIStoresPrivateAllowlistedConfiguration(t *testing.T) {
 	}
 }
 
+func TestTelegramConfigMigratesOutOfCodexHome(t *testing.T) {
+	home := t.TempDir()
+	legacyHome := filepath.Join(home, "isolated-codex-home")
+	t.Setenv("HOME", home)
+	t.Setenv("CODEX_HOME", legacyHome)
+	legacyPath := filepath.Join(legacyHome, "telegram-bridge.json")
+	if err := os.MkdirAll(filepath.Dir(legacyPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(legacyPath, []byte(`{"botToken":"123:token","proxyUrl":"socks5://127.0.0.1:10810","allowedUserIds":["42"]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	config, err := loadTelegramBridgeConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.BotToken != "123:token" || !reflect.DeepEqual(config.AllowedUserIDs, []string{"42"}) {
+		t.Fatalf("migrated Telegram config = %#v", config)
+	}
+	if telegramBridgeConfigPath() == legacyPath {
+		t.Fatal("Telegram config must not remain coupled to CODEX_HOME")
+	}
+	info, err := os.Stat(telegramBridgeConfigPath())
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("migrated Telegram config info=%#v err=%v", info, err)
+	}
+}
+
 func TestTelegramRuntimeStateSavePreservesNewerCustomCommands(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

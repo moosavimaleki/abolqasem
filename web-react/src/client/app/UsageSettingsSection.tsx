@@ -28,7 +28,8 @@ export function UsageSettingsSection({ locale }: { locale: "en" | "fa" }) {
   const fa = locale === "fa"
   const [usage, setUsage] = useState<UsageSnapshot | null>(null)
   const [resources, setResources] = useState<ResourceUsageSnapshot | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [usageLoading, setUsageLoading] = useState(true)
+  const [resourcesLoading, setResourcesLoading] = useState(true)
   const [clearing, setClearing] = useState(false)
   const [confirmClear, setConfirmClear] = useState(false)
   const [confirmKind, setConfirmKind] = useState<"cache" | "checkpoints" | "archives" | "attachments" | null>(null)
@@ -36,27 +37,44 @@ export function UsageSettingsSection({ locale }: { locale: "en" | "fa" }) {
   const [autoCleanup, setAutoCleanup] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const refresh = useCallback(async (force = false) => {
-    setLoading(true)
-    setError(null)
+  const refreshUsage = useCallback(async (force = false) => {
+    setUsageLoading(true)
     try {
-      const [usageResponse, resourcesResponse] = await Promise.all([
-        force
-          ? fetch("/api/usage/refresh", { method: "POST", cache: "no-store" })
-          : fetch("/api/usage", { cache: "no-store" }),
-        fetch("/api/resources", { cache: "no-store" }),
-      ])
-      if (!usageResponse.ok || !resourcesResponse.ok) throw new Error(fa ? "خواندن آمار مصرف ناموفق بود" : "Could not load usage data")
+      const usageResponse = force
+        ? await fetch("/api/usage/refresh", { method: "POST", cache: "no-store" })
+        : await fetch("/api/usage", { cache: "no-store" })
+      if (!usageResponse.ok) throw new Error(fa ? "خواندن سهمیه ناموفق بود" : "Could not load usage limits")
       setUsage(await usageResponse.json() as UsageSnapshot)
-      setResources(await resourcesResponse.json() as ResourceUsageSnapshot)
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : String(nextError))
     } finally {
-      setLoading(false)
+      setUsageLoading(false)
     }
   }, [fa])
 
-  useEffect(() => { void refresh(false) }, [refresh])
+  const refreshResources = useCallback(async () => {
+    setResourcesLoading(true)
+    try {
+      const response = await fetch("/api/resources", { cache: "no-store" })
+      if (!response.ok) throw new Error(fa ? "خواندن فضای ذخیره‌سازی ناموفق بود" : "Could not load storage usage")
+      setResources(await response.json() as ResourceUsageSnapshot)
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : String(nextError))
+    } finally {
+      setResourcesLoading(false)
+    }
+  }, [fa])
+
+  const refresh = useCallback(async (force = false) => {
+    setError(null)
+    await Promise.all([refreshUsage(force), refreshResources()])
+  }, [refreshResources, refreshUsage])
+
+  useEffect(() => {
+    setError(null)
+    void refreshUsage(false)
+    void refreshResources()
+  }, [refreshResources, refreshUsage])
 
   useEffect(() => {
     void fetch("/api/settings", { cache: "no-store" }).then(async (response) => response.ok ? await response.json() as { disk_management?: { warning_threshold_bytes?: number; auto_cleanup?: boolean } } : null).then((settings) => {
@@ -105,7 +123,7 @@ export function UsageSettingsSection({ locale }: { locale: "en" | "fa" }) {
     if (!response.ok) throw new Error(await response.text())
   }, [])
 
-  if (loading && !usage && !resources) {
+  if (usageLoading && !usage) {
     return <div className="flex min-h-52 items-center justify-center text-muted-foreground"><Loader2 className="size-4 animate-spin" /></div>
   }
 
@@ -115,8 +133,8 @@ export function UsageSettingsSection({ locale }: { locale: "en" | "fa" }) {
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        <Button variant="ghost" size="sm" onClick={() => void refresh(true)} disabled={loading}>
-          {loading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+        <Button variant="ghost" size="sm" onClick={() => void refresh(true)} disabled={usageLoading || resourcesLoading}>
+          {usageLoading || resourcesLoading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
           {fa ? "به‌روزرسانی" : "Refresh"}
         </Button>
       </div>
@@ -135,6 +153,7 @@ export function UsageSettingsSection({ locale }: { locale: "en" | "fa" }) {
 
       <section className="rounded-2xl border border-border bg-card/30 p-3 sm:p-4" aria-labelledby="cache-usage-title">
         <div className="mb-3 flex items-center gap-2"><Database className="size-4 text-muted-foreground" /><h2 id="cache-usage-title" className="font-medium">{fa ? "کش و فضای ذخیره‌سازی ابوالقاسم" : "Abolqasem cache and storage"}</h2></div>
+        {resourcesLoading && !resources ? <div className="flex min-h-24 items-center justify-center text-muted-foreground"><Loader2 className="size-4 animate-spin" /></div> : <>
         <div className="grid grid-cols-2 gap-2 lg:grid-cols-5">
           {[
             [fa ? "کش قابل پاک‌سازی" : "Clearable cache", resources?.storage.cache_bytes ?? 0],
@@ -151,6 +170,7 @@ export function UsageSettingsSection({ locale }: { locale: "en" | "fa" }) {
           <Button variant="outline" size="sm" className="w-full" onClick={() => setConfirmKind("archives")} disabled={(resources?.storage.archive_bytes ?? 0) === 0}><Archive className="size-4" />{fa ? "پاک‌سازی آرشیو سشن‌ها" : "Clear archived sessions"}</Button>
         </div>
         <p className="mt-2 text-xs text-muted-foreground">{fa ? "پیوست‌ها فقط با اقدام دستی حذف می‌شوند؛ سشن‌های فعال دست‌نخورده می‌مانند." : "Attachments require an explicit delete; active sessions remain untouched."}</p>
+        </>}
       </section>
 
       <section className="rounded-2xl border border-border bg-card/30 p-4" aria-labelledby="disk-policy-title">
@@ -158,7 +178,7 @@ export function UsageSettingsSection({ locale }: { locale: "en" | "fa" }) {
         <div className="grid gap-3 md:grid-cols-[11rem_minmax(0,1fr)_auto] md:items-end">
           <label className="grid gap-1.5 text-sm font-medium"><span>{fa ? "هشدار از حجم" : "Warn above"}</span><div className="flex items-center gap-2"><Input className="h-9" dir="ltr" type="number" min="0.25" step="0.25" value={thresholdGB} onChange={(event) => setThresholdGB(event.target.value)} onBlur={() => void saveDiskPolicy(thresholdGB, autoCleanup).catch((nextError) => setError(String(nextError)))} /><span className="text-xs text-muted-foreground">GB</span></div></label>
           <label className="flex min-h-9 items-center gap-2 text-sm"><input type="checkbox" checked={autoCleanup} onChange={(event) => { setAutoCleanup(event.target.checked); void saveDiskPolicy(thresholdGB, event.target.checked).catch((nextError) => setError(String(nextError))) }} /><span>{fa ? "پس از عبور از حد، کش و چک‌پوینت‌ها خودکار پاک شوند" : "Automatically clear cache and checkpoints above the limit"}</span></label>
-          <Button variant="outline" size="sm" onClick={() => void refresh(true)} disabled={loading}>{fa ? "بررسی فضا" : "Check now"}</Button>
+          <Button variant="outline" size="sm" onClick={() => void refreshResources()} disabled={resourcesLoading}>{fa ? "بررسی فضا" : "Check now"}</Button>
         </div>
       </section>
 

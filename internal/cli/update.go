@@ -51,7 +51,10 @@ func runUpdate() error {
 	if err := executeUpdateScript(scriptPath, binDir); err != nil {
 		return err
 	}
-	return restartActiveMode()
+	// The release installer repairs the persistent service and all hooks, then
+	// restarts and health-checks the server. Restarting again here caused a
+	// second disconnect immediately after a successful update.
+	return nil
 }
 
 func downloadUpdateScript() (string, error) {
