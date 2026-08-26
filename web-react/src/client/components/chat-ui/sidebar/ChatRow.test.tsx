@@ -25,6 +25,7 @@ describe("ChatRow", () => {
         nowMs={60_000}
         onSelectChat={() => undefined}
         onRenameChat={() => undefined}
+        onOpenInNewTab={() => undefined}
         onOpenInFinder={() => undefined}
         onForkChat={() => undefined}
         onConvertChat={() => undefined}
@@ -44,6 +45,7 @@ describe("ChatRow", () => {
         nowMs={60_000}
         onSelectChat={() => undefined}
         onRenameChat={() => undefined}
+        onOpenInNewTab={() => undefined}
         onOpenInFinder={() => undefined}
         onForkChat={() => undefined}
         onConvertChat={() => undefined}
@@ -63,6 +65,7 @@ describe("ChatRow", () => {
         nowMs={60_000}
         onSelectChat={() => undefined}
         onRenameChat={() => undefined}
+        onOpenInNewTab={() => undefined}
         onOpenInFinder={() => undefined}
         onForkChat={() => undefined}
         onConvertChat={() => undefined}
@@ -85,6 +88,7 @@ describe("ChatRow", () => {
         showShortcutHint
         onSelectChat={() => undefined}
         onRenameChat={() => undefined}
+        onOpenInNewTab={() => undefined}
         onOpenInFinder={() => undefined}
         onForkChat={() => undefined}
         onConvertChat={() => undefined}
@@ -107,6 +111,7 @@ describe("ChatRow", () => {
           nowMs={60_000}
           onSelectChat={() => undefined}
           onRenameChat={() => undefined}
+          onOpenInNewTab={() => undefined}
           onOpenInFinder={() => undefined}
           onForkChat={() => undefined}
           onConvertChat={() => undefined}
@@ -129,6 +134,7 @@ describe("ChatRow", () => {
           nowMs={60_000}
           onSelectChat={() => undefined}
           onRenameChat={() => undefined}
+          onOpenInNewTab={() => undefined}
           onOpenInFinder={() => undefined}
           onForkChat={() => undefined}
           onConvertChat={() => undefined}
@@ -151,6 +157,7 @@ describe("ChatRow", () => {
         nowMs={60_000}
         onSelectChat={() => undefined}
         onRenameChat={() => undefined}
+        onOpenInNewTab={() => undefined}
         onOpenInFinder={() => undefined}
         onForkChat={() => undefined}
         onConvertChat={() => undefined}
@@ -173,6 +180,7 @@ describe("ChatRow", () => {
           nowMs={60_000}
           onSelectChat={() => undefined}
           onRenameChat={() => undefined}
+          onOpenInNewTab={() => undefined}
           onOpenInFinder={() => undefined}
           onForkChat={() => undefined}
           onConvertChat={() => undefined}

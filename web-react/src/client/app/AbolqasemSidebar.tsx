@@ -569,6 +569,9 @@ function AbolqasemSidebarImpl({
           onClose()
         }}
         onRenameChat={() => onRenameChat(chat)}
+        onOpenInNewTab={(chatId) => {
+          window.open(chatRoute(chatId), "_blank", "noopener,noreferrer")
+        }}
         onOpenInFinder={() => onOpenExternalPath("open_finder", chat.localPath)}
         onForkChat={() => onForkChat(chat)}
         onConvertChat={(_, provider) => onConvertChat(chat, provider)}

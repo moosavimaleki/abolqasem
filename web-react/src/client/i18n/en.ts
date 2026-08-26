@@ -53,6 +53,7 @@ export const en = {
     archiveChat: "Archive chat",
     forkChat: "Fork chat",
     forkToProvider: (provider: string) => `Fork to ${provider}`,
+    openInNewTab: "Open in new tab",
     newChat: "New Chat",
     newProject: "New project",
     noArchivedChats: "No archived chats",

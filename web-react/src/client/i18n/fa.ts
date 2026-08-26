@@ -54,6 +54,7 @@ export const fa: TranslationDictionary = {
     archiveChat: "آرشیو چت",
     forkChat: "Fork چت",
     forkToProvider: (provider: string) => `Fork به ${provider}`,
+    openInNewTab: "باز کردن در تب جدید",
     newChat: "چت جدید",
     newProject: "پروژه جدید",
     noArchivedChats: "چت آرشیوشده‌ای نیست",

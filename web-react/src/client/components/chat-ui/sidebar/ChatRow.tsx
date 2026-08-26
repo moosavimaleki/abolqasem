@@ -25,6 +25,7 @@ interface Props {
   showShortcutHint?: boolean
   onSelectChat: (chatId: string) => void
   onRenameChat: (chatId: string) => void
+  onOpenInNewTab: (chatId: string) => void
   onOpenInFinder: (localPath: string) => void
   onForkChat: (chatId: string) => void
   onConvertChat: (chatId: string, provider: AgentProvider) => void
@@ -41,6 +42,7 @@ function ChatRowImpl({
   showShortcutHint = false,
   onSelectChat,
   onRenameChat,
+  onOpenInNewTab,
   onOpenInFinder,
   onForkChat,
   onConvertChat,
@@ -236,6 +238,7 @@ function ChatRowImpl({
     <ChatRowMenu
       canFork={chat.canFork}
       onRename={() => onRenameChat(chat.chatId)}
+      onOpenInNewTab={() => onOpenInNewTab(chat.chatId)}
       onOpenInFinder={() => onOpenInFinder(chat.localPath)}
       onFork={() => onForkChat(chat.chatId)}
       onConvert={(provider) => onConvertChat(chat.chatId, provider)}
