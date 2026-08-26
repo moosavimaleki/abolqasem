@@ -200,6 +200,27 @@ func handleAPIResourceArchives(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"status": "ok", "cleared_bytes": clearedBytes, "resources": currentResourceUsage()})
 }
 
+// handleAPIResourceAttachments removes only uploaded attachment payloads. It
+// deliberately leaves transcript events and chat metadata intact; old
+// attachment references will render as unavailable after this operation.
+func handleAPIResourceAttachments(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	root := resourceUploadRoot()
+	clearedBytes := directorySize(root)
+	if err := os.RemoveAll(root); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]any{"status": "ok", "cleared_bytes": clearedBytes, "resources": currentResourceUsage()})
+}
+
 func handleAPIResourceCompact(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -277,12 +298,19 @@ func eventStreamArchiveCount() int {
 }
 
 func resourceUploadRoot() string {
+	if strings.TrimSpace(resourceUploadRootOverride) != "" {
+		return resourceUploadRootOverride
+	}
 	base, err := os.UserCacheDir()
 	if err != nil {
 		base = os.TempDir()
 	}
 	return filepath.Join(base, appinfo.Name, "uploads")
 }
+
+// resourceUploadRootOverride is only set by package tests so destructive
+// cleanup tests never touch a developer's real attachment cache.
+var resourceUploadRootOverride string
 
 func resetWorkspaceSearchCaches() {
 	sessionSearchIndex.Lock()

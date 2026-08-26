@@ -151,3 +151,41 @@ func TestHandleAPIResourceCheckpointsAndArchivesClearOnlySelectedData(t *testing
 		}
 	}
 }
+
+func TestHandleAPIResourceAttachmentsClearsUploadsOnly(t *testing.T) {
+	withWorkspaceComposerStore(t)
+	previousRoot := resourceUploadRootOverride
+	resourceUploadRootOverride = t.TempDir()
+	t.Cleanup(func() { resourceUploadRootOverride = previousRoot })
+	root := resourceUploadRoot()
+	attachment := filepath.Join(root, "project-1", "upload-1.bin")
+	messageFile := filepath.Join(workspaceDataDir(), events.StreamMessages+".jsonl")
+	for path, content := range map[string]string{attachment: "attachment", messageFile: "message"} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", path, err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
+	recorder := httptest.NewRecorder()
+	handleAPIResourceAttachments(recorder, httptest.NewRequest(http.MethodDelete, "/api/resources/attachments", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var response struct {
+		ClearedBytes int64 `json:"cleared_bytes"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.ClearedBytes != int64(len("attachment")) {
+		t.Fatalf("expected cleared bytes %d, got %d", len("attachment"), response.ClearedBytes)
+	}
+	if _, err := os.Stat(attachment); !os.IsNotExist(err) {
+		t.Fatalf("expected attachment to be removed, stat err=%v", err)
+	}
+	if _, err := os.Stat(messageFile); err != nil {
+		t.Fatalf("expected transcript to remain: %v", err)
+	}
+}

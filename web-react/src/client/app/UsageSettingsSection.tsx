@@ -31,7 +31,7 @@ export function UsageSettingsSection({ locale }: { locale: "en" | "fa" }) {
   const [loading, setLoading] = useState(true)
   const [clearing, setClearing] = useState(false)
   const [confirmClear, setConfirmClear] = useState(false)
-  const [confirmKind, setConfirmKind] = useState<"cache" | "checkpoints" | "archives" | null>(null)
+  const [confirmKind, setConfirmKind] = useState<"cache" | "checkpoints" | "archives" | "attachments" | null>(null)
   const [thresholdGB, setThresholdGB] = useState("2")
   const [autoCleanup, setAutoCleanup] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -83,7 +83,7 @@ export function UsageSettingsSection({ locale }: { locale: "en" | "fa" }) {
     }
   }, [])
 
-  const clearResource = useCallback(async (kind: "cache" | "checkpoints" | "archives") => {
+  const clearResource = useCallback(async (kind: "cache" | "checkpoints" | "archives" | "attachments") => {
     setClearing(true)
     setError(null)
     try {
@@ -133,29 +133,32 @@ export function UsageSettingsSection({ locale }: { locale: "en" | "fa" }) {
         {codex?.updated_at ? <div className="mt-3 text-xs text-muted-foreground">{fa ? "ثبت‌شده" : "Recorded"}: {new Date(codex.updated_at).toLocaleString(fa ? "fa-IR" : undefined)}</div> : null}
       </section>
 
-      <section className="rounded-2xl border border-border bg-card/30 p-4" aria-labelledby="cache-usage-title">
-        <div className="mb-4 flex items-center gap-2"><Database className="size-4 text-muted-foreground" /><h2 id="cache-usage-title" className="font-medium">{fa ? "کش و فضای ذخیره‌سازی ابوالقاسم" : "Abolqasem cache and storage"}</h2></div>
-        <div className="grid gap-3 sm:grid-cols-4">
-          <div className="rounded-xl bg-muted/25 p-3"><div className="text-xs text-muted-foreground">{fa ? "کش قابل پاک‌سازی" : "Clearable cache"}</div><div className="mt-1 font-medium">{formatBytes(resources?.storage.cache_bytes ?? 0)}</div></div>
-          <div className="rounded-xl bg-muted/25 p-3"><div className="text-xs text-muted-foreground">{fa ? "اتچمنت‌ها" : "Attachments"}</div><div className="mt-1 font-medium">{formatBytes(resources?.storage.upload_bytes ?? 0)}</div></div>
-          <div className="rounded-xl bg-muted/25 p-3"><div className="text-xs text-muted-foreground">{fa ? "چک‌پوینت‌ها" : "Checkpoints"}</div><div className="mt-1 font-medium">{formatBytes(resources?.storage.checkpoint_bytes ?? 0)}</div></div>
-          <div className="rounded-xl bg-muted/25 p-3"><div className="text-xs text-muted-foreground">{fa ? "آرشیو سشن‌ها" : "Archived sessions"}</div><div className="mt-1 font-medium">{formatBytes(resources?.storage.archive_bytes ?? 0)}</div><div className="text-[11px] text-muted-foreground">{resources?.storage.archive_count ?? 0}</div></div>
-          <div className="rounded-xl bg-muted/25 p-3"><div className="text-xs text-muted-foreground">{fa ? "کل داده برنامه" : "Total app data"}</div><div className="mt-1 font-medium">{formatBytes(resources?.storage.total_bytes ?? 0)}</div></div>
+      <section className="rounded-2xl border border-border bg-card/30 p-3 sm:p-4" aria-labelledby="cache-usage-title">
+        <div className="mb-3 flex items-center gap-2"><Database className="size-4 text-muted-foreground" /><h2 id="cache-usage-title" className="font-medium">{fa ? "کش و فضای ذخیره‌سازی ابوالقاسم" : "Abolqasem cache and storage"}</h2></div>
+        <div className="grid grid-cols-2 gap-2 lg:grid-cols-5">
+          {[
+            [fa ? "کش قابل پاک‌سازی" : "Clearable cache", resources?.storage.cache_bytes ?? 0],
+            [fa ? "اتچمنت‌ها" : "Attachments", resources?.storage.upload_bytes ?? 0],
+            [fa ? "چک‌پوینت‌ها" : "Checkpoints", resources?.storage.checkpoint_bytes ?? 0],
+            [fa ? "آرشیو سشن‌ها" : "Archived sessions", resources?.storage.archive_bytes ?? 0],
+            [fa ? "کل داده برنامه" : "Total app data", resources?.storage.total_bytes ?? 0],
+          ].map(([label, bytes]) => <div key={String(label)} className="min-w-0 rounded-xl bg-muted/25 px-3 py-2.5"><div className="truncate text-xs text-muted-foreground">{label}</div><div className="mt-1 font-medium tabular-nums">{formatBytes(Number(bytes))}</div></div>)}
         </div>
-        <div className="mt-4 grid gap-2 sm:grid-cols-3">
-          <Button variant="outline" size="sm" onClick={() => setConfirmKind("cache")} disabled={(resources?.storage.cache_bytes ?? 0) === 0}><Trash2 className="size-4" />{fa ? "پاک‌سازی کش" : "Clear cache"}</Button>
-          <Button variant="outline" size="sm" onClick={() => setConfirmKind("checkpoints")} disabled={(resources?.storage.checkpoint_bytes ?? 0) === 0}><Trash2 className="size-4" />{fa ? "پاک‌سازی چک‌پوینت‌ها" : "Clear checkpoints"}</Button>
-          <Button variant="outline" size="sm" onClick={() => setConfirmKind("archives")} disabled={(resources?.storage.archive_bytes ?? 0) === 0}><Archive className="size-4" />{fa ? "پاک‌سازی آرشیو سشن‌ها" : "Clear archived sessions"}</Button>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          <Button variant="outline" size="sm" className="w-full" onClick={() => setConfirmKind("cache")} disabled={(resources?.storage.cache_bytes ?? 0) === 0}><Trash2 className="size-4" />{fa ? "پاک‌سازی کش" : "Clear cache"}</Button>
+          <Button variant="outline" size="sm" className="w-full" onClick={() => setConfirmKind("attachments")} disabled={(resources?.storage.upload_bytes ?? 0) === 0}><Trash2 className="size-4" />{fa ? "حذف پیوست‌ها" : "Delete attachments"}</Button>
+          <Button variant="outline" size="sm" className="w-full" onClick={() => setConfirmKind("checkpoints")} disabled={(resources?.storage.checkpoint_bytes ?? 0) === 0}><Trash2 className="size-4" />{fa ? "پاک‌سازی چک‌پوینت‌ها" : "Clear checkpoints"}</Button>
+          <Button variant="outline" size="sm" className="w-full" onClick={() => setConfirmKind("archives")} disabled={(resources?.storage.archive_bytes ?? 0) === 0}><Archive className="size-4" />{fa ? "پاک‌سازی آرشیو سشن‌ها" : "Clear archived sessions"}</Button>
         </div>
-        <p className="mt-3 text-xs text-muted-foreground">{fa ? "اتچمنت‌ها و سشن‌های فعال حذف نمی‌شوند." : "Attachments and active sessions are never removed."}</p>
+        <p className="mt-2 text-xs text-muted-foreground">{fa ? "پیوست‌ها فقط با اقدام دستی حذف می‌شوند؛ سشن‌های فعال دست‌نخورده می‌مانند." : "Attachments require an explicit delete; active sessions remain untouched."}</p>
       </section>
 
       <section className="rounded-2xl border border-border bg-card/30 p-4" aria-labelledby="disk-policy-title">
         <div className="mb-3 flex items-center gap-2"><Database className="size-4 text-muted-foreground" /><h2 id="disk-policy-title" className="font-medium">{fa ? "سیاست هشدار دیسک" : "Disk warning policy"}</h2></div>
-        <div className="grid gap-4 md:grid-cols-[minmax(0,12rem)_1fr_auto] md:items-end">
-          <label className="grid gap-1.5 text-sm font-medium"><span>{fa ? "هشدار از حجم" : "Warn above"}</span><div className="flex items-center gap-2"><Input dir="ltr" type="number" min="0.25" step="0.25" value={thresholdGB} onChange={(event) => setThresholdGB(event.target.value)} onBlur={() => void saveDiskPolicy(thresholdGB, autoCleanup).catch((nextError) => setError(String(nextError)))} /><span className="text-xs text-muted-foreground">GB</span></div></label>
-          <label className="flex items-center gap-3 text-sm"><input type="checkbox" checked={autoCleanup} onChange={(event) => { setAutoCleanup(event.target.checked); void saveDiskPolicy(thresholdGB, event.target.checked).catch((nextError) => setError(String(nextError))) }} /><span>{fa ? "پس از عبور از حد، کش و چک‌پوینت‌ها خودکار پاک شوند" : "Automatically clear cache and checkpoints above the limit"}</span></label>
-          <Button variant="ghost" size="sm" onClick={() => void refresh(true)} disabled={loading}>{fa ? "بررسی فضا" : "Check now"}</Button>
+        <div className="grid gap-3 md:grid-cols-[11rem_minmax(0,1fr)_auto] md:items-end">
+          <label className="grid gap-1.5 text-sm font-medium"><span>{fa ? "هشدار از حجم" : "Warn above"}</span><div className="flex items-center gap-2"><Input className="h-9" dir="ltr" type="number" min="0.25" step="0.25" value={thresholdGB} onChange={(event) => setThresholdGB(event.target.value)} onBlur={() => void saveDiskPolicy(thresholdGB, autoCleanup).catch((nextError) => setError(String(nextError)))} /><span className="text-xs text-muted-foreground">GB</span></div></label>
+          <label className="flex min-h-9 items-center gap-2 text-sm"><input type="checkbox" checked={autoCleanup} onChange={(event) => { setAutoCleanup(event.target.checked); void saveDiskPolicy(thresholdGB, event.target.checked).catch((nextError) => setError(String(nextError))) }} /><span>{fa ? "پس از عبور از حد، کش و چک‌پوینت‌ها خودکار پاک شوند" : "Automatically clear cache and checkpoints above the limit"}</span></label>
+          <Button variant="outline" size="sm" onClick={() => void refresh(true)} disabled={loading}>{fa ? "بررسی فضا" : "Check now"}</Button>
         </div>
       </section>
 
@@ -166,7 +169,7 @@ export function UsageSettingsSection({ locale }: { locale: "en" | "fa" }) {
         </DialogContent>
       </Dialog>
       <Dialog open={confirmKind !== null} onOpenChange={(open) => { if (!open) setConfirmKind(null) }}>
-        <DialogContent size="sm"><DialogBody><DialogTitle>{fa ? "این داده‌ها پاک شوند؟" : "Remove these files?"}</DialogTitle><DialogDescription>{fa ? "این عملیات قابل بازگشت نیست؛ سشن‌های فعال و اتچمنت‌ها دست‌نخورده می‌مانند." : "This cannot be undone. Active sessions and attachments remain untouched."}</DialogDescription></DialogBody><DialogFooter><Button variant="ghost" onClick={() => setConfirmKind(null)}>{fa ? "انصراف" : "Cancel"}</Button><Button variant="destructive" onClick={() => { if (confirmKind) void clearResource(confirmKind) }} disabled={clearing}>{clearing ? <Loader2 className="size-4 animate-spin" /> : null}{fa ? "پاک کن" : "Remove"}</Button></DialogFooter></DialogContent>
+        <DialogContent size="sm"><DialogBody><DialogTitle>{fa ? "این داده‌ها پاک شوند؟" : "Remove these files?"}</DialogTitle><DialogDescription>{fa ? (confirmKind === "attachments" ? "پیوست‌های ذخیره‌شده حذف می‌شوند و دیگر در چت‌ها قابل باز کردن نیستند. این عملیات قابل بازگشت نیست." : "این عملیات قابل بازگشت نیست؛ سشن‌های فعال و پیوست‌ها دست‌نخورده می‌مانند.") : (confirmKind === "attachments" ? "Stored attachments will no longer be available in chats. This cannot be undone." : "This cannot be undone. Active sessions and attachments remain untouched.")}</DialogDescription></DialogBody><DialogFooter><Button variant="ghost" onClick={() => setConfirmKind(null)}>{fa ? "انصراف" : "Cancel"}</Button><Button variant="destructive" onClick={() => { if (confirmKind) void clearResource(confirmKind) }} disabled={clearing}>{clearing ? <Loader2 className="size-4 animate-spin" /> : null}{fa ? "پاک کن" : "Remove"}</Button></DialogFooter></DialogContent>
       </Dialog>
     </div>
   )

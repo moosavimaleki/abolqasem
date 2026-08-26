@@ -3557,18 +3557,18 @@ export function SettingsPage() {
                         ? "کاربران مجاز فقط همین فرمان‌های ازپیش‌تعریف‌شده را با /run <name> اجرا می‌کنند؛ آرگومان دلخواه از تلگرام پذیرفته نمی‌شود."
                         : "Only allowlisted Telegram users may run these exact commands with /run <name>. Arguments from Telegram are never accepted."}
                     >
-                      <div className="flex w-full max-w-3xl flex-col gap-2">
+                      <div className="grid w-full max-w-4xl gap-2">
                         {telegramDraft.customCommands.map((command, index) => (
-                          <fieldset key={index} className="rounded-lg border border-border bg-muted/15 p-2.5" dir={direction}>
+                          <fieldset key={index} className="rounded-xl border border-border/80 bg-muted/10 p-3" dir={direction}>
                             <legend className="sr-only">{locale === "fa" ? `فرمان ${index + 1}` : `Command ${index + 1}`}</legend>
-                            <div className="mb-2 flex h-7 items-center justify-between gap-2">
-                              <div className="flex min-w-0 items-baseline gap-2">
-                                <span className="shrink-0 text-xs font-medium text-foreground">{locale === "fa" ? `فرمان ${index + 1}` : `Command ${index + 1}`}</span>
+                            <div className="mb-2 flex items-center justify-between gap-2">
+                              <div className="flex min-w-0 items-center gap-2">
+                                <span className="shrink-0 text-xs font-medium text-muted-foreground">{locale === "fa" ? `فرمان ${index + 1}` : `Command ${index + 1}`}</span>
                                 <code dir="ltr" className="truncate text-left text-xs text-muted-foreground">/run {command.name.trim() || "name"}</code>
                               </div>
-                              <Button type="button" size="icon" variant="ghost" className="size-7 shrink-0" onClick={() => removeTelegramCustomCommand(index)} aria-label={locale === "fa" ? "حذف فرمان سفارشی تلگرام" : "Remove custom Telegram command"}><Trash2 className="size-3.5" /></Button>
+                              <Button type="button" size="icon-sm" variant="ghost" className="shrink-0" onClick={() => removeTelegramCustomCommand(index)} aria-label={locale === "fa" ? "حذف فرمان سفارشی تلگرام" : "Remove custom Telegram command"}><Trash2 className="size-3.5" /></Button>
                             </div>
-                            <div className="grid gap-2 sm:grid-cols-[minmax(8rem,0.7fr)_minmax(12rem,1.3fr)]">
+                            <div className="grid gap-2 lg:grid-cols-[minmax(8rem,0.7fr)_minmax(12rem,1.3fr)_minmax(14rem,2fr)]">
                               <label className="grid min-w-0 gap-1 text-xs font-medium text-foreground">
                                 <span>{locale === "fa" ? "نام تلگرام" : "Telegram name"}</span>
                                 <Input aria-label={locale === "fa" ? "نام فرمان تلگرام" : "Telegram command name"} dir="ltr" className="h-8 font-mono text-left text-xs" value={command.name} onChange={(event) => updateTelegramCustomCommand(index, { name: event.target.value.toLowerCase() })} placeholder="status" />
@@ -3577,12 +3577,12 @@ export function SettingsPage() {
                                 <span>{locale === "fa" ? "توضیح برای کاربر" : "User-facing description"}</span>
                                 <Input aria-label={locale === "fa" ? "توضیح فرمان تلگرام" : "Telegram command description"} dir={direction} className={`h-8 text-xs ${direction === "rtl" ? "text-right" : "text-left"}`} value={command.description} onChange={(event) => updateTelegramCustomCommand(index, { description: event.target.value })} placeholder={locale === "fa" ? "مثلاً: نمایش وضعیت سرویس" : "e.g. Show service status"} />
                               </label>
+                              <label className="grid min-w-0 gap-1 text-xs font-medium text-foreground">
+                                <span>{locale === "fa" ? "دستور سیستم" : "System command"}</span>
+                                <Input aria-label={locale === "fa" ? "فرمان سیستم" : "System command"} dir="ltr" className="h-8 font-mono text-left text-xs" value={command.command} onChange={(event) => updateTelegramCustomCommand(index, { command: event.target.value })} placeholder="git status --short" />
+                              </label>
                             </div>
-                            <label className="mt-2 grid gap-1 text-xs font-medium text-foreground">
-                              <span>{locale === "fa" ? "دستور اجرا روی سیستم" : "Command to run on this system"}</span>
-                              <Input aria-label={locale === "fa" ? "فرمان سیستم" : "System command"} dir="ltr" className="h-8 font-mono text-left text-xs" value={command.command} onChange={(event) => updateTelegramCustomCommand(index, { command: event.target.value })} placeholder="git status --short" />
-                            </label>
-                            <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_7rem]">
+                            <div className="mt-2 grid gap-2 lg:grid-cols-[minmax(0,1fr)_7rem]">
                               <label className="grid min-w-0 gap-1 text-xs font-medium text-foreground">
                                 <span>{locale === "fa" ? "پوشهٔ اجرا" : "Working directory"}</span>
                                 <Input aria-label={locale === "fa" ? "مسیر اجرای فرمان" : "Working directory"} dir="ltr" className="h-8 font-mono text-left text-xs" value={command.workingDirectory} onChange={(event) => updateTelegramCustomCommand(index, { workingDirectory: event.target.value })} placeholder="/srv/project (optional)" />

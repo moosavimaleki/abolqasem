@@ -17,6 +17,7 @@ export interface ResourceUsageSnapshot {
     checkpoint_bytes?: number
     archive_bytes?: number
     archive_count?: number
+    native_transcripts?: { count: number; missing: number; bytes: number }
   }
 }
 
