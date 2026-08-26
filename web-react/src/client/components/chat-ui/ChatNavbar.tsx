@@ -40,11 +40,6 @@ function openContextMenuFromButton(event: ReactMouseEvent<HTMLButtonElement>) {
   }))
 }
 
-function shortSessionToken(value: string) {
-  if (value.length <= 18) return value
-  return `${value.slice(0, 8)}…${value.slice(-8)}`
-}
-
 function NavbarOverflowMenu({
   showOnDesktop,
   onToggleEmbeddedTerminal,
@@ -343,8 +338,6 @@ interface Props {
   branchName?: string
   hasGitRepo?: boolean
   gitStatus?: "unknown" | "ready" | "no_repo"
-  sessionToken?: string | null
-  pendingForkSessionToken?: string | null
 }
 
 export function ChatNavbar({
@@ -373,8 +366,6 @@ export function ChatNavbar({
   branchName,
   hasGitRepo = true,
   gitStatus = "unknown",
-  sessionToken,
-  pendingForkSessionToken,
 }: Props) {
   const { t, locale, direction } = useI18n()
   const isPersian = locale === "fa" || direction === "rtl"
@@ -384,12 +375,6 @@ export function ChatNavbar({
     : gitStatus === "unknown"
       ? null
       : (branchName ?? t.chat.detachedHead)
-  const visibleSessionToken = sessionToken || pendingForkSessionToken || null
-  const sessionTokenLabel = sessionToken
-    ? (isPersian ? "Session" : "Session")
-    : pendingForkSessionToken
-      ? (isPersian ? "Fork Session" : "Fork Session")
-      : null
   const isMac = platform === "darwin"
   const rightPanelVisible = rightPanel !== "hidden"
   const handleCloseRightPanel = rightPanel === "browser"
@@ -473,28 +458,7 @@ export function ChatNavbar({
           </Button>
         </div>
 
-        <div className="flex-1 min-w-0 flex items-center justify-center px-2">
-          {visibleSessionToken ? (
-            <div className="hidden md:inline-flex max-w-[360px] items-center gap-1 rounded-full border border-border/70 bg-background/60 px-1 py-1 text-xs text-muted-foreground">
-              <Button
-                type="button"
-                variant="ghost"
-                size="none"
-                onClick={async () => {
-                  if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) return
-                  await navigator.clipboard.writeText(visibleSessionToken)
-                }}
-                className="min-w-0 gap-2 rounded-full px-2 py-0.5 hover:bg-muted/40"
-                title={visibleSessionToken}
-                aria-label={visibleSessionToken}
-              >
-                <span className="shrink-0">{sessionTokenLabel}</span>
-                <span dir="ltr" className="truncate text-foreground">{shortSessionToken(visibleSessionToken)}</span>
-                <Copy className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              </Button>
-            </div>
-          ) : null}
-        </div>
+        <div className="min-w-0 flex-1" />
 
         {(localPath || canSearchCurrentChat || messages.length > 0) && hasHeaderActions ? (
           <div className="flex items-center gap-2 flex-shrink-0">

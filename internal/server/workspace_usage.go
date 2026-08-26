@@ -18,14 +18,22 @@ type workspaceUsageSnapshot struct {
 }
 
 type workspaceCodexUsageSnapshot struct {
-	RateLimits any       `json:"rate_limits"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	RateLimits any                            `json:"rate_limits"`
+	Account    *workspaceCodexAccountSnapshot `json:"account,omitempty"`
+	UpdatedAt  time.Time                      `json:"updated_at"`
+}
+
+type workspaceCodexAccountSnapshot struct {
+	Type     string `json:"type,omitempty"`
+	Email    string `json:"email,omitempty"`
+	PlanType string `json:"plan_type,omitempty"`
 }
 
 var (
-	workspaceUsageMu        sync.Mutex
-	workspaceReadCodexUsage = readWorkspaceCodexRateLimits
-	workspaceUsageCachePath = func() string {
+	workspaceUsageMu          sync.Mutex
+	workspaceReadCodexUsage   = readWorkspaceCodexRateLimits
+	workspaceReadCodexAccount = readWorkspaceCodexAccount
+	workspaceUsageCachePath   = func() string {
 		return filepath.Join(state.GetStateDir(), "usage.json")
 	}
 )
@@ -37,10 +45,34 @@ func workspaceStoreCodexUsage(rateLimits any) {
 	workspaceUsageMu.Lock()
 	defer workspaceUsageMu.Unlock()
 
-	snapshot := workspaceUsageSnapshot{Codex: &workspaceCodexUsageSnapshot{
-		RateLimits: rateLimits,
-		UpdatedAt:  time.Now().UTC(),
-	}}
+	snapshot := workspaceLoadUsageUnlocked()
+	if snapshot.Codex == nil {
+		snapshot.Codex = &workspaceCodexUsageSnapshot{}
+	}
+	snapshot.Codex.RateLimits = rateLimits
+	snapshot.Codex.UpdatedAt = time.Now().UTC()
+	workspaceWriteUsageUnlocked(snapshot)
+}
+
+func workspaceStoreCodexAccount(account *workspaceCodexAccountSnapshot) {
+	if account == nil {
+		return
+	}
+	workspaceUsageMu.Lock()
+	defer workspaceUsageMu.Unlock()
+
+	snapshot := workspaceLoadUsageUnlocked()
+	if snapshot.Codex == nil {
+		snapshot.Codex = &workspaceCodexUsageSnapshot{}
+	}
+	snapshot.Codex.Account = account
+	if snapshot.Codex.UpdatedAt.IsZero() {
+		snapshot.Codex.UpdatedAt = time.Now().UTC()
+	}
+	workspaceWriteUsageUnlocked(snapshot)
+}
+
+func workspaceWriteUsageUnlocked(snapshot workspaceUsageSnapshot) {
 	data, err := json.Marshal(snapshot)
 	if err != nil {
 		return
@@ -59,6 +91,10 @@ func workspaceStoreCodexUsage(rateLimits any) {
 func workspaceLoadUsage() workspaceUsageSnapshot {
 	workspaceUsageMu.Lock()
 	defer workspaceUsageMu.Unlock()
+	return workspaceLoadUsageUnlocked()
+}
+
+func workspaceLoadUsageUnlocked() workspaceUsageSnapshot {
 	data, err := os.ReadFile(workspaceUsageCachePath())
 	if err != nil {
 		return workspaceUsageSnapshot{}
@@ -95,7 +131,52 @@ func handleAPIUsageRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	workspaceStoreCodexUsage(rateLimits)
+	if account, accountErr := workspaceReadCodexAccount(ctx); accountErr == nil {
+		workspaceStoreCodexAccount(account)
+	}
 	writeJSON(w, workspaceLoadUsage())
+}
+
+func readWorkspaceCodexAccount(ctx context.Context) (*workspaceCodexAccountSnapshot, error) {
+	process := workspaceCodexSessions.anyLiveProcess()
+	ownedProbe := false
+	if process == nil {
+		cwd, err := os.Getwd()
+		if err != nil {
+			cwd = os.TempDir()
+		}
+		process, err = startWorkspaceCodexProcess(ctx, cwd, os.Environ())
+		if err != nil {
+			return nil, err
+		}
+		ownedProbe = true
+		if err := process.Initialize(ctx); err != nil {
+			process.Close()
+			return nil, process.wrapErr(err)
+		}
+	}
+	if ownedProbe {
+		defer process.Close()
+	}
+
+	var response map[string]any
+	if err := process.client.Call(ctx, "account/read", map[string]any{"refreshToken": false}, &response); err != nil {
+		return nil, process.wrapErr(err)
+	}
+	account, ok := response["account"].(map[string]any)
+	if !ok || len(account) == 0 {
+		return &workspaceCodexAccountSnapshot{}, nil
+	}
+	return &workspaceCodexAccountSnapshot{
+		Type:     workspaceUsageString(account["type"]),
+		Email:    workspaceUsageString(account["email"]),
+		PlanType: workspaceUsageString(account["planType"]),
+	}, nil
+}
+
+func workspaceUsageString(value any) string {
+	text, _ := value.(string)
+	return text
 }
 
 func readWorkspaceCodexRateLimits(ctx context.Context) (any, error) {

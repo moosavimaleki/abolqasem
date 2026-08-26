@@ -1,7 +1,11 @@
 import type { RateLimitSnapshot, RateLimitWindowSnapshot, TranscriptEntry } from "../../shared/types"
 
 export interface UsageSnapshot {
-  codex: { rate_limits: RateLimitSnapshot; updated_at: string } | null
+  codex: {
+    rate_limits: RateLimitSnapshot
+    account?: { type?: string; email?: string; plan_type?: string }
+    updated_at: string
+  } | null
 }
 
 export interface ResourceUsageSnapshot {

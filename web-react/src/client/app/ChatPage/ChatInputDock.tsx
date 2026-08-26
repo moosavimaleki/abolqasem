@@ -20,6 +20,9 @@ interface ChatInputDockProps {
   availableProviders: AbolqasemState["availableProviders"]
   contextWindowSnapshot: ContextWindowSnapshot | null
   rateLimitSnapshot: RateLimitSnapshot | null
+  accountEmail?: string | null
+  sessionId?: string | null
+  sessionPath?: string | null
   readOnly?: boolean
   codexLock?: CodexLockStatus | null
   lockBusy?: boolean
@@ -51,6 +54,9 @@ export const ChatInputDock = memo(function ChatInputDock({
   availableProviders,
   contextWindowSnapshot,
   rateLimitSnapshot,
+  accountEmail = null,
+  sessionId = null,
+  sessionPath = null,
   readOnly = false,
   codexLock = null,
   lockBusy = false,
@@ -87,6 +93,9 @@ export const ChatInputDock = memo(function ChatInputDock({
           showPreferenceControls
           contextWindowSnapshot={contextWindowSnapshot}
           rateLimitSnapshot={rateLimitSnapshot}
+          accountEmail={accountEmail}
+          sessionId={sessionId}
+          sessionPath={sessionPath}
           readOnly={readOnly}
           codexLock={codexLock}
           lockBusy={lockBusy}

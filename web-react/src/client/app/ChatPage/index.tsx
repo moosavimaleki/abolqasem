@@ -945,7 +945,7 @@ export function ChatPage() {
   )
   const resolvedKeybindings = useMemo(() => getResolvedKeybindings(state.keybindings), [state.keybindings])
   const baseContextWindowSnapshotRef = useRef<ReturnType<typeof deriveLatestContextWindowSnapshot>>(null)
-	const [cachedRateLimitSnapshot, setCachedRateLimitSnapshot] = useState<UsageSnapshot["codex"]>(null)
+  const [cachedUsageSnapshot, setCachedUsageSnapshot] = useState<UsageSnapshot["codex"]>(null)
   const contextWindowSnapshot = useMemo(() => {
     const derivedSnapshot = deriveLatestContextWindowSnapshot(state.chatSnapshot?.messages ?? [])
     const previousSnapshot = baseContextWindowSnapshotRef.current
@@ -959,18 +959,44 @@ export function ChatPage() {
     () => deriveLatestRateLimitSnapshot(state.chatSnapshot?.messages ?? []),
     [state.chatSnapshot?.messages],
   )
-  const rateLimitSnapshot = transcriptRateLimitSnapshot ?? cachedRateLimitSnapshot?.rate_limits ?? null
+  const rateLimitSnapshot = transcriptRateLimitSnapshot ?? cachedUsageSnapshot?.rate_limits ?? null
+  const transcriptAccountEmail = useMemo(() => {
+    const entries = state.chatSnapshot?.messages ?? []
+    for (let index = entries.length - 1; index >= 0; index -= 1) {
+      const entry = entries[index]
+      if (entry?.kind === "account_info" && entry.accountInfo.email) return entry.accountInfo.email
+    }
+    return null
+  }, [state.chatSnapshot?.messages])
+  const accountEmail = cachedUsageSnapshot?.account?.email ?? transcriptAccountEmail
+  const codexSessionId = state.runtime?.nativeSessionId
+    ?? codexLock?.sessionId
+    ?? state.runtime?.sessionToken
+    ?? state.runtime?.pendingForkSessionToken
+    ?? null
+  const codexSessionPath = state.runtime?.nativeTranscriptPath ?? codexLock?.sessionPath ?? null
+
+  const fetchUsageSnapshot = useCallback(async (method: "GET" | "POST", signal?: AbortSignal) => {
+    const response = await fetch(method === "POST" ? "/api/usage/refresh" : "/api/usage", {
+      method,
+      cache: "no-store",
+      signal,
+    })
+    if (!response.ok) return null
+    const snapshot = await response.json() as UsageSnapshot
+    setCachedUsageSnapshot(snapshot.codex)
+    return snapshot
+  }, [])
 
   useEffect(() => {
     const controller = new AbortController()
-    fetch("/api/usage", { cache: "no-store", signal: controller.signal })
-      .then((response) => response.ok ? response.json() as Promise<UsageSnapshot> : null)
-      .then((snapshot) => {
-        if (snapshot) setCachedRateLimitSnapshot(snapshot.codex)
-      })
+    void fetchUsageSnapshot("GET", controller.signal)
+      .then((snapshot) => snapshot?.codex?.account
+        ? null
+        : fetchUsageSnapshot("POST", controller.signal))
       .catch(() => undefined)
     return () => controller.abort()
-  }, [state.activeChatId])
+  }, [fetchUsageSnapshot, state.activeChatId])
   useLayoutEffect(() => {
     messagesRef.current = state.messages
   }, [state.messages])
@@ -1612,6 +1638,7 @@ export function ChatPage() {
     setCodexLockActionPending(true)
     try {
       await state.socket.command({ type: "chat.reloadCodexAuth", chatId: state.activeChatId })
+      await fetchUsageSnapshot("POST").catch(() => undefined)
     } catch (error) {
       await dialog.alert({
         title: "حساب Codex بارگذاری نشد",
@@ -1622,7 +1649,7 @@ export function ChatPage() {
     } finally {
       setCodexLockActionPending(false)
     }
-  }, [dialog, state.activeChatId, state.socket, t.common.ok])
+  }, [dialog, fetchUsageSnapshot, state.activeChatId, state.socket, t.common.ok])
 
   useEffect(() => {
     return () => clearShowScrollTimeout()
@@ -1981,8 +2008,6 @@ export function ChatPage() {
           branchName={state.chatDiffSnapshot?.branchName}
           hasGitRepo={state.chatDiffSnapshot?.status !== "no_repo"}
           gitStatus={state.chatDiffSnapshot?.status}
-          sessionToken={state.runtime?.sessionToken}
-          pendingForkSessionToken={state.runtime?.pendingForkSessionToken}
         />
         {projectFilePreviewContent ?? (
           <ChatTranscriptViewport
@@ -2045,6 +2070,9 @@ export function ChatPage() {
           availableProviders={state.availableProviders}
           contextWindowSnapshot={contextWindowSnapshot}
           rateLimitSnapshot={rateLimitSnapshot}
+          accountEmail={accountEmail}
+          sessionId={state.runtime?.provider === "codex" ? codexSessionId : null}
+          sessionPath={state.runtime?.provider === "codex" ? codexSessionPath : null}
           readOnly={codexChatReadOnly}
           codexLock={codexLock}
           lockBusy={codexLockActionPending}

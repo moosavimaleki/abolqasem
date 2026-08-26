@@ -23,8 +23,7 @@ import { useChatInputStore } from "../../stores/chatInputStore"
 import { NEW_CHAT_COMPOSER_ID, type ComposerState, useChatPreferencesStore } from "../../stores/chatPreferencesStore"
 import { CHAT_INPUT_ATTRIBUTE, focusNextChatInput } from "../../app/chatFocusPolicy"
 import { ChatPreferenceControls } from "./ChatPreferenceControls"
-import { ContextWindowMeter } from "./ContextWindowMeter"
-import { UsageLimitMeter } from "./UsageLimitMeter"
+import { SessionHealthPopover } from "./SessionHealthPopover"
 import { AttachmentFileCard, AttachmentImageCard } from "../messages/AttachmentCard"
 import { AttachmentPreviewModal } from "../messages/AttachmentPreviewModal"
 import { classifyAttachmentPreview } from "../messages/attachmentPreview"
@@ -151,6 +150,9 @@ interface Props {
   showPreferenceControls?: boolean
   contextWindowSnapshot?: ContextWindowSnapshot | null
   rateLimitSnapshot?: RateLimitSnapshot | null
+  accountEmail?: string | null
+  sessionId?: string | null
+  sessionPath?: string | null
   readOnly?: boolean
   codexLock?: CodexLockStatus | null
   lockBusy?: boolean
@@ -229,6 +231,9 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
   showPreferenceControls = true,
   contextWindowSnapshot = null,
   rateLimitSnapshot = null,
+  accountEmail = null,
+  sessionId = null,
+  sessionPath = null,
   readOnly = false,
   codexLock = null,
   lockBusy = false,
@@ -1162,24 +1167,34 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
               includePlanMode={showPlanMode}
               className="max-w-[840px] mx-auto"
             />
-            {activeContextWindow || rateLimitSnapshot ? (
-              <div className="flex items-center gap-1 md:hidden mx-[13px]">
-                {rateLimitSnapshot ? <UsageLimitMeter snapshot={rateLimitSnapshot} /> : null}
-                {activeContextWindow ? <ContextWindowMeter usage={activeContextWindow} /> : null}
+            {activeContextWindow || rateLimitSnapshot || accountEmail || sessionId || sessionPath ? (
+              <div className="flex items-center md:hidden mx-[13px]">
+                <SessionHealthPopover
+                  snapshot={rateLimitSnapshot}
+                  contextUsage={activeContextWindow}
+                  accountEmail={accountEmail}
+                  sessionId={sessionId}
+                  sessionPath={sessionPath}
+                />
               </div>
             ) : null}
             <div className="min-w-3" />
           </div>
 
-          {activeContextWindow || rateLimitSnapshot ? (
+          {activeContextWindow || rateLimitSnapshot || accountEmail || sessionId || sessionPath ? (
             <div
               className={cn(
-                "absolute top-1/2 -translate-y-1/2 hidden items-center gap-1 md:flex",
+                "absolute top-1/2 -translate-y-1/2 hidden items-center md:flex",
                 isRtl ? "left-[29px] -translate-x-1/2" : "right-[29px] translate-x-1/2"
               )}
             >
-              {rateLimitSnapshot ? <UsageLimitMeter snapshot={rateLimitSnapshot} /> : null}
-              {activeContextWindow ? <ContextWindowMeter usage={activeContextWindow} /> : null}
+              <SessionHealthPopover
+                snapshot={rateLimitSnapshot}
+                contextUsage={activeContextWindow}
+                accountEmail={accountEmail}
+                sessionId={sessionId}
+                sessionPath={sessionPath}
+              />
             </div>
           ) : null}
         </div>
