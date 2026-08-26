@@ -764,3 +764,40 @@ func TestNormalizeTelegramMappingsRejectsInvalidIDs(t *testing.T) {
 		t.Fatalf("mappings = %#v, want %#v", got, want)
 	}
 }
+
+func TestTelegramModelCommandUsesDirectCodexPicker(t *testing.T) {
+	command, argument := telegramCommand("/model")
+	if command != "model" || argument != "" {
+		t.Fatalf("telegram /model parse = %q %q", command, argument)
+	}
+	models := telegramCodexModelChoices()
+	if len(models) == 0 {
+		t.Fatal("Codex model picker must expose at least one model")
+	}
+	defaultModel := telegramCodexProviderCatalog().DefaultModel
+	foundDefault := false
+	for _, model := range models {
+		if model.ID == defaultModel {
+			foundDefault = true
+			break
+		}
+	}
+	if !foundDefault {
+		t.Fatalf("model picker does not include Codex default model %q: %#v", defaultModel, models)
+	}
+}
+
+func TestTelegramModelCommandIsDocumentedInSettingsAndHelp(t *testing.T) {
+	help := telegramHelpMarkdown()
+	if !strings.Contains(help, "`/model`") || !strings.Contains(help, "`/thinking`") {
+		t.Fatalf("help does not document direct model/thinking commands: %s", help)
+	}
+	config := telegramBridgeConfig{
+		Mappings:    map[string]string{"42": "chat-1"},
+		Preferences: map[string]telegramChatPreference{},
+	}
+	settings := telegramSessionSettingsMarkdown(config, "42")
+	if !strings.Contains(settings, "`/model`") || !strings.Contains(settings, "`/thinking`") {
+		t.Fatalf("settings does not document direct model/thinking commands: %s", settings)
+	}
+}

@@ -347,8 +347,14 @@ func (b *telegramBridge) handleMessage(ctx context.Context, config telegramBridg
 	case "commands":
 		b.sendText(ctx, config.BotToken, chatID, telegramCustomCommandHelpMarkdown(config.CustomCommands))
 		return
-	case "settings", "model", "thinking":
+	case "settings":
 		b.sendTelegramSessionSettings(ctx, config, chatID)
+		return
+	case "model":
+		b.sendTelegramModelPicker(ctx, config, chatID)
+		return
+	case "thinking":
+		b.sendTelegramEffortPicker(ctx, config, chatID)
 		return
 	case "run":
 		name := strings.ToLower(strings.TrimSpace(argument))
@@ -488,9 +494,19 @@ func (b *telegramBridge) handleCallbackQuery(ctx context.Context, config telegra
 		b.sendProjectPicker(ctx, config, chatID)
 		return
 	}
-	if callback.Data == "settings" || callback.Data == "model" || callback.Data == "thinking" {
+	if callback.Data == "settings" {
 		b.answerCallbackQuery(ctx, config.BotToken, callback.ID, "تنظیمات نشست")
 		b.sendTelegramSessionSettings(ctx, config, chatID)
+		return
+	}
+	if callback.Data == "model" {
+		b.answerCallbackQuery(ctx, config.BotToken, callback.ID, "انتخاب مدل")
+		b.sendTelegramModelPicker(ctx, config, chatID)
+		return
+	}
+	if callback.Data == "thinking" {
+		b.answerCallbackQuery(ctx, config.BotToken, callback.ID, "انتخاب سطح فکر")
+		b.sendTelegramEffortPicker(ctx, config, chatID)
 		return
 	}
 	if callback.Data == "history" {
@@ -942,6 +958,8 @@ func telegramHelpMarkdown() string {
 		"- `/chat <id>` — انتخاب مستقیم یک نشست\n" +
 		"- `/current` — نمایش نشست فعلی\n" +
 		"- `/settings` — انتخاب مدل و سطح فکر برای پیام‌های بعدی\n" +
+		"- `/model` — انتخاب مدل Codex برای پیام‌های بعدی\n" +
+		"- `/thinking` — انتخاب سطح فکر برای پیام‌های بعدی\n" +
 		"- `/history` — نمایش تاریخچهٔ اخیر\n" +
 		"- `/status` — وضعیت پل و اتصال\n" +
 		"- `/commands` — فهرست فرمان‌های سیستمی مجاز\n" +
@@ -1101,10 +1119,10 @@ func telegramEffortCallback(data string) (string, bool) {
 func telegramSessionSettingsMarkdown(config telegramBridgeConfig, telegramChatID string) string {
 	target := strings.TrimSpace(config.Mappings[telegramChatID])
 	if target == "" {
-		return "# تنظیمات نشست\n\nهنوز نشستی انتخاب نشده است. ابتدا از دکمهٔ انتخاب نشست استفاده کنید."
+		return "# تنظیمات نشست\n\nهنوز نشستی انتخاب نشده است. ابتدا از دکمهٔ انتخاب نشست استفاده کنید.\n\nپس از انتخاب نشست، با `/model` مدل Codex و با `/thinking` سطح فکر را تعیین کنید."
 	}
 	model, effort := telegramCodexSelection(config.Preferences[telegramChatID])
-	return fmt.Sprintf("# تنظیمات نشست\n\nنشست فعلی: `%s`\n\n**مدل:** `%s`\n\n**سطح فکر:** `%s`\n\nانتخاب‌ها فقط برای پیام‌های بعدی همین چت تلگرام ذخیره می‌شوند.", telegramMarkdownInline(target), telegramMarkdownInline(model), telegramMarkdownInline(effort))
+	return fmt.Sprintf("# تنظیمات نشست\n\nنشست فعلی: `%s`\n\n**مدل:** `%s`\n\n**سطح فکر:** `%s`\n\nانتخاب‌ها فقط برای پیام‌های بعدی همین چت تلگرام ذخیره می‌شوند.\n\nفرمان‌های سریع: `/model` برای انتخاب مدل و `/thinking` برای انتخاب سطح فکر.", telegramMarkdownInline(target), telegramMarkdownInline(model), telegramMarkdownInline(effort))
 }
 
 func telegramSessionSettingsMarkup(config telegramBridgeConfig, telegramChatID string) any {
@@ -1548,6 +1566,8 @@ func (b *telegramBridge) syncBotCommands(ctx context.Context, token string) {
 		{"command": "chat", "description": "انتخاب نشست با شناسه"},
 		{"command": "current", "description": "نمایش نشست فعلی"},
 		{"command": "settings", "description": "تنظیم مدل و سطح فکر"},
+		{"command": "model", "description": "انتخاب مدل Codex"},
+		{"command": "thinking", "description": "انتخاب سطح فکر"},
 		{"command": "history", "description": "نمایش تاریخچهٔ اخیر"},
 		{"command": "status", "description": "نمایش وضعیت پل"},
 		{"command": "whoami", "description": "نمایش شناسه‌های تلگرام"},
