@@ -602,6 +602,100 @@ func TestTelegramSendTranscriptEmbedsPreviewButtonsWithTranscript(t *testing.T) 
 	}
 }
 
+func TestTelegramTranscriptPreviewButtonsWorkForHomeWorkspaceMarkdownLinks(t *testing.T) {
+	withWorkspaceComposerStore(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	files := []struct {
+		relative string
+		line     int
+	}{
+		{"Downloads/Eitaa Desktop/svg.py", 29},
+		{"eitaa-apk/svg.py", 30},
+		{"eitaa-apk/svg_to_static_lottie.py", 30},
+		{"Projects/Hamed/CiFa/backend/src/svg_generator.py", 63},
+		{"Projects/Hamed/CiFa/tools/test_svg_path.py", 123},
+	}
+	var markdown strings.Builder
+	for _, item := range files {
+		path := filepath.Join(home, item.relative)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("line one\nline two\nline three\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		encodedPath := strings.ReplaceAll(path, " ", "%20")
+		fmt.Fprintf(&markdown, "- [%s:%d](%s:%d)\n", item.relative, item.line, encodedPath, item.line)
+	}
+	// Multiple citations for the same file must remain readable but create one
+	// useful file action instead of exhausting the eight-button Telegram limit.
+	firstPath := filepath.Join(home, files[0].relative)
+	fmt.Fprintf(&markdown, "- [خط 49](%s:49)\n", strings.ReplaceAll(firstPath, " ", "%20"))
+
+	project, err := workspaceOpenProject(home, "home")
+	if err != nil {
+		t.Fatal(err)
+	}
+	chat, err := (&workspaceEventStore{store: workspaceStore()}).CreateChat(project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var calls []string
+	var richPayload map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		calls = append(calls, request.URL.Path)
+		if request.URL.Path == "/bot123:test/sendRichMessage" {
+			if err := json.NewDecoder(request.Body).Decode(&richPayload); err != nil {
+				t.Errorf("decode rich payload: %v", err)
+			}
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"ok":true,"result":{}}`))
+	}))
+	defer server.Close()
+
+	bridge := &telegramBridge{client: server.Client(), apiBaseURL: server.URL, previewByToken: map[string]telegramPreviewItem{}}
+	bridge.sendTranscript(context.Background(), "123:test", "99", chat.ID, markdown.String())
+	if len(calls) != 1 || calls[0] != "/bot123:test/sendRichMessage" {
+		t.Fatalf("transcript calls = %#v", calls)
+	}
+	rich, ok := richPayload["rich_message"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing rich message: %#v", richPayload)
+	}
+	blocks, ok := rich["blocks"].([]any)
+	if !ok {
+		t.Fatalf("preview must use native rich blocks, got %#v", rich)
+	}
+	var previewCallback string
+	buttonCount := 0
+	for _, raw := range blocks {
+		block, _ := raw.(map[string]any)
+		if block["type"] != "buttons" {
+			continue
+		}
+		buttons, _ := block["buttons"].([]any)
+		buttonCount += len(buttons)
+		if len(buttons) > 0 && previewCallback == "" {
+			button, _ := buttons[0].(map[string]any)
+			previewCallback, _ = button["callback_data"].(string)
+		}
+	}
+	if buttonCount != len(files) || !strings.HasPrefix(previewCallback, telegramPreviewCallbackPrefix) {
+		t.Fatalf("preview buttons = %d callback=%q blocks=%#v", buttonCount, previewCallback, blocks)
+	}
+	item, ok := bridge.telegramPreviewForCallback(previewCallback, "99", chat.ID)
+	if !ok {
+		t.Fatal("preview action was not retained for its callback")
+	}
+	bridge.sendTelegramPreview(context.Background(), "123:test", "99", item)
+	if len(calls) != 2 || calls[1] != "/bot123:test/sendDocument" {
+		t.Fatalf("preview document calls = %#v", calls)
+	}
+}
+
 func TestTelegramCodePreviewCapsHugeFilesWithDownloadHint(t *testing.T) {
 	lines := make([]filePreviewLine, telegramPreviewMaxCodeLines+25)
 	for index := range lines {

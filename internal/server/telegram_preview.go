@@ -10,6 +10,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -78,11 +79,33 @@ func (b *telegramBridge) sendTranscript(ctx context.Context, token, telegramChat
 
 func (b *telegramBridge) telegramTranscriptPreviews(telegramChatID, workspaceChatID, markdown string) (string, []telegramPreviewButton) {
 	buttons := make([]telegramPreviewButton, 0, telegramPreviewButtonLimit)
+	previewedFiles := map[string]struct{}{}
+	addFilePreview := func(path string, line int) bool {
+		if len(buttons) >= telegramPreviewButtonLimit {
+			return false
+		}
+		// A response frequently cites several lines of one file. One semantic
+		// action per file is easier to use on mobile and prevents the first file
+		// from consuming the entire RichBlockButtons allowance.
+		if _, exists := previewedFiles[path]; exists {
+			return false
+		}
+		token := b.rememberTelegramPreview(telegramPreviewItem{
+			Kind: telegramPreviewFile, TelegramChatID: telegramChatID, WorkspaceChatID: workspaceChatID, FilePath: path, Line: line, CreatedAt: time.Now(),
+		})
+		if token == "" {
+			return false
+		}
+		previewedFiles[path] = struct{}{}
+		label := "📄 " + filepath.Base(path)
+		if line > 0 {
+			label += " · خط " + strconv.Itoa(line)
+		}
+		buttons = append(buttons, telegramPreviewButton{Label: label, Token: token})
+		return true
+	}
 	markdown = b.telegramReplaceMermaidBlocks(telegramChatID, workspaceChatID, markdown, &buttons)
 	markdown = telegramMarkdownFileLink.ReplaceAllStringFunc(markdown, func(raw string) string {
-		if len(buttons) >= telegramPreviewButtonLimit {
-			return raw
-		}
 		parts := telegramMarkdownFileLink.FindStringSubmatch(raw)
 		if len(parts) != 3 {
 			return raw
@@ -91,19 +114,10 @@ func (b *telegramBridge) telegramTranscriptPreviews(telegramChatID, workspaceCha
 		if !ok {
 			return raw
 		}
-		token := b.rememberTelegramPreview(telegramPreviewItem{
-			Kind: telegramPreviewFile, TelegramChatID: telegramChatID, WorkspaceChatID: workspaceChatID, FilePath: path, Line: line, CreatedAt: time.Now(),
-		})
-		if token == "" {
-			return raw
-		}
-		buttons = append(buttons, telegramPreviewButton{Label: "📄 " + firstNonEmptyString(parts[1], filepath.Base(path)), Token: token})
+		_ = addFilePreview(path, line)
 		return "`" + telegramMarkdownInline(parts[1]) + "`"
 	})
 	markdown = telegramPlainFileReference.ReplaceAllStringFunc(markdown, func(raw string) string {
-		if len(buttons) >= telegramPreviewButtonLimit {
-			return raw
-		}
 		parts := telegramPlainFileReference.FindStringSubmatch(raw)
 		if len(parts) != 4 {
 			return raw
@@ -117,13 +131,7 @@ func (b *telegramBridge) telegramTranscriptPreviews(telegramChatID, workspaceCha
 		if !ok {
 			return raw
 		}
-		token := b.rememberTelegramPreview(telegramPreviewItem{
-			Kind: telegramPreviewFile, TelegramChatID: telegramChatID, WorkspaceChatID: workspaceChatID, FilePath: path, Line: line, CreatedAt: time.Now(),
-		})
-		if token == "" {
-			return raw
-		}
-		buttons = append(buttons, telegramPreviewButton{Label: "📄 " + filepath.Base(path), Token: token})
+		_ = addFilePreview(path, line)
 		return parts[1] + "`" + telegramMarkdownInline(parts[2]) + "`" + parts[3]
 	})
 	return markdown, buttons
@@ -209,7 +217,7 @@ func telegramResolvePreviewFilePath(workspaceChatID, raw string) (string, int, b
 	}
 	var path string
 	if filepath.IsAbs(decoded) {
-		path, err = resolvePreviewPath([]string{project.LocalPath}, decoded)
+		path, err = resolveTelegramPreviewPath(project.LocalPath, decoded)
 		if err != nil {
 			return "", 0, false
 		}
@@ -227,7 +235,7 @@ func telegramResolvePreviewFilePath(workspaceChatID, raw string) (string, int, b
 		candidates = append(candidates, filepath.Join(project.LocalPath, strings.TrimPrefix(decoded, prefix)))
 	}
 	for _, candidate := range candidates {
-		path, err = resolvePreviewPath([]string{project.LocalPath}, candidate)
+		path, err = resolveTelegramPreviewPath(project.LocalPath, candidate)
 		if err == nil {
 			return path, line, true
 		}
@@ -240,8 +248,40 @@ func telegramPreviewPathAllowed(workspaceChatID, path string) bool {
 	if err != nil {
 		return false
 	}
-	_, err = resolvePreviewPath([]string{project.LocalPath}, path)
+	_, err = resolveTelegramPreviewPath(project.LocalPath, path)
 	return err == nil
+}
+
+// resolveTelegramPreviewPath permits an explicitly selected workspace even
+// when it is the home directory. The general file-preview API intentionally
+// rejects home as a broad root; Telegram reaches this function only after the
+// chat/project mapping was selected by an authorised user. Symlink resolution
+// and strict containment still prevent an escape from that selected root.
+func resolveTelegramPreviewPath(projectRoot, requestedPath string) (string, error) {
+	rootAbs, err := filepath.Abs(strings.TrimSpace(projectRoot))
+	if err != nil {
+		return "", errFilePreviewForbidden
+	}
+	rootEval, err := filepath.EvalSymlinks(rootAbs)
+	if err != nil {
+		return "", errFilePreviewForbidden
+	}
+	targetPath := cleanRequestedPreviewPath(requestedPath)
+	if targetPath == "" || !filepath.IsAbs(targetPath) {
+		return "", errFilePreviewForbidden
+	}
+	targetEval, err := filepath.EvalSymlinks(targetPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", errFilePreviewNotFound
+		}
+		return "", err
+	}
+	relative, err := filepath.Rel(rootEval, targetEval)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
+		return "", errFilePreviewForbidden
+	}
+	return targetEval, nil
 }
 
 func (b *telegramBridge) rememberTelegramPreview(item telegramPreviewItem) string {
@@ -293,7 +333,12 @@ func (b *telegramBridge) sendTelegramPreview(ctx context.Context, token, telegra
 		}
 		// Telegram previews should show the file, not only the context around the
 		// referenced line. Keep a generous safety cap for SVG dimensions.
-		preview, previewErr := buildFilePreview([]string{project.LocalPath}, item.FilePath, item.Line, filePreviewOptions{Full: true})
+		resolvedPath, resolveErr := resolveTelegramPreviewPath(project.LocalPath, item.FilePath)
+		if resolveErr != nil {
+			err = resolveErr
+			break
+		}
+		preview, previewErr := buildFilePreviewResolved(resolvedPath, item.Line, filePreviewOptions{Full: true})
 		if previewErr != nil {
 			err = previewErr
 			break

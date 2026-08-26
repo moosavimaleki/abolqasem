@@ -94,6 +94,17 @@ func buildFilePreview(rootPaths []string, requestedPath string, line int, option
 	if err != nil {
 		return filePreviewResponse{}, err
 	}
+	return buildFilePreviewResolved(targetPath, line, options)
+}
+
+// buildFilePreviewResolved renders a path whose containment was already
+// checked by the caller. It deliberately does not repeat root validation so a
+// selected workspace may be the user's home directory without turning the
+// general-purpose preview API into a broad filesystem reader.
+func buildFilePreviewResolved(targetPath string, line int, options filePreviewOptions) (filePreviewResponse, error) {
+	if line <= 0 && !options.Full {
+		line = 1
+	}
 	if !isSupportedPreviewFile(targetPath) {
 		return filePreviewResponse{}, errFilePreviewUnsupported
 	}
