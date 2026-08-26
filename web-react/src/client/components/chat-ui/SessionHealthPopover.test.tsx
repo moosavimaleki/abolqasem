@@ -48,6 +48,7 @@ describe("SessionHealthPopover", () => {
     )
 
     expect(html).toContain("سهمیهٔ باقی‌مانده")
+    expect(html).toContain("بازنشانی پس از")
     expect(html).toContain("۵ ساعت")
     expect(html).toContain("۱ هفته")
     expect(html).toContain("کانتکست این چت")

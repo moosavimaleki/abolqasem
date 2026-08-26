@@ -114,7 +114,11 @@ export function SessionHealthPanel({
               >
                 <div className="flex items-center justify-between gap-3 text-[11px]">
                   <span className="font-medium text-foreground">{duration}</span>
-                  {resetAfter ? <span className="tabular-nums text-muted-foreground">{resetAfter}</span> : null}
+                  {resetAfter ? (
+                    <span className="tabular-nums text-muted-foreground">
+                      {fa ? `بازنشانی پس از ${resetAfter}` : `Resets in ${resetAfter}`}
+                    </span>
+                  ) : null}
                 </div>
                 <ProgressRow
                   marker="quota"
