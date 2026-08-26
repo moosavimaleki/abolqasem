@@ -5,9 +5,9 @@
 - [ ] حذف کامل مسیرهای tmux و Gemini از runtime و UI
 - [ ] نمایش activity واقعی Codex (بدون وضعیت ساختگی)
 - [ ] پیوست تصویر و متن بلند با ارسال و preview صحیح
-- [ ] حذف duplicate پیام optimistic و پیام واقعی session
+- [x] حذف duplicate پیام optimistic و پیام واقعی session
 - [ ] تکمیل صف و Steer و خالی‌شدن صف بعد از خطا
-- [ ] جلوگیری از duplicate شدن `turn_aborted`
+- [x] جلوگیری از duplicate شدن `turn_aborted`
 - [ ] takeover نشست‌های مشکل‌دار در وب
 - [ ] takeover نشست‌های قفل‌شده از Telegram
 - [ ] custom commandهای Telegram با ذخیره و اجرای امن
