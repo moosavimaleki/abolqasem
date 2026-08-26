@@ -8,8 +8,8 @@
 - [x] حذف duplicate پیام optimistic و پیام واقعی session
 - [x] تکمیل صف و Steer و خالی‌شدن صف بعد از خطا
 - [x] جلوگیری از duplicate شدن `turn_aborted`
-- [ ] takeover نشست‌های مشکل‌دار در وب
-- [ ] takeover نشست‌های قفل‌شده از Telegram
+- [x] takeover نشست‌های مشکل‌دار در وب
+- [x] takeover نشست‌های قفل‌شده از Telegram
 - [ ] custom commandهای Telegram با ذخیره و اجرای امن
 - [ ] usage/context/sidebar/cache مطابق Kanna
 - [ ] نمایش planهای native و proposed در UI
