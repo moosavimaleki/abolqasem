@@ -358,9 +358,15 @@ func TestTelegramTranscriptPreviewsUseOpaqueCallbacksAndVectorDocuments(t *testi
 	if !ok || preview.FilePath != file {
 		t.Fatalf("preview callback = %#v %v", preview, ok)
 	}
-	response, err := buildFilePreview([]string{filepath.Dir(file)}, file, 3, filePreviewOptions{})
+	response, err := buildFilePreview([]string{filepath.Dir(file)}, file, 3, filePreviewOptions{Full: true})
+	if err != nil {
+		t.Fatalf("full code preview err=%v", err)
+	}
+	if !response.Full || len(response.Lines) != 5 {
+		t.Fatalf("Telegram code preview must include the full file: full=%v lines=%d", response.Full, len(response.Lines))
+	}
 	codeSVG := telegramCodePreviewSVG(response)
-	if err != nil || !strings.Contains(codeSVG, "<svg") || !strings.Contains(codeSVG, "main.go") || !strings.Contains(codeSVG, `width="720" height="`) {
+	if !strings.Contains(codeSVG, "<svg") || !strings.Contains(codeSVG, "main.go") || !strings.Contains(codeSVG, `width="720" height="`) {
 		t.Fatalf("code preview svg err=%v", err)
 	}
 	if strings.Contains(codeSVG, `width="100%"`) {
@@ -377,6 +383,24 @@ func TestTelegramTranscriptPreviewsUseOpaqueCallbacksAndVectorDocuments(t *testi
 	markdown, buttons := bridge.telegramTranscriptPreviews("99", "chat-1", "```mermaid\nflowchart TD\nA --> B\n```")
 	if !strings.Contains(markdown, "برای دیدن") || len(buttons) != 1 || !strings.Contains(buttons[0].Label, "Mermaid") {
 		t.Fatalf("Mermaid transcript preview = %q %#v", markdown, buttons)
+	}
+}
+
+func TestTelegramCodePreviewCapsHugeFilesWithDownloadHint(t *testing.T) {
+	lines := make([]filePreviewLine, telegramPreviewMaxCodeLines+25)
+	for index := range lines {
+		lines[index] = filePreviewLine{Number: index + 1, Text: fmt.Sprintf("line %d", index+1)}
+	}
+
+	svg := telegramCodePreviewSVG(filePreviewResponse{Path: "/tmp/large.py", Language: "python", Lines: lines})
+	if !strings.Contains(svg, "line 2400") {
+		t.Fatal("expected the capped preview to retain the last included source line")
+	}
+	if !strings.Contains(svg, "remaining 25 lines") {
+		t.Fatal("expected a download hint for omitted lines")
+	}
+	if strings.Contains(svg, "line 2425") {
+		t.Fatal("capped preview must not render lines beyond the safety limit")
 	}
 }
 

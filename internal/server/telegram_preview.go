@@ -22,6 +22,7 @@ const (
 	telegramPreviewCallbackPrefix = "preview:"
 	telegramPreviewLifetime       = 30 * time.Minute
 	telegramPreviewButtonLimit    = 8
+	telegramPreviewMaxCodeLines   = 2400
 )
 
 type telegramPreviewKind string
@@ -202,7 +203,9 @@ func (b *telegramBridge) sendTelegramPreview(ctx context.Context, token, telegra
 			err = projectErr
 			break
 		}
-		preview, previewErr := buildFilePreview([]string{project.LocalPath}, item.FilePath, item.Line, filePreviewOptions{})
+		// Telegram previews should show the file, not only the context around the
+		// referenced line. Keep a generous safety cap for SVG dimensions.
+		preview, previewErr := buildFilePreview([]string{project.LocalPath}, item.FilePath, item.Line, filePreviewOptions{Full: true})
 		if previewErr != nil {
 			err = previewErr
 			break
@@ -262,6 +265,12 @@ func telegramCodePreviewSVG(preview filePreviewResponse) string {
 	lines := preview.Lines
 	if len(lines) == 0 {
 		lines = []filePreviewLine{{Number: 1, Text: "(empty file)"}}
+	}
+	if len(lines) > telegramPreviewMaxCodeLines {
+		lines = append(append([]filePreviewLine(nil), lines[:telegramPreviewMaxCodeLines]...), filePreviewLine{
+			Number: lines[telegramPreviewMaxCodeLines-1].Number + 1,
+			Text:   fmt.Sprintf("… preview truncated; download the document for the remaining %d lines …", len(preview.Lines)-telegramPreviewMaxCodeLines),
+		})
 	}
 	maxColumns := 0
 	for _, line := range lines {
