@@ -309,7 +309,11 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
     : selectedCodexExecutionMode
   const lockActionLabel = isLockedElsewhere ? t.composer.takeOverSession : t.composer.checkSessionLock
   const effectiveLockActionLabel = lockBusy ? t.composer.checkingSessionLock : lockActionLabel
-  const lockedPlaceholder = t.composer.buildSomething
+  const lockedPlaceholder = isLockedElsewhere
+    ? t.composer.lockedElsewherePlaceholder
+    : isLockUnknown
+      ? t.composer.sessionLockUnknownPlaceholder
+      : t.composer.buildSomething
   const orderedAttachments = [...attachments].sort((left, right) => {
     if (left.kind === right.kind) return 0
     return left.kind === "image" ? -1 : 1

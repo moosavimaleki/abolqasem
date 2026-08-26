@@ -2116,6 +2116,7 @@ function SettingsRow({
   children,
   bordered = true,
   alignStart = false,
+  wide = false,
   anchorId,
 }: {
   title: string
@@ -2123,21 +2124,23 @@ function SettingsRow({
   children: ReactNode
   bordered?: boolean
   alignStart?: boolean
+  wide?: boolean
   anchorId?: string
 }) {
   return (
     <div id={anchorId} className={cn(anchorId ? "scroll-mt-24" : undefined, bordered ? "border-t border-border" : undefined)}>
       <div
         className={cn(
-          "flex flex-col gap-4 py-5 md:flex-row md:justify-between md:gap-8",
-          alignStart ? "md:items-start" : "md:items-center"
+          "flex flex-col gap-4 py-5",
+          wide ? "md:gap-3" : "md:flex-row md:justify-between md:gap-8",
+          wide ? "md:items-stretch" : (alignStart ? "md:items-start" : "md:items-center")
         )}
       >
-        <div className="min-w-0 max-w-xl">
+        <div className={cn("min-w-0", wide ? "w-full max-w-none" : "max-w-xl")}>
           <div className="text-sm font-medium text-foreground">{title}</div>
           <div className="mt-1 text-[13px] text-muted-foreground">{description}</div>
         </div>
-        <div className="flex items-center justify-start md:shrink-0 md:justify-end">{children}</div>
+        <div className={cn("flex items-center justify-start md:shrink-0 md:justify-end", wide ? "w-full" : undefined)}>{children}</div>
       </div>
     </div>
   )
@@ -3554,12 +3557,13 @@ export function SettingsPage() {
                       description={locale === "fa"
                         ? "کاربران مجاز فقط همین فرمان‌های ازپیش‌تعریف‌شده را با /run <name> اجرا می‌کنند؛ آرگومان دلخواه از تلگرام پذیرفته نمی‌شود."
                         : "Only allowlisted Telegram users may run these exact commands with /run <name>. Arguments from Telegram are never accepted."}
+                      wide
                     >
-                      <div className="flex w-full flex-col gap-3">
+                      <div className="flex w-full flex-col gap-2">
                         {telegramDraft.customCommands.map((command, index) => (
-                          <fieldset key={index} className="rounded-lg border border-border bg-muted/20 p-4">
+                          <fieldset key={index} className="rounded-lg border border-border bg-muted/20 p-3">
                             <legend className="sr-only">{locale === "fa" ? `فرمان ${index + 1}` : `Command ${index + 1}`}</legend>
-                            <div className="mb-4 flex items-start justify-between gap-3">
+                            <div className="mb-3 flex items-start justify-between gap-3">
                               <div>
                                 <span className="text-sm font-medium text-foreground">{locale === "fa" ? `فرمان ${index + 1}` : `Command ${index + 1}`}</span>
                                 <p dir="ltr" className="mt-1 font-mono text-xs text-muted-foreground">/run {command.name.trim() || "name"}</p>
@@ -3578,12 +3582,12 @@ export function SettingsPage() {
                                 <span className="text-xs font-normal text-muted-foreground">{locale === "fa" ? "کوتاه و قابل‌فهم بنویسید." : "Keep this short and clear."}</span>
                               </label>
                             </div>
-                            <label className="mt-4 grid gap-1.5 text-sm font-medium text-foreground">
+                            <label className="mt-3 grid gap-1.5 text-sm font-medium text-foreground">
                               <span>{locale === "fa" ? "دستور اجرا روی سیستم" : "Command to run on this system"}</span>
                               <Textarea aria-label={locale === "fa" ? "فرمان سیستم" : "System command"} dir="ltr" className="min-h-20 font-mono text-left text-xs" value={command.command} onChange={(event) => updateTelegramCustomCommand(index, { command: event.target.value })} placeholder="git status --short" />
                               <span className="text-xs font-normal text-muted-foreground">{locale === "fa" ? "فقط همین متن اجرا می‌شود؛ آرگومان‌های ارسالی کاربر پذیرفته نمی‌شوند." : "Only this exact command runs; Telegram arguments are ignored."}</span>
                             </label>
-                            <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_10rem]">
+                            <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_10rem]">
                               <label className="grid gap-1.5 text-sm font-medium text-foreground">
                                 <span>{locale === "fa" ? "پوشهٔ اجرا" : "Working directory"}</span>
                                 <Input aria-label={locale === "fa" ? "مسیر اجرای فرمان" : "Working directory"} dir="ltr" className="font-mono text-left" value={command.workingDirectory} onChange={(event) => updateTelegramCustomCommand(index, { workingDirectory: event.target.value })} placeholder={locale === "fa" ? "اختیاری؛ مثلاً /srv/project" : "Optional; e.g. /srv/project"} />

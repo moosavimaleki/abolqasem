@@ -59,6 +59,9 @@ func TestTelegramRuntimeStateSavePreservesNewerCustomCommands(t *testing.T) {
 		BotToken:       "123:token",
 		ProxyURL:       "socks5://127.0.0.1:10810",
 		AllowedUserIDs: []string{"42"},
+		Preferences: map[string]telegramChatPreference{
+			"42": {Model: "gpt-5.6", ReasoningEffort: "high"},
+		},
 		CustomCommands: []telegramCustomCommand{command},
 	}
 	if err := saveTelegramBridgeConfig(latest); err != nil {
@@ -85,6 +88,9 @@ func TestTelegramRuntimeStateSavePreservesNewerCustomCommands(t *testing.T) {
 	}
 	if !reflect.DeepEqual(stored.ChatIDs, []string{"99"}) || stored.Mappings["99"] != "chat-1" {
 		t.Fatalf("runtime state was not saved: %#v", stored)
+	}
+	if stored.Preferences["42"].Model != "gpt-5.6" || stored.Preferences["42"].ReasoningEffort != "high" {
+		t.Fatalf("runtime state save removed Telegram model preferences: %#v", stored.Preferences)
 	}
 }
 
@@ -309,6 +315,45 @@ func TestTelegramBridgeCommandAndTextHelpers(t *testing.T) {
 	chunks := splitTelegramText(long)
 	if len(chunks) != 2 || len([]rune(chunks[0])) > telegramMessageLimit || chunks[0]+chunks[1] != long {
 		t.Fatalf("unexpected Telegram chunks: %#v", chunks)
+	}
+}
+
+func TestTelegramSessionSelectionCallbacksAreValidated(t *testing.T) {
+	for _, test := range []struct {
+		data   string
+		model  int
+		effort string
+		valid  bool
+	}{
+		{data: "tm:2", model: 2, valid: true},
+		{data: "tm:-1", valid: false},
+		{data: "tm:bad", valid: false},
+		{data: "te:high", effort: "high", valid: true},
+		{data: "te:unsafe", valid: false},
+	} {
+		model, modelOK := telegramModelCallback(test.data)
+		effort, effortOK := telegramEffortCallback(test.data)
+		if test.valid {
+			if test.model != 0 && (!modelOK || model != test.model) {
+				t.Fatalf("model callback %q = %d, %v", test.data, model, modelOK)
+			}
+			if test.effort != "" && (!effortOK || effort != test.effort) {
+				t.Fatalf("effort callback %q = %q, %v", test.data, effort, effortOK)
+			}
+		} else if modelOK || effortOK {
+			t.Fatalf("invalid callback accepted: %q", test.data)
+		}
+	}
+}
+
+func TestTelegramPreferencesNormalizeByNumericChatID(t *testing.T) {
+	got := normalizeTelegramPreferences(map[string]telegramChatPreference{
+		" 42 ": {Model: " gpt-5.5 ", ReasoningEffort: " high "},
+		"bad":  {Model: "gpt-5.4"},
+	})
+	want := map[string]telegramChatPreference{"42": {Model: "gpt-5.5", ReasoningEffort: "high"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("preferences = %#v, want %#v", got, want)
 	}
 }
 

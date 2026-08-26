@@ -19,6 +19,7 @@ import (
 	"time"
 	"unicode"
 
+	"abolqasem/internal/providers/catalog"
 	"abolqasem/internal/workspace/agent"
 	"abolqasem/internal/workspace/readmodels"
 	"abolqasem/internal/workspace/transcript"
@@ -35,6 +36,9 @@ const telegramProjectCallbackPrefix = "project:"
 const telegramProjectsPageCallbackPrefix = "ps:"
 const telegramProjectChatsPageCallbackPrefix = "pc:"
 const telegramPickerPageSize = 5
+const telegramTelegramPickerCallback = "picker"
+const telegramModelCallbackPrefix = "tm:"
+const telegramEffortCallbackPrefix = "te:"
 
 type telegramUpdate struct {
 	UpdateID      int64                  `json:"update_id"`
@@ -306,6 +310,11 @@ func (b *telegramBridge) do(request *http.Request, target *telegramAPIResponse) 
 }
 
 func (b *telegramBridge) handleMessage(ctx context.Context, config telegramBridgeConfig, message telegramMessage) {
+	// Per-chat preferences can change from inline buttons while the poller keeps
+	// its network configuration snapshot. Refresh the persisted state per prompt.
+	if latest, err := loadTelegramBridgeConfig(); err == nil {
+		config = latest
+	}
 	chatID, userID := fmt.Sprintf("%d", message.Chat.ID), fmt.Sprintf("%d", message.From.ID)
 	if !telegramUserAllowed(config, userID) {
 		b.sendText(ctx, config.BotToken, chatID, "این کاربر اجازهٔ استفاده از ربات را ندارد.\n\nشناسهٔ کاربر شما: `"+userID+"`\n\nاین شناسه را در allowlist تنظیمات Telegram اضافه کنید.")
@@ -323,8 +332,7 @@ func (b *telegramBridge) handleMessage(ctx context.Context, config telegramBridg
 	}
 	switch command {
 	case "start":
-		b.sendText(ctx, config.BotToken, chatID, telegramHelpMarkdown())
-		b.sendChatPicker(ctx, config, chatID)
+		b.sendTextWithMarkup(ctx, config.BotToken, chatID, telegramHelpMarkdown(), telegramDashboardMarkup())
 		return
 	case "help":
 		b.sendText(ctx, config.BotToken, chatID, telegramHelpMarkdown())
@@ -338,6 +346,9 @@ func (b *telegramBridge) handleMessage(ctx context.Context, config telegramBridg
 		return
 	case "commands":
 		b.sendText(ctx, config.BotToken, chatID, telegramCustomCommandHelpMarkdown(config.CustomCommands))
+		return
+	case "settings", "model", "thinking":
+		b.sendTelegramSessionSettings(ctx, config, chatID)
 		return
 	case "run":
 		name := strings.ToLower(strings.TrimSpace(argument))
@@ -364,16 +375,16 @@ func (b *telegramBridge) handleMessage(ctx context.Context, config telegramBridg
 		b.sendProjectPicker(ctx, config, chatID)
 		return
 	case "newchat", "newthread":
-		target, err := createTelegramChat(&config, chatID)
+		_, err := createTelegramChat(&config, chatID)
 		if err != nil {
 			b.sendText(ctx, config.BotToken, chatID, "ساخت نشست تازه ناموفق بود: "+err.Error())
 			return
 		}
-		b.sendText(ctx, config.BotToken, chatID, "نشست تازه ساخته و انتخاب شد: `"+target+"`\n\nپیام بعدی شما به همین نشست فرستاده می‌شود.")
+		b.sendTelegramSessionSettings(ctx, config, chatID)
 		return
 	case "current":
-		if target := strings.TrimSpace(config.Mappings[chatID]); target != "" {
-			b.sendText(ctx, config.BotToken, chatID, "متصل به: "+target)
+		if strings.TrimSpace(config.Mappings[chatID]) != "" {
+			b.sendTelegramSessionSettings(ctx, config, chatID)
 		} else {
 			b.sendText(ctx, config.BotToken, chatID, "هنوز به چتی متصل نیستید. /chat <chat-id>")
 		}
@@ -397,7 +408,7 @@ func (b *telegramBridge) handleMessage(ctx context.Context, config telegramBridg
 			b.sendText(ctx, config.BotToken, chatID, "ذخیرهٔ اتصال ناموفق بود: "+err.Error())
 			return
 		}
-		b.sendText(ctx, config.BotToken, chatID, "نشست انتخاب شد: `"+target+"`\n\nپیام بعدی شما به همین نشست فرستاده می‌شود.")
+		b.sendTelegramSessionSettings(ctx, config, chatID)
 		return
 	case "history":
 		target := strings.TrimSpace(config.Mappings[chatID])
@@ -426,7 +437,16 @@ func (b *telegramBridge) handleMessage(ctx context.Context, config telegramBridg
 		b.sendTextWithMarkup(ctx, config.BotToken, chatID, "این chat قفل است: "+err.Error(), telegramTakeOverLockMarkup(target))
 		return
 	}
-	result, err := workspaceAgentCoordinator().Send(ctx, agent.SendCommand{ChatID: target, Content: text})
+	pref := config.Preferences[chatID]
+	model, effort := telegramCodexSelection(pref)
+	result, err := workspaceAgentCoordinator().Send(ctx, agent.SendCommand{
+		ChatID:       target,
+		Content:      text,
+		Provider:     "codex",
+		Model:        model,
+		Effort:       effort,
+		ModelOptions: &catalog.ModelOptions{Codex: &catalog.CodexModelOptionsPatch{ReasoningEffort: effort}},
+	})
 	if err != nil {
 		b.sendText(ctx, config.BotToken, chatID, "ارسال ناموفق بود: "+err.Error())
 		return
@@ -439,6 +459,9 @@ func (b *telegramBridge) handleMessage(ctx context.Context, config telegramBridg
 }
 
 func (b *telegramBridge) handleCallbackQuery(ctx context.Context, config telegramBridgeConfig, callback telegramCallbackQuery) {
+	if latest, err := loadTelegramBridgeConfig(); err == nil {
+		config = latest
+	}
 	chatID := ""
 	if callback.Message != nil {
 		chatID = fmt.Sprintf("%d", callback.Message.Chat.ID)
@@ -458,6 +481,45 @@ func (b *telegramBridge) handleCallbackQuery(ctx context.Context, config telegra
 	if preview, ok := b.telegramPreviewForCallback(callback.Data, chatID, config.Mappings[chatID]); ok {
 		b.answerCallbackQuery(ctx, config.BotToken, callback.ID, "در حال آماده‌سازی پیش‌نمایش…")
 		go b.sendTelegramPreview(context.Background(), config.BotToken, chatID, preview)
+		return
+	}
+	if callback.Data == telegramTelegramPickerCallback {
+		b.answerCallbackQuery(ctx, config.BotToken, callback.ID, "فهرست نشست‌ها")
+		b.sendProjectPicker(ctx, config, chatID)
+		return
+	}
+	if callback.Data == "settings" || callback.Data == "model" || callback.Data == "thinking" {
+		b.answerCallbackQuery(ctx, config.BotToken, callback.ID, "تنظیمات نشست")
+		b.sendTelegramSessionSettings(ctx, config, chatID)
+		return
+	}
+	if callback.Data == "history" {
+		target := strings.TrimSpace(config.Mappings[chatID])
+		if target == "" {
+			b.answerCallbackQuery(ctx, config.BotToken, callback.ID, "ابتدا یک نشست انتخاب کنید")
+			b.sendTextWithMarkup(ctx, config.BotToken, chatID, "هنوز نشستی انتخاب نشده است.", telegramDashboardMarkup())
+			return
+		}
+		b.answerCallbackQuery(ctx, config.BotToken, callback.ID, "تاریخچهٔ اخیر")
+		b.sendTextWithMarkup(ctx, config.BotToken, chatID, telegramChatHistoryMarkdown(target), telegramSessionSettingsMarkup(config, chatID))
+		return
+	}
+	if callback.Data == "tm" {
+		b.answerCallbackQuery(ctx, config.BotToken, callback.ID, "انتخاب مدل")
+		b.sendTelegramModelPicker(ctx, config, chatID)
+		return
+	}
+	if callback.Data == "te" {
+		b.answerCallbackQuery(ctx, config.BotToken, callback.ID, "انتخاب سطح فکر")
+		b.sendTelegramEffortPicker(ctx, config, chatID)
+		return
+	}
+	if modelIndex, ok := telegramModelCallback(callback.Data); ok {
+		b.selectTelegramModel(ctx, config, callback.ID, chatID, modelIndex)
+		return
+	}
+	if effort, ok := telegramEffortCallback(callback.Data); ok {
+		b.selectTelegramEffort(ctx, config, callback.ID, chatID, effort)
 		return
 	}
 	if target, ok := telegramTakeOverLockChatID(callback.Data); ok {
@@ -874,6 +936,7 @@ func telegramHelpMarkdown() string {
 		"- `/newchat` — ساخت و انتخاب نشست تازه\n" +
 		"- `/chat <id>` — انتخاب مستقیم یک نشست\n" +
 		"- `/current` — نمایش نشست فعلی\n" +
+		"- `/settings` — انتخاب مدل و سطح فکر برای پیام‌های بعدی\n" +
 		"- `/history` — نمایش تاریخچهٔ اخیر\n" +
 		"- `/status` — وضعیت پل و اتصال\n" +
 		"- `/commands` — فهرست فرمان‌های سیستمی مجاز\n" +
@@ -961,6 +1024,156 @@ func outputOrError(output string, err error) string {
 		return output + "\n\n" + err.Error()
 	}
 	return err.Error()
+}
+
+func telegramCodexProviderCatalog() catalog.ProviderCatalogEntry {
+	for _, provider := range workspaceAvailableProviders() {
+		if provider.ID == "codex" {
+			return provider
+		}
+	}
+	return catalog.GetOrDefault("codex")
+}
+
+func telegramCodexModelChoices() []catalog.ProviderModelOption {
+	provider := telegramCodexProviderCatalog()
+	models := append([]catalog.ProviderModelOption(nil), provider.Models...)
+	if len(models) == 0 {
+		models = []catalog.ProviderModelOption{{ID: catalog.DefaultCodexModel, Label: catalog.DefaultCodexModel}}
+	}
+	return models
+}
+
+func telegramCodexEffortChoices() []catalog.ProviderEffortOption {
+	return []catalog.ProviderEffortOption{
+		{ID: "minimal", Label: "Minimal"},
+		{ID: "low", Label: "Low"},
+		{ID: "medium", Label: "Medium"},
+		{ID: "high", Label: "High"},
+		{ID: "xhigh", Label: "XHigh"},
+	}
+}
+
+func telegramCodexSelection(preference telegramChatPreference) (string, string) {
+	model := strings.TrimSpace(preference.Model)
+	models := telegramCodexModelChoices()
+	validModel := false
+	for _, candidate := range models {
+		if candidate.ID == model {
+			validModel = true
+			break
+		}
+	}
+	if !validModel {
+		model = telegramCodexProviderCatalog().DefaultModel
+		if model == "" {
+			model = models[0].ID
+		}
+	}
+	effort := strings.TrimSpace(preference.ReasoningEffort)
+	if !catalog.IsCodexReasoningEffort(effort) {
+		effort = catalog.CodexRuntimeDefaultReasoningEffort()
+	}
+	return model, effort
+}
+
+func telegramModelCallback(data string) (int, bool) {
+	if !strings.HasPrefix(data, telegramModelCallbackPrefix) || len([]byte(data)) > 64 {
+		return 0, false
+	}
+	index, err := strconv.Atoi(strings.TrimPrefix(data, telegramModelCallbackPrefix))
+	return index, err == nil && index >= 0
+}
+
+func telegramEffortCallback(data string) (string, bool) {
+	if !strings.HasPrefix(data, telegramEffortCallbackPrefix) || len([]byte(data)) > 64 {
+		return "", false
+	}
+	effort := strings.TrimPrefix(data, telegramEffortCallbackPrefix)
+	return effort, catalog.IsCodexReasoningEffort(effort)
+}
+
+func telegramSessionSettingsMarkdown(config telegramBridgeConfig, telegramChatID string) string {
+	target := strings.TrimSpace(config.Mappings[telegramChatID])
+	if target == "" {
+		return "# تنظیمات نشست\n\nهنوز نشستی انتخاب نشده است. ابتدا از دکمهٔ انتخاب نشست استفاده کنید."
+	}
+	model, effort := telegramCodexSelection(config.Preferences[telegramChatID])
+	return fmt.Sprintf("# تنظیمات نشست\n\nنشست فعلی: `%s`\n\n**مدل:** `%s`\n\n**سطح فکر:** `%s`\n\nانتخاب‌ها فقط برای پیام‌های بعدی همین چت تلگرام ذخیره می‌شوند.", telegramMarkdownInline(target), telegramMarkdownInline(model), telegramMarkdownInline(effort))
+}
+
+func telegramSessionSettingsMarkup(config telegramBridgeConfig, telegramChatID string) any {
+	model, effort := telegramCodexSelection(config.Preferences[telegramChatID])
+	return map[string]any{"inline_keyboard": [][]map[string]string{
+		{{"text": "🧠 مدل: " + truncateTelegramButtonLabel(model, 28), "callback_data": "tm"}, {"text": "🎯 سطح فکر: " + effort, "callback_data": "te"}},
+		{{"text": "🗂 نشست‌ها", "callback_data": telegramTelegramPickerCallback}, {"text": "📜 تاریخچه", "callback_data": "history"}},
+	}}
+}
+
+func telegramDashboardMarkup() any {
+	return map[string]any{"inline_keyboard": [][]map[string]string{
+		{{"text": "🗂 انتخاب نشست", "callback_data": telegramTelegramPickerCallback}, {"text": "⚙️ تنظیمات نشست", "callback_data": "settings"}},
+	}}
+}
+
+func (b *telegramBridge) sendTelegramSessionSettings(ctx context.Context, config telegramBridgeConfig, telegramChatID string) {
+	b.sendTextWithMarkup(ctx, config.BotToken, telegramChatID, telegramSessionSettingsMarkdown(config, telegramChatID), telegramSessionSettingsMarkup(config, telegramChatID))
+}
+
+func (b *telegramBridge) sendTelegramModelPicker(ctx context.Context, config telegramBridgeConfig, telegramChatID string) {
+	models := telegramCodexModelChoices()
+	rows := make([][]map[string]string, 0, len(models)+1)
+	for index, model := range models {
+		label := firstNonEmptyString(model.Label, model.ID)
+		rows = append(rows, []map[string]string{{"text": truncateTelegramButtonLabel(label, 50), "callback_data": telegramModelCallbackPrefix + strconv.Itoa(index)}})
+	}
+	rows = append(rows, []map[string]string{{"text": "↩ بازگشت", "callback_data": "settings"}})
+	b.sendTextWithMarkup(ctx, config.BotToken, telegramChatID, "# انتخاب مدل\n\nمدل موردنظر را برای پیام‌های بعدی انتخاب کنید:", map[string]any{"inline_keyboard": rows})
+}
+
+func (b *telegramBridge) sendTelegramEffortPicker(ctx context.Context, config telegramBridgeConfig, telegramChatID string) {
+	efforts := telegramCodexEffortChoices()
+	rows := make([][]map[string]string, 0, len(efforts)+1)
+	for _, effort := range efforts {
+		rows = append(rows, []map[string]string{{"text": effort.Label, "callback_data": telegramEffortCallbackPrefix + effort.ID}})
+	}
+	rows = append(rows, []map[string]string{{"text": "↩ بازگشت", "callback_data": "settings"}})
+	b.sendTextWithMarkup(ctx, config.BotToken, telegramChatID, "# انتخاب سطح فکر\n\nسطح reasoning را برای پیام‌های بعدی انتخاب کنید:", map[string]any{"inline_keyboard": rows})
+}
+
+func (b *telegramBridge) selectTelegramModel(ctx context.Context, config telegramBridgeConfig, callbackID, telegramChatID string, index int) {
+	models := telegramCodexModelChoices()
+	if index >= len(models) {
+		b.answerCallbackQuery(ctx, config.BotToken, callbackID, "مدل پیدا نشد")
+		return
+	}
+	preference := config.Preferences[telegramChatID]
+	preference.Model = models[index].ID
+	if err := saveTelegramBridgePreference(telegramChatID, preference); err != nil {
+		b.answerCallbackQuery(ctx, config.BotToken, callbackID, "ذخیره ناموفق بود")
+		b.setError(err)
+		return
+	}
+	config.Preferences[telegramChatID] = preference
+	b.answerCallbackQuery(ctx, config.BotToken, callbackID, "مدل ذخیره شد")
+	b.sendTelegramSessionSettings(ctx, config, telegramChatID)
+}
+
+func (b *telegramBridge) selectTelegramEffort(ctx context.Context, config telegramBridgeConfig, callbackID, telegramChatID, effort string) {
+	if !catalog.IsCodexReasoningEffort(effort) {
+		b.answerCallbackQuery(ctx, config.BotToken, callbackID, "سطح فکر نامعتبر است")
+		return
+	}
+	preference := config.Preferences[telegramChatID]
+	preference.ReasoningEffort = effort
+	if err := saveTelegramBridgePreference(telegramChatID, preference); err != nil {
+		b.answerCallbackQuery(ctx, config.BotToken, callbackID, "ذخیره ناموفق بود")
+		b.setError(err)
+		return
+	}
+	config.Preferences[telegramChatID] = preference
+	b.answerCallbackQuery(ctx, config.BotToken, callbackID, "سطح فکر ذخیره شد")
+	b.sendTelegramSessionSettings(ctx, config, telegramChatID)
 }
 
 func telegramCodeBlock(value string) string {
@@ -1217,6 +1430,7 @@ func (b *telegramBridge) syncBotCommands(ctx context.Context, token string) {
 		{"command": "newchat", "description": "ساخت و انتخاب نشست تازه"},
 		{"command": "chat", "description": "انتخاب نشست با شناسه"},
 		{"command": "current", "description": "نمایش نشست فعلی"},
+		{"command": "settings", "description": "تنظیم مدل و سطح فکر"},
 		{"command": "history", "description": "نمایش تاریخچهٔ اخیر"},
 		{"command": "status", "description": "نمایش وضعیت پل"},
 		{"command": "whoami", "description": "نمایش شناسه‌های تلگرام"},

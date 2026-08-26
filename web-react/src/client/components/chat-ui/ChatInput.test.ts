@@ -198,7 +198,7 @@ describe("ChatInput", () => {
       })
     ))
 
-    expect(html).toContain('placeholder="Build something..."')
+    expect(html).toContain('placeholder="This session is open in another Codex process; you cannot send messages here."')
     expect(html).toContain('textarea')
     expect(html).toContain('disabled=""')
     expect(html).toContain('aria-label="Take over session"')
@@ -206,6 +206,31 @@ describe("ChatInput", () => {
     expect(html).not.toContain(">Locked by another Codex<")
     expect(html).not.toContain("bg-amber")
     expect(html).not.toContain("text-amber")
+  })
+
+  test("explains the read-only lock state in Persian instead of showing the normal composer prompt", () => {
+    const html = renderToStaticMarkup(createElement(
+      I18nProvider,
+      { locale: "fa" },
+      createElement(ChatInput, {
+        onSubmit: async () => undefined,
+        disabled: false,
+        readOnly: true,
+        canCancel: false,
+        activeProvider: "codex",
+        availableProviders: PROVIDERS,
+        codexLock: {
+          state: "owned_elsewhere",
+          canTakeOver: true,
+          canRelease: false,
+          ownerPid: 123,
+        },
+        onTakeOverSession: () => undefined,
+      })
+    ))
+
+    expect(html).toContain('placeholder="این نشست در Codex دیگری باز است؛ از اینجا نمی‌توانید پیام ارسال کنید."')
+    expect(html).not.toContain('placeholder="یک پیام بنویسید..."')
   })
 
   test("renders a compact releasable lock control beside model preferences when we own the session", () => {

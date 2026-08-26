@@ -12,12 +12,20 @@ import (
 )
 
 type telegramBridgeConfig struct {
-	BotToken       string                  `json:"botToken"`
-	ProxyURL       string                  `json:"proxyUrl,omitempty"`
-	AllowedUserIDs []string                `json:"allowedUserIds"`
-	ChatIDs        []string                `json:"chatIds,omitempty"`
-	Mappings       map[string]string       `json:"mappings,omitempty"`
-	CustomCommands []telegramCustomCommand `json:"customCommands,omitempty"`
+	BotToken       string                            `json:"botToken"`
+	ProxyURL       string                            `json:"proxyUrl,omitempty"`
+	AllowedUserIDs []string                          `json:"allowedUserIds"`
+	ChatIDs        []string                          `json:"chatIds,omitempty"`
+	Mappings       map[string]string                 `json:"mappings,omitempty"`
+	Preferences    map[string]telegramChatPreference `json:"preferences,omitempty"`
+	CustomCommands []telegramCustomCommand           `json:"customCommands,omitempty"`
+}
+
+// telegramChatPreference is scoped to the Telegram conversation, so changing
+// the model from Telegram does not mutate the web composer or another user.
+type telegramChatPreference struct {
+	Model           string `json:"model,omitempty"`
+	ReasoningEffort string `json:"reasoningEffort,omitempty"`
 }
 
 type telegramCustomCommand struct {
@@ -30,12 +38,13 @@ type telegramCustomCommand struct {
 
 func (c *telegramBridgeConfig) UnmarshalJSON(data []byte) error {
 	type telegramBridgeConfigWire struct {
-		BotToken       string                  `json:"botToken"`
-		ProxyURL       string                  `json:"proxyUrl,omitempty"`
-		AllowedUserIDs json.RawMessage         `json:"allowedUserIds"`
-		ChatIDs        json.RawMessage         `json:"chatIds,omitempty"`
-		Mappings       map[string]string       `json:"mappings,omitempty"`
-		CustomCommands []telegramCustomCommand `json:"customCommands,omitempty"`
+		BotToken       string                            `json:"botToken"`
+		ProxyURL       string                            `json:"proxyUrl,omitempty"`
+		AllowedUserIDs json.RawMessage                   `json:"allowedUserIds"`
+		ChatIDs        json.RawMessage                   `json:"chatIds,omitempty"`
+		Mappings       map[string]string                 `json:"mappings,omitempty"`
+		Preferences    map[string]telegramChatPreference `json:"preferences,omitempty"`
+		CustomCommands []telegramCustomCommand           `json:"customCommands,omitempty"`
 	}
 	var wire telegramBridgeConfigWire
 	if err := json.Unmarshal(data, &wire); err != nil {
@@ -55,6 +64,7 @@ func (c *telegramBridgeConfig) UnmarshalJSON(data []byte) error {
 		AllowedUserIDs: allowedUserIDs,
 		ChatIDs:        chatIDs,
 		Mappings:       wire.Mappings,
+		Preferences:    wire.Preferences,
 		CustomCommands: wire.CustomCommands,
 	}
 	return nil
@@ -115,6 +125,7 @@ func loadTelegramBridgeConfig() (telegramBridgeConfig, error) {
 	config.AllowedUserIDs = normalizeTelegramIDs(config.AllowedUserIDs)
 	config.ChatIDs = normalizeTelegramIDs(config.ChatIDs)
 	config.Mappings = normalizeTelegramMappings(config.Mappings)
+	config.Preferences = normalizeTelegramPreferences(config.Preferences)
 	config.CustomCommands = normalizeTelegramCustomCommands(config.CustomCommands)
 	return config, nil
 }
@@ -125,6 +136,7 @@ func saveTelegramBridgeConfig(config telegramBridgeConfig) error {
 	config.AllowedUserIDs = normalizeTelegramIDs(config.AllowedUserIDs)
 	config.ChatIDs = normalizeTelegramIDs(config.ChatIDs)
 	config.Mappings = normalizeTelegramMappings(config.Mappings)
+	config.Preferences = normalizeTelegramPreferences(config.Preferences)
 	config.CustomCommands = normalizeTelegramCustomCommands(config.CustomCommands)
 	if config.BotToken == "" {
 		return errors.New("botToken is required")
@@ -161,6 +173,32 @@ func saveTelegramBridgeRuntimeState(config telegramBridgeConfig) error {
 	latest.ChatIDs = config.ChatIDs
 	latest.Mappings = config.Mappings
 	return saveTelegramBridgeConfig(latest)
+}
+
+func saveTelegramBridgePreference(telegramChatID string, preference telegramChatPreference) error {
+	config, err := loadTelegramBridgeConfig()
+	if err != nil {
+		return err
+	}
+	if config.Preferences == nil {
+		config.Preferences = map[string]telegramChatPreference{}
+	}
+	config.Preferences[telegramChatID] = preference
+	return saveTelegramBridgeConfig(config)
+}
+
+func normalizeTelegramPreferences(values map[string]telegramChatPreference) map[string]telegramChatPreference {
+	result := map[string]telegramChatPreference{}
+	for chatID, preference := range values {
+		chatID = strings.TrimSpace(chatID)
+		if !isTelegramNumericID(chatID) {
+			continue
+		}
+		result[chatID] = telegramChatPreference{
+			Model: strings.TrimSpace(preference.Model), ReasoningEffort: strings.TrimSpace(preference.ReasoningEffort),
+		}
+	}
+	return result
 }
 
 func normalizeTelegramMappings(values map[string]string) map[string]string {
