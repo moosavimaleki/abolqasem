@@ -17,6 +17,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/alecthomas/chroma/v2"
+	"github.com/alecthomas/chroma/v2/lexers"
+	"github.com/alecthomas/chroma/v2/styles"
 )
 
 const (
@@ -409,46 +413,141 @@ func telegramCodePreviewSVG(preview filePreviewResponse) string {
 	for _, line := range lines {
 		maxColumns = max(maxColumns, min(120, len([]rune(line.Text)))+len(strconv.Itoa(line.Number)))
 	}
+	highlightedLines := telegramHighlightCode(preview.Path, preview.Language, lines)
 	width := max(720, min(1440, 84+maxColumns*8))
 	height := 54 + len(lines)*22
 	var output strings.Builder
 	// Telegram's SVG viewer does not consistently paint percentage-sized rects.
 	// Use explicit dimensions so the document is opaque instead of checkerboard.
-	fmt.Fprintf(&output, `<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 %d %d"><rect x="0" y="0" width="%d" height="%d" fill="#071426"/><rect x="0" y="0" width="%d" height="42" fill="#0d1d33"/><circle cx="22" cy="21" r="5" fill="#ef6b73"/><circle cx="40" cy="21" r="5" fill="#e7b35b"/><circle cx="58" cy="21" r="5" fill="#45c486"/><text x="82" y="26" fill="#d7e4f7" font-family="monospace" font-size="14">%s · %s</text>`, width, height, width, height, width, height, width, html.EscapeString(filepath.Base(preview.Path)), html.EscapeString(preview.Language))
+	fmt.Fprintf(&output, `<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 %d %d"><rect x="0" y="0" width="%d" height="%d" fill="#0d1117"/><rect x="0" y="0" width="%d" height="42" fill="#161b22"/><circle cx="22" cy="21" r="5" fill="#ff7b72"/><circle cx="40" cy="21" r="5" fill="#d29922"/><circle cx="58" cy="21" r="5" fill="#3fb950"/><text x="82" y="26" fill="#c9d1d9" font-family="monospace" font-size="14">%s · %s</text>`, width, height, width, height, width, height, width, html.EscapeString(filepath.Base(preview.Path)), html.EscapeString(preview.Language))
 	for index, line := range lines {
 		y := 64 + index*22
 		if line.Highlight {
-			fmt.Fprintf(&output, `<rect x="0" y="%d" width="%d" height="22" fill="#16355a"/>`, y-16, width)
+			fmt.Fprintf(&output, `<rect x="0" y="%d" width="%d" height="22" fill="#1f3a5f"/>`, y-16, width)
 		}
-		fmt.Fprintf(&output, `<text x="16" y="%d" text-anchor="end" fill="#506785" font-family="monospace" font-size="13">%d</text>`, y, line.Number)
-		fmt.Fprintf(&output, `<text x="34" y="%d" fill="%s" font-family="monospace" font-size="14" xml:space="preserve">%s</text>`, y, telegramCodeColor(line.Text), html.EscapeString(telegramTrimCodeLine(line.Text)))
+		fmt.Fprintf(&output, `<text x="16" y="%d" text-anchor="end" fill="#6e7681" font-family="monospace" font-size="13">%d</text>`, y, line.Number)
+		fmt.Fprintf(&output, `<text x="34" y="%d" fill="#c9d1d9" font-family="monospace" font-size="14" xml:space="preserve">`, y)
+		for _, span := range telegramTrimHighlightedLine(highlightedLines[index], 120) {
+			attributes := ""
+			if span.Bold {
+				attributes += ` font-weight="600"`
+			}
+			if span.Italic {
+				attributes += ` font-style="italic"`
+			}
+			fmt.Fprintf(&output, `<tspan fill="%s"%s>%s</tspan>`, span.Colour, attributes, html.EscapeString(span.Text))
+		}
+		output.WriteString(`</text>`)
 	}
 	output.WriteString(`</svg>`)
 	return output.String()
 }
 
-func telegramTrimCodeLine(value string) string {
-	runes := []rune(value)
-	if len(runes) > 120 {
-		return string(runes[:119]) + "…"
-	}
-	return value
+type telegramCodeSpan struct {
+	Text   string
+	Colour string
+	Bold   bool
+	Italic bool
 }
 
-func telegramCodeColor(line string) string {
-	trimmed := strings.TrimSpace(line)
-	switch {
-	case strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "--"):
-		return "#6f8cae"
-	case strings.Contains(trimmed, `"`) || strings.Contains(trimmed, "'"):
-		return "#eab676"
-	case strings.HasPrefix(trimmed, "func ") || strings.HasPrefix(trimmed, "def ") || strings.HasPrefix(trimmed, "class ") || strings.HasPrefix(trimmed, "function "):
-		return "#b99aff"
-	case strings.Contains(trimmed, "return") || strings.Contains(trimmed, "if ") || strings.Contains(trimmed, "for "):
-		return "#78b7ff"
-	default:
-		return "#d7e4f7"
+// telegramHighlightCode uses Chroma's Pygments-derived lexer registry instead
+// of assigning one heuristic colour to an entire source line. Tokenising the
+// whole file preserves multiline strings/comments, then the tokens are split
+// back into SVG rows without embedding unsafe HTML.
+func telegramHighlightCode(path, language string, source []filePreviewLine) [][]telegramCodeSpan {
+	plain := func() [][]telegramCodeSpan {
+		lines := make([][]telegramCodeSpan, len(source))
+		for index, line := range source {
+			lines[index] = []telegramCodeSpan{{Text: strings.ReplaceAll(line.Text, "\t", "    "), Colour: "#c9d1d9"}}
+		}
+		return lines
 	}
+
+	lexer := lexers.Match(path)
+	if lexer == nil && language != "" {
+		lexer = lexers.Get(language)
+	}
+	codeLines := make([]string, len(source))
+	for index, line := range source {
+		codeLines[index] = strings.ReplaceAll(line.Text, "\t", "    ")
+	}
+	code := strings.Join(codeLines, "\n")
+	if lexer == nil {
+		lexer = lexers.Analyse(code)
+	}
+	if lexer == nil {
+		lexer = lexers.Fallback
+	}
+	iterator, err := chroma.Coalesce(lexer).Tokenise(nil, code)
+	if err != nil {
+		return plain()
+	}
+	style := styles.Get("github-dark")
+	if style == nil {
+		style = styles.Fallback
+	}
+
+	lines := make([][]telegramCodeSpan, 1, len(source))
+	for token := iterator(); token != chroma.EOF; token = iterator() {
+		entry := style.Get(token.Type)
+		colour := "#c9d1d9"
+		if entry.Colour.IsSet() {
+			colour = entry.Colour.String()
+		}
+		parts := strings.Split(token.Value, "\n")
+		for index, part := range parts {
+			if part != "" {
+				lineIndex := len(lines) - 1
+				lines[lineIndex] = append(lines[lineIndex], telegramCodeSpan{
+					Text: part, Colour: colour, Bold: entry.Bold == chroma.Yes, Italic: entry.Italic == chroma.Yes,
+				})
+			}
+			if index < len(parts)-1 {
+				lines = append(lines, nil)
+			}
+		}
+	}
+	for len(lines) < len(source) {
+		lines = append(lines, nil)
+	}
+	if len(lines) > len(source) {
+		lines = lines[:len(source)]
+	}
+	return lines
+}
+
+func telegramTrimHighlightedLine(spans []telegramCodeSpan, maxRunes int) []telegramCodeSpan {
+	totalRunes := 0
+	for _, span := range spans {
+		totalRunes += len([]rune(span.Text))
+	}
+	if totalRunes <= maxRunes {
+		return spans
+	}
+	if maxRunes <= 0 {
+		return nil
+	}
+
+	trimmed := make([]telegramCodeSpan, 0, len(spans)+1)
+	remaining := maxRunes - 1 // Reserve the last column for the ellipsis.
+	for _, span := range spans {
+		if remaining <= 0 {
+			break
+		}
+		runes := []rune(span.Text)
+		if len(runes) <= remaining {
+			trimmed = append(trimmed, span)
+			remaining -= len(runes)
+			continue
+		}
+		span.Text = string(runes[:remaining])
+		if span.Text != "" {
+			trimmed = append(trimmed, span)
+		}
+		break
+	}
+	trimmed = append(trimmed, telegramCodeSpan{Text: "…", Colour: "#8b949e"})
+	return trimmed
 }
 
 type telegramMermaidNode struct {

@@ -3,6 +3,7 @@ module abolqasem
 go 1.22.2
 
 require (
+	github.com/alecthomas/chroma/v2 v2.24.1
 	github.com/blugelabs/bluge v0.2.2
 	github.com/creack/pty v1.1.24
 	github.com/gorilla/websocket v1.5.3
@@ -28,6 +29,7 @@ require (
 	github.com/blugelabs/ice/v2 v2.0.1 // indirect
 	github.com/caio/go-tdigest v3.1.0+incompatible // indirect
 	github.com/dgryski/go-metro v0.0.0-20180109044635-280f6062b5bc // indirect
+	github.com/dlclark/regexp2 v1.12.0 // indirect
 	github.com/golang/snappy v0.0.1 // indirect
 	github.com/gorilla/css v1.0.1 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect

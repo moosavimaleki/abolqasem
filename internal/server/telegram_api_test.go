@@ -5,12 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -703,14 +705,65 @@ func TestTelegramCodePreviewCapsHugeFilesWithDownloadHint(t *testing.T) {
 	}
 
 	svg := telegramCodePreviewSVG(filePreviewResponse{Path: "/tmp/large.py", Language: "python", Lines: lines})
-	if !strings.Contains(svg, "line 2400") {
+	visibleText := html.UnescapeString(regexp.MustCompile(`<[^>]+>`).ReplaceAllString(svg, ""))
+	if !strings.Contains(visibleText, "line 2400") {
 		t.Fatal("expected the capped preview to retain the last included source line")
 	}
-	if !strings.Contains(svg, "remaining 25 lines") {
+	if !strings.Contains(visibleText, "remaining 25 lines") {
 		t.Fatal("expected a download hint for omitted lines")
 	}
-	if strings.Contains(svg, "line 2425") {
+	if strings.Contains(svg, `>2425</text>`) {
 		t.Fatal("capped preview must not render lines beyond the safety limit")
+	}
+}
+
+func TestTelegramCodePreviewUsesTokenLevelSyntaxHighlighting(t *testing.T) {
+	preview := filePreviewResponse{
+		Path:     "/tmp/example.py",
+		Language: "python",
+		Lines: []filePreviewLine{
+			{Number: 1, Text: "# load the input"},
+			{Number: 2, Text: "def load(path: str) -> int:", Highlight: true},
+			{Number: 3, Text: "\tvalue = 42"},
+			{Number: 4, Text: "\treturn value if path == 'ready' else 0"},
+		},
+	}
+
+	svg := telegramCodePreviewSVG(preview)
+	if !strings.Contains(svg, `<tspan fill="`) {
+		t.Fatal("expected token-level SVG spans")
+	}
+	colours := regexp.MustCompile(`<tspan fill="(#[0-9A-Fa-f]{6})"`).FindAllStringSubmatch(svg, -1)
+	unique := map[string]struct{}{}
+	for _, match := range colours {
+		unique[match[1]] = struct{}{}
+	}
+	if len(unique) < 4 {
+		t.Fatalf("expected Python comments, keywords, names and literals to use distinct colours; got %v", unique)
+	}
+	if !strings.Contains(svg, `fill="#1f3a5f"`) {
+		t.Fatal("expected the referenced source line to retain its highlight background")
+	}
+	if !strings.Contains(svg, `>def</tspan>`) || !strings.Contains(svg, `>&#39;ready&#39;</tspan>`) {
+		t.Fatalf("expected Python keyword and string tokens in SVG: %s", svg)
+	}
+}
+
+func TestTelegramTrimHighlightedLinePreservesTokensAndWidth(t *testing.T) {
+	spans := []telegramCodeSpan{
+		{Text: "return ", Colour: "#ff0000"},
+		{Text: strings.Repeat("value", 30), Colour: "#00ff00"},
+	}
+	trimmed := telegramTrimHighlightedLine(spans, 24)
+	var text strings.Builder
+	for _, span := range trimmed {
+		text.WriteString(span.Text)
+	}
+	if got := len([]rune(text.String())); got != 24 {
+		t.Fatalf("trimmed width = %d, want 24 (%q)", got, text.String())
+	}
+	if !strings.HasSuffix(text.String(), "…") || trimmed[0].Colour != "#ff0000" || trimmed[1].Colour != "#00ff00" {
+		t.Fatalf("token colours or ellipsis were not preserved: %#v", trimmed)
 	}
 }
 
