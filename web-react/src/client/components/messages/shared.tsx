@@ -38,6 +38,7 @@ import {
   Maximize2,
   Minimize2,
   RotateCcw,
+  Quote,
   ZoomIn,
   ZoomOut,
 } from "lucide-react"
@@ -826,7 +827,8 @@ function createBaseMarkdownComponents(inheritedDirection?: TextDirection) {
           className="abolqasem-blockquote my-5 first:mt-0 last:mb-0"
           {...props}
         >
-          {childNodes}
+          <span className="abolqasem-blockquote-mark" aria-hidden="true"><Quote /></span>
+          <div className="abolqasem-blockquote-content">{childNodes}</div>
         </blockquote>
       )
     })()

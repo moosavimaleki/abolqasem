@@ -456,52 +456,65 @@
     margin: 0.25em 0;
   }
 
-  .prose blockquote {
+  .prose .abolqasem-blockquote {
     position: relative;
-    margin: 1.25em 0;
-    padding: 0.95em 1.1em;
-    padding-inline-start: 1.25em;
-    overflow: hidden;
-    color: hsl(var(--foreground) / 0.9);
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    gap: 0.7rem;
+    margin: 1.1em 0;
+    padding: 0.85em 1em;
+    color: hsl(var(--foreground) / 0.92);
     background:
-      linear-gradient(135deg, hsl(var(--logo) / 0.13), transparent 54%),
-      hsl(var(--muted) / 0.42);
-    border: 1px solid hsl(var(--border) / 0.78);
-    border-inline-start: 4px solid hsl(var(--logo) / 0.82);
-    border-radius: 1rem;
-    box-shadow:
-      inset 0 1px 0 hsl(var(--foreground) / 0.05),
-      0 12px 34px hsl(var(--background) / 0.14);
+      linear-gradient(135deg, hsl(var(--logo) / 0.1), transparent 62%),
+      hsl(var(--muted) / 0.3);
+    border: 1px solid hsl(var(--border) / 0.66);
+    border-inline-start: 3px solid hsl(var(--logo) / 0.72);
+    border-radius: 0.85rem;
+    box-shadow: inset 0 1px 0 hsl(var(--foreground) / 0.04);
   }
 
-  .prose blockquote::before {
-    content: "";
-    position: absolute;
-    inset-block: 0.8em;
-    inset-inline-start: 0.45em;
-    width: 2px;
-    border-radius: 999px;
-    background: hsl(var(--logo) / 0.34);
+  .prose .abolqasem-blockquote-mark {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 1.8rem;
+    height: 1.8rem;
+    margin-block-start: 0.1rem;
+    color: hsl(var(--logo) / 0.9);
+    background: hsl(var(--logo) / 0.1);
+    border: 1px solid hsl(var(--logo) / 0.18);
+    border-radius: 0.55rem;
   }
 
-  .prose blockquote > * {
-    position: relative;
+  .prose .abolqasem-blockquote-mark svg {
+    width: 0.95rem;
+    height: 0.95rem;
+    stroke-width: 1.75;
+  }
+
+  .prose .abolqasem-blockquote-content {
+    min-width: 0;
+  }
+
+  .prose .abolqasem-blockquote-content > * {
     margin-top: 0.75em;
     margin-bottom: 0.75em;
   }
 
-  .prose blockquote > p {
+  .prose .abolqasem-blockquote-content > p {
     margin-top: 0;
     margin-bottom: 0;
   }
 
-  .prose blockquote > p + p {
+  .prose .abolqasem-blockquote-content > p + p {
     margin-top: 0.75em;
   }
 
-  .prose blockquote ul,
-  .prose blockquote ol,
-  .prose blockquote pre {
+  .prose .abolqasem-blockquote-content ul,
+  .prose .abolqasem-blockquote-content ol,
+  .prose .abolqasem-blockquote-content pre {
     margin-top: 0.75em;
     margin-bottom: 0.75em;
   }

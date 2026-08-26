@@ -84,6 +84,13 @@ function getCollapsedSystemPayload(content: string, wrappedSystemMessage: string
     }
   }
 
+  if (internalPayload?.kind === "agents_instructions") {
+    return {
+      label: isPersian ? "دستورالعمل‌های محیط پروژه" : "Project environment instructions",
+      content: internalPayload.payload,
+    }
+  }
+
   return null
 }
 

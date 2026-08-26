@@ -34,4 +34,26 @@ describe("UserMessage", () => {
     expect(html).toContain("بعد")
     expect((html.match(/&lt;environment_context&gt;/g) ?? [])).toHaveLength(1)
   })
+
+  test("collapses Codex AGENTS bootstrap text without turning it into a user bubble", () => {
+    const html = renderToStaticMarkup(
+      <UserMessage content={[
+        "# AGENTS.md instructions for /tmp/project",
+        "",
+        "<INSTRUCTIONS>",
+        "@/tmp/RTK.md",
+        "</INSTRUCTIONS>",
+        "",
+        "<environment_context>",
+        "  <cwd>/tmp/project</cwd>",
+        "</environment_context>",
+        "",
+        "پیام واقعی کاربر",
+      ].join("\n")} />,
+    )
+
+    expect(html).toContain("دستورالعمل‌های محیط پروژه")
+    expect(html).toContain("پیام واقعی کاربر")
+    expect((html.match(/AGENTS\.md instructions/g) ?? [])).toHaveLength(1)
+  })
 })

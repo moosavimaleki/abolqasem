@@ -29,6 +29,8 @@ describe("markdownComponents", () => {
 
     expect(html).toContain("<blockquote")
     expect(html).toContain("abolqasem-blockquote")
+    expect(html).toContain("abolqasem-blockquote-mark")
+    expect(html).toContain("abolqasem-blockquote-content")
     expect(html).toContain("<p")
     expect(html).toContain("quoted line")
   })

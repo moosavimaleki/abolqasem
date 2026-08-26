@@ -652,16 +652,31 @@ export function processTranscriptMessages(entries: TranscriptEntry[]): HydratedT
 }
 
 export function extractInternalSystemPayload(content: string) {
-  const match = content.match(/<(environment_context|turn_aborted)>\s*([\s\S]*?)\s*<\/\1>/i)
-  if (!match) return null
+	// Codex persists repository bootstrap instructions as a user-prompt in a
+	// few app-server versions. They are machine context, not something the user
+	// typed, so preserve them as a collapsible payload instead of a chat bubble.
+	const agentsBootstrap = content.match(/^#\s+AGENTS\.md instructions\b[\s\S]*?(?:<\/INSTRUCTIONS>|<\/environment_context>)(?:\s*<environment_context>[\s\S]*?<\/environment_context>)?/i)
+	if (agentsBootstrap) {
+		const payload = agentsBootstrap[0].trim()
+		return {
+			kind: "agents_instructions",
+			payload,
+			dedupeKey: `agents_instructions:${payload.replace(/\s+/g, " ")}`,
+		}
+	}
 
-  const kind = match[1]!.toLowerCase()
-  const payload = match[0].trim()
-  return {
-    kind,
-    payload,
-    dedupeKey: `${kind}:${payload.replace(/\s+/g, " ")}`,
+	const match = content.match(/<(environment_context|turn_aborted)>\s*([\s\S]*?)\s*<\/\1>/i)
+  if (match) {
+    const kind = match[1]!.toLowerCase()
+    const payload = match[0].trim()
+    return {
+      kind,
+      payload,
+      dedupeKey: `${kind}:${payload.replace(/\s+/g, " ")}`,
+    }
   }
+
+	return null
 }
 
 /** Removes machine-only response metadata that must never become chat content. */
