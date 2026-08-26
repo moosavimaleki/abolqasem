@@ -469,10 +469,12 @@ export function processTranscriptMessages(entries: TranscriptEntry[]): HydratedT
         break
       case "assistant_text":
         {
+          const visibleText = stripInternalAssistantMetadata(entry.text)
+          if (!visibleText) break
           // Recent Codex versions can persist internal payloads both as a
           // user_message event and as an assistant text echo. Keep one
           // canonical collapsed row instead of showing a second chat bubble.
-          const systemPayload = extractInternalSystemPayload(entry.text)
+          const systemPayload = extractInternalSystemPayload(visibleText)
           if (systemPayload) {
             if (internalSystemPayloads.has(systemPayload.dedupeKey)) break
             internalSystemPayloads.add(systemPayload.dedupeKey)
@@ -481,7 +483,7 @@ export function processTranscriptMessages(entries: TranscriptEntry[]): HydratedT
         messages.push({
           ...createBaseMessage(entry),
           kind: "assistant_text",
-          text: entry.text,
+          text: stripInternalAssistantMetadata(entry.text),
         })
         break
       case "tool_call": {
@@ -660,4 +662,9 @@ export function extractInternalSystemPayload(content: string) {
     payload,
     dedupeKey: `${kind}:${payload.replace(/\s+/g, " ")}`,
   }
+}
+
+/** Removes machine-only response metadata that must never become chat content. */
+export function stripInternalAssistantMetadata(content: string) {
+  return content.replace(/(?:\r?\n)*<oai-mem-citation>\s*[\s\S]*?<\/oai-mem-citation>\s*$/i, "").trimEnd()
 }

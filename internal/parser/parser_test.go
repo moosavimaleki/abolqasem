@@ -79,6 +79,21 @@ func TestParseMessagesCodexDedupesResponseItemEventPairs(t *testing.T) {
 	}
 }
 
+func TestParseMessagesCodexHidesInternalMemoryCitation(t *testing.T) {
+	path := writeTranscript(t, `{"timestamp":"2026-08-26T10:00:00Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"پاسخ قابل نمایش.\n\n<oai-mem-citation>\n<citation_entries>MEMORY.md:1-2</citation_entries>\n<rollout_ids>abc</rollout_ids>\n</oai-mem-citation>"}]}}`)
+
+	result, err := ParseMessages("codex", "session-1", path, ParseOptions{Limit: 10})
+	if err != nil {
+		t.Fatalf("ParseMessages returned error: %v", err)
+	}
+	if len(result.Items) != 1 || result.Items[0].Text != "پاسخ قابل نمایش." {
+		t.Fatalf("unexpected sanitized messages: %#v", result.Items)
+	}
+	if got := stripCodexInternalMemoryCitation("normal mention: <oai-mem-citation>"); got != "normal mention: <oai-mem-citation>" {
+		t.Fatalf("incomplete ordinary mention was changed: %q", got)
+	}
+}
+
 func TestParseMessagesCodexDedupesImageBoundaryResponseItem(t *testing.T) {
 	path := writeTranscript(t, strings.Join([]string{
 		`{"timestamp":"2026-08-24T14:05:07.286Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"# Files mentioned by the user:\n\n## image.png: /tmp/image.png\n\n## My request for Codex:\n\nپادشاه این جاست؟"},{"type":"input_text","text":"<image name=[Image #1] path=\"/tmp/image.png\">"},{"type":"input_image","image_url":"data:image/png;base64,do-not-render"},{"type":"input_text","text":"</image>"}]}}`,

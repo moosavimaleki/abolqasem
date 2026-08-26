@@ -22,6 +22,8 @@ import (
 
 var ErrTranscriptUnavailable = errors.New("transcript is unavailable")
 
+var codexInternalMemoryCitationPattern = regexp.MustCompile(`(?is)(?:\r?\n)*<oai-mem-citation>\s*.*?</oai-mem-citation>\s*$`)
+
 type Message struct {
 	ID        string     `json:"id"`
 	SessionID string     `json:"session_id"`
@@ -1279,11 +1281,18 @@ func codexMessageSource(recordType string, eventType string) string {
 }
 
 func newCodexSearchableMessage(sessionID string, index int, role, kind, text string, createdAt *time.Time, source string) *SearchableMessage {
+	if strings.EqualFold(strings.TrimSpace(role), "assistant") {
+		text = stripCodexInternalMemoryCitation(text)
+	}
 	msg := newSearchableMessage(sessionID, index, role, kind, text, createdAt)
 	if msg != nil {
 		msg.Source = source
 	}
 	return msg
+}
+
+func stripCodexInternalMemoryCitation(text string) string {
+	return strings.TrimSpace(codexInternalMemoryCitationPattern.ReplaceAllString(text, ""))
 }
 
 func shouldDropSearchableDuplicate(agent string, previous *SearchableMessage, current *SearchableMessage) bool {

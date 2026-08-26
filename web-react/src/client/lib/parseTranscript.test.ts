@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { processTranscriptMessages, tmuxCaptureToReadableText, tmuxCaptureToTranscriptMessages } from "./parseTranscript"
+import { processTranscriptMessages, stripInternalAssistantMetadata, tmuxCaptureToReadableText, tmuxCaptureToTranscriptMessages } from "./parseTranscript"
 import { getLatestToolIds } from "../app/derived"
 import type { TranscriptEntry } from "../../shared/types"
 
@@ -12,6 +12,18 @@ function entry(partial: Omit<TranscriptEntry, "_id" | "createdAt">): TranscriptE
 }
 
 describe("processTranscriptMessages", () => {
+  test("removes internal memory citations from assistant bubbles", () => {
+    const metadata = "<oai-mem-citation>\n<citation_entries>MEMORY.md:1-2</citation_entries>\n<rollout_ids>abc</rollout_ids>\n</oai-mem-citation>"
+    const messages = processTranscriptMessages([
+      entry({ kind: "assistant_text", text: `پاسخ قابل نمایش.\n\n${metadata}` }),
+      entry({ kind: "assistant_text", text: metadata }),
+    ])
+
+    expect(messages).toHaveLength(1)
+    expect(messages[0]?.kind === "assistant_text" ? messages[0].text : "").toBe("پاسخ قابل نمایش.")
+    expect(stripInternalAssistantMetadata(`normal mention: <oai-mem-citation>`)).toBe("normal mention: <oai-mem-citation>")
+  })
+
   test("merges native Codex command deltas, file changes, plans, and activity", () => {
     const messages = processTranscriptMessages([
       entry({ kind: "command_execution", itemId: "cmd-1", command: "go test ./...", cwd: "/work", status: "inProgress" }),

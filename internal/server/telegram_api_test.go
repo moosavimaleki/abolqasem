@@ -460,6 +460,17 @@ func TestTelegramFinalMessageDoesNotRepeatAnOlderTurn(t *testing.T) {
 	}
 }
 
+func TestTelegramFinalMessageStripsInternalMemoryCitation(t *testing.T) {
+	entries := []readmodels.TranscriptEntry{
+		{"_id": "user", "kind": "user_prompt", "content": "گزارش بده"},
+		{"_id": "answer", "kind": "assistant_text", "text": "گزارش آماده شد.\n\n<oai-mem-citation>\n<citation_entries>MEMORY.md:1-2</citation_entries>\n<rollout_ids>abc</rollout_ids>\n</oai-mem-citation>"},
+	}
+	fingerprint, text := telegramFinalMessage(entries)
+	if fingerprint != "answer" || text != "گزارش آماده شد." {
+		t.Fatalf("sanitized Telegram message = %q %q", fingerprint, text)
+	}
+}
+
 func TestTelegramFinalMessageUsesCleanProposedPlanMarkdown(t *testing.T) {
 	entries := []readmodels.TranscriptEntry{
 		{"_id": "user", "kind": "user_prompt", "content": "پلن کن"},

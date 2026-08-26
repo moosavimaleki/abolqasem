@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -24,6 +25,8 @@ const (
 	searchPerSessionLimit = 3
 	searchMaxSnippetRunes = 220
 )
+
+var workspaceInternalMemoryCitationPattern = regexp.MustCompile(`(?is)(?:\r?\n)*<oai-mem-citation>\s*.*?</oai-mem-citation>\s*$`)
 
 type sessionSearchResult struct {
 	Key                  string               `json:"key"`
@@ -427,7 +430,7 @@ func workspaceEntrySearchText(entry readmodels.TranscriptEntry) (kind string, ro
 	case transcript.KindUserPrompt:
 		return kind, "user", workspaceEntryString(entry, "content")
 	case transcript.KindAssistantText:
-		return kind, "assistant", workspaceEntryString(entry, "text")
+		return kind, "assistant", workspaceStripInternalAssistantMetadata(workspaceEntryString(entry, "text"))
 	case transcript.KindProposedPlan:
 		return kind, "assistant", workspaceEntryString(entry, "plan")
 	case transcript.KindStatus:
@@ -445,6 +448,10 @@ func workspaceEntrySearchText(entry readmodels.TranscriptEntry) (kind string, ro
 	default:
 		return kind, kind, workspaceAnySearchText(entry["content"], entry["text"], entry["summary"], entry["json"])
 	}
+}
+
+func workspaceStripInternalAssistantMetadata(text string) string {
+	return strings.TrimSpace(workspaceInternalMemoryCitationPattern.ReplaceAllString(text, ""))
 }
 
 func workspaceEntryString(entry readmodels.TranscriptEntry, key string) string {
