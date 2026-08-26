@@ -25,6 +25,16 @@ export function getProcessingStatus(
     if (message.kind === "turn_activity") {
       return message.activity
     }
+    // Native Codex app-server items are themselves authoritative activity
+    // signals. Older sessions may not contain an explicit turn_activity
+    // event, so derive the visible status from the in-progress item instead
+    // of displaying a generic transport status.
+    if (message.kind === "command_execution" && message.status === "inProgress") {
+      return "running_command"
+    }
+    if (message.kind === "file_change" && message.status === "inProgress") {
+      return "applying_changes"
+    }
   }
   return "thinking"
 }

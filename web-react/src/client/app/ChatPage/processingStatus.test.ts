@@ -27,6 +27,20 @@ describe("getProcessingStatus", () => {
     ], "running")).toBe("running_command")
   })
 
+  test("derives running command activity from a native in-progress command", () => {
+    expect(getProcessingStatus([
+      message({ kind: "user_prompt", content: "run tests", attachments: [] }),
+      message({ kind: "command_execution", itemId: "cmd-1", command: "go test ./...", cwd: ".", status: "inProgress", aggregatedOutput: "" }),
+    ], "running")).toBe("running_command")
+  })
+
+  test("derives applying changes activity from a native in-progress file change", () => {
+    expect(getProcessingStatus([
+      message({ kind: "user_prompt", content: "edit file", attachments: [] }),
+      message({ kind: "file_change", itemId: "file-1", status: "inProgress", changes: [], output: "" }),
+    ], "running")).toBe("applying_changes")
+  })
+
   test("keeps the explicit waiting-for-user state", () => {
     expect(getProcessingStatus([], "waiting_for_user")).toBe("waiting_for_user")
   })
