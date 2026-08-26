@@ -87,6 +87,13 @@ function getCollapsedSystemPayload(content: string, wrappedSystemMessage: string
   return null
 }
 
+function bodyWithoutCollapsedSystemPayload(content: string, body: string, wrappedSystemMessage: string | null) {
+  if (wrappedSystemMessage) return body
+  const internalPayload = extractInternalSystemPayload(content)
+  if (!internalPayload) return body
+  return body.replace(internalPayload.payload, "").trim()
+}
+
 function CollapsedSystemPayload({ label, content, direction }: { label: string; content: string; direction: "ltr" | "rtl" }) {
   return (
     <details className="group w-full max-w-[85%] overflow-hidden rounded-xl border border-border/70 bg-muted/25 text-xs text-muted-foreground sm:max-w-[80%]">
@@ -116,6 +123,12 @@ export function UserMessage({ content, attachments = [], steered = false, checkp
   const collapsedSystemPayload = useMemo(
     () => getCollapsedSystemPayload(content, parsedContent.systemMessage, direction === "rtl"),
     [content, direction, parsedContent.systemMessage],
+  )
+  const displayBody = useMemo(
+    () => collapsedSystemPayload
+      ? bodyWithoutCollapsedSystemPayload(content, parsedContent.body, parsedContent.systemMessage)
+      : parsedContent.body,
+    [collapsedSystemPayload, content, parsedContent.body, parsedContent.systemMessage],
   )
   const shouldShowImagePlaceholders = renderOptions.attachmentMode === "metadata"
   const canInteractWithAttachments = !renderOptions.readonly || renderOptions.attachmentMode === "bundle"
@@ -232,10 +245,10 @@ export function UserMessage({ content, attachments = [], steered = false, checkp
             ))}
           </div>
         ) : null}
-        {(parsedContent.body || (!parsedContent.body && attachments.length === 0 && content && !parsedContent.systemMessage)) ? (
+        {(displayBody || (!displayBody && !collapsedSystemPayload && attachments.length === 0 && content && !parsedContent.systemMessage)) ? (
           <div className="group/message relative flex max-w-[85%] items-center gap-2 sm:max-w-[80%]" dir="ltr">
             <MessageCopyButton
-              text={parsedContent.body}
+              text={displayBody}
               label={t.common.copyMessage}
               copiedLabel={t.common.copied}
               className="absolute -left-8 top-1/2 z-10 -translate-y-1/2"
@@ -252,7 +265,7 @@ export function UserMessage({ content, attachments = [], steered = false, checkp
               </span>
             ) : null}
             <div className="min-w-0 flex-1 rounded-[20px] border border-border bg-muted px-3.5 py-1.5 text-primary prose prose-sm prose-invert [&_p]:whitespace-pre-line">
-              <Markdown remarkPlugins={[remarkGfm]} components={createMarkdownComponents({ source: parsedContent.body })}>{parsedContent.body}</Markdown>
+              <Markdown remarkPlugins={[remarkGfm]} components={createMarkdownComponents({ source: displayBody })}>{displayBody}</Markdown>
             </div>
           </div>
         ) : null}

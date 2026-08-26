@@ -3,6 +3,7 @@ package server
 import (
 	"abolqasem/internal/appinfo"
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -77,13 +78,13 @@ func newWorkspaceCodexSessionManager() *workspaceCodexSessionManager {
 
 func (m *workspaceCodexSessionManager) session(ctx context.Context, request agent.TurnRequest) (*workspaceCodexSession, error) {
 	m.mu.Lock()
-	existing := m.sessions[request.ChatID]
+	existingKey, existing := m.matchingSessionLocked(request.ChatID, request.SessionToken)
 	if existing != nil && existing.reusableFor(request) {
 		m.mu.Unlock()
 		return existing, nil
 	}
 	if existing != nil {
-		delete(m.sessions, request.ChatID)
+		delete(m.sessions, existingKey)
 	}
 	m.mu.Unlock()
 
@@ -113,9 +114,13 @@ func (m *workspaceCodexSessionManager) session(ctx context.Context, request agen
 	}
 
 	m.mu.Lock()
-	if replaced := m.sessions[request.ChatID]; replaced != nil && replaced != session {
+	_, replaced := m.matchingSessionLocked(request.ChatID, threadID)
+	if replaced != nil && replaced != session {
 		m.mu.Unlock()
 		session.close()
+		if replaced.reusableFor(request) {
+			return replaced, nil
+		}
 		return nil, errors.New("codex session was replaced")
 	}
 	m.sessions[request.ChatID] = session
@@ -125,23 +130,60 @@ func (m *workspaceCodexSessionManager) session(ctx context.Context, request agen
 
 func (m *workspaceCodexSessionManager) remove(chatID string, process *workspaceCodexProcess) {
 	m.mu.Lock()
-	session := m.sessions[chatID]
-	if session != nil && session.process == process {
+	if session := m.sessions[chatID]; session != nil && session.process == process {
 		delete(m.sessions, chatID)
+		m.mu.Unlock()
+		return
+	}
+	for key, session := range m.sessions {
+		if session != nil && session.process == process {
+			delete(m.sessions, key)
+			break
+		}
 	}
 	m.mu.Unlock()
 }
 
 func (m *workspaceCodexSessionManager) close(chatID string) {
+	m.closeThread(chatID, "")
+}
+
+func (m *workspaceCodexSessionManager) closeThread(chatID string, threadID string) {
 	m.mu.Lock()
-	session := m.sessions[chatID]
+	key, session := m.matchingSessionLocked(chatID, threadID)
 	if session != nil {
-		delete(m.sessions, chatID)
+		delete(m.sessions, key)
 	}
 	m.mu.Unlock()
 	if session != nil {
 		session.close()
 	}
+}
+
+func (m *workspaceCodexSessionManager) matchingSessionLocked(chatID string, threadID string) (string, *workspaceCodexSession) {
+	threadID = strings.TrimSpace(threadID)
+	if session := m.sessions[chatID]; session != nil && (threadID == "" || session.threadID == threadID) {
+		return chatID, session
+	}
+	if threadID == "" {
+		return "", nil
+	}
+	for key, session := range m.sessions {
+		if session != nil && session.threadID == threadID {
+			return key, session
+		}
+	}
+	return "", nil
+}
+
+func (m *workspaceCodexSessionManager) ownerChatID(chatID string, threadID string) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	key, session := m.matchingSessionLocked(chatID, threadID)
+	if session == nil {
+		return ""
+	}
+	return key
 }
 
 func (m *workspaceCodexSessionManager) owns(chatID string, threadID string) bool {
@@ -152,20 +194,32 @@ func (m *workspaceCodexSessionManager) owns(chatID string, threadID string) bool
 func (m *workspaceCodexSessionManager) ownedExecutionMode(chatID string, threadID string) (string, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	session := m.sessions[chatID]
+	_, session := m.matchingSessionLocked(chatID, threadID)
 	if session == nil || session.process == nil || session.process.Exited() || session.threadID != threadID {
 		return "", false
 	}
 	return session.executionMode, true
 }
 
-// ownedExecutionModeByWriterPID is a recovery path for a live app-server whose
-// persisted thread id has not caught up yet. The writer PID comes from lsof,
-// so this still only recognizes a process started and retained by this server.
-func (m *workspaceCodexSessionManager) ownedExecutionModeByWriterPID(chatID string, pid int) (string, bool) {
+func (m *workspaceCodexSessionManager) anyLiveProcess() *workspaceCodexProcess {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	session := m.sessions[chatID]
+	for _, session := range m.sessions {
+		if session != nil && session.process != nil && !session.process.Exited() {
+			return session.process
+		}
+	}
+	return nil
+}
+
+// ownedExecutionModeByWriterPID is a recovery path for a live app-server whose
+// persisted chat alias has not caught up yet. The writer PID comes from lsof,
+// and the thread id prevents a different chat hosted by this server from being
+// mistaken for the requested session.
+func (m *workspaceCodexSessionManager) ownedExecutionModeByWriterPID(chatID string, threadID string, pid int) (string, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	_, session := m.matchingSessionLocked(chatID, threadID)
 	if session == nil || session.process == nil || session.process.Exited() || session.process.cmd == nil || session.process.cmd.Process == nil || session.process.cmd.Process.Pid != pid {
 		return "", false
 	}
@@ -177,6 +231,9 @@ func (s *workspaceCodexSession) reusableFor(request agent.TurnRequest) bool {
 		return false
 	}
 	if request.PendingForkSessionToken != "" {
+		return false
+	}
+	if request.SessionToken != "" && s.threadID != request.SessionToken {
 		return false
 	}
 	return s.cwd == request.LocalPath && s.threadID != "" && s.executionMode == workspaceCodexExecutionPolicyFor(request.ExecutionMode).mode
@@ -891,33 +948,54 @@ func (p *workspaceCodexProcess) notify(method string, params any) error {
 }
 
 func (p *workspaceCodexProcess) scanStdout(stdout io.Reader) {
-	scanner := bufio.NewScanner(stdout)
-	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
-	for scanner.Scan() {
-		line := append([]byte(nil), scanner.Bytes()...)
-		p.logf("<< %s", redactWorkspaceCodexJSON(line))
+	err := readWorkspaceCodexLines(stdout, func(line []byte) {
+		p.logf("<< %s", workspaceCodexLogJSON(line))
 		if err := p.client.HandleMessage(line); err != nil {
 			p.logf("invalid codex message: %s", err.Error())
 		}
-	}
-	if err := scanner.Err(); err != nil {
+	})
+	if err != nil {
 		p.logf("stdout scan failed: %s", err.Error())
 	}
 }
 
 func (p *workspaceCodexProcess) scanStderr(stderr io.Reader) {
-	scanner := bufio.NewScanner(stderr)
-	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
+	err := readWorkspaceCodexLines(stderr, func(raw []byte) {
+		line := strings.TrimSpace(string(raw))
 		if line != "" {
 			p.client.RecordStderr(redactWorkspaceCodexText(line))
 			p.logf("!! %s", redactWorkspaceCodexText(line))
 		}
-	}
-	if err := scanner.Err(); err != nil {
+	})
+	if err != nil {
 		p.logf("stderr scan failed: %s", err.Error())
 	}
+}
+
+func readWorkspaceCodexLines(source io.Reader, handle func([]byte)) error {
+	reader := bufio.NewReaderSize(source, 64*1024)
+	for {
+		line, err := reader.ReadBytes('\n')
+		line = bytes.TrimSuffix(line, []byte{'\n'})
+		line = bytes.TrimSuffix(line, []byte{'\r'})
+		if len(line) > 0 {
+			handle(line)
+		}
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return err
+		}
+	}
+}
+
+func workspaceCodexLogJSON(message []byte) string {
+	const detailedLogLimit = 256 * 1024
+	if len(message) > detailedLogLimit {
+		return fmt.Sprintf("[large JSON-RPC message: %d bytes]", len(message))
+	}
+	return redactWorkspaceCodexJSON(message)
 }
 
 func (p *workspaceCodexProcess) wrapErr(err error) error {

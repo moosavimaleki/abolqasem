@@ -413,6 +413,15 @@ export function getUsageOrderedSidebarChats(data: SidebarData) {
   )
 }
 
+export function getNewSidebarChatSections(data: SidebarData) {
+  const ordered = getUsageOrderedSidebarChats(data)
+  const active = ordered.filter(({ chat }) => chat.status === "starting" || chat.status === "running")
+  const attention = ordered.filter(({ chat }) => chat.status === "waiting_for_user" || chat.status === "failed")
+  const pinned = new Set([...active, ...attention].map(({ chat }) => chat.chatId))
+  const recent = ordered.filter(({ chat }) => !pinned.has(chat.chatId))
+  return { active, attention, recent }
+}
+
 function chatIdForSearchResult(data: SidebarData, result: BackendSearchResult) {
   if (result.chat_id) return result.chat_id
   return allSidebarSearchChats(data).find(({ chat }) => chat.legacySessionKey === result.key)?.chat.chatId ?? null
@@ -491,6 +500,7 @@ function AbolqasemSidebarImpl({
     () => getUsageOrderedSidebarChats(data),
     [data],
   )
+  const chatSections = useMemo(() => getNewSidebarChatSections(data), [data])
 
   const changeSidebarView = useCallback((view: SidebarView) => {
     setSidebarView(view)
@@ -868,12 +878,24 @@ function AbolqasemSidebarImpl({
             ) : null}
 
             {sidebarView === "chats" ? (
-              <div>
-                {flatChats.map(({ chat, projectName }) => (
-                  <div key={chat.chatId}>
-                    <div className="truncate px-3 pt-1 text-[10px] text-muted-foreground/70">{projectName}</div>
-                    {renderChatRow(chat)}
-                  </div>
+              <div className="space-y-3 pb-2">
+                {([
+                  { key: "active", label: locale === "fa" ? "در حال اجرا" : "In progress", items: chatSections.active },
+                  { key: "attention", label: locale === "fa" ? "نیازمند توجه" : "Needs attention", items: chatSections.attention },
+                  { key: "recent", label: locale === "fa" ? "اخیر" : "Recent", items: chatSections.recent },
+                ] as const).filter((section) => section.items.length > 0).map((section) => (
+                  <section key={section.key} aria-labelledby={`sidebar-section-${section.key}`}>
+                    <div id={`sidebar-section-${section.key}`} className="flex h-7 items-center justify-between px-3 text-[10px] font-medium text-muted-foreground/80">
+                      <span>{section.label}</span>
+                      <span className="tabular-nums text-muted-foreground/55">{section.items.length}</span>
+                    </div>
+                    {section.items.map(({ chat, projectName }) => (
+                      <div key={chat.chatId}>
+                        <div className="truncate px-3 pt-1 text-[10px] text-muted-foreground/65">{projectName}</div>
+                        {renderChatRow(chat)}
+                      </div>
+                    ))}
+                  </section>
                 ))}
               </div>
             ) : <LocalProjectsSection

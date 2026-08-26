@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -25,6 +26,15 @@ const (
 	codexLockOwnedElsewhere = "owned_elsewhere"
 	codexLockUnknown        = "unknown"
 )
+
+const (
+	workspaceCodexClaimTimeout       = 45 * time.Second
+	workspaceCodexGracefulStopWait   = 3 * time.Second
+	workspaceCodexForcedStopWait     = 3 * time.Second
+	workspaceCodexWriterPollInterval = 100 * time.Millisecond
+)
+
+var workspaceCodexTakeoverMu sync.Mutex
 
 type workspaceCodexLockOwner struct {
 	PID     int
@@ -103,7 +113,7 @@ func workspaceCodexLockStatus(chat readmodels.ChatRecord) readmodels.CodexLockSt
 		return readmodels.CodexLockStatus{State: codexLockAvailable, SessionID: sessionID, SessionPath: path}
 	}
 	for _, owner := range owners {
-		if executionMode, owned := workspaceCodexSessions.ownedExecutionModeByWriterPID(chat.ID, owner.PID); owned {
+		if executionMode, owned := workspaceCodexSessions.ownedExecutionModeByWriterPID(chat.ID, sessionID, owner.PID); owned {
 			return readmodels.CodexLockStatus{
 				State:         codexLockOwnedByUs,
 				SessionID:     sessionID,
@@ -277,10 +287,11 @@ func workspaceReleaseCodexSession(chatID string) (readmodels.CodexLockStatus, er
 	if status.State != codexLockOwnedByUs {
 		return status, errors.New("this server does not own the Codex session")
 	}
-	if workspaceAgentCoordinator().ActiveStatuses()[chatID] != "" {
+	ownerChatID := firstNonEmpty(workspaceCodexSessions.ownerChatID(chat.ID, status.SessionID), chatID)
+	if workspaceAgentCoordinator().ActiveStatuses()[ownerChatID] != "" {
 		return status, errors.New("cannot release a session while its turn is active")
 	}
-	workspaceCodexSessions.close(chatID)
+	workspaceCodexSessions.closeThread(chatID, status.SessionID)
 	return workspaceCodexLockStatus(chat), nil
 }
 
@@ -308,7 +319,9 @@ func workspaceClaimCodexSessionWithMode(chatID string, executionMode string) (re
 	if err != nil {
 		return status, err
 	}
-	session, err := workspaceCodexSessions.session(context.Background(), agent.TurnRequest{
+	claimCtx, cancel := context.WithTimeout(context.Background(), workspaceCodexClaimTimeout)
+	defer cancel()
+	session, err := workspaceCodexSessions.session(claimCtx, agent.TurnRequest{
 		ChatID:        chat.ID,
 		LocalPath:     project,
 		Provider:      "codex",
@@ -334,14 +347,15 @@ func workspaceSetCodexExecutionMode(chatID string, executionMode string) (readmo
 	if status.State != codexLockOwnedByUs {
 		return status, errors.New("this server does not own the Codex session")
 	}
-	if workspaceAgentCoordinator().ActiveStatuses()[chatID] != "" {
+	ownerChatID := firstNonEmpty(workspaceCodexSessions.ownerChatID(chat.ID, status.SessionID), chatID)
+	if workspaceAgentCoordinator().ActiveStatuses()[ownerChatID] != "" {
 		return status, errors.New("cannot change execution mode while a turn is active")
 	}
 	executionMode = workspaceCodexExecutionPolicyFor(executionMode).mode
 	if status.ExecutionMode == executionMode {
 		return status, nil
 	}
-	workspaceCodexSessions.close(chatID)
+	workspaceCodexSessions.closeThread(chatID, status.SessionID)
 	return workspaceClaimCodexSessionWithMode(chatID, executionMode)
 }
 
@@ -357,7 +371,8 @@ func workspaceReloadCodexAuth(chatID string) (readmodels.CodexLockStatus, error)
 	if status.State != codexLockOwnedByUs {
 		return status, errors.New("this server does not own the Codex session")
 	}
-	if workspaceAgentCoordinator().ActiveStatuses()[chatID] != "" {
+	ownerChatID := firstNonEmpty(workspaceCodexSessions.ownerChatID(chat.ID, status.SessionID), chatID)
+	if workspaceAgentCoordinator().ActiveStatuses()[ownerChatID] != "" {
 		return status, errors.New("cannot reload Codex authentication while a turn is active")
 	}
 
@@ -371,8 +386,10 @@ func workspaceReloadCodexAuth(chatID string) (readmodels.CodexLockStatus, error)
 		sessionID = derefWorkspaceString(chat.SessionToken)
 	}
 
-	workspaceCodexSessions.close(chatID)
-	session, err := workspaceCodexSessions.session(context.Background(), agent.TurnRequest{
+	workspaceCodexSessions.closeThread(chatID, sessionID)
+	claimCtx, cancel := context.WithTimeout(context.Background(), workspaceCodexClaimTimeout)
+	defer cancel()
+	session, err := workspaceCodexSessions.session(claimCtx, agent.TurnRequest{
 		ChatID:        chat.ID,
 		LocalPath:     projectPath,
 		Provider:      "codex",
@@ -390,13 +407,19 @@ func workspaceTakeOverCodexSession(chatID string, confirmed bool, executionMode 
 	if !confirmed {
 		return readmodels.CodexLockStatus{}, errors.New("takeover requires explicit confirmation")
 	}
+	workspaceCodexTakeoverMu.Lock()
+	defer workspaceCodexTakeoverMu.Unlock()
+
 	chat, err := workspaceChatRequired(chatID)
 	if err != nil {
 		return readmodels.CodexLockStatus{}, err
 	}
 	status := workspaceCodexLockStatus(chat)
-	if status.State == codexLockAvailable {
+	if status.State == codexLockOwnedByUs {
 		return status, nil
+	}
+	if status.State == codexLockAvailable {
+		return workspaceClaimCodexSessionWithMode(chatID, executionMode)
 	}
 	if status.State != codexLockOwnedElsewhere || status.OwnerPID <= 0 {
 		return status, errors.New("Codex session is not available for takeover")
@@ -411,30 +434,59 @@ func workspaceTakeOverCodexSession(chatID string, confirmed bool, executionMode 
 	if err != nil {
 		return status, err
 	}
-	if err := process.Signal(syscall.SIGTERM); err != nil {
+	if err := process.Signal(syscall.SIGTERM); err != nil && !errors.Is(err, os.ErrProcessDone) && !errors.Is(err, syscall.ESRCH) {
 		return status, fmt.Errorf("terminate Codex owner: %w", err)
 	}
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		time.Sleep(100 * time.Millisecond)
-		owners, inspectErr := workspaceCodexWritableOwners(status.SessionPath)
-		if inspectErr == nil && len(owners) == 0 {
-			return workspaceClaimCodexSessionWithMode(chatID, executionMode)
-		}
-	}
-	owners, inspectErr := workspaceCodexWritableOwners(status.SessionPath)
+	owners, inspectErr := workspaceWaitForCodexOwnerRelease(status.SessionPath, status.OwnerPID, workspaceCodexGracefulStopWait)
 	if inspectErr != nil {
 		return status, inspectErr
 	}
-	for _, owner := range owners {
-		if owner.PID == os.Getpid() {
-			return status, errors.New("refusing to terminate the current server")
+	if !workspaceCodexOwnersContainPID(owners, status.OwnerPID) {
+		return workspaceClaimAfterCodexOwnerRelease(chatID, executionMode, chat, owners)
+	}
+	if err := process.Signal(syscall.SIGKILL); err != nil && !errors.Is(err, os.ErrProcessDone) && !errors.Is(err, syscall.ESRCH) {
+		return status, fmt.Errorf("kill Codex owner: %w", err)
+	}
+	owners, inspectErr = workspaceWaitForCodexOwnerRelease(status.SessionPath, status.OwnerPID, workspaceCodexForcedStopWait)
+	if inspectErr != nil {
+		return status, inspectErr
+	}
+	if workspaceCodexOwnersContainPID(owners, status.OwnerPID) {
+		return status, errors.New("Codex owner did not release the session after SIGKILL")
+	}
+	return workspaceClaimAfterCodexOwnerRelease(chatID, executionMode, chat, owners)
+}
+
+func workspaceWaitForCodexOwnerRelease(sessionPath string, ownerPID int, timeout time.Duration) ([]workspaceCodexLockOwner, error) {
+	deadline := time.Now().Add(timeout)
+	for {
+		owners, err := workspaceCodexWritableOwners(sessionPath)
+		if err != nil {
+			return nil, err
 		}
-		ownerProcess, findErr := os.FindProcess(owner.PID)
-		if findErr == nil {
-			_ = ownerProcess.Signal(syscall.SIGKILL)
+		if !workspaceCodexOwnersContainPID(owners, ownerPID) || !time.Now().Before(deadline) {
+			return owners, nil
+		}
+		time.Sleep(workspaceCodexWriterPollInterval)
+	}
+}
+
+func workspaceCodexOwnersContainPID(owners []workspaceCodexLockOwner, pid int) bool {
+	for _, owner := range owners {
+		if owner.PID == pid {
+			return true
 		}
 	}
-	time.Sleep(100 * time.Millisecond)
-	return workspaceClaimCodexSessionWithMode(chatID, executionMode)
+	return false
+}
+
+func workspaceClaimAfterCodexOwnerRelease(chatID string, executionMode string, chat readmodels.ChatRecord, owners []workspaceCodexLockOwner) (readmodels.CodexLockStatus, error) {
+	if len(owners) == 0 {
+		return workspaceClaimCodexSessionWithMode(chatID, executionMode)
+	}
+	refreshed := workspaceCodexLockStatus(chat)
+	if refreshed.State == codexLockOwnedByUs {
+		return refreshed, nil
+	}
+	return refreshed, errors.New("Codex session owner changed during takeover; refresh and try again")
 }

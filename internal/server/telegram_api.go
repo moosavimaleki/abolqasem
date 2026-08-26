@@ -12,20 +12,30 @@ import (
 )
 
 type telegramBridgeConfig struct {
-	BotToken       string            `json:"botToken"`
-	ProxyURL       string            `json:"proxyUrl,omitempty"`
-	AllowedUserIDs []string          `json:"allowedUserIds"`
-	ChatIDs        []string          `json:"chatIds,omitempty"`
-	Mappings       map[string]string `json:"mappings,omitempty"`
+	BotToken       string                  `json:"botToken"`
+	ProxyURL       string                  `json:"proxyUrl,omitempty"`
+	AllowedUserIDs []string                `json:"allowedUserIds"`
+	ChatIDs        []string                `json:"chatIds,omitempty"`
+	Mappings       map[string]string       `json:"mappings,omitempty"`
+	CustomCommands []telegramCustomCommand `json:"customCommands,omitempty"`
+}
+
+type telegramCustomCommand struct {
+	Name             string `json:"name"`
+	Description      string `json:"description,omitempty"`
+	Command          string `json:"command"`
+	WorkingDirectory string `json:"workingDirectory,omitempty"`
+	TimeoutSeconds   int    `json:"timeoutSeconds,omitempty"`
 }
 
 func (c *telegramBridgeConfig) UnmarshalJSON(data []byte) error {
 	type telegramBridgeConfigWire struct {
-		BotToken       string            `json:"botToken"`
-		ProxyURL       string            `json:"proxyUrl,omitempty"`
-		AllowedUserIDs json.RawMessage   `json:"allowedUserIds"`
-		ChatIDs        json.RawMessage   `json:"chatIds,omitempty"`
-		Mappings       map[string]string `json:"mappings,omitempty"`
+		BotToken       string                  `json:"botToken"`
+		ProxyURL       string                  `json:"proxyUrl,omitempty"`
+		AllowedUserIDs json.RawMessage         `json:"allowedUserIds"`
+		ChatIDs        json.RawMessage         `json:"chatIds,omitempty"`
+		Mappings       map[string]string       `json:"mappings,omitempty"`
+		CustomCommands []telegramCustomCommand `json:"customCommands,omitempty"`
 	}
 	var wire telegramBridgeConfigWire
 	if err := json.Unmarshal(data, &wire); err != nil {
@@ -45,6 +55,7 @@ func (c *telegramBridgeConfig) UnmarshalJSON(data []byte) error {
 		AllowedUserIDs: allowedUserIDs,
 		ChatIDs:        chatIDs,
 		Mappings:       wire.Mappings,
+		CustomCommands: wire.CustomCommands,
 	}
 	return nil
 }
@@ -104,6 +115,7 @@ func loadTelegramBridgeConfig() (telegramBridgeConfig, error) {
 	config.AllowedUserIDs = normalizeTelegramIDs(config.AllowedUserIDs)
 	config.ChatIDs = normalizeTelegramIDs(config.ChatIDs)
 	config.Mappings = normalizeTelegramMappings(config.Mappings)
+	config.CustomCommands = normalizeTelegramCustomCommands(config.CustomCommands)
 	return config, nil
 }
 
@@ -113,6 +125,7 @@ func saveTelegramBridgeConfig(config telegramBridgeConfig) error {
 	config.AllowedUserIDs = normalizeTelegramIDs(config.AllowedUserIDs)
 	config.ChatIDs = normalizeTelegramIDs(config.ChatIDs)
 	config.Mappings = normalizeTelegramMappings(config.Mappings)
+	config.CustomCommands = normalizeTelegramCustomCommands(config.CustomCommands)
 	if config.BotToken == "" {
 		return errors.New("botToken is required")
 	}
@@ -135,6 +148,19 @@ func saveTelegramBridgeConfig(config telegramBridgeConfig) error {
 		return err
 	}
 	return os.Rename(temp, path)
+}
+
+// saveTelegramBridgeRuntimeState persists the chat state owned by the polling
+// loop without overwriting settings that may have been changed by the UI since
+// that loop loaded its config.
+func saveTelegramBridgeRuntimeState(config telegramBridgeConfig) error {
+	latest, err := loadTelegramBridgeConfig()
+	if err != nil {
+		return err
+	}
+	latest.ChatIDs = config.ChatIDs
+	latest.Mappings = config.Mappings
+	return saveTelegramBridgeConfig(latest)
 }
 
 func normalizeTelegramMappings(values map[string]string) map[string]string {
@@ -186,7 +212,7 @@ func handleAPITelegramConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, map[string]any{"botToken": config.BotToken, "proxyUrl": config.ProxyURL, "allowedUserIds": config.AllowedUserIDs})
+	writeJSON(w, map[string]any{"botToken": config.BotToken, "proxyUrl": config.ProxyURL, "allowedUserIds": config.AllowedUserIDs, "customCommands": config.CustomCommands})
 }
 
 func handleAPITelegramStatus(w http.ResponseWriter, r *http.Request) {
@@ -222,6 +248,41 @@ func handleAPITelegramConfigure(w http.ResponseWriter, r *http.Request) {
 	}
 	workspaceTelegramBridge.Reload()
 	writeJSON(w, map[string]any{"ok": true})
+}
+
+func normalizeTelegramCustomCommands(values []telegramCustomCommand) []telegramCustomCommand {
+	seen := map[string]bool{}
+	result := make([]telegramCustomCommand, 0, len(values))
+	for _, value := range values {
+		value.Name = strings.ToLower(strings.TrimSpace(value.Name))
+		value.Description = strings.TrimSpace(value.Description)
+		value.Command = strings.TrimSpace(value.Command)
+		value.WorkingDirectory = strings.TrimSpace(value.WorkingDirectory)
+		if !isTelegramCustomCommandName(value.Name) || value.Command == "" || len(value.Command) > 4096 || seen[value.Name] {
+			continue
+		}
+		if value.TimeoutSeconds <= 0 {
+			value.TimeoutSeconds = 30
+		}
+		if value.TimeoutSeconds > 120 {
+			value.TimeoutSeconds = 120
+		}
+		seen[value.Name] = true
+		result = append(result, value)
+	}
+	return result
+}
+
+func isTelegramCustomCommandName(value string) bool {
+	if len(value) == 0 || len(value) > 32 {
+		return false
+	}
+	for _, char := range value {
+		if (char < 'a' || char > 'z') && (char < '0' || char > '9') && char != '_' && char != '-' {
+			return false
+		}
+	}
+	return true
 }
 
 func handleAPITelegramTest(w http.ResponseWriter, r *http.Request) {

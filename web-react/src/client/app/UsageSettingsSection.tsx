@@ -31,12 +31,14 @@ export function UsageSettingsSection({ locale }: { locale: "en" | "fa" }) {
   const [confirmClear, setConfirmClear] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (force = false) => {
     setLoading(true)
     setError(null)
     try {
       const [usageResponse, resourcesResponse] = await Promise.all([
-        fetch("/api/usage", { cache: "no-store" }),
+        force
+          ? fetch("/api/usage/refresh", { method: "POST", cache: "no-store" })
+          : fetch("/api/usage", { cache: "no-store" }),
         fetch("/api/resources", { cache: "no-store" }),
       ])
       if (!usageResponse.ok || !resourcesResponse.ok) throw new Error(fa ? "خواندن آمار مصرف ناموفق بود" : "Could not load usage data")
@@ -49,7 +51,7 @@ export function UsageSettingsSection({ locale }: { locale: "en" | "fa" }) {
     }
   }, [fa])
 
-  useEffect(() => { void refresh() }, [refresh])
+  useEffect(() => { void refresh(false) }, [refresh])
 
   const clearCache = useCallback(async () => {
     setClearing(true)
@@ -77,16 +79,16 @@ export function UsageSettingsSection({ locale }: { locale: "en" | "fa" }) {
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        <Button variant="ghost" size="sm" onClick={() => void refresh()} disabled={loading}>
+        <Button variant="ghost" size="sm" onClick={() => void refresh(true)} disabled={loading}>
           {loading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
           {fa ? "به‌روزرسانی" : "Refresh"}
         </Button>
       </div>
       {error ? <div className="rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">{error}</div> : null}
 
-      <section className="rounded-2xl border border-border bg-card/30 p-4">
+      <section className="rounded-2xl border border-border bg-card/30 p-4" aria-labelledby="codex-usage-title">
         <div className="mb-4 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2"><Gauge className="size-4 text-muted-foreground" /><h2 className="font-medium">Codex</h2></div>
+          <div className="flex items-center gap-2"><Gauge className="size-4 text-muted-foreground" /><h2 id="codex-usage-title" className="font-medium">{fa ? "مصرف Codex" : "Codex usage"}</h2></div>
           {codex?.rate_limits.planType ? <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">{codex.rate_limits.planType}</span> : null}
         </div>
         {windows.length ? <div className="space-y-2">{windows.map((window, index) => <RateWindow key={`${window.windowDurationMins}-${index}`} value={window} locale={locale} />)}</div> : (
@@ -95,8 +97,8 @@ export function UsageSettingsSection({ locale }: { locale: "en" | "fa" }) {
         {codex?.updated_at ? <div className="mt-3 text-xs text-muted-foreground">{fa ? "ثبت‌شده" : "Recorded"}: {new Date(codex.updated_at).toLocaleString(fa ? "fa-IR" : undefined)}</div> : null}
       </section>
 
-      <section className="rounded-2xl border border-border bg-card/30 p-4">
-        <div className="mb-4 flex items-center gap-2"><Database className="size-4 text-muted-foreground" /><h2 className="font-medium">{fa ? "فضای ذخیره‌سازی" : "Storage"}</h2></div>
+      <section className="rounded-2xl border border-border bg-card/30 p-4" aria-labelledby="cache-usage-title">
+        <div className="mb-4 flex items-center gap-2"><Database className="size-4 text-muted-foreground" /><h2 id="cache-usage-title" className="font-medium">{fa ? "کش و فضای ذخیره‌سازی ابوالقاسم" : "Abolqasem cache and storage"}</h2></div>
         <div className="grid gap-3 sm:grid-cols-3">
           <div className="rounded-xl bg-muted/25 p-3"><div className="text-xs text-muted-foreground">{fa ? "کش قابل پاک‌سازی" : "Clearable cache"}</div><div className="mt-1 font-medium">{formatBytes(resources?.storage.cache_bytes ?? 0)}</div></div>
           <div className="rounded-xl bg-muted/25 p-3"><div className="text-xs text-muted-foreground">{fa ? "اتچمنت‌ها" : "Attachments"}</div><div className="mt-1 font-medium">{formatBytes(resources?.storage.upload_bytes ?? 0)}</div></div>

@@ -3,7 +3,7 @@ import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import type { SidebarChatRow, SidebarData } from "../../shared/types"
 import { I18nProvider } from "../i18n/context"
-import { getUsageOrderedSidebarChats, SidebarPrimaryControls } from "./AbolqasemSidebar"
+import { getNewSidebarChatSections, getUsageOrderedSidebarChats, SidebarPrimaryControls } from "./AbolqasemSidebar"
 
 function chat(chatId: string, lastMessageAt: number, unread: boolean): SidebarChatRow {
   return {
@@ -46,6 +46,22 @@ describe("getUsageOrderedSidebarChats", () => {
     olderUnread.unread = false
     expect(getUsageOrderedSidebarChats(sidebarData([olderUnread, newerRead])).map(({ chat }) => chat.chatId))
       .toEqual(["newer", "older"])
+  })
+
+  test("groups runtime state without moving an idle unread chat when it is read", () => {
+    const idleUnread = chat("idle-unread", 300, true)
+    const running = { ...chat("running", 200, false), status: "running" as const }
+    const waiting = { ...chat("waiting", 100, false), status: "waiting_for_user" as const }
+    const data = sidebarData([waiting, idleUnread, running])
+
+    let sections = getNewSidebarChatSections(data)
+    expect(sections.active.map(({ chat }) => chat.chatId)).toEqual(["running"])
+    expect(sections.attention.map(({ chat }) => chat.chatId)).toEqual(["waiting"])
+    expect(sections.recent.map(({ chat }) => chat.chatId)).toEqual(["idle-unread"])
+
+    idleUnread.unread = false
+    sections = getNewSidebarChatSections(data)
+    expect(sections.recent.map(({ chat }) => chat.chatId)).toEqual(["idle-unread"])
   })
 })
 

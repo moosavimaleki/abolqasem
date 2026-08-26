@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"sort"
 	"strconv"
 	"strings"
@@ -25,10 +26,15 @@ import (
 	"golang.org/x/net/proxy"
 )
 
+const telegramCustomCommandOutputLimit = 24 * 1024
+
 const telegramMessageLimit = 3500
 
 const telegramTakeOverLockCallbackPrefix = "lock:takeover:"
 const telegramProjectCallbackPrefix = "project:"
+const telegramProjectsPageCallbackPrefix = "ps:"
+const telegramProjectChatsPageCallbackPrefix = "pc:"
+const telegramPickerPageSize = 5
 
 type telegramUpdate struct {
 	UpdateID      int64                  `json:"update_id"`
@@ -79,6 +85,8 @@ var workspaceTelegramBridge = &telegramBridge{
 	apiBaseURL:          telegramAPIBaseURL,
 	lastForwardedByChat: map[string]string{},
 }
+
+var workspaceTakeOverCodexSessionForTelegram = workspaceTakeOverCodexSession
 
 func telegramHTTPClient(proxyURL string) (*http.Client, error) {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
@@ -133,7 +141,7 @@ func (b *telegramBridge) Reload() {
 		return
 	}
 	client, proxyErr := telegramHTTPClient(config.ProxyURL)
-	fingerprint := config.BotToken + "|" + config.ProxyURL + "|" + strings.Join(config.AllowedUserIDs, ",")
+	fingerprint := telegramBridgeConfigFingerprint(config)
 	if config.BotToken == "" || len(config.AllowedUserIDs) == 0 {
 		if b.cancel != nil {
 			b.cancel()
@@ -159,6 +167,11 @@ func (b *telegramBridge) Reload() {
 	b.cancel, b.active, b.fingerprint, b.lastError = cancel, true, fingerprint, ""
 	go b.poll(ctx, config)
 	go b.initializeBot(ctx, config)
+}
+
+func telegramBridgeConfigFingerprint(config telegramBridgeConfig) string {
+	commands, _ := json.Marshal(config.CustomCommands)
+	return config.BotToken + "|" + config.ProxyURL + "|" + strings.Join(config.AllowedUserIDs, ",") + "|" + string(commands)
 }
 
 func (b *telegramBridge) initializeBot(ctx context.Context, config telegramBridgeConfig) {
@@ -321,6 +334,30 @@ func (b *telegramBridge) handleMessage(ctx context.Context, config telegramBridg
 		status := b.Status(config)
 		b.sendText(ctx, config.BotToken, chatID, fmt.Sprintf("وضعیت پل تلگرام:\n\n- فعال: `%v`\n- اتصال‌ها: `%v`\n- آخرین خطا: `%v`", status["active"], status["mappedChats"], status["lastError"]))
 		return
+	case "commands":
+		b.sendText(ctx, config.BotToken, chatID, telegramCustomCommandHelpMarkdown(config.CustomCommands))
+		return
+	case "run":
+		name := strings.ToLower(strings.TrimSpace(argument))
+		if strings.ContainsAny(name, " \t\n") || name == "" {
+			b.sendText(ctx, config.BotToken, chatID, "استفاده: `/run <name>`\n\nبرای دیدن فرمان‌های مجاز: /commands")
+			return
+		}
+		customCommand, ok := telegramCustomCommandByName(config.CustomCommands, name)
+		if !ok {
+			b.sendText(ctx, config.BotToken, chatID, "این فرمان در allowlist نیست. برای دیدن فرمان‌های مجاز: /commands")
+			return
+		}
+		b.sendText(ctx, config.BotToken, chatID, "در حال اجرای `/run "+telegramMarkdownInline(customCommand.Name)+"`…")
+		go func(command telegramCustomCommand) {
+			output, err := runTelegramCustomCommand(context.Background(), command)
+			if err != nil {
+				b.sendText(context.Background(), config.BotToken, chatID, "اجرای `/run "+telegramMarkdownInline(command.Name)+"` ناموفق بود:\n\n```text\n"+telegramCodeBlock(outputOrError(output, err))+"\n```")
+				return
+			}
+			b.sendText(context.Background(), config.BotToken, chatID, "خروجی `/run "+telegramMarkdownInline(command.Name)+"`:\n\n```text\n"+telegramCodeBlock(output)+"\n```")
+		}(customCommand)
+		return
 	case "chats", "threads", "projects":
 		b.sendProjectPicker(ctx, config, chatID)
 		return
@@ -354,7 +391,7 @@ func (b *telegramBridge) handleMessage(ctx context.Context, config telegramBridg
 			return
 		}
 		config.Mappings[chatID] = target
-		if err := saveTelegramBridgeConfig(config); err != nil {
+		if err := saveTelegramBridgeRuntimeState(config); err != nil {
 			b.sendText(ctx, config.BotToken, chatID, "ذخیرهٔ اتصال ناموفق بود: "+err.Error())
 			return
 		}
@@ -421,14 +458,21 @@ func (b *telegramBridge) handleCallbackQuery(ctx context.Context, config telegra
 			b.answerCallbackQuery(ctx, config.BotToken, callback.ID, "نشست پیدا نشد")
 			return
 		}
-		status, err := workspaceTakeOverCodexSession(target, true, "dangerous")
-		if err != nil {
-			b.answerCallbackQuery(ctx, config.BotToken, callback.ID, "گرفتن نشست ناموفق بود")
-			b.sendTextWithMarkup(ctx, config.BotToken, chatID, "گرفتن قفل نشست ناموفق بود: "+err.Error(), telegramTakeOverLockMarkupForStatus(target, status))
+		b.startCodexTakeOverFromTelegram(ctx, config, callback.ID, chatID, target)
+		return
+	}
+	if page, ok := telegramProjectsPage(callback.Data); ok {
+		b.answerCallbackQuery(ctx, config.BotToken, callback.ID, "صفحه تغییر کرد")
+		b.sendProjectPickerPage(ctx, config, chatID, page)
+		return
+	}
+	if projectID, page, ok := telegramProjectChatsPage(callback.Data); ok {
+		if len(telegramChatChoicesForProject(projectID)) == 0 {
+			b.answerCallbackQuery(ctx, config.BotToken, callback.ID, "پروژه یا چت‌های آن پیدا نشد")
 			return
 		}
-		b.answerCallbackQuery(ctx, config.BotToken, callback.ID, "نشست گرفته شد")
-		b.sendText(ctx, config.BotToken, chatID, "قفل نشست توسط ابوالقاسم گرفته شد. پیام بعدی شما ارسال می‌شود.")
+		b.answerCallbackQuery(ctx, config.BotToken, callback.ID, "صفحه تغییر کرد")
+		b.sendProjectChatPickerPage(ctx, config, chatID, projectID, page)
 		return
 	}
 	if projectID, ok := telegramProjectCallbackProjectID(callback.Data); ok {
@@ -451,7 +495,7 @@ func (b *telegramBridge) handleCallbackQuery(ctx context.Context, config telegra
 	}
 	b.rememberChatID(&config, chatID)
 	config.Mappings[chatID] = target
-	if err := saveTelegramBridgeConfig(config); err != nil {
+	if err := saveTelegramBridgeRuntimeState(config); err != nil {
 		b.answerCallbackQuery(ctx, config.BotToken, callback.ID, "ذخیره ناموفق بود")
 		b.setError(err)
 		return
@@ -459,6 +503,20 @@ func (b *telegramBridge) handleCallbackQuery(ctx context.Context, config telegra
 	b.answerCallbackQuery(ctx, config.BotToken, callback.ID, "نشست انتخاب شد")
 	b.sendText(ctx, config.BotToken, chatID, "نشست انتخاب شد: `"+target+"`")
 	b.sendText(ctx, config.BotToken, chatID, telegramChatHistoryMarkdown(target))
+}
+
+func (b *telegramBridge) startCodexTakeOverFromTelegram(ctx context.Context, config telegramBridgeConfig, callbackID string, telegramChatID string, targetChatID string) {
+	// Telegram expects callback queries to be acknowledged quickly. Claiming a
+	// Codex app-server can take several seconds, so keep it off the polling loop.
+	b.answerCallbackQuery(ctx, config.BotToken, callbackID, "در حال گرفتن نشست…")
+	go func() {
+		status, err := workspaceTakeOverCodexSessionForTelegram(targetChatID, true, "dangerous")
+		if err != nil {
+			b.sendTextWithMarkup(context.Background(), config.BotToken, telegramChatID, "گرفتن قفل نشست ناموفق بود: "+err.Error(), telegramTakeOverLockMarkupForStatus(targetChatID, status))
+			return
+		}
+		b.sendText(context.Background(), config.BotToken, telegramChatID, "قفل نشست توسط ابوالقاسم گرفته شد. پیام بعدی شما ارسال می‌شود.")
+	}()
 }
 
 func telegramTakeOverLockMarkup(chatID string) any {
@@ -499,7 +557,7 @@ func (b *telegramBridge) rememberChatID(config *telegramBridgeConfig, chatID str
 	if len(config.ChatIDs) > 50 {
 		config.ChatIDs = config.ChatIDs[:50]
 	}
-	if err := saveTelegramBridgeConfig(*config); err != nil {
+	if err := saveTelegramBridgeRuntimeState(*config); err != nil {
 		b.setError(err)
 	}
 }
@@ -630,31 +688,42 @@ func (b *telegramBridge) sendChatPicker(ctx context.Context, config telegramBrid
 }
 
 func (b *telegramBridge) sendProjectPicker(ctx context.Context, config telegramBridgeConfig, telegramChatID string) {
-	markdown := telegramProjectListMarkdown()
-	markup := telegramProjectPickerMarkup()
+	b.sendProjectPickerPage(ctx, config, telegramChatID, 1)
+}
+
+func (b *telegramBridge) sendProjectPickerPage(ctx context.Context, config telegramBridgeConfig, telegramChatID string, page int) {
+	choices := telegramProjectChoices(0)
+	markdown := telegramProjectListMarkdownForChoices(choices, page)
+	markup := telegramProjectPickerMarkupForChoices(choices, page)
 	b.sendTextWithMarkup(ctx, config.BotToken, telegramChatID, markdown, markup)
 }
 
-func telegramProjectListMarkdown() string {
-	choices := telegramProjectChoices(0)
+func telegramProjectListMarkdownForChoices(choices []telegramProjectChoice, page int) string {
 	if len(choices) == 0 {
 		return "هنوز پروژه‌ای با chat قابل انتخاب وجود ندارد. ابتدا در ابوالقاسم یک chat بسازید."
 	}
+	start, end, page, pageCount, ok := telegramPageBounds(len(choices), page)
+	if !ok {
+		return "این صفحه وجود ندارد. برای برگشت به ابتدای فهرست /chats را بزنید."
+	}
 	var result strings.Builder
-	result.WriteString("# انتخاب پروژه\n\nبرای دیدن chatهای هر پروژه، روی نام پروژه بزنید.\n\n")
-	for _, choice := range choices {
+	fmt.Fprintf(&result, "# انتخاب پروژه\n\nبرای دیدن chatهای هر پروژه، روی نام پروژه بزنید. صفحهٔ %d از %d:\n\n", page, pageCount)
+	for _, choice := range choices[start:end] {
 		fmt.Fprintf(&result, "- **%s** · %d chat\n", telegramMarkdownInline(choice.Title), choice.ChatCount)
 	}
 	return result.String()
 }
 
-func telegramProjectPickerMarkup() any {
-	choices := telegramProjectChoices(0)
+func telegramProjectPickerMarkupForChoices(choices []telegramProjectChoice, page int) any {
 	if len(choices) == 0 {
 		return nil
 	}
-	rows := make([][]map[string]string, 0, len(choices))
-	for _, choice := range choices {
+	start, end, page, pageCount, ok := telegramPageBounds(len(choices), page)
+	if !ok {
+		return nil
+	}
+	rows := make([][]map[string]string, 0, telegramPickerPageSize+1)
+	for _, choice := range choices[start:end] {
 		callbackData := telegramProjectCallbackPrefix + choice.ProjectID
 		if len([]byte(callbackData)) > 64 {
 			continue
@@ -664,6 +733,9 @@ func telegramProjectPickerMarkup() any {
 			"callback_data": callbackData,
 		}})
 	}
+	rows = appendTelegramPaginationRow(rows, page, pageCount, func(target int) string {
+		return telegramProjectsPageCallbackPrefix + strconv.Itoa(target)
+	})
 	if len(rows) == 0 {
 		return nil
 	}
@@ -671,20 +743,28 @@ func telegramProjectPickerMarkup() any {
 }
 
 func (b *telegramBridge) sendProjectChatPicker(ctx context.Context, config telegramBridgeConfig, telegramChatID string, projectID string) {
+	b.sendProjectChatPickerPage(ctx, config, telegramChatID, projectID, 1)
+}
+
+func (b *telegramBridge) sendProjectChatPickerPage(ctx context.Context, config telegramBridgeConfig, telegramChatID string, projectID string, page int) {
 	choices := telegramChatChoicesForProject(projectID)
 	if len(choices) == 0 {
 		b.sendText(ctx, config.BotToken, telegramChatID, "برای این پروژه chat قابل انتخابی پیدا نشد.")
 		return
 	}
-	markdown := telegramProjectChatListMarkdown(config.Mappings[telegramChatID], choices)
-	markup := telegramProjectChatPickerMarkup(config.Mappings[telegramChatID], choices)
+	markdown := telegramProjectChatListMarkdown(config.Mappings[telegramChatID], choices, page)
+	markup := telegramProjectChatPickerMarkup(config.Mappings[telegramChatID], choices, page)
 	b.sendTextWithMarkup(ctx, config.BotToken, telegramChatID, markdown, markup)
 }
 
-func telegramProjectChatListMarkdown(currentChatID string, choices []telegramChatChoice) string {
+func telegramProjectChatListMarkdown(currentChatID string, choices []telegramChatChoice, page int) string {
+	start, end, page, pageCount, ok := telegramPageBounds(len(choices), page)
+	if !ok {
+		return "این صفحه وجود ندارد. برای برگشت به فهرست پروژه‌ها /chats را بزنید."
+	}
 	var result strings.Builder
-	fmt.Fprintf(&result, "# %s\n\nchat موردنظر را انتخاب کنید:\n\n", telegramMarkdownInline(choices[0].ProjectTitle))
-	for _, choice := range choices {
+	fmt.Fprintf(&result, "# %s\n\nchat موردنظر را انتخاب کنید. صفحهٔ %d از %d:\n\n", telegramMarkdownInline(choices[0].ProjectTitle), page, pageCount)
+	for _, choice := range choices[start:end] {
 		marker := ""
 		if choice.ChatID == currentChatID {
 			marker = " ← نشست فعلی"
@@ -694,9 +774,13 @@ func telegramProjectChatListMarkdown(currentChatID string, choices []telegramCha
 	return result.String()
 }
 
-func telegramProjectChatPickerMarkup(currentChatID string, choices []telegramChatChoice) any {
-	rows := make([][]map[string]string, 0, len(choices))
-	for _, choice := range choices {
+func telegramProjectChatPickerMarkup(currentChatID string, choices []telegramChatChoice, page int) any {
+	start, end, page, pageCount, ok := telegramPageBounds(len(choices), page)
+	if !ok {
+		return nil
+	}
+	rows := make([][]map[string]string, 0, telegramPickerPageSize+1)
+	for _, choice := range choices[start:end] {
 		label := choice.ChatTitle
 		if choice.ChatID == currentChatID {
 			label = "✓ " + label
@@ -706,7 +790,63 @@ func telegramProjectChatPickerMarkup(currentChatID string, choices []telegramCha
 			"callback_data": "chat:" + choice.ChatID,
 		}})
 	}
+	rows = appendTelegramPaginationRow(rows, page, pageCount, func(target int) string {
+		return telegramProjectChatsPageCallbackPrefix + strconv.Itoa(target) + ":" + choices[0].ProjectID
+	})
 	return map[string]any{"inline_keyboard": rows}
+}
+
+func telegramPageBounds(total int, page int) (start int, end int, normalizedPage int, pageCount int, ok bool) {
+	if total == 0 || page < 1 {
+		return 0, 0, page, 0, false
+	}
+	pageCount = (total + telegramPickerPageSize - 1) / telegramPickerPageSize
+	if page > pageCount {
+		return 0, 0, page, pageCount, false
+	}
+	start = (page - 1) * telegramPickerPageSize
+	return start, min(start+telegramPickerPageSize, total), page, pageCount, true
+}
+
+func appendTelegramPaginationRow(rows [][]map[string]string, page int, pageCount int, callback func(int) string) [][]map[string]string {
+	buttons := make([]map[string]string, 0, 2)
+	if page > 1 {
+		buttons = append(buttons, map[string]string{"text": "« قبلی", "callback_data": callback(page - 1)})
+	}
+	if page < pageCount {
+		buttons = append(buttons, map[string]string{"text": "بعدی »", "callback_data": callback(page + 1)})
+	}
+	if len(buttons) > 0 {
+		rows = append(rows, buttons)
+	}
+	return rows
+}
+
+func telegramProjectsPage(data string) (int, bool) {
+	return telegramCallbackPage(data, telegramProjectsPageCallbackPrefix)
+}
+
+func telegramProjectChatsPage(data string) (string, int, bool) {
+	if !strings.HasPrefix(data, telegramProjectChatsPageCallbackPrefix) || len([]byte(data)) > 64 {
+		return "", 0, false
+	}
+	parts := strings.SplitN(strings.TrimPrefix(data, telegramProjectChatsPageCallbackPrefix), ":", 2)
+	if len(parts) != 2 || strings.TrimSpace(parts[1]) == "" {
+		return "", 0, false
+	}
+	page, err := strconv.Atoi(parts[0])
+	if err != nil || page < 1 {
+		return "", 0, false
+	}
+	return strings.TrimSpace(parts[1]), page, true
+}
+
+func telegramCallbackPage(data string, prefix string) (int, bool) {
+	if !strings.HasPrefix(data, prefix) || len([]byte(data)) > 64 {
+		return 0, false
+	}
+	page, err := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(data, prefix)))
+	return page, err == nil && page > 0
 }
 
 func telegramProjectCallbackProjectID(data string) (string, bool) {
@@ -735,9 +875,99 @@ func telegramHelpMarkdown() string {
 		"- `/current` — نمایش نشست فعلی\n" +
 		"- `/history` — نمایش تاریخچهٔ اخیر\n" +
 		"- `/status` — وضعیت پل و اتصال\n" +
+		"- `/commands` — فهرست فرمان‌های سیستمی مجاز\n" +
+		"- `/run <name>` — اجرای یک فرمان از پیش‌تعریف‌شده\n" +
 		"- `/whoami` — شناسه‌های Telegram\n" +
 		"- `/help` — همین راهنما\n\n" +
 		"فرمان‌های سازگار با Codex Mobile یعنی `/threads`، `/newthread` و `/thread <id>` نیز پشتیبانی می‌شوند."
+}
+
+func telegramCustomCommandHelpMarkdown(commands []telegramCustomCommand) string {
+	if len(commands) == 0 {
+		return "هیچ فرمان سیستمی مجازی تعریف نشده است. آن را از Settings → Telegram اضافه کنید."
+	}
+	var result strings.Builder
+	result.WriteString("# فرمان‌های سیستمی مجاز\n\nفقط این فرمان‌های از پیش‌تعریف‌شده، بدون آرگومان، اجرا می‌شوند.\n\n")
+	for _, command := range commands {
+		fmt.Fprintf(&result, "- `/run %s`", telegramMarkdownInline(command.Name))
+		if command.Description != "" {
+			fmt.Fprintf(&result, " — %s", telegramMarkdownInline(command.Description))
+		}
+		result.WriteString("\n")
+	}
+	return result.String()
+}
+
+func telegramCustomCommandByName(commands []telegramCustomCommand, name string) (telegramCustomCommand, bool) {
+	for _, command := range commands {
+		if command.Name == name {
+			return command, true
+		}
+	}
+	return telegramCustomCommand{}, false
+}
+
+func runTelegramCustomCommand(ctx context.Context, command telegramCustomCommand) (string, error) {
+	timeout := time.Duration(command.TimeoutSeconds) * time.Second
+	if timeout <= 0 || timeout > 120*time.Second {
+		timeout = 30 * time.Second
+	}
+	runContext, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	cmd := exec.CommandContext(runContext, "sh", "-lc", command.Command)
+	if command.WorkingDirectory != "" {
+		cmd.Dir = command.WorkingDirectory
+	}
+	output := &telegramCappedOutput{limit: telegramCustomCommandOutputLimit}
+	cmd.Stdout = output
+	cmd.Stderr = output
+	err := cmd.Run()
+	result := strings.TrimSpace(output.String())
+	if output.truncated {
+		result += "\n\n[output truncated]"
+	}
+	if errors.Is(runContext.Err(), context.DeadlineExceeded) {
+		return result, fmt.Errorf("timed out after %s", timeout)
+	}
+	return result, err
+}
+
+type telegramCappedOutput struct {
+	limit     int
+	buffer    strings.Builder
+	truncated bool
+}
+
+func (output *telegramCappedOutput) Write(value []byte) (int, error) {
+	remaining := output.limit - output.buffer.Len()
+	if remaining <= 0 {
+		output.truncated = true
+		return len(value), nil
+	}
+	if len(value) > remaining {
+		_, _ = output.buffer.Write(value[:remaining])
+		output.truncated = true
+		return len(value), nil
+	}
+	_, _ = output.buffer.Write(value)
+	return len(value), nil
+}
+
+func (output *telegramCappedOutput) String() string { return output.buffer.String() }
+
+func outputOrError(output string, err error) string {
+	if strings.TrimSpace(output) != "" {
+		return output + "\n\n" + err.Error()
+	}
+	return err.Error()
+}
+
+func telegramCodeBlock(value string) string {
+	value = strings.ReplaceAll(value, "```", "''' ")
+	if strings.TrimSpace(value) == "" {
+		return "(no output)"
+	}
+	return value
 }
 
 func createTelegramChat(config *telegramBridgeConfig, telegramChatID string) (string, error) {
@@ -775,7 +1005,7 @@ func createTelegramChat(config *telegramBridgeConfig, telegramChatID string) (st
 		config.Mappings = map[string]string{}
 	}
 	config.Mappings[telegramChatID] = chat.ID
-	if err := saveTelegramBridgeConfig(*config); err != nil {
+	if err := saveTelegramBridgeRuntimeState(*config); err != nil {
 		return "", err
 	}
 	workspaceConnections.broadcast(chat.ID)

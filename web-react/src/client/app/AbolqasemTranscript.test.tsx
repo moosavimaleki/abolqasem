@@ -230,7 +230,7 @@ describe("AbolqasemTranscript", () => {
     expect(html).toContain("Please review these.")
   })
 
-  test("hides steer system-message text and renders a steer icon left of the user bubble", () => {
+  test("collapses steer system-message text once and renders a steer icon beside the user bubble", () => {
     const html = renderTranscript([
       {
         id: "user-steer-1",
@@ -246,7 +246,8 @@ Please check the latest error first.`,
       },
     ])
 
-    expect(html).not.toContain("The user would like you to know the following.")
+    expect(html.match(/The user would like you to know the following\./g)).toHaveLength(1)
+    expect(html).toContain("System message")
     expect(html).toContain("Please check the latest error first.")
     expect(html).toContain('aria-label="Sent mid-turn"')
   })

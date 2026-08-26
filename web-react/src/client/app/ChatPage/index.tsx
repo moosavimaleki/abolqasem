@@ -18,7 +18,7 @@ import { getAppearanceThemeClassName, useReaderAppearanceSettings } from "../../
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "../../components/ui/resizable"
 import { actionMatchesEvent, getResolvedKeybindings } from "../../lib/keybindings"
 import { deriveLatestContextWindowSnapshot } from "../../lib/contextWindow"
-import { deriveLatestRateLimitSnapshot } from "../../lib/usage"
+import { deriveLatestRateLimitSnapshot, type UsageSnapshot } from "../../lib/usage"
 import { cn } from "../../lib/utils"
 import {
   DEFAULT_RIGHT_SIDEBAR_SIZE,
@@ -945,6 +945,7 @@ export function ChatPage() {
   )
   const resolvedKeybindings = useMemo(() => getResolvedKeybindings(state.keybindings), [state.keybindings])
   const baseContextWindowSnapshotRef = useRef<ReturnType<typeof deriveLatestContextWindowSnapshot>>(null)
+	const [cachedRateLimitSnapshot, setCachedRateLimitSnapshot] = useState<UsageSnapshot["codex"]>(null)
   const contextWindowSnapshot = useMemo(() => {
     const derivedSnapshot = deriveLatestContextWindowSnapshot(state.chatSnapshot?.messages ?? [])
     const previousSnapshot = baseContextWindowSnapshotRef.current
@@ -954,10 +955,22 @@ export function ChatPage() {
     baseContextWindowSnapshotRef.current = derivedSnapshot
     return derivedSnapshot
   }, [state.chatSnapshot?.messages])
-  const rateLimitSnapshot = useMemo(
+  const transcriptRateLimitSnapshot = useMemo(
     () => deriveLatestRateLimitSnapshot(state.chatSnapshot?.messages ?? []),
     [state.chatSnapshot?.messages],
   )
+  const rateLimitSnapshot = transcriptRateLimitSnapshot ?? cachedRateLimitSnapshot?.rate_limits ?? null
+
+  useEffect(() => {
+    const controller = new AbortController()
+    fetch("/api/usage", { cache: "no-store", signal: controller.signal })
+      .then((response) => response.ok ? response.json() as Promise<UsageSnapshot> : null)
+      .then((snapshot) => {
+        if (snapshot) setCachedRateLimitSnapshot(snapshot.codex)
+      })
+      .catch(() => undefined)
+    return () => controller.abort()
+  }, [state.activeChatId])
   useLayoutEffect(() => {
     messagesRef.current = state.messages
   }, [state.messages])

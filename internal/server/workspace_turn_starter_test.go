@@ -12,9 +12,54 @@ import (
 	"time"
 
 	codexprovider "abolqasem/internal/providers/codex"
+	codexrpc "abolqasem/internal/providers/codex/rpc"
 	"abolqasem/internal/workspace/agent"
 	"abolqasem/internal/workspace/readmodels"
 )
+
+type workspaceCodexTestTransport struct {
+	sent chan []byte
+}
+
+func (transport *workspaceCodexTestTransport) Send(message []byte) error {
+	transport.sent <- append([]byte(nil), message...)
+	return nil
+}
+
+func TestWorkspaceCodexStdoutAcceptsResumeResponsesLargerThanScannerLimit(t *testing.T) {
+	transport := &workspaceCodexTestTransport{sent: make(chan []byte, 1)}
+	client := codexrpc.NewClient(transport)
+	process := &workspaceCodexProcess{client: client}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	var result struct {
+		Thread struct {
+			ID string `json:"id"`
+		} `json:"thread"`
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- client.Call(ctx, "thread/resume", map[string]any{"threadId": "session-large"}, &result)
+	}()
+
+	request := <-transport.sent
+	var envelope struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(request, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	response := `{"id":"` + envelope.ID + `","result":{"thread":{"id":"session-large"},"history":"` + strings.Repeat("x", 9*1024*1024) + `"}}` + "\n"
+	process.scanStdout(strings.NewReader(response))
+
+	if err := <-done; err != nil {
+		t.Fatalf("large resume response was not delivered: %v", err)
+	}
+	if result.Thread.ID != "session-large" {
+		t.Fatalf("thread id = %q", result.Thread.ID)
+	}
+}
 
 func TestWorkspaceCodexInputsReferenceAttachedTextWithoutInliningIt(t *testing.T) {
 	dir := t.TempDir()

@@ -65,6 +65,7 @@ import { Button, buttonVariants } from "../components/ui/button"
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../components/ui/dialog"
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "../components/ui/context-menu"
 import { Input } from "../components/ui/input"
+import { Textarea } from "../components/ui/textarea"
 import { SettingsHeaderButton } from "../components/ui/settings-header-button"
 import type { EditorPreset } from "../../shared/protocol"
 import { SegmentedControl } from "../components/ui/segmented-control"
@@ -96,6 +97,14 @@ import { getDictionary, getLocaleDirection, LOCALE_OPTIONS, normalizeLocale } fr
 import { useI18n } from "../i18n/context"
 import { HOOK_NOTIFICATION_SETTINGS_HASH, settingsRoute } from "./routes"
 import { UsageSettingsSection } from "./UsageSettingsSection"
+
+type TelegramCustomCommandDraft = {
+  name: string
+  description: string
+  command: string
+  workingDirectory: string
+  timeoutSeconds: number
+}
 
 const sidebarItems = [
   {
@@ -2171,7 +2180,10 @@ export function SettingsPage() {
       mcp: { label: dictionary.settings.mcpServers, subtitle: dictionary.settings.mcpServersSubtitle },
       providers: { label: dictionary.settings.providers, subtitle: dictionary.settings.providersSubtitle },
       proxy: { label: dictionary.settings.proxy, subtitle: dictionary.settings.proxySubtitle },
-      telegram: { label: "Telegram", subtitle: "Connect an allowlisted Telegram bot to existing Codex chats." },
+      telegram: {
+        label: locale === "fa" ? "تلگرام" : "Telegram",
+        subtitle: locale === "fa" ? "اتصال امن ربات تلگرام به چت‌های Codex." : "Connect an allowlisted Telegram bot to existing Codex chats.",
+      },
       usage: { label: locale === "fa" ? "مصرف" : "Usage", subtitle: locale === "fa" ? "محدودیت‌های Codex و فضای کش محلی." : "Review Codex limits and local cache usage." },
       keybindings: { label: dictionary.settings.keybindings, subtitle: dictionary.settings.keybindingsSubtitle },
       changelog: { label: dictionary.settings.changelog, subtitle: dictionary.settings.changelogSubtitle },
@@ -2252,7 +2264,7 @@ export function SettingsPage() {
   const [llmValidationStatus, setLlmValidationStatus] = useState<"idle" | "valid" | "invalid">("idle")
   const [llmValidationError, setLlmValidationError] = useState<unknown | null>(null)
   const [llmValidationDialogOpen, setLlmValidationDialogOpen] = useState(false)
-  const [telegramDraft, setTelegramDraft] = useState({ botToken: "", proxyUrl: "", allowedUserIds: "" })
+  const [telegramDraft, setTelegramDraft] = useState<{ botToken: string; proxyUrl: string; allowedUserIds: string; customCommands: TelegramCustomCommandDraft[] }>({ botToken: "", proxyUrl: "", allowedUserIds: "", customCommands: [] })
   const [telegramStatus, setTelegramStatus] = useState<{ configured: boolean; active: boolean; proxyConfigured: boolean; mappedChats: number; knownChats: number; lastError: string } | null>(null)
   const [telegramError, setTelegramError] = useState<string | null>(null)
   const [telegramNotice, setTelegramNotice] = useState<string | null>(null)
@@ -2414,12 +2426,23 @@ export function SettingsPage() {
       fetch("/api/telegram/config", { cache: "no-store" }),
       fetch("/api/telegram/status", { cache: "no-store" }),
     ])
-    if (!configResponse.ok || !statusResponse.ok) throw new Error("Telegram settings could not be loaded")
-    const config = await configResponse.json() as { botToken?: string; proxyUrl?: string; allowedUserIds?: string[] }
+    if (!configResponse.ok || !statusResponse.ok) throw new Error(locale === "fa" ? "تنظیمات تلگرام بارگیری نشد." : "Telegram settings could not be loaded")
+    const config = await configResponse.json() as { botToken?: string; proxyUrl?: string; allowedUserIds?: string[]; customCommands?: TelegramCustomCommandDraft[] }
     const status = await statusResponse.json() as { configured?: boolean; active?: boolean; proxyConfigured?: boolean; mappedChats?: number; knownChats?: number; lastError?: string }
-    setTelegramDraft({ botToken: config.botToken ?? "", proxyUrl: config.proxyUrl ?? "", allowedUserIds: (config.allowedUserIds ?? []).join(", ") })
+    setTelegramDraft({
+      botToken: config.botToken ?? "",
+      proxyUrl: config.proxyUrl ?? "",
+      allowedUserIds: (config.allowedUserIds ?? []).join(", "),
+      customCommands: (config.customCommands ?? []).map((command) => ({
+        name: command.name ?? "",
+        description: command.description ?? "",
+        command: command.command ?? "",
+        workingDirectory: command.workingDirectory ?? "",
+        timeoutSeconds: command.timeoutSeconds ?? 30,
+      })),
+    })
     setTelegramStatus({ configured: status.configured === true, active: status.active === true, proxyConfigured: status.proxyConfigured === true, mappedChats: status.mappedChats ?? 0, knownChats: status.knownChats ?? 0, lastError: status.lastError ?? "" })
-  }, [])
+  }, [locale])
 
   useEffect(() => {
     if (selectedPage !== "telegram" || isConnecting) return
@@ -2438,6 +2461,7 @@ export function SettingsPage() {
           botToken: telegramDraft.botToken,
           proxyUrl: telegramDraft.proxyUrl,
           allowedUserIds: telegramDraft.allowedUserIds.split(/[\s,]+/).filter(Boolean),
+          customCommands: telegramDraft.customCommands,
         }),
       })
       if (!response.ok) throw new Error(await response.text())
@@ -2449,6 +2473,24 @@ export function SettingsPage() {
     }
   }, [refreshTelegram, telegramDraft])
 
+  const updateTelegramCustomCommand = useCallback((index: number, patch: Partial<TelegramCustomCommandDraft>) => {
+    setTelegramDraft((current) => ({
+      ...current,
+      customCommands: current.customCommands.map((command, commandIndex) => commandIndex === index ? { ...command, ...patch } : command),
+    }))
+  }, [])
+
+  const addTelegramCustomCommand = useCallback(() => {
+    setTelegramDraft((current) => ({
+      ...current,
+      customCommands: [...current.customCommands, { name: "", description: "", command: "", workingDirectory: "", timeoutSeconds: 30 }],
+    }))
+  }, [])
+
+  const removeTelegramCustomCommand = useCallback((index: number) => {
+    setTelegramDraft((current) => ({ ...current, customCommands: current.customCommands.filter((_, commandIndex) => commandIndex !== index) }))
+  }, [])
+
   const testTelegram = useCallback(async () => {
     setTelegramTesting(true)
     setTelegramError(null)
@@ -2456,14 +2498,14 @@ export function SettingsPage() {
     try {
       const response = await fetch("/api/telegram/test", { method: "POST" })
       if (!response.ok) throw new Error(await response.text())
-      setTelegramNotice("Test message sent with Rich Markdown and RTL.")
+      setTelegramNotice(locale === "fa" ? "پیام آزمایشی با Rich Markdown و RTL ارسال شد." : "Test message sent with Rich Markdown and RTL.")
       await refreshTelegram()
     } catch (error) {
       setTelegramError(error instanceof Error ? error.message : String(error))
     } finally {
       setTelegramTesting(false)
     }
-  }, [refreshTelegram])
+  }, [locale, refreshTelegram])
 
   function commitScrollback() {
     const nextValue = Number(scrollbackDraft)
@@ -3444,31 +3486,61 @@ export function SettingsPage() {
                     </div>
                   </>
                 ) : selectedPage === "telegram" ? (
-                  <div className="border-b border-border">
+                  <div className="border-b border-border" dir={direction}>
                     {telegramError ? <div className="mb-4 rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">{telegramError}</div> : null}
                     {telegramNotice ? <div className="mb-4 rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm text-foreground">{telegramNotice}</div> : null}
                     <SettingsRow
-                      title="Telegram bridge"
-                      description="Only allowlisted users can use the bridge. In Telegram, use /chats to see and select recent chats, or send a message to create one automatically."
+                      title={locale === "fa" ? "پل تلگرام" : "Telegram bridge"}
+                      description={locale === "fa"
+                        ? "فقط کاربران مجاز می‌توانند از ربات استفاده کنند. برای دیدن و انتخاب چت‌ها در تلگرام دستور /chats را بفرستید."
+                        : "Only allowlisted users can use the bridge. In Telegram, use /chats to see and select recent chats, or send a message to create one automatically."}
                       bordered={false}
                     >
-                      <div className="text-sm text-muted-foreground">{telegramStatus?.active ? "Active" : telegramStatus?.configured ? "Configured; starting" : "Not configured"}</div>
+                      <div className="text-sm text-muted-foreground">{telegramStatus?.active
+                        ? (locale === "fa" ? "فعال" : "Active")
+                        : telegramStatus?.configured
+                          ? (locale === "fa" ? "تنظیم شده؛ در حال راه‌اندازی" : "Configured; starting")
+                          : (locale === "fa" ? "تنظیم نشده" : "Not configured")}</div>
                     </SettingsRow>
-                    <SettingsRow title="Bot token" description="Stored locally with owner-only file permissions.">
-                      <Input type="password" value={telegramDraft.botToken} onChange={(event) => setTelegramDraft((current) => ({ ...current, botToken: event.target.value }))} placeholder="123456:token" />
+                    <SettingsRow title={locale === "fa" ? "توکن ربات" : "Bot token"} description={locale === "fa" ? "به‌صورت محلی و با دسترسی محدود به مالک ذخیره می‌شود." : "Stored locally with owner-only file permissions."}>
+                      <Input dir="ltr" className="font-mono text-left" type="password" value={telegramDraft.botToken} onChange={(event) => setTelegramDraft((current) => ({ ...current, botToken: event.target.value }))} placeholder="123456:token" />
                     </SettingsRow>
-                    <SettingsRow title="Allowed user IDs" description="Comma-separated Telegram numeric IDs, or * for all users.">
-                      <Input value={telegramDraft.allowedUserIds} onChange={(event) => setTelegramDraft((current) => ({ ...current, allowedUserIds: event.target.value }))} placeholder="123456789" />
+                    <SettingsRow title={locale === "fa" ? "شناسهٔ کاربران مجاز" : "Allowed user IDs"} description={locale === "fa" ? "شناسه‌های عددی تلگرام را با ویرگول جدا کنید؛ * یعنی همهٔ کاربران." : "Comma-separated Telegram numeric IDs, or * for all users."}>
+                      <Input dir="ltr" className="font-mono text-left" value={telegramDraft.allowedUserIds} onChange={(event) => setTelegramDraft((current) => ({ ...current, allowedUserIds: event.target.value }))} placeholder="123456789" />
                     </SettingsRow>
-                    <SettingsRow title="Telegram proxy" description="Required for polling and sending. Supports HTTP, HTTPS, SOCKS5, and SOCKS5H.">
-                      <Input dir="ltr" value={telegramDraft.proxyUrl} onChange={(event) => setTelegramDraft((current) => ({ ...current, proxyUrl: event.target.value }))} placeholder="socks5://127.0.0.1:10810" />
+                    <SettingsRow title={locale === "fa" ? "پروکسی تلگرام" : "Telegram proxy"} description={locale === "fa" ? "برای دریافت و ارسال پیام لازم است؛ HTTP، HTTPS، SOCKS5 و SOCKS5H پشتیبانی می‌شوند." : "Required for polling and sending. Supports HTTP, HTTPS, SOCKS5, and SOCKS5H."}>
+                      <Input dir="ltr" className="font-mono text-left" value={telegramDraft.proxyUrl} onChange={(event) => setTelegramDraft((current) => ({ ...current, proxyUrl: event.target.value }))} placeholder="socks5://127.0.0.1:10810" />
                     </SettingsRow>
-                    <SettingsRow title="Mappings" description="Each Telegram chat chooses its destination from the /chats picker.">
+                    <SettingsRow
+                      title={locale === "fa" ? "فرمان‌های سفارشی سیستم" : "Custom system commands"}
+                      description={locale === "fa"
+                        ? "کاربران مجاز فقط همین فرمان‌های ازپیش‌تعریف‌شده را با /run <name> اجرا می‌کنند؛ آرگومان دلخواه از تلگرام پذیرفته نمی‌شود."
+                        : "Only allowlisted Telegram users may run these exact commands with /run <name>. Arguments from Telegram are never accepted."}
+                    >
+                      <div className="flex w-full flex-col gap-3">
+                        {telegramDraft.customCommands.map((command, index) => (
+                          <div key={`${command.name}-${index}`} className="rounded-lg border border-border bg-muted/20 p-3">
+                            <div className="grid gap-2 md:grid-cols-[minmax(0,0.7fr)_minmax(0,1fr)_auto]">
+                              <Input aria-label={locale === "fa" ? "نام فرمان تلگرام" : "Telegram command name"} dir="ltr" className="font-mono text-left" value={command.name} onChange={(event) => updateTelegramCustomCommand(index, { name: event.target.value.toLowerCase() })} placeholder="status" />
+                              <Input aria-label={locale === "fa" ? "توضیح فرمان تلگرام" : "Telegram command description"} dir={direction} className={direction === "rtl" ? "text-right" : "text-left"} value={command.description} onChange={(event) => updateTelegramCustomCommand(index, { description: event.target.value })} placeholder={locale === "fa" ? "توضیحی که در /commands نمایش داده می‌شود" : "Description shown by /commands"} />
+                              <Button type="button" size="icon" variant="ghost" onClick={() => removeTelegramCustomCommand(index)} aria-label={locale === "fa" ? "حذف فرمان سفارشی تلگرام" : "Remove custom Telegram command"}><Trash2 className="size-4" /></Button>
+                            </div>
+                            <Textarea aria-label={locale === "fa" ? "فرمان سیستم" : "System command"} dir="ltr" className="mt-2 min-h-20 font-mono text-left text-xs" value={command.command} onChange={(event) => updateTelegramCustomCommand(index, { command: event.target.value })} placeholder="git status --short" />
+                            <div className="mt-2 grid gap-2 md:grid-cols-[minmax(0,1fr)_9rem]">
+                              <Input aria-label={locale === "fa" ? "مسیر اجرای فرمان" : "Working directory"} dir="ltr" className="font-mono text-left" value={command.workingDirectory} onChange={(event) => updateTelegramCustomCommand(index, { workingDirectory: event.target.value })} placeholder={locale === "fa" ? "مسیر اجرا؛ اختیاری" : "Optional working directory"} />
+                              <Input aria-label={locale === "fa" ? "مهلت اجرا به ثانیه" : "Timeout seconds"} dir="ltr" className="font-mono text-left" type="number" min={1} max={120} value={command.timeoutSeconds} onChange={(event) => updateTelegramCustomCommand(index, { timeoutSeconds: Number(event.target.value) || 30 })} />
+                            </div>
+                          </div>
+                        ))}
+                        <Button type="button" size="sm" variant="outline" className="w-fit" onClick={addTelegramCustomCommand}><Plus className="size-4" /> {locale === "fa" ? "افزودن فرمان" : "Add command"}</Button>
+                      </div>
+                    </SettingsRow>
+                    <SettingsRow title={locale === "fa" ? "اتصال چت‌ها" : "Mappings"} description={locale === "fa" ? "هر چت تلگرام مقصد خود را از فهرست /chats انتخاب می‌کند." : "Each Telegram chat chooses its destination from the /chats picker."}>
                       <div className="flex flex-wrap items-center gap-3">
-                        <span className="text-sm text-muted-foreground">{telegramStatus?.mappedChats ?? 0} connected</span>
-                        <span className="text-sm text-muted-foreground">{telegramStatus?.proxyConfigured ? "Proxy ready" : "Proxy required"}</span>
-                        <Button type="button" size="sm" onClick={() => void saveTelegram()} disabled={telegramSaving}>{telegramSaving ? "Saving…" : "Save and connect"}</Button>
-                        <Button type="button" size="sm" variant="outline" onClick={() => void testTelegram()} disabled={telegramTesting || !canSendTelegramTest(telegramStatus)}>{telegramTesting ? "Sending…" : "Send test"}</Button>
+                        <span className="text-sm text-muted-foreground">{locale === "fa" ? `${telegramStatus?.mappedChats ?? 0} چت متصل` : `${telegramStatus?.mappedChats ?? 0} connected`}</span>
+                        <span className="text-sm text-muted-foreground">{telegramStatus?.proxyConfigured ? (locale === "fa" ? "پروکسی آماده است" : "Proxy ready") : (locale === "fa" ? "پروکسی لازم است" : "Proxy required")}</span>
+                        <Button type="button" size="sm" onClick={() => void saveTelegram()} disabled={telegramSaving}>{telegramSaving ? (locale === "fa" ? "در حال ذخیره…" : "Saving…") : (locale === "fa" ? "ذخیره و اتصال" : "Save and connect")}</Button>
+                        <Button type="button" size="sm" variant="outline" onClick={() => void testTelegram()} disabled={telegramTesting || !canSendTelegramTest(telegramStatus)}>{telegramTesting ? (locale === "fa" ? "در حال ارسال…" : "Sending…") : (locale === "fa" ? "ارسال پیام آزمایشی" : "Send test")}</Button>
                       </div>
                     </SettingsRow>
                     {telegramStatus?.lastError ? <div className="px-4 pb-4 text-sm text-destructive">{telegramStatus.lastError}</div> : null}

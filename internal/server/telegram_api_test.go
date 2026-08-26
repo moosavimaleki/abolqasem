@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"abolqasem/internal/workspace/readmodels"
 )
@@ -22,7 +24,7 @@ func TestTelegramConfigAPIStoresPrivateAllowlistedConfiguration(t *testing.T) {
 	mux := http.NewServeMux()
 	setupRoutes(mux)
 
-	request := httptest.NewRequest(http.MethodPost, "/api/telegram/configure", bytes.NewBufferString(`{"botToken":" 123:token ","proxyUrl":"socks5://127.0.0.1:10810","allowedUserIds":[" tg:42 ","*","42"]}`))
+	request := httptest.NewRequest(http.MethodPost, "/api/telegram/configure", bytes.NewBufferString(`{"botToken":" 123:token ","proxyUrl":"socks5://127.0.0.1:10810","allowedUserIds":[" tg:42 ","*","42"],"customCommands":[{"name":" Git_Status ","description":" Repository status ","command":" git status --short ","workingDirectory":" /tmp ","timeoutSeconds":999},{"name":"bad name","command":"echo no"}]}`))
 	response := httptest.NewRecorder()
 	mux.ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
@@ -32,11 +34,82 @@ func TestTelegramConfigAPIStoresPrivateAllowlistedConfiguration(t *testing.T) {
 	if err != nil || info.Mode().Perm() != 0o600 {
 		t.Fatalf("expected private Telegram config, info=%#v err=%v", info, err)
 	}
+	config, err := loadTelegramBridgeConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(config.CustomCommands, []telegramCustomCommand{{Name: "git_status", Description: "Repository status", Command: "git status --short", WorkingDirectory: "/tmp", TimeoutSeconds: 120}}) {
+		t.Fatalf("unexpected custom commands: %#v", config.CustomCommands)
+	}
 
 	status := httptest.NewRecorder()
 	mux.ServeHTTP(status, httptest.NewRequest(http.MethodGet, "/api/telegram/status", nil))
 	if status.Code != http.StatusOK || !bytes.Contains(status.Body.Bytes(), []byte(`"configured":true`)) || !bytes.Contains(status.Body.Bytes(), []byte(`"proxyConfigured":true`)) || !bytes.Contains(status.Body.Bytes(), []byte(`"allowAllUsers":true`)) {
 		t.Fatalf("unexpected Telegram status: %d %s", status.Code, status.Body.String())
+	}
+}
+
+func TestTelegramRuntimeStateSavePreservesNewerCustomCommands(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CODEX_HOME", filepath.Join(home, ".codex"))
+	command := telegramCustomCommand{Name: "status", Command: "git status --short", TimeoutSeconds: 30}
+	latest := telegramBridgeConfig{
+		BotToken:       "123:token",
+		ProxyURL:       "socks5://127.0.0.1:10810",
+		AllowedUserIDs: []string{"42"},
+		CustomCommands: []telegramCustomCommand{command},
+	}
+	if err := saveTelegramBridgeConfig(latest); err != nil {
+		t.Fatal(err)
+	}
+
+	staleWorkerConfig := telegramBridgeConfig{
+		BotToken:       latest.BotToken,
+		ProxyURL:       latest.ProxyURL,
+		AllowedUserIDs: latest.AllowedUserIDs,
+		ChatIDs:        []string{"99"},
+		Mappings:       map[string]string{"99": "chat-1"},
+	}
+	if err := saveTelegramBridgeRuntimeState(staleWorkerConfig); err != nil {
+		t.Fatal(err)
+	}
+
+	stored, err := loadTelegramBridgeConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(stored.CustomCommands, []telegramCustomCommand{command}) {
+		t.Fatalf("runtime state save removed custom commands: %#v", stored.CustomCommands)
+	}
+	if !reflect.DeepEqual(stored.ChatIDs, []string{"99"}) || stored.Mappings["99"] != "chat-1" {
+		t.Fatalf("runtime state was not saved: %#v", stored)
+	}
+}
+
+func TestTelegramBridgeFingerprintIncludesCustomCommands(t *testing.T) {
+	base := telegramBridgeConfig{BotToken: "123:token", ProxyURL: "socks5://127.0.0.1:10810", AllowedUserIDs: []string{"42"}}
+	withCommand := base
+	withCommand.CustomCommands = []telegramCustomCommand{{Name: "status", Command: "git status --short"}}
+	if telegramBridgeConfigFingerprint(base) == telegramBridgeConfigFingerprint(withCommand) {
+		t.Fatal("custom command changes must restart the Telegram worker")
+	}
+}
+
+func TestTelegramCustomCommandRunsOnlyConfiguredCommand(t *testing.T) {
+	output, err := runTelegramCustomCommand(context.Background(), telegramCustomCommand{
+		Name:           "report",
+		Command:        "printf 'ready'",
+		TimeoutSeconds: 1,
+	})
+	if err != nil || output != "ready" {
+		t.Fatalf("run command = %q, %v", output, err)
+	}
+	if _, ok := telegramCustomCommandByName([]telegramCustomCommand{{Name: "report"}}, "missing"); ok {
+		t.Fatal("unknown command must not resolve")
+	}
+	if !strings.Contains(telegramCustomCommandHelpMarkdown([]telegramCustomCommand{{Name: "report", Description: "show report"}}), "/run report") {
+		t.Fatal("custom command help should advertise the safe invocation")
 	}
 }
 
@@ -233,6 +306,68 @@ func TestTelegramTakeOverLockCallbackIsCompactAndValidated(t *testing.T) {
 	}
 }
 
+func TestTelegramTakeOverAcknowledgesBeforeClaimCompletes(t *testing.T) {
+	paths := make(chan string, 2)
+	telegramServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths <- r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"result":{}}`))
+	}))
+	defer telegramServer.Close()
+
+	claimStarted := make(chan struct{})
+	releaseClaim := make(chan struct{})
+	claimFinished := make(chan struct{})
+	originalTakeOver := workspaceTakeOverCodexSessionForTelegram
+	workspaceTakeOverCodexSessionForTelegram = func(chatID string, confirmed bool, executionMode string) (readmodels.CodexLockStatus, error) {
+		close(claimStarted)
+		<-releaseClaim
+		close(claimFinished)
+		return readmodels.CodexLockStatus{State: codexLockOwnedByUs}, nil
+	}
+	t.Cleanup(func() {
+		select {
+		case <-claimFinished:
+		default:
+			close(releaseClaim)
+			<-claimFinished
+		}
+		workspaceTakeOverCodexSessionForTelegram = originalTakeOver
+	})
+
+	bridge := &telegramBridge{client: telegramServer.Client(), apiBaseURL: telegramServer.URL}
+	bridge.startCodexTakeOverFromTelegram(context.Background(), telegramBridgeConfig{BotToken: "123:test"}, "callback-1", "99", "chat-1")
+
+	select {
+	case path := <-paths:
+		if path != "/bot123:test/answerCallbackQuery" {
+			t.Fatalf("first Telegram request = %q", path)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("callback query was not acknowledged promptly")
+	}
+	select {
+	case <-claimStarted:
+	case <-time.After(time.Second):
+		t.Fatal("takeover worker did not start")
+	}
+	select {
+	case path := <-paths:
+		t.Fatalf("sent %q before takeover completed", path)
+	default:
+	}
+
+	close(releaseClaim)
+	select {
+	case path := <-paths:
+		if path != "/bot123:test/sendRichMessage" {
+			t.Fatalf("completion Telegram request = %q", path)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("takeover completion was not reported")
+	}
+}
+
 func TestTelegramChatChoicesAreNewestFirstAndRenderable(t *testing.T) {
 	sidebar := readmodels.SidebarData{ProjectGroups: []readmodels.SidebarProjectGroup{
 		{GroupKey: "project-one", Title: "پروژه *یک*", Chats: []readmodels.SidebarChatRow{{ChatID: "chat-old", Title: "قدیمی", CreationTime: 10}}},
@@ -267,10 +402,10 @@ func TestTelegramProjectPickerSeparatesChatsByProject(t *testing.T) {
 	if len(projectChats) != 2 || projectChats[0].ChatID != "chat-new" || projectChats[1].ChatID != "chat-middle" {
 		t.Fatalf("project chats = %#v", projectChats)
 	}
-	if markdown := telegramProjectChatListMarkdown("chat-middle", projectChats); !strings.Contains(markdown, "فعال") || !strings.Contains(markdown, "نشست فعلی") || strings.Contains(markdown, "کهنه") {
+	if markdown := telegramProjectChatListMarkdown("chat-middle", projectChats, 1); !strings.Contains(markdown, "فعال") || !strings.Contains(markdown, "نشست فعلی") || strings.Contains(markdown, "کهنه") {
 		t.Fatalf("project chat markdown = %q", markdown)
 	}
-	markup, err := json.Marshal(telegramProjectChatPickerMarkup("chat-middle", projectChats))
+	markup, err := json.Marshal(telegramProjectChatPickerMarkup("chat-middle", projectChats, 1))
 	if err != nil || !strings.Contains(string(markup), "chat:chat-new") || !strings.Contains(string(markup), "chat:chat-middle") || strings.Contains(string(markup), "chat:chat-old") {
 		t.Fatalf("project chat markup = %s err=%v", markup, err)
 	}
@@ -279,6 +414,36 @@ func TestTelegramProjectPickerSeparatesChatsByProject(t *testing.T) {
 	}
 	if _, ok := telegramProjectCallbackProjectID("project:" + strings.Repeat("x", 65)); ok {
 		t.Fatal("oversized project callback must be rejected")
+	}
+}
+
+func TestTelegramProjectAndChatPickersPaginateFiveAtATime(t *testing.T) {
+	projects := make([]telegramProjectChoice, 0, 7)
+	chats := make([]telegramChatChoice, 0, 7)
+	for index := 1; index <= 7; index++ {
+		projects = append(projects, telegramProjectChoice{ProjectID: fmt.Sprintf("project-%d", index), Title: fmt.Sprintf("پروژه %d", index), ChatCount: index})
+		chats = append(chats, telegramChatChoice{ProjectID: "project-1", ProjectTitle: "پروژه ۱", ChatID: fmt.Sprintf("chat-%d", index), ChatTitle: fmt.Sprintf("چت %d", index)})
+	}
+
+	projectMarkup, err := json.Marshal(telegramProjectPickerMarkupForChoices(projects, 1))
+	if err != nil || strings.Count(string(projectMarkup), `"callback_data":"project:`) != 5 || !strings.Contains(string(projectMarkup), `"callback_data":"ps:2"`) || strings.Contains(string(projectMarkup), `"callback_data":"ps:0"`) {
+		t.Fatalf("first project page markup = %s err=%v", projectMarkup, err)
+	}
+	secondProjectMarkup, _ := json.Marshal(telegramProjectPickerMarkupForChoices(projects, 2))
+	if strings.Count(string(secondProjectMarkup), `"callback_data":"project:`) != 2 || !strings.Contains(string(secondProjectMarkup), `"callback_data":"ps:1"`) || strings.Contains(string(secondProjectMarkup), `"callback_data":"ps:3"`) {
+		t.Fatalf("second project page markup = %s", secondProjectMarkup)
+	}
+
+	chatMarkup, err := json.Marshal(telegramProjectChatPickerMarkup("", chats, 1))
+	if err != nil || strings.Count(string(chatMarkup), `"callback_data":"chat:`) != 5 || !strings.Contains(string(chatMarkup), `"callback_data":"pc:2:project-1"`) {
+		t.Fatalf("first chat page markup = %s err=%v", chatMarkup, err)
+	}
+	secondChatMarkup, _ := json.Marshal(telegramProjectChatPickerMarkup("", chats, 2))
+	if strings.Count(string(secondChatMarkup), `"callback_data":"chat:`) != 2 || !strings.Contains(string(secondChatMarkup), `"callback_data":"pc:1:project-1"`) {
+		t.Fatalf("second chat page markup = %s", secondChatMarkup)
+	}
+	if projectID, page, ok := telegramProjectChatsPage("pc:2:project-1"); !ok || projectID != "project-1" || page != 2 {
+		t.Fatalf("chat page callback = %q %d %v", projectID, page, ok)
 	}
 }
 
