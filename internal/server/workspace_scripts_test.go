@@ -20,6 +20,18 @@ func TestDiscoverProjectRunnableScriptsListsRootFilesPackageAndMakeTargets(t *te
 	if err := os.WriteFile(filepath.Join(root, "Makefile"), []byte("build:\n\t@echo build\n.PHONY: build\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.MkdirAll(filepath.Join(root, "scripts", "nested"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "scripts", "nested", "release.zsh"), []byte("#!/bin/zsh\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "node_modules", "ignored"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "node_modules", "ignored", "dependency.sh"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	scripts := discoverProjectRunnableScripts(root)
 	byID := map[string]projectRunnableScript{}
@@ -34,5 +46,11 @@ func TestDiscoverProjectRunnableScriptsListsRootFilesPackageAndMakeTargets(t *te
 	}
 	if byID["make:build"].Command != "make build" {
 		t.Fatalf("make target missing: %#v", scripts)
+	}
+	if byID["file:scripts/nested/release.zsh"].Command != "./scripts/nested/release.zsh" {
+		t.Fatalf("nested shell script missing: %#v", scripts)
+	}
+	if _, ok := byID["file:node_modules/ignored/dependency.sh"]; ok {
+		t.Fatalf("dependency directory must not be listed: %#v", scripts)
 	}
 }

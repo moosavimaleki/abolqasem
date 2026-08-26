@@ -80,7 +80,7 @@ const TerminalWorkspacePane = memo(function TerminalWorkspacePane({
   scriptCommand,
   onRunScript,
 }: TerminalWorkspacePaneProps) {
-  const { t, direction } = useI18n()
+  const { t } = useI18n()
   const handleSetPaneElement = useCallback((element: HTMLDivElement | null) => {
     setPaneElement(terminalId, element)
   }, [setPaneElement, terminalId])
@@ -159,26 +159,29 @@ const TerminalWorkspacePane = memo(function TerminalWorkspacePane({
           </div>
 
           {showScripts && scripts.length > 0 ? (
-            <div className="flex min-w-0 items-center gap-2 overflow-x-auto px-3 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" dir="ltr">
-              <span className="flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground" dir={direction}>
-                <ScrollText className="size-3" />
-                {t.terminal.projectScripts}
-              </span>
-              {scripts.map((script) => (
-                <Button
-                  key={script.id}
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => onRunScript(script.command)}
-                  title={script.command}
-                  className="h-6 shrink-0 gap-1 rounded-md border-border/70 px-2 font-mono text-[11px] text-foreground hover:bg-muted/50"
-                  aria-label={`${t.terminal.runScript}: ${script.label}`}
-                >
-                  <Play className="size-3" />
-                  <span>{script.label}</span>
-                </Button>
-              ))}
+            <div className="mx-3 mb-2 min-w-0 overflow-hidden rounded-md border border-border/60 bg-muted/10" dir="rtl">
+              <div className="flex h-7 items-center gap-1.5 border-b border-border/50 px-2 text-[11px] font-medium text-muted-foreground">
+                <ScrollText className="size-3.5" />
+                <span>{t.terminal.projectScripts}</span>
+                <span className="mr-auto tabular-nums text-[10px] opacity-70">{scripts.length}</span>
+              </div>
+              <div className="max-h-32 space-y-1 overflow-y-auto p-1.5 [scrollbar-width:thin]">
+                {scripts.map((script) => (
+                  <Button
+                    key={script.id}
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => onRunScript(script.command)}
+                    title={script.command}
+                    className="h-7 w-full justify-start gap-2 rounded px-2 font-mono text-[11px] text-foreground hover:bg-muted/60"
+                    aria-label={`${t.terminal.runScript}: ${script.label}`}
+                  >
+                    <Play className="size-3 shrink-0 text-muted-foreground" />
+                    <span className="min-w-0 flex-1 truncate text-left" dir="ltr">{script.label}</span>
+                  </Button>
+                ))}
+              </div>
             </div>
           ) : null}
 

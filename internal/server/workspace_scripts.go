@@ -2,13 +2,14 @@ package server
 
 import (
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 )
 
-const maxProjectRunnableScripts = 40
+const maxProjectRunnableScripts = 100
 
 type projectRunnableScript struct {
 	ID      string `json:"id"`
@@ -25,8 +26,9 @@ func workspaceReadProjectRunnableScripts(raw json.RawMessage) ([]projectRunnable
 	return discoverProjectRunnableScripts(projectPath), nil
 }
 
-// discoverProjectRunnableScripts only inspects the project root. It never runs
-// a file and intentionally avoids deep walking through dependency directories.
+// discoverProjectRunnableScripts discovers runnable project entry points without
+// executing them. Script files are collected recursively, while dependency and
+// build-output directories are skipped so a large checkout stays responsive.
 func discoverProjectRunnableScripts(projectPath string) []projectRunnableScript {
 	root := resolveWorkspaceLocalPath(projectPath)
 	seen := map[string]bool{}
@@ -44,19 +46,31 @@ func discoverProjectRunnableScripts(projectPath string) []projectRunnableScript 
 		add(projectRunnableScript{ID: "saved:" + action.ID, Label: action.Label, Command: action.Command, Source: "saved"})
 	}
 
-	entries, err := os.ReadDir(root)
-	if err == nil {
-		for _, entry := range entries {
-			if entry.IsDir() {
-				continue
-			}
-			name := entry.Name()
-			extension := strings.ToLower(filepath.Ext(name))
-			if extension != ".sh" && extension != ".bash" && extension != ".zsh" && extension != ".fish" && extension != ".bat" && extension != ".cmd" {
-				continue
-			}
-			add(projectRunnableScript{ID: "file:" + name, Label: "./" + name, Command: "./" + shellQuote(name), Source: "file"})
+	var filePaths []string
+	_ = filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return nil
 		}
+		if entry.IsDir() {
+			if path != root && skippedRunnableScriptDirectory(entry.Name()) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if isRunnableScriptFile(path, entry) {
+			filePaths = append(filePaths, path)
+		}
+		return nil
+	})
+	sort.Strings(filePaths)
+	for _, path := range filePaths {
+		relativePath, err := filepath.Rel(root, path)
+		if err != nil || relativePath == "." || strings.HasPrefix(relativePath, ".."+string(filepath.Separator)) {
+			continue
+		}
+		relativePath = filepath.ToSlash(relativePath)
+		label := "./" + relativePath
+		add(projectRunnableScript{ID: "file:" + relativePath, Label: label, Command: "./" + shellQuote(relativePath), Source: "file"})
 	}
 
 	for _, script := range discoverPackageScripts(root) {
@@ -66,6 +80,37 @@ func discoverProjectRunnableScripts(projectPath string) []projectRunnableScript 
 		add(script)
 	}
 	return result
+}
+
+func skippedRunnableScriptDirectory(name string) bool {
+	switch strings.ToLower(name) {
+	case ".git", ".hg", ".svn", "node_modules", "vendor", "dist", "build", "target", ".next", ".nuxt", ".venv", "venv", "__pycache__":
+		return true
+	default:
+		return false
+	}
+}
+
+func isRunnableScriptFile(path string, entry os.DirEntry) bool {
+	name := strings.ToLower(entry.Name())
+	switch filepath.Ext(name) {
+	case ".sh", ".bash", ".zsh", ".fish", ".ksh", ".command", ".bat", ".cmd", ".ps1":
+		return true
+	}
+	// Include extensionless executable scripts (and Python/Node scripts with a
+	// shebang) so projects that keep entry points under scripts/ are complete.
+	info, err := entry.Info()
+	if err != nil || info.Mode()&0o111 == 0 {
+		return false
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer file.Close()
+	var prefix [128]byte
+	n, err := file.Read(prefix[:])
+	return (err == nil || err == io.EOF) && strings.HasPrefix(string(prefix[:n]), "#!")
 }
 
 func discoverPackageScripts(root string) []projectRunnableScript {
