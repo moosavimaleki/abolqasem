@@ -13,4 +13,4 @@
 - [x] custom commandهای Telegram با ذخیره و اجرای امن
 - [x] usage/context/sidebar/cache مطابق Kanna
 - [x] نمایش planهای native و proposed در UI
-- [ ] تست نهایی، release، tag و push
+- [x] تست نهایی، release، tag و push
