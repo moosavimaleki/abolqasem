@@ -247,6 +247,16 @@ describe("processTranscriptMessages", () => {
     expect(messages[0]).toMatchObject({ kind: "user_prompt", content })
   })
 
+  test("deduplicates turn-aborted assistant echoes", () => {
+    const payload = "<turn_aborted>\nThe user interrupted the previous turn.\n</turn_aborted>"
+    const messages = processTranscriptMessages([
+      { _id: "abort-user", kind: "user_prompt", content: payload, attachments: [], createdAt: 1 },
+      { _id: "abort-echo", kind: "assistant_text", text: payload, createdAt: 2 },
+    ])
+    expect(messages).toHaveLength(1)
+    expect(messages[0]?.kind).toBe("user_prompt")
+  })
+
   test("preserves structured Claude ask-user-question results when a later echoed tool result arrives", () => {
     const messages = processTranscriptMessages([
       entry({

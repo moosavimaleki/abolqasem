@@ -1410,11 +1410,19 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
       if (!shouldShowOptimisticWebPrompts) {
         return []
       }
-      return optimisticUserPrompts
+      // Reconcile synchronously during render as well as in the effect below.
+      // This prevents one extra frame (and, for slow sockets, a persistent
+      // duplicate) when the native transcript already contains the prompt.
+      const visiblePrompts = reconcileOptimisticUserPrompts(
+        optimisticUserPrompts,
+        optimisticScopeId,
+        serverTranscriptEntries,
+      )
+      return visiblePrompts
         .filter((prompt) => prompt.scopeId === optimisticScopeId)
         .map((prompt) => prompt.entry)
     },
-    [optimisticScopeId, optimisticUserPrompts, shouldShowOptimisticWebPrompts]
+    [optimisticScopeId, optimisticUserPrompts, serverTranscriptEntries, shouldShowOptimisticWebPrompts]
   )
   const transcriptEntries = useMemo(
     () => [...serverTranscriptEntries, ...optimisticTranscriptEntries],

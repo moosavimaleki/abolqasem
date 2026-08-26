@@ -468,6 +468,16 @@ export function processTranscriptMessages(entries: TranscriptEntry[]): HydratedT
         })
         break
       case "assistant_text":
+        {
+          // Recent Codex versions can persist internal payloads both as a
+          // user_message event and as an assistant text echo. Keep one
+          // canonical collapsed row instead of showing a second chat bubble.
+          const systemPayload = extractInternalSystemPayload(entry.text)
+          if (systemPayload) {
+            if (internalSystemPayloads.has(systemPayload.dedupeKey)) break
+            internalSystemPayloads.add(systemPayload.dedupeKey)
+          }
+        }
         messages.push({
           ...createBaseMessage(entry),
           kind: "assistant_text",
