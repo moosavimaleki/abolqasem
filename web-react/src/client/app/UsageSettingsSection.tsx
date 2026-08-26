@@ -3,7 +3,7 @@ import { Database, Gauge, Loader2, RefreshCw, Trash2 } from "lucide-react"
 import type { RateLimitWindowSnapshot } from "../../shared/types"
 import { Button } from "../components/ui/button"
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "../components/ui/dialog"
-import { formatBytes, formatLocalizedPercent, formatRateLimitDurationLocalized, formatRelativeResetTime, type ResourceUsageSnapshot, type UsageSnapshot } from "../lib/usage"
+import { formatBytes, formatLocalizedPercent, formatRateLimitDurationLocalized, formatRelativeResetTime, selectRateLimitWindows, type ResourceUsageSnapshot, type UsageSnapshot } from "../lib/usage"
 
 function RateWindow({ value, locale }: { value: RateLimitWindowSnapshot; locale: "en" | "fa" }) {
   const used = Math.max(0, Math.min(100, value.usedPercent))
@@ -75,7 +75,7 @@ export function UsageSettingsSection({ locale }: { locale: "en" | "fa" }) {
   }
 
   const codex = usage?.codex
-  const windows = [codex?.rate_limits.primary, codex?.rate_limits.secondary].filter((item): item is RateLimitWindowSnapshot => Boolean(item))
+  const windows = selectRateLimitWindows(codex?.rate_limits ?? null)
 
   return (
     <div className="space-y-4">

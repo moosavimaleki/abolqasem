@@ -26,9 +26,26 @@ export function deriveLatestRateLimitSnapshot(entries: TranscriptEntry[]): RateL
 }
 
 export function selectLongRateLimitWindow(snapshot: RateLimitSnapshot | null): RateLimitWindowSnapshot | null {
-  if (!snapshot) return null
-  const windows = [snapshot.primary, snapshot.secondary].filter((window): window is RateLimitWindowSnapshot => Boolean(window))
-  return windows.sort((left, right) => (right.windowDurationMins ?? 0) - (left.windowDurationMins ?? 0))[0] ?? null
+  return selectRateLimitWindows(snapshot)[0] ?? null
+}
+
+/**
+ * The Codex app-server can expose a short rolling limit alongside a weekly
+ * limit, and may add/remove either at runtime. Keep the UI data-driven rather
+ * than assuming that primary or secondary has a fixed duration.
+ */
+export function selectRateLimitWindows(snapshot: RateLimitSnapshot | null): RateLimitWindowSnapshot[] {
+  if (!snapshot) return []
+  const seen = new Set<string>()
+  return [...(snapshot.windows ?? []), snapshot.primary, snapshot.secondary]
+    .filter((window): window is RateLimitWindowSnapshot => Boolean(window))
+    .filter((window) => {
+      const key = `${window.windowDurationMins ?? ""}:${window.resetsAt ?? ""}:${window.usedPercent}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    .sort((left, right) => (right.windowDurationMins ?? 0) - (left.windowDurationMins ?? 0))
 }
 
 export function formatRateLimitDuration(minutes?: number | null) {

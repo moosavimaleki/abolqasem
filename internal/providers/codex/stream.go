@@ -2,6 +2,7 @@ package codex
 
 import (
 	"encoding/json"
+	"fmt"
 
 	codexrpc "abolqasem/internal/providers/codex/rpc"
 	"abolqasem/internal/workspace/readmodels"
@@ -277,7 +278,8 @@ func rateLimitEntry(raw json.RawMessage) readmodels.TranscriptEntry {
 func normalizeRateLimitSnapshot(raw map[string]any) map[string]any {
 	primary := normalizeRateLimitWindow(asMap(firstNonNil(raw["primary"])))
 	secondary := normalizeRateLimitWindow(asMap(firstNonNil(raw["secondary"])))
-	if primary == nil && secondary == nil {
+	windows := normalizeRateLimitWindows(raw, primary, secondary)
+	if len(windows) == 0 {
 		return nil
 	}
 	return map[string]any{
@@ -285,10 +287,42 @@ func normalizeRateLimitSnapshot(raw map[string]any) map[string]any {
 		"limitName":            firstStringValue(raw, "limitName", "limit_name"),
 		"primary":              primary,
 		"secondary":            secondary,
+		"windows":              windows,
 		"credits":              normalizeRateLimitCredits(asMap(firstNonNil(raw["credits"]))),
 		"planType":             firstStringValue(raw, "planType", "plan_type"),
 		"rateLimitReachedType": firstStringValue(raw, "rateLimitReachedType", "rate_limit_reached_type"),
 	}
+}
+
+// Newer app-server builds may attach an explicit list of rolling windows while
+// older ones expose only primary/secondary. Preserve both shapes so a 5-hour
+// window can appear or disappear without a client update.
+func normalizeRateLimitWindows(raw map[string]any, primary, secondary map[string]any) []map[string]any {
+	result := make([]map[string]any, 0, 4)
+	seen := map[string]bool{}
+	appendWindow := func(candidate map[string]any) {
+		if candidate == nil {
+			return
+		}
+		key := fmt.Sprintf("%v:%v:%v", candidate["windowDurationMins"], candidate["resetsAt"], candidate["usedPercent"])
+		if seen[key] {
+			return
+		}
+		seen[key] = true
+		result = append(result, candidate)
+	}
+	appendWindow(primary)
+	appendWindow(secondary)
+	for _, key := range []string{"windows", "rateLimitWindows", "rate_limit_windows"} {
+		items, ok := raw[key].([]any)
+		if !ok {
+			continue
+		}
+		for _, item := range items {
+			appendWindow(normalizeRateLimitWindow(asMap(item)))
+		}
+	}
+	return result
 }
 
 func normalizeRateLimitCredits(raw map[string]any) map[string]any {

@@ -76,6 +76,7 @@ type telegramBridge struct {
 	client              *http.Client
 	apiBaseURL          string
 	lastForwardedByChat map[string]string
+	previewByToken      map[string]telegramPreviewItem
 }
 
 const telegramAPIBaseURL = "https://api.telegram.org"
@@ -84,6 +85,7 @@ var workspaceTelegramBridge = &telegramBridge{
 	client:              &http.Client{Timeout: 40 * time.Second},
 	apiBaseURL:          telegramAPIBaseURL,
 	lastForwardedByChat: map[string]string{},
+	previewByToken:      map[string]telegramPreviewItem{},
 }
 
 var workspaceTakeOverCodexSessionForTelegram = workspaceTakeOverCodexSession
@@ -453,6 +455,11 @@ func (b *telegramBridge) handleCallbackQuery(ctx context.Context, config telegra
 		b.answerCallbackQuery(ctx, config.BotToken, callback.ID, "انتخاب نامعتبر است")
 		return
 	}
+	if preview, ok := b.telegramPreviewForCallback(callback.Data, chatID, config.Mappings[chatID]); ok {
+		b.answerCallbackQuery(ctx, config.BotToken, callback.ID, "در حال آماده‌سازی پیش‌نمایش…")
+		go b.sendTelegramPreview(context.Background(), config.BotToken, chatID, preview)
+		return
+	}
 	if target, ok := telegramTakeOverLockChatID(callback.Data); ok {
 		if _, _, err := workspaceChatProjectRequired(target); err != nil {
 			b.answerCallbackQuery(ctx, config.BotToken, callback.ID, "نشست پیدا نشد")
@@ -706,12 +713,9 @@ func telegramProjectListMarkdownForChoices(choices []telegramProjectChoice, page
 	if !ok {
 		return "این صفحه وجود ندارد. برای برگشت به ابتدای فهرست /chats را بزنید."
 	}
-	var result strings.Builder
-	fmt.Fprintf(&result, "# انتخاب پروژه\n\nبرای دیدن chatهای هر پروژه، روی نام پروژه بزنید. صفحهٔ %d از %d:\n\n", page, pageCount)
-	for _, choice := range choices[start:end] {
-		fmt.Fprintf(&result, "- **%s** · %d chat\n", telegramMarkdownInline(choice.Title), choice.ChatCount)
-	}
-	return result.String()
+	_ = start
+	_ = end
+	return fmt.Sprintf("# انتخاب پروژه\n\nاز دکمه‌های زیر یک پروژه را انتخاب کنید تا chatهای آن نمایش داده شوند. صفحهٔ %d از %d.", page, pageCount)
 }
 
 func telegramProjectPickerMarkupForChoices(choices []telegramProjectChoice, page int) any {
@@ -762,16 +766,13 @@ func telegramProjectChatListMarkdown(currentChatID string, choices []telegramCha
 	if !ok {
 		return "این صفحه وجود ندارد. برای برگشت به فهرست پروژه‌ها /chats را بزنید."
 	}
-	var result strings.Builder
-	fmt.Fprintf(&result, "# %s\n\nchat موردنظر را انتخاب کنید. صفحهٔ %d از %d:\n\n", telegramMarkdownInline(choices[0].ProjectTitle), page, pageCount)
-	for _, choice := range choices[start:end] {
-		marker := ""
-		if choice.ChatID == currentChatID {
-			marker = " ← نشست فعلی"
-		}
-		fmt.Fprintf(&result, "- **%s**%s\n", telegramMarkdownInline(choice.ChatTitle), marker)
+	_ = start
+	_ = end
+	current := ""
+	if currentChatID != "" {
+		current = " نشست فعلی با علامت ✓ مشخص است."
 	}
-	return result.String()
+	return fmt.Sprintf("# انتخاب chat\n\nاز دکمه‌های زیر chat موردنظر را انتخاب کنید. صفحهٔ %d از %d.%s", page, pageCount, current)
 }
 
 func telegramProjectChatPickerMarkup(currentChatID string, choices []telegramChatChoice, page int) any {
@@ -1089,7 +1090,7 @@ func (b *telegramBridge) forwardFinal(token string, telegramChatID string, works
 				return
 			}
 			if text := telegramFinalText(snapshot.Messages); text != "" {
-				b.sendText(context.Background(), token, telegramChatID, text)
+				b.sendTranscript(context.Background(), token, telegramChatID, workspaceChatID, text)
 			}
 			return
 		}
@@ -1159,7 +1160,7 @@ func (b *telegramBridge) chatStateChanged(chatID string) {
 	b.mu.Unlock()
 	go func() {
 		for _, telegramChatID := range recipients {
-			b.sendText(context.Background(), config.BotToken, telegramChatID, text)
+			b.sendTranscript(context.Background(), config.BotToken, telegramChatID, chatID, text)
 		}
 	}()
 }
@@ -1266,18 +1267,140 @@ func splitTelegramText(value string) []string {
 	}
 	chunks := []string{}
 	for len([]rune(value)) > telegramMessageLimit {
-		runes := []rune(value)
-		cut := telegramMessageLimit
-		for index := cut; index > telegramMessageLimit/2; index-- {
-			if runes[index] == '\n' || runes[index] == ' ' {
-				cut = index
-				break
-			}
+		chunk, rest := splitTelegramMarkdownChunk(value)
+		if chunk == "" || rest == "" {
+			break
 		}
-		chunks = append(chunks, strings.TrimSpace(string(runes[:cut])))
-		value = strings.TrimSpace(string(runes[cut:]))
+		chunks = append(chunks, chunk)
+		value = rest
 	}
 	return append(chunks, value)
+}
+
+type telegramMarkdownFence struct {
+	opening string
+	marker  string
+}
+
+// splitTelegramMarkdownChunk keeps rich Markdown valid at the Telegram message
+// boundary. A code fence is closed before the split and reopened in the next
+// message; a long GFM table gets its header and separator repeated. This keeps
+// the custom Rich Markdown renderer from treating half a block as prose.
+func splitTelegramMarkdownChunk(value string) (string, string) {
+	runes := []rune(value)
+	maxCut := min(telegramMessageLimit, len(runes))
+	minCut := maxCut / 2
+	for cut := maxCut; cut >= minCut; cut-- {
+		if cut < len(runes) && !unicode.IsSpace(runes[cut-1]) {
+			continue
+		}
+		if chunk, rest, ok := renderTelegramMarkdownSplit(runes, cut); ok {
+			return chunk, rest
+		}
+	}
+
+	// A single unbroken token is rare but must still respect Telegram's limit.
+	// Reserve room for a closing fence when its content has no whitespace.
+	cut := maxCut
+	if fence, open := telegramMarkdownOpenFence(string(runes[:cut])); open {
+		cut = min(cut, telegramMessageLimit-len([]rune(fence.marker))-1)
+	}
+	if cut <= 0 {
+		cut = maxCut
+	}
+	chunk, rest, ok := renderTelegramMarkdownSplit(runes, cut)
+	if ok {
+		return chunk, rest
+	}
+	return strings.TrimSpace(string(runes[:cut])), strings.TrimSpace(string(runes[cut:]))
+}
+
+func renderTelegramMarkdownSplit(runes []rune, cut int) (string, string, bool) {
+	if cut <= 0 || cut >= len(runes) {
+		return "", "", false
+	}
+	chunk := strings.TrimRightFunc(string(runes[:cut]), unicode.IsSpace)
+	rest := strings.TrimLeftFunc(string(runes[cut:]), unicode.IsSpace)
+	if chunk == "" || rest == "" {
+		return "", "", false
+	}
+	if fence, open := telegramMarkdownOpenFence(chunk); open {
+		chunk += "\n" + fence.marker
+		rest = fence.opening + "\n" + rest
+	} else if header := telegramMarkdownTableHeader(chunk); header != "" {
+		rest = header + "\n" + rest
+	}
+	if len([]rune(chunk)) > telegramMessageLimit {
+		return "", "", false
+	}
+	return chunk, rest, true
+}
+
+func telegramMarkdownOpenFence(markdown string) (telegramMarkdownFence, bool) {
+	var current telegramMarkdownFence
+	for _, line := range strings.Split(markdown, "\n") {
+		marker, opening, ok := telegramMarkdownFenceLine(line)
+		if !ok {
+			continue
+		}
+		if current.marker == "" {
+			current = telegramMarkdownFence{opening: opening, marker: marker}
+			continue
+		}
+		if strings.HasPrefix(strings.TrimSpace(line), current.marker) {
+			current = telegramMarkdownFence{}
+		}
+	}
+	return current, current.marker != ""
+}
+
+func telegramMarkdownFenceLine(line string) (marker string, opening string, ok bool) {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return "", "", false
+	}
+	first := rune(trimmed[0])
+	if first != '`' && first != '~' {
+		return "", "", false
+	}
+	count := 0
+	for _, char := range trimmed {
+		if char != first {
+			break
+		}
+		count++
+	}
+	if count < 3 {
+		return "", "", false
+	}
+	return strings.Repeat(string(first), count), trimmed, true
+}
+
+func telegramMarkdownTableHeader(markdown string) string {
+	lines := strings.Split(strings.TrimRightFunc(markdown, unicode.IsSpace), "\n")
+	start := len(lines) - 1
+	for start >= 0 && strings.Contains(lines[start], "|") {
+		start--
+	}
+	table := lines[start+1:]
+	if len(table) < 2 || !telegramMarkdownTableDivider(table[1]) {
+		return ""
+	}
+	return strings.TrimSpace(table[0]) + "\n" + strings.TrimSpace(table[1])
+}
+
+func telegramMarkdownTableDivider(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if strings.Count(trimmed, "|") < 2 || !strings.Contains(trimmed, "-") {
+		return false
+	}
+	for _, char := range trimmed {
+		if char == '|' || char == '-' || char == ':' || unicode.IsSpace(char) {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func sortedTelegramMappingIDs(mappings map[string]string) []string {

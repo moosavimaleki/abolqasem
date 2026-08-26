@@ -6,8 +6,10 @@ import { useI18n } from "../../i18n/context"
 import { type ContextWindowSnapshot, formatContextWindowTokens } from "../../lib/contextWindow"
 import {
   formatLocalizedPercent,
+  formatRateLimitDurationLocalized,
   formatRelativeResetTime,
   selectLongRateLimitWindow,
+  selectRateLimitWindows,
 } from "../../lib/usage"
 
 interface SessionHealthPopoverProps {
@@ -75,9 +77,7 @@ export function SessionHealthPanel({
 }: SessionHealthPopoverProps) {
   const { locale } = useI18n()
   const fa = locale === "fa"
-  const quotaWindow = selectLongRateLimitWindow(snapshot ?? null)
-  const comparison = quotaWindow ? getQuotaWindowComparison(quotaWindow) : null
-  const resetAfter = quotaWindow ? formatRelativeResetTime(quotaWindow.resetsAt, locale) : null
+  const quotaWindows = selectRateLimitWindows(snapshot ?? null)
   const contextRemaining = contextUsage?.remainingPercentage == null
     ? null
     : clampPercent(contextUsage.remainingPercentage)
@@ -100,25 +100,32 @@ export function SessionHealthPanel({
         ) : null}
       </div>
 
-      {comparison ? (
-        <div className="space-y-2.5 rounded-xl border border-border/65 bg-muted/20 p-2.5" data-session-health-comparison="quota-time">
-          <ProgressRow
-            marker="quota"
-            label={fa ? "سهمیهٔ باقی‌مانده" : "Quota remaining"}
-            value={comparison.quotaRemaining}
-            detail={formatLocalizedPercent(comparison.quotaRemaining, locale)}
-          />
-          {comparison.timeRemaining !== null ? (
-            <ProgressRow
-              marker="time"
-              label={fa ? "زمان تا بازنشانی" : "Time until reset"}
-              value={comparison.timeRemaining}
-              detail={resetAfter
-                ? `${formatLocalizedPercent(comparison.timeRemaining, locale)} · ${resetAfter}`
-                : formatLocalizedPercent(comparison.timeRemaining, locale)}
-            />
-          ) : null}
-        </div>
+      {quotaWindows.length > 0 ? (
+        <section className="space-y-2 rounded-xl border border-border/65 bg-muted/20 p-2.5" aria-label={fa ? "بازه‌های سهمیه" : "Quota windows"}>
+          {quotaWindows.map((quotaWindow, index) => {
+            const comparison = getQuotaWindowComparison(quotaWindow)
+            const resetAfter = formatRelativeResetTime(quotaWindow.resetsAt, locale)
+            const duration = formatRateLimitDurationLocalized(quotaWindow.windowDurationMins, locale)
+            return (
+              <div
+                key={`${quotaWindow.windowDurationMins ?? "unknown"}-${quotaWindow.resetsAt ?? index}`}
+                className={index > 0 ? "space-y-2 border-t border-border/55 pt-2.5" : "space-y-2"}
+                data-session-health-comparison="quota-time"
+              >
+                <div className="flex items-center justify-between gap-3 text-[11px]">
+                  <span className="font-medium text-foreground">{duration}</span>
+                  {resetAfter ? <span className="tabular-nums text-muted-foreground">{resetAfter}</span> : null}
+                </div>
+                <ProgressRow
+                  marker="quota"
+                  label={fa ? "سهمیهٔ باقی‌مانده" : "Quota remaining"}
+                  value={comparison.quotaRemaining}
+                  detail={formatLocalizedPercent(comparison.quotaRemaining, locale)}
+                />
+              </div>
+            )
+          })}
+        </section>
       ) : null}
 
       {contextUsage ? (

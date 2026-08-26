@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { deriveLatestRateLimitSnapshot, formatBytes, formatLocalizedPercent, formatRateLimitDurationLocalized, formatRelativeResetTime, selectLongRateLimitWindow } from "./usage"
+import { deriveLatestRateLimitSnapshot, formatBytes, formatLocalizedPercent, formatRateLimitDurationLocalized, formatRelativeResetTime, selectLongRateLimitWindow, selectRateLimitWindows } from "./usage"
 
 describe("usage", () => {
   test("derives the latest app-server rate limit and selects the longest window", () => {
@@ -9,6 +9,18 @@ describe("usage", () => {
     ])
     expect(latest?.secondary?.usedPercent).toBe(51)
     expect(selectLongRateLimitWindow(latest)?.windowDurationMins).toBe(10_080)
+    expect(selectRateLimitWindows(latest).map((window) => window.windowDurationMins)).toEqual([10_080, 300])
+  })
+
+  test("keeps every rate-limit window that a newer app-server exposes", () => {
+    expect(selectRateLimitWindows({
+      primary: { usedPercent: 20, windowDurationMins: 300 },
+      windows: [
+        { usedPercent: 20, windowDurationMins: 300 },
+        { usedPercent: 42, windowDurationMins: 1_440 },
+        { usedPercent: 61, windowDurationMins: 10_080 },
+      ],
+    }).map((window) => window.windowDurationMins)).toEqual([10_080, 1_440, 300])
   })
 
   test("formats disk usage", () => {

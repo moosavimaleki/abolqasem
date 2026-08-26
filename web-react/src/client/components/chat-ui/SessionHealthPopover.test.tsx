@@ -22,6 +22,11 @@ describe("SessionHealthPopover", () => {
         <SessionHealthPanel
           snapshot={{
             planType: "plus",
+            primary: {
+              usedPercent: 20,
+              windowDurationMins: 300,
+              resetsAt: Math.floor(Date.now() / 1000) + 4 * 60 * 60,
+            },
             secondary: {
               usedPercent: 68,
               windowDurationMins: 10_080,
@@ -43,13 +48,14 @@ describe("SessionHealthPopover", () => {
     )
 
     expect(html).toContain("سهمیهٔ باقی‌مانده")
-    expect(html).toContain("زمان تا بازنشانی")
+    expect(html).toContain("۵ ساعت")
+    expect(html).toContain("۱ هفته")
     expect(html).toContain("کانتکست این چت")
     expect(html).toContain("96k")
     expect(html).toContain("active@example.com")
     expect(html).not.toContain("codex resume")
     expect(html).not.toContain("Session file path")
-    expect(html).toContain('data-session-health-comparison="quota-time"')
+    expect(html.match(/data-session-health-comparison="quota-time"/g)).toHaveLength(2)
   })
 
   test("uses one restrained dual-ring trigger instead of separate quota and context buttons", () => {

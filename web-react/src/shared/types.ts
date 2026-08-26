@@ -957,6 +957,9 @@ export interface RateLimitSnapshot {
   limitName?: string | null
   primary?: RateLimitWindowSnapshot | null
   secondary?: RateLimitWindowSnapshot | null
+  /** All windows reported by newer app-server versions. `primary`/`secondary`
+   * remain for compatibility with older transcript entries. */
+  windows?: RateLimitWindowSnapshot[] | null
   credits?: {
     hasCredits?: boolean
     unlimited?: boolean

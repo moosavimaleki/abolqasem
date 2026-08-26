@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -285,6 +286,98 @@ func TestTelegramBridgeCommandAndTextHelpers(t *testing.T) {
 	}
 }
 
+func TestTelegramMarkdownSplitterClosesFencesAndRepeatsTableHeaders(t *testing.T) {
+	code := "```go\n" + strings.Repeat("fmt.Println(\"safe boundary\")\n", 180) + "```"
+	chunks := splitTelegramText(code)
+	if len(chunks) < 2 {
+		t.Fatalf("expected code to split, got %#v", chunks)
+	}
+	for index, chunk := range chunks {
+		if len([]rune(chunk)) > telegramMessageLimit || strings.Count(chunk, "```")%2 != 0 {
+			t.Fatalf("invalid code chunk %d: %q", index, chunk)
+		}
+	}
+	joined := strings.Join(chunks, "\n")
+	if strings.Count(joined, "fmt.Println") != 180 {
+		t.Fatalf("code lines were lost across chunks: %d", strings.Count(joined, "fmt.Println"))
+	}
+
+	table := "| file | change |\n|---|---|\n" + strings.Repeat("| internal/server/very-long-name.go | edited |\n", 120)
+	chunks = splitTelegramText(table)
+	if len(chunks) < 2 {
+		t.Fatalf("expected table to split, got %#v", chunks)
+	}
+	for index, chunk := range chunks[1:] {
+		if !strings.HasPrefix(chunk, "| file | change |\n|---|---|") {
+			t.Fatalf("table header was not repeated for chunk %d: %q", index+1, chunk[:min(80, len(chunk))])
+		}
+	}
+}
+
+func TestTelegramTranscriptPreviewsUseOpaqueCallbacksAndVectorDocuments(t *testing.T) {
+	bridge := &telegramBridge{previewByToken: map[string]telegramPreviewItem{}}
+	file := filepath.Join(t.TempDir(), "main.go")
+	if err := os.WriteFile(file, []byte("package main\n\nfunc main() {\n\tprintln(\"ready\")\n}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	item := telegramPreviewItem{Kind: telegramPreviewFile, TelegramChatID: "99", WorkspaceChatID: "chat-1", FilePath: file, Line: 3, CreatedAt: time.Now()}
+	token := bridge.rememberTelegramPreview(item)
+	if token == "" || len(token) > 64 {
+		t.Fatalf("invalid preview token: %q", token)
+	}
+	if _, ok := bridge.telegramPreviewForCallback(telegramPreviewCallbackPrefix+token, "99", "wrong-chat"); ok {
+		t.Fatal("preview token must be bound to its workspace chat")
+	}
+	preview, ok := bridge.telegramPreviewForCallback(telegramPreviewCallbackPrefix+token, "99", "chat-1")
+	if !ok || preview.FilePath != file {
+		t.Fatalf("preview callback = %#v %v", preview, ok)
+	}
+	response, err := buildFilePreview([]string{filepath.Dir(file)}, file, 3, filePreviewOptions{})
+	if err != nil || !strings.Contains(telegramCodePreviewSVG(response), "<svg") || !strings.Contains(telegramCodePreviewSVG(response), "main.go") {
+		t.Fatalf("code preview svg err=%v", err)
+	}
+	chart := telegramMermaidSVG("flowchart TD\nA --> B\nB --> C")
+	if !strings.Contains(chart, "<svg") || !strings.Contains(chart, "marker-end") {
+		t.Fatalf("Mermaid SVG was not rendered: %s", chart)
+	}
+	markdown, buttons := bridge.telegramTranscriptPreviews("99", "chat-1", "```mermaid\nflowchart TD\nA --> B\n```")
+	if !strings.Contains(markdown, "برای دیدن") || len(buttons) != 1 || !strings.Contains(buttons[0].Label, "Mermaid") {
+		t.Fatalf("Mermaid transcript preview = %q %#v", markdown, buttons)
+	}
+}
+
+func TestTelegramSendDocumentUploadsVectorPreview(t *testing.T) {
+	var filename, chatID, caption string
+	var payload []byte
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/bot123:test/sendDocument" {
+			t.Errorf("path = %q", request.URL.Path)
+		}
+		if err := request.ParseMultipartForm(1024 * 1024); err != nil {
+			t.Errorf("ParseMultipartForm: %v", err)
+		}
+		chatID, caption = request.FormValue("chat_id"), request.FormValue("caption")
+		file, header, err := request.FormFile("document")
+		if err != nil {
+			t.Errorf("FormFile: %v", err)
+		} else {
+			defer file.Close()
+			filename = header.Filename
+			payload, _ = io.ReadAll(file)
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"ok":true,"result":{}}`))
+	}))
+	defer server.Close()
+	bridge := &telegramBridge{client: server.Client(), apiBaseURL: server.URL}
+	if err := bridge.sendDocument(context.Background(), "123:test", "99", "preview.svg", []byte("<svg/>"), "preview"); err != nil {
+		t.Fatal(err)
+	}
+	if filename != "preview.svg" || chatID != "99" || caption != "preview" || string(payload) != "<svg/>" {
+		t.Fatalf("unexpected document request: %q %q %q %q", filename, chatID, caption, payload)
+	}
+}
+
 func TestTelegramTakeOverLockCallbackIsCompactAndValidated(t *testing.T) {
 	data := telegramTakeOverLockCallbackPrefix + "chat-123"
 	if chatID, ok := telegramTakeOverLockChatID(data); !ok || chatID != "chat-123" {
@@ -402,7 +495,7 @@ func TestTelegramProjectPickerSeparatesChatsByProject(t *testing.T) {
 	if len(projectChats) != 2 || projectChats[0].ChatID != "chat-new" || projectChats[1].ChatID != "chat-middle" {
 		t.Fatalf("project chats = %#v", projectChats)
 	}
-	if markdown := telegramProjectChatListMarkdown("chat-middle", projectChats, 1); !strings.Contains(markdown, "فعال") || !strings.Contains(markdown, "نشست فعلی") || strings.Contains(markdown, "کهنه") {
+	if markdown := telegramProjectChatListMarkdown("chat-middle", projectChats, 1); !strings.Contains(markdown, "دکمه") || !strings.Contains(markdown, "نشست فعلی") || strings.Contains(markdown, "کهنه") || strings.Contains(markdown, "فعال") {
 		t.Fatalf("project chat markdown = %q", markdown)
 	}
 	markup, err := json.Marshal(telegramProjectChatPickerMarkup("chat-middle", projectChats, 1))

@@ -159,6 +159,24 @@ func TestStreamNormalizerMapsRateLimits(t *testing.T) {
 	if secondary["usedPercent"] != float64(12) || secondary["windowDurationMins"] != float64(10080) {
 		t.Fatalf("unexpected secondary window: %#v", secondary)
 	}
+	windows, ok := limits["windows"].([]map[string]any)
+	if !ok || len(windows) != 2 {
+		t.Fatalf("expected dynamic window list, got %#v", limits["windows"])
+	}
+}
+
+func TestNormalizeRateLimitSnapshotPreservesAdditionalWindows(t *testing.T) {
+	snapshot := normalizeRateLimitSnapshot(map[string]any{
+		"primary": map[string]any{"usedPercent": 10, "windowDurationMins": 300},
+		"windows": []any{
+			map[string]any{"usedPercent": 10, "windowDurationMins": 300},
+			map[string]any{"usedPercent": 45, "windowDurationMins": 1440},
+		},
+	})
+	windows, ok := snapshot["windows"].([]map[string]any)
+	if !ok || len(windows) != 2 || windows[1]["windowDurationMins"] != float64(1440) {
+		t.Fatalf("additional rate limit windows were lost: %#v", snapshot)
+	}
 }
 
 func TestStreamNormalizerMapsCompaction(t *testing.T) {
