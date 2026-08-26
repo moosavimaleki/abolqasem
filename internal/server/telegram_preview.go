@@ -270,11 +270,13 @@ func telegramCodePreviewSVG(preview filePreviewResponse) string {
 	width := max(720, min(1440, 84+maxColumns*8))
 	height := 54 + len(lines)*22
 	var output strings.Builder
-	fmt.Fprintf(&output, `<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 %d %d"><rect width="100%%" height="100%%" fill="#071426"/><rect x="0" y="0" width="100%%" height="42" fill="#0d1d33"/><circle cx="22" cy="21" r="5" fill="#ef6b73"/><circle cx="40" cy="21" r="5" fill="#e7b35b"/><circle cx="58" cy="21" r="5" fill="#45c486"/><text x="82" y="26" fill="#91a6c4" font-family="monospace" font-size="14">%s · %s</text>`, width, height, width, height, html.EscapeString(filepath.Base(preview.Path)), html.EscapeString(preview.Language))
+	// Telegram's SVG viewer does not consistently paint percentage-sized rects.
+	// Use explicit dimensions so the document is opaque instead of checkerboard.
+	fmt.Fprintf(&output, `<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 %d %d"><rect x="0" y="0" width="%d" height="%d" fill="#071426"/><rect x="0" y="0" width="%d" height="42" fill="#0d1d33"/><circle cx="22" cy="21" r="5" fill="#ef6b73"/><circle cx="40" cy="21" r="5" fill="#e7b35b"/><circle cx="58" cy="21" r="5" fill="#45c486"/><text x="82" y="26" fill="#d7e4f7" font-family="monospace" font-size="14">%s · %s</text>`, width, height, width, height, width, height, width, html.EscapeString(filepath.Base(preview.Path)), html.EscapeString(preview.Language))
 	for index, line := range lines {
 		y := 64 + index*22
 		if line.Highlight {
-			fmt.Fprintf(&output, `<rect x="0" y="%d" width="100%%" height="22" fill="#16355a"/>`, y-16)
+			fmt.Fprintf(&output, `<rect x="0" y="%d" width="%d" height="22" fill="#16355a"/>`, y-16, width)
 		}
 		fmt.Fprintf(&output, `<text x="16" y="%d" text-anchor="end" fill="#506785" font-family="monospace" font-size="13">%d</text>`, y, line.Number)
 		fmt.Fprintf(&output, `<text x="34" y="%d" fill="%s" font-family="monospace" font-size="14" xml:space="preserve">%s</text>`, y, telegramCodeColor(line.Text), html.EscapeString(telegramTrimCodeLine(line.Text)))
@@ -349,7 +351,7 @@ func telegramMermaidSVG(source string) string {
 	rows := (len(ordered) + 2) / 3
 	width, height := 780, max(220, 110+rows*130)
 	var output strings.Builder
-	fmt.Fprintf(&output, `<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 %d %d"><defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#83b6f4"/></marker></defs><rect width="100%%" height="100%%" rx="16" fill="#071426"/><text x="24" y="32" fill="#9ab3d7" font-family="sans-serif" font-size="16">Mermaid chart</text>`, width, height, width, height)
+	fmt.Fprintf(&output, `<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 %d %d"><defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#83b6f4"/></marker></defs><rect x="0" y="0" width="%d" height="%d" rx="16" fill="#071426"/><text x="24" y="32" fill="#d7e4f7" font-family="sans-serif" font-size="16">Mermaid chart</text>`, width, height, width, height, width, height)
 	for _, edge := range edges {
 		from, to := positions[edge.From], positions[edge.To]
 		fmt.Fprintf(&output, `<path d="M%d %d L%d %d" stroke="#83b6f4" stroke-width="2" fill="none" marker-end="url(#arrow)"/>`, from[0]+70, from[1]+26, to[0]-70, to[1]+26)
@@ -366,7 +368,7 @@ func telegramMermaidSourceSVG(source string) string {
 	lines := strings.Split(strings.TrimSpace(source), "\n")
 	height := max(120, 70+len(lines)*22)
 	var output strings.Builder
-	fmt.Fprintf(&output, `<svg xmlns="http://www.w3.org/2000/svg" width="900" height="%d" viewBox="0 0 900 %d"><rect width="100%%" height="100%%" fill="#071426"/><text x="20" y="30" fill="#9ab3d7" font-family="sans-serif" font-size="16">Mermaid source</text>`, height, height)
+	fmt.Fprintf(&output, `<svg xmlns="http://www.w3.org/2000/svg" width="900" height="%d" viewBox="0 0 900 %d"><rect x="0" y="0" width="900" height="%d" fill="#071426"/><text x="20" y="30" fill="#d7e4f7" font-family="sans-serif" font-size="16">Mermaid source</text>`, height, height, height)
 	for index, line := range lines {
 		fmt.Fprintf(&output, `<text x="20" y="%d" fill="#d7e4f7" font-family="monospace" font-size="14">%s</text>`, 58+index*22, html.EscapeString(line))
 	}

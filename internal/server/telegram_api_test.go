@@ -359,8 +359,16 @@ func TestTelegramTranscriptPreviewsUseOpaqueCallbacksAndVectorDocuments(t *testi
 		t.Fatalf("preview callback = %#v %v", preview, ok)
 	}
 	response, err := buildFilePreview([]string{filepath.Dir(file)}, file, 3, filePreviewOptions{})
-	if err != nil || !strings.Contains(telegramCodePreviewSVG(response), "<svg") || !strings.Contains(telegramCodePreviewSVG(response), "main.go") {
+	codeSVG := telegramCodePreviewSVG(response)
+	if err != nil || !strings.Contains(codeSVG, "<svg") || !strings.Contains(codeSVG, "main.go") || !strings.Contains(codeSVG, `width="720" height="`) {
 		t.Fatalf("code preview svg err=%v", err)
+	}
+	if strings.Contains(codeSVG, `width="100%"`) {
+		t.Fatal("code preview must use explicit background dimensions for Telegram SVG viewer")
+	}
+	chartSVG := telegramMermaidSVG("flowchart TD\nA --> B")
+	if !strings.Contains(chartSVG, `<rect x="0" y="0" width="780"`) {
+		t.Fatal("Mermaid preview must include an opaque explicit-size background")
 	}
 	chart := telegramMermaidSVG("flowchart TD\nA --> B\nB --> C")
 	if !strings.Contains(chart, "<svg") || !strings.Contains(chart, "marker-end") {
