@@ -66,7 +66,7 @@ describe("getUsageOrderedSidebarChats", () => {
 })
 
 describe("SidebarPrimaryControls", () => {
-  test("places primary actions and search before the view filter", () => {
+  test("keeps search first after creation moves to the header pencil menu", () => {
     const html = renderToStaticMarkup(createElement(
       I18nProvider,
       { locale: "fa" },
@@ -75,22 +75,19 @@ describe("SidebarPrimaryControls", () => {
         locale: "fa",
         sidebarView: "chats",
         onChangeView: () => undefined,
-        onNewChat: () => undefined,
-        onAddProject: () => undefined,
         onSelectChat: () => undefined,
       }),
     ))
 
-    const actionsIndex = html.indexOf('data-sidebar-control="actions"')
     const searchIndex = html.indexOf('data-sidebar-control="search"')
     const filterIndex = html.indexOf('data-sidebar-control="view-filter"')
 
-    expect(actionsIndex).toBeGreaterThanOrEqual(0)
-    expect(searchIndex).toBeGreaterThan(actionsIndex)
+    expect(searchIndex).toBeGreaterThanOrEqual(0)
     expect(filterIndex).toBeGreaterThan(searchIndex)
     expect(html.match(/>چت‌ها</g)).toHaveLength(1)
-    expect(html).toContain('data-sidebar-action="new-chat"')
-    expect(html).toContain('data-sidebar-action="add-project"')
+    expect(html).not.toContain('data-sidebar-control="actions"')
+    expect(html).not.toContain('data-sidebar-action="new-chat"')
+    expect(html).not.toContain('data-sidebar-action="add-project"')
     expect(html).not.toContain('bg-muted/55')
   })
 })

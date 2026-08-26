@@ -16,7 +16,7 @@ describe("SessionHealthPopover", () => {
     expect(Math.round(comparison.timeRemaining ?? 0)).toBe(71)
   })
 
-  test("renders quota, context, active account, and copyable Codex session details", () => {
+  test("renders quota, context, and the active account without duplicating copy tools", () => {
     const html = renderToStaticMarkup(
       <I18nProvider locale="fa">
         <SessionHealthPanel
@@ -38,8 +38,6 @@ describe("SessionHealthPopover", () => {
             compactsAutomatically: false,
           }}
           accountEmail="active@example.com"
-          sessionId="01a-session-id"
-          sessionPath="/home/test/.codex/sessions/rollout-01a-session-id.jsonl"
         />
       </I18nProvider>,
     )
@@ -49,8 +47,8 @@ describe("SessionHealthPopover", () => {
     expect(html).toContain("کانتکست این چت")
     expect(html).toContain("96k")
     expect(html).toContain("active@example.com")
-    expect(html).toContain("codex resume 01a-session-id")
-    expect(html).toContain("/home/test/.codex/sessions/rollout-01a-session-id.jsonl")
+    expect(html).not.toContain("codex resume")
+    expect(html).not.toContain("Session file path")
     expect(html).toContain('data-session-health-comparison="quota-time"')
   })
 

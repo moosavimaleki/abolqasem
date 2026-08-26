@@ -21,8 +21,6 @@ interface ChatInputDockProps {
   contextWindowSnapshot: ContextWindowSnapshot | null
   rateLimitSnapshot: RateLimitSnapshot | null
   accountEmail?: string | null
-  sessionId?: string | null
-  sessionPath?: string | null
   readOnly?: boolean
   codexLock?: CodexLockStatus | null
   lockBusy?: boolean
@@ -55,8 +53,6 @@ export const ChatInputDock = memo(function ChatInputDock({
   contextWindowSnapshot,
   rateLimitSnapshot,
   accountEmail = null,
-  sessionId = null,
-  sessionPath = null,
   readOnly = false,
   codexLock = null,
   lockBusy = false,
@@ -94,8 +90,6 @@ export const ChatInputDock = memo(function ChatInputDock({
           contextWindowSnapshot={contextWindowSnapshot}
           rateLimitSnapshot={rateLimitSnapshot}
           accountEmail={accountEmail}
-          sessionId={sessionId}
-          sessionPath={sessionPath}
           readOnly={readOnly}
           codexLock={codexLock}
           lockBusy={lockBusy}

@@ -1987,6 +1987,7 @@ export function ChatPage() {
           onOpenSidebar={state.openSidebar}
           onExpandSidebar={state.expandSidebar}
           onNewChat={state.handleCompose}
+          onAddProject={state.openAddProjectModal}
           localPath={state.navbarLocalPath}
           embeddedTerminalVisible={showTerminalPane}
           onToggleEmbeddedTerminal={projectId ? handleToggleEmbeddedTerminal : undefined}
@@ -1997,6 +1998,8 @@ export function ChatPage() {
           onOpenExternal={handleOpenExternal}
           activeChatId={state.activeChatId}
           messages={state.messages}
+          sessionId={state.runtime?.provider === "codex" ? codexSessionId : null}
+          sessionPath={state.runtime?.provider === "codex" ? codexSessionPath : null}
           onChatSearchResultSelect={state.activeChatId ? handleChatSearchResultSelect : undefined}
           editorPreset={editorPreset}
           editorCommandTemplate={editorCommandTemplate}
@@ -2071,8 +2074,6 @@ export function ChatPage() {
           contextWindowSnapshot={contextWindowSnapshot}
           rateLimitSnapshot={rateLimitSnapshot}
           accountEmail={accountEmail}
-          sessionId={state.runtime?.provider === "codex" ? codexSessionId : null}
-          sessionPath={state.runtime?.provider === "codex" ? codexSessionPath : null}
           readOnly={codexChatReadOnly}
           codexLock={codexLock}
           lockBusy={codexLockActionPending}

@@ -1,8 +1,6 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
-import { Check, Copy, FileJson, Mail, TerminalSquare } from "lucide-react"
+import { useMemo } from "react"
+import { Mail } from "lucide-react"
 import type { RateLimitSnapshot, RateLimitWindowSnapshot } from "../../../shared/types"
-import { copyTextToClipboard } from "../messages/shared"
-import { Button } from "../ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover"
 import { useI18n } from "../../i18n/context"
 import { type ContextWindowSnapshot, formatContextWindowTokens } from "../../lib/contextWindow"
@@ -16,8 +14,6 @@ interface SessionHealthPopoverProps {
   snapshot?: RateLimitSnapshot | null
   contextUsage?: ContextWindowSnapshot | null
   accountEmail?: string | null
-  sessionId?: string | null
-  sessionPath?: string | null
 }
 
 function clampPercent(value: number) {
@@ -72,45 +68,10 @@ function ProgressRow({
   )
 }
 
-function CopyRow({
-  icon,
-  label,
-  value,
-  copyValue,
-  copied,
-  onCopy,
-}: {
-  icon: ReactNode
-  label: string
-  value: string
-  copyValue: string
-  copied: boolean
-  onCopy: () => void
-}) {
-  return (
-    <Button
-      type="button"
-      variant="ghost"
-      className="h-auto min-h-11 w-full justify-start gap-2 rounded-xl px-2.5 py-2 text-start hover:bg-muted/60"
-      onClick={onCopy}
-      aria-label={`${label}: ${copyValue}`}
-    >
-      <span className="shrink-0 text-muted-foreground">{copied ? <Check className="h-4 w-4" /> : icon}</span>
-      <span className="min-w-0 flex-1">
-        <span className="block text-[11px] leading-4 text-muted-foreground">{label}</span>
-        <span dir="ltr" className="block truncate font-mono text-[11px] leading-4 text-foreground">{value}</span>
-      </span>
-      <Copy className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-    </Button>
-  )
-}
-
 export function SessionHealthPanel({
   snapshot,
   contextUsage,
   accountEmail,
-  sessionId,
-  sessionPath,
 }: SessionHealthPopoverProps) {
   const { locale } = useI18n()
   const fa = locale === "fa"
@@ -120,27 +81,6 @@ export function SessionHealthPanel({
   const contextRemaining = contextUsage?.remainingPercentage == null
     ? null
     : clampPercent(contextUsage.remainingPercentage)
-  const [copied, setCopied] = useState<"resume" | "path" | null>(null)
-  const [copyFailed, setCopyFailed] = useState(false)
-  const copiedTimerRef = useRef<number | null>(null)
-
-  useEffect(() => () => {
-    if (copiedTimerRef.current !== null) window.clearTimeout(copiedTimerRef.current)
-  }, [])
-
-  const copy = async (kind: "resume" | "path", value: string) => {
-    try {
-      await copyTextToClipboard(value)
-      setCopied(kind)
-      setCopyFailed(false)
-      if (copiedTimerRef.current !== null) window.clearTimeout(copiedTimerRef.current)
-      copiedTimerRef.current = window.setTimeout(() => setCopied(null), 1600)
-    } catch {
-      setCopied(null)
-      setCopyFailed(true)
-    }
-  }
-
   return (
     <div className="space-y-3" dir={fa ? "rtl" : "ltr"}>
       <div className="flex min-w-0 items-start justify-between gap-3">
@@ -208,35 +148,6 @@ export function SessionHealthPanel({
         </div>
       ) : null}
 
-      {sessionId || sessionPath ? (
-        <div className="space-y-0.5 border-t border-border/60 pt-2">
-          {sessionId ? (
-            <CopyRow
-              icon={<TerminalSquare className="h-4 w-4" />}
-              label={fa ? "ادامه در ترمینال" : "Resume in terminal"}
-              value={`codex resume ${sessionId}`}
-              copyValue={`codex resume ${sessionId}`}
-              copied={copied === "resume"}
-              onCopy={() => { void copy("resume", `codex resume ${sessionId}`) }}
-            />
-          ) : null}
-          {sessionPath ? (
-            <CopyRow
-              icon={<FileJson className="h-4 w-4" />}
-              label={fa ? "مسیر فایل نشست" : "Session file path"}
-              value={sessionPath}
-              copyValue={sessionPath}
-              copied={copied === "path"}
-              onCopy={() => { void copy("path", sessionPath) }}
-            />
-          ) : null}
-          {copyFailed ? (
-            <p role="alert" className="px-2.5 pt-1 text-[11px] text-destructive">
-              {fa ? "کپی در کلیپ‌بورد انجام نشد." : "Could not copy to the clipboard."}
-            </p>
-          ) : null}
-        </div>
-      ) : null}
     </div>
   )
 }

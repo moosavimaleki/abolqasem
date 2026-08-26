@@ -151,8 +151,6 @@ interface Props {
   contextWindowSnapshot?: ContextWindowSnapshot | null
   rateLimitSnapshot?: RateLimitSnapshot | null
   accountEmail?: string | null
-  sessionId?: string | null
-  sessionPath?: string | null
   readOnly?: boolean
   codexLock?: CodexLockStatus | null
   lockBusy?: boolean
@@ -232,8 +230,6 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
   contextWindowSnapshot = null,
   rateLimitSnapshot = null,
   accountEmail = null,
-  sessionId = null,
-  sessionPath = null,
   readOnly = false,
   codexLock = null,
   lockBusy = false,
@@ -1167,21 +1163,19 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
               includePlanMode={showPlanMode}
               className="max-w-[840px] mx-auto"
             />
-            {activeContextWindow || rateLimitSnapshot || accountEmail || sessionId || sessionPath ? (
+            {activeContextWindow || rateLimitSnapshot || accountEmail ? (
               <div className="flex items-center md:hidden mx-[13px]">
                 <SessionHealthPopover
                   snapshot={rateLimitSnapshot}
                   contextUsage={activeContextWindow}
                   accountEmail={accountEmail}
-                  sessionId={sessionId}
-                  sessionPath={sessionPath}
                 />
               </div>
             ) : null}
             <div className="min-w-3" />
           </div>
 
-          {activeContextWindow || rateLimitSnapshot || accountEmail || sessionId || sessionPath ? (
+          {activeContextWindow || rateLimitSnapshot || accountEmail ? (
             <div
               className={cn(
                 "absolute top-1/2 -translate-y-1/2 hidden items-center md:flex",
@@ -1192,8 +1186,6 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 snapshot={rateLimitSnapshot}
                 contextUsage={activeContextWindow}
                 accountEmail={accountEmail}
-                sessionId={sessionId}
-                sessionPath={sessionPath}
               />
             </div>
           ) : null}
