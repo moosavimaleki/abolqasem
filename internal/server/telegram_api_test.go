@@ -491,6 +491,10 @@ func TestTelegramTranscriptPreviewsRecognizeRelativeSourceReferences(t *testing.
 	if err := os.WriteFile(file, []byte("from pathlib import Path\n\nprint('svg')\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	resolvedFile, err := filepath.EvalSymlinks(file)
+	if err != nil {
+		t.Fatal(err)
+	}
 	project, err := workspaceOpenProject(projectRoot, "Eitaa")
 	if err != nil {
 		t.Fatal(err)
@@ -505,7 +509,7 @@ func TestTelegramTranscriptPreviewsRecognizeRelativeSourceReferences(t *testing.
 		t.Fatalf("relative source reference = %q, buttons=%#v", markdown, buttons)
 	}
 	item, ok := bridge.telegramPreviewForCallback(telegramPreviewCallbackPrefix+buttons[0].Token, "99", chat.ID)
-	if !ok || item.FilePath != file || item.Line != 3 {
+	if !ok || item.FilePath != resolvedFile || item.Line != 3 {
 		t.Fatalf("relative preview item = %#v, ok=%v", item, ok)
 	}
 	// Codex sometimes includes the selected project directory in an otherwise
@@ -515,7 +519,7 @@ func TestTelegramTranscriptPreviewsRecognizeRelativeSourceReferences(t *testing.
 		t.Fatalf("project-prefixed source reference = %#v", prefixedButtons)
 	}
 	prefixed, ok := bridge.telegramPreviewForCallback(telegramPreviewCallbackPrefix+prefixedButtons[0].Token, "99", chat.ID)
-	if !ok || prefixed.FilePath != file || prefixed.Line != 3 {
+	if !ok || prefixed.FilePath != resolvedFile || prefixed.Line != 3 {
 		t.Fatalf("project-prefixed preview item = %#v, ok=%v", prefixed, ok)
 	}
 }
