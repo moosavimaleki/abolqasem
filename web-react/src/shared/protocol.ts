@@ -42,6 +42,13 @@ export interface ProjectQuickAction {
   command: string
 }
 
+export interface ProjectRunnableScript {
+  id: string
+  label: string
+  command: string
+  source: "file" | "package" | "make" | "saved"
+}
+
 export type SubscriptionTopic =
   | { type: "sidebar" }
   | { type: "local-projects" }
@@ -82,6 +89,7 @@ export type ClientCommand =
   | { type: "browser.killLocalHttpServer"; port: number }
   | { type: "project.readQuickActions"; projectId: string }
   | { type: "project.writeQuickActions"; projectId: string; quickActions: ProjectQuickAction[] }
+  | { type: "project.readRunnableScripts"; projectId: string }
   | { type: "update.check"; force?: boolean }
   | { type: "update.install" }
   | { type: "app.readManagement" }

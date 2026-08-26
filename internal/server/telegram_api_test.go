@@ -25,7 +25,7 @@ func TestTelegramConfigAPIStoresPrivateAllowlistedConfiguration(t *testing.T) {
 	mux := http.NewServeMux()
 	setupRoutes(mux)
 
-	request := httptest.NewRequest(http.MethodPost, "/api/telegram/configure", bytes.NewBufferString(`{"botToken":" 123:token ","proxyUrl":"socks5://127.0.0.1:10810","allowedUserIds":[" tg:42 ","*","42"],"customCommands":[{"name":" Git_Status ","description":" Repository status ","command":" git status --short ","workingDirectory":" /tmp ","timeoutSeconds":999},{"name":"bad name","command":"echo no"}]}`))
+	request := httptest.NewRequest(http.MethodPost, "/api/telegram/configure", bytes.NewBufferString(`{"botToken":" 123:token ","proxyUrl":"socks5://127.0.0.1:10810","allowedUserIds":[" tg:42 ","*","42"],"customCommands":[{"name":" Git_Status ","description":" Repository status ","command":" git status --short ","workingDirectory":" /tmp ","timeoutSeconds":999}]}`))
 	response := httptest.NewRecorder()
 	mux.ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
@@ -131,6 +131,32 @@ func TestTelegramConfigAcceptsLegacyScalarNumericIDs(t *testing.T) {
 	}
 	if !reflect.DeepEqual(config.AllowedUserIDs, []string{"42"}) || !reflect.DeepEqual(config.ChatIDs, []string{"-100123"}) {
 		t.Fatalf("legacy IDs were not normalized: %#v", config)
+	}
+}
+
+func TestTelegramConfigAPIDoesNotSilentlyDropInvalidCustomCommand(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CODEX_HOME", filepath.Join(home, ".codex"))
+	if err := saveTelegramBridgeConfig(telegramBridgeConfig{
+		BotToken: "123:token", ProxyURL: "socks5://127.0.0.1:10810", AllowedUserIDs: []string{"42"},
+		CustomCommands: []telegramCustomCommand{{Name: "status", Command: "git status --short"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	setupRoutes(mux)
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/telegram/configure", bytes.NewBufferString(`{"botToken":"123:token","proxyUrl":"socks5://127.0.0.1:10810","allowedUserIds":["42"],"customCommands":[{"name":"bad/name","command":"echo no"}]}`)))
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "name must use") {
+		t.Fatalf("expected actionable custom command validation error, got %d %s", response.Code, response.Body.String())
+	}
+	stored, err := loadTelegramBridgeConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(stored.CustomCommands, []telegramCustomCommand{{Name: "status", Command: "git status --short", TimeoutSeconds: 30}}) {
+		t.Fatalf("invalid save must preserve existing commands: %#v", stored.CustomCommands)
 	}
 }
 

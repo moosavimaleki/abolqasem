@@ -17,6 +17,7 @@ import {
   setCachedChangelog,
   shouldPreviewChatSoundChange,
   canSendTelegramTest,
+  validateTelegramCustomCommandDrafts,
   McpSection,
   SkillsSection,
 } from "./SettingsPage"
@@ -48,6 +49,21 @@ const SAMPLE_RELEASES = [
 
 afterEach(() => {
   resetSettingsPageChangelogCache()
+})
+
+describe("validateTelegramCustomCommandDrafts", () => {
+  test("keeps an invalid draft visible by blocking save with an actionable error", () => {
+    expect(validateTelegramCustomCommandDrafts([
+      { name: "bad/name", description: "", command: "git status", workingDirectory: "", timeoutSeconds: 30 },
+    ], "fa")).toContain("نام")
+  })
+
+  test("accepts valid configured commands and ignores a blank newly-added row", () => {
+    expect(validateTelegramCustomCommandDrafts([
+      { name: "status", description: "", command: "git status --short", workingDirectory: "", timeoutSeconds: 30 },
+      { name: "", description: "", command: "", workingDirectory: "", timeoutSeconds: 30 },
+    ], "en")).toBeNull()
+  })
 })
 
 function createUpdateSnapshot(overrides: Partial<UpdateSnapshot> = {}): UpdateSnapshot {

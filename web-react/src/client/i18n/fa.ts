@@ -213,6 +213,8 @@ export const fa: TranslationDictionary = {
     addRight: "افزودن ترمینال در سمت راست",
     archive: "آرشیو ترمینال",
     clear: "پاک کردن ترمینال",
+    projectScripts: "اسکریپت‌های پروژه",
+    runScript: "اجرای اسکریپت",
     terminal: "ترمینال",
   },
   git: {

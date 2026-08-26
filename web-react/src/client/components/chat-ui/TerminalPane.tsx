@@ -17,6 +17,7 @@ interface Props {
   clearVersion?: number
   focusRequestVersion?: number
   initialCommand?: string
+  scriptCommand?: { id: number; command: string } | null
   command?: string
   closeOnUnmount?: boolean
   directionMode?: TerminalDirectionMode
@@ -277,6 +278,7 @@ export function TerminalPane({
   clearVersion = 0,
   focusRequestVersion = 0,
   initialCommand,
+  scriptCommand = null,
   command,
   closeOnUnmount = false,
   directionMode = "normal",
@@ -293,6 +295,8 @@ export function TerminalPane({
   const createAttemptRef = useRef(0)
   const lastAppliedSnapshotKeyRef = useRef<string | null>(null)
   const sentInitialCommandRef = useRef<string | null>(null)
+  const lastScriptCommandIDRef = useRef(0)
+  const scriptCommandRef = useRef(scriptCommand)
   const lastSizeRef = useRef<{ cols: number; rows: number } | null>(null)
   const [metadata, setMetadata] = useState<Pick<TerminalSnapshot, "cwd" | "shell" | "status" | "exitCode"> | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -347,6 +351,16 @@ export function TerminalPane({
   useEffect(() => {
     sentInitialCommandRef.current = null
   }, [initialCommand])
+
+  useEffect(() => {
+    scriptCommandRef.current = scriptCommand
+  }, [scriptCommand])
+
+  useEffect(() => {
+    if (!scriptCommand || scriptCommand.id <= lastScriptCommandIDRef.current || !hasCreatedRef.current) return
+    lastScriptCommandIDRef.current = scriptCommand.id
+    sendInput(`${scriptCommand.command}\r`)
+  }, [scriptCommand])
 
   useEffect(() => {
     const terminal = new Terminal(getTerminalOptions(scrollback, terminalTheme))
@@ -538,6 +552,11 @@ export function TerminalPane({
           sentInitialCommandRef.current = initialCommand
           sendInput(`${initialCommand}\r`)
           onInitialCommandSent?.(terminalId)
+        }
+        const pendingScriptCommand = scriptCommandRef.current
+        if (pendingScriptCommand && pendingScriptCommand.id > lastScriptCommandIDRef.current) {
+          lastScriptCommandIDRef.current = pendingScriptCommand.id
+          sendInput(`${pendingScriptCommand.command}\r`)
         }
         scheduleResizeSync()
       }).catch((commandError) => {

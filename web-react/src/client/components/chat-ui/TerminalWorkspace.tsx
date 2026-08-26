@@ -1,5 +1,6 @@
-import { Fragment, memo, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react"
-import { Eraser, Plus, X } from "lucide-react"
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import { Eraser, Play, Plus, ScrollText, X } from "lucide-react"
+import type { ProjectRunnableScript } from "../../../shared/protocol"
 import type { SocketStatus, AbolqasemSocket } from "../../app/socket"
 import { Button } from "../ui/button"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "../ui/resizable"
@@ -47,6 +48,10 @@ interface TerminalWorkspacePaneProps {
   onCommandSent?: () => void
   onInitialCommandSent?: (terminalId: string) => void
   setPaneElement: (terminalId: string, element: HTMLDivElement | null) => void
+  scripts: ProjectRunnableScript[]
+  showScripts: boolean
+  scriptCommand: { id: number; command: string } | null
+  onRunScript: (command: string) => void
 }
 
 const TerminalWorkspacePane = memo(function TerminalWorkspacePane({
@@ -70,8 +75,12 @@ const TerminalWorkspacePane = memo(function TerminalWorkspacePane({
   onCommandSent,
   onInitialCommandSent,
   setPaneElement,
+  scripts,
+  showScripts,
+  scriptCommand,
+  onRunScript,
 }: TerminalWorkspacePaneProps) {
-  const { t } = useI18n()
+  const { t, direction } = useI18n()
   const handleSetPaneElement = useCallback((element: HTMLDivElement | null) => {
     setPaneElement(terminalId, element)
   }, [setPaneElement, terminalId])
@@ -149,6 +158,30 @@ const TerminalWorkspacePane = memo(function TerminalWorkspacePane({
             </div>
           </div>
 
+          {showScripts && scripts.length > 0 ? (
+            <div className="flex min-w-0 items-center gap-2 overflow-x-auto px-3 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" dir="ltr">
+              <span className="flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground" dir={direction}>
+                <ScrollText className="size-3" />
+                {t.terminal.projectScripts}
+              </span>
+              {scripts.map((script) => (
+                <Button
+                  key={script.id}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onRunScript(script.command)}
+                  title={script.command}
+                  className="h-6 shrink-0 gap-1 rounded-md border-border/70 px-2 font-mono text-[11px] text-foreground hover:bg-muted/50"
+                  aria-label={`${t.terminal.runScript}: ${script.label}`}
+                >
+                  <Play className="size-3" />
+                  <span>{script.label}</span>
+                </Button>
+              ))}
+            </div>
+          ) : null}
+
           <TerminalPane
             projectId={projectId}
             terminalId={terminalId}
@@ -158,6 +191,7 @@ const TerminalWorkspacePane = memo(function TerminalWorkspacePane({
             clearVersion={clearVersion}
             focusRequestVersion={focusRequestVersion}
             initialCommand={initialCommand}
+            scriptCommand={scriptCommand}
             onCommandSent={onCommandSent}
             onInitialCommandSent={onInitialCommandSent}
             onPathChange={handlePathChange}
@@ -191,6 +225,27 @@ function TerminalWorkspaceImpl({
   const [viewportWidth, setViewportWidth] = useState(0)
   const [pathsByTerminalId, setPathsByTerminalId] = useState<Record<string, string | null>>({})
   const [clearVersionsByTerminalId, setClearVersionsByTerminalId] = useState<Record<string, number>>({})
+  const [scripts, setScripts] = useState<ProjectRunnableScript[]>([])
+  const [scriptCommand, setScriptCommand] = useState<{ id: number; command: string } | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setScripts([])
+    void socket.command<ProjectRunnableScript[]>({ type: "project.readRunnableScripts", projectId })
+      .then((nextScripts) => {
+        if (!cancelled) setScripts(nextScripts)
+      })
+      .catch(() => {
+        if (!cancelled) setScripts([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [projectId, socket])
+
+  const handleRunScript = useCallback((command: string) => {
+    setScriptCommand((current) => ({ id: (current?.id ?? 0) + 1, command }))
+  }, [])
 
   useLayoutEffect(() => {
     const element = containerRef.current
@@ -292,6 +347,9 @@ function TerminalWorkspaceImpl({
                 clearVersion={clearVersionsByTerminalId[terminalPane.id] ?? 0}
                 focusRequestVersion={index === 0 ? focusRequestVersion : 0}
                 initialCommand={pendingCommandsByTerminalId?.[terminalPane.id]}
+                scripts={scripts}
+                showScripts={layout.terminals.length === 1}
+                scriptCommand={scriptCommand}
                 splitTerminalShortcut={splitTerminalShortcut}
                 onAddTerminal={onAddTerminal}
                 onRemoveTerminal={onRemoveTerminal}
@@ -299,6 +357,7 @@ function TerminalWorkspaceImpl({
                 onPathChange={handlePathChange}
                 onCommandSent={onTerminalCommandSent}
                 onInitialCommandSent={onInitialTerminalCommandSent}
+                onRunScript={handleRunScript}
                 setPaneElement={handleSetPaneElement}
               />
             ))}

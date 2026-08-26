@@ -1,6 +1,6 @@
 import { LegendList, type LegendListRef } from "@legendapp/list/react"
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { ArrowDown, BookOpen, Loader2, Upload } from "lucide-react"
+import { ArrowDown, ArrowUp, BookOpen, Loader2, Upload } from "lucide-react"
 import { AnimatedShinyText } from "../../components/ui/animated-shiny-text"
 import { AbolqasemLogo } from "../../components/AbolqasemLogo"
 import { ConversationMinimap, type MessageIndexItem } from "../../components/chat-ui/ConversationMinimap"
@@ -35,6 +35,16 @@ import { getProcessingStatus } from "./processingStatus"
 
 const CHECKPOINT_PROMPT_PREVIEW_MAX = 120
 const PROMPT_CHECKPOINT_MAX_DELAY_MS = 30 * 60 * 1000
+const TRANSCRIPT_JUMP_HINT_TIMEOUT_MS = 2600
+
+export function shouldShowTranscriptJumpHint(previousTop: number, nextTop: number, elapsedMs: number) {
+  return elapsedMs > 0 && elapsedMs <= 140 && Math.abs(nextTop - previousTop) >= 220
+}
+
+export function transcriptJumpDistance(viewportHeight: number, direction: "up" | "down") {
+  const amount = Math.max(280, Math.round(viewportHeight * 0.72))
+  return direction === "up" ? -amount : amount
+}
 
 function checkpointPromptPreview(value: string) {
   const normalized = value.trim().split(/\s+/).filter(Boolean).join(" ")
@@ -217,6 +227,9 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
   const [filePreviewError, setFilePreviewError] = useState<string | null>(null)
   const [readerDocument, setReaderDocument] = useState<AssistantReaderDocument | null>(null)
   const [floatingReaderMessageId, setFloatingReaderMessageId] = useState<string | null>(null)
+  const [showTranscriptJumpHint, setShowTranscriptJumpHint] = useState(false)
+  const scrollHintTimeoutRef = useRef<number | null>(null)
+  const lastScrollSampleRef = useRef<{ top: number; time: number } | null>(null)
   const isMac = platform === "darwin"
   const transcriptAppearanceStyle = useMemo(() => getAppearanceTextStyle(appearanceSettings), [appearanceSettings])
   const transcriptAppearanceClassName = useMemo(() => cn(
@@ -278,6 +291,12 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
     setReaderDocument(null)
     setFloatingReaderMessageId(null)
   }, [activeChatId])
+
+  useEffect(() => {
+    return () => {
+      if (scrollHintTimeoutRef.current !== null) window.clearTimeout(scrollHintTimeoutRef.current)
+    }
+  }, [])
 
   useEffect(() => {
     if (typeof window === "undefined") return
@@ -361,6 +380,17 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
       : listRef.current?.getScrollableNode?.()
 
     if (currentTarget instanceof HTMLElement) {
+      const now = performance.now()
+      const previousSample = lastScrollSampleRef.current
+      if (previousSample && shouldShowTranscriptJumpHint(previousSample.top, currentTarget.scrollTop, now - previousSample.time)) {
+        setShowTranscriptJumpHint(true)
+        if (scrollHintTimeoutRef.current !== null) window.clearTimeout(scrollHintTimeoutRef.current)
+        scrollHintTimeoutRef.current = window.setTimeout(() => {
+          setShowTranscriptJumpHint(false)
+          scrollHintTimeoutRef.current = null
+        }, TRANSCRIPT_JUMP_HINT_TIMEOUT_MS)
+      }
+      lastScrollSampleRef.current = { top: currentTarget.scrollTop, time: now }
       const distanceFromEnd = currentTarget.scrollHeight - currentTarget.clientHeight - currentTarget.scrollTop
       onIsAtEndChange(distanceFromEnd <= 4)
       return
@@ -371,6 +401,23 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
       onIsAtEndChange(state.isAtEnd)
     }
   }, [listRef, onIsAtEndChange])
+
+  useEffect(() => {
+    const handleJumpShortcut = (event: KeyboardEvent) => {
+      if (!event.shiftKey || event.altKey || event.ctrlKey || event.metaKey || (event.key !== "ArrowUp" && event.key !== "ArrowDown")) return
+      const target = event.target instanceof HTMLElement ? event.target : null
+      if (target?.matches("input, textarea, select, [contenteditable='true']")) return
+      const scrollNode = listRef.current?.getScrollableNode?.()
+      if (!(scrollNode instanceof HTMLElement)) return
+      event.preventDefault()
+      scrollNode.scrollBy({
+        top: transcriptJumpDistance(scrollNode.clientHeight, event.key === "ArrowUp" ? "up" : "down"),
+        behavior: "smooth",
+      })
+    }
+    window.addEventListener("keydown", handleJumpShortcut)
+    return () => window.removeEventListener("keydown", handleJumpShortcut)
+  }, [listRef])
 
   useEffect(() => {
     let cleanup: (() => void) | undefined
@@ -704,6 +751,23 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
           </div>
         </div>
       ) : null}
+
+      <div
+        className={cn(
+          "pointer-events-none absolute end-5 top-1/2 z-20 -translate-y-1/2 transition-all duration-200",
+          showTranscriptJumpHint ? "translate-x-0 opacity-100" : "translate-x-2 opacity-0",
+        )}
+        aria-hidden={!showTranscriptJumpHint}
+      >
+        <div className="rounded-lg border border-border/80 bg-background/88 px-2.5 py-2 text-[11px] text-muted-foreground shadow-lg backdrop-blur-md" dir={direction}>
+          <div className="flex items-center gap-1.5 whitespace-nowrap">
+            <kbd className="rounded border border-border bg-muted/60 px-1 font-mono text-[10px] text-foreground">Shift</kbd>
+            <ArrowUp className="size-3" />
+            <ArrowDown className="size-3" />
+          </div>
+          <div className="mt-1">{direction === "rtl" ? "پرش سریع در گفت‌وگو" : "Jump through the conversation"}</div>
+        </div>
+      </div>
 
       <div
         style={{ bottom: transcriptPaddingBottom - 20 }}

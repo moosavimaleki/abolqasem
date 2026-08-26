@@ -212,6 +212,8 @@ export const en = {
     addRight: "Add terminal to the right",
     archive: "Archive terminal",
     clear: "Clear terminal",
+    projectScripts: "Project scripts",
+    runScript: "Run script",
     terminal: "Terminal",
   },
   git: {

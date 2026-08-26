@@ -239,6 +239,10 @@ func handleAPITelegramConfigure(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid telegram configuration", http.StatusBadRequest)
 		return
 	}
+	if err := validateTelegramCustomCommands(config.CustomCommands); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	existing, _ := loadTelegramBridgeConfig()
 	config.ChatIDs = existing.ChatIDs
 	config.Mappings = existing.Mappings
@@ -247,7 +251,34 @@ func handleAPITelegramConfigure(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	workspaceTelegramBridge.Reload()
-	writeJSON(w, map[string]any{"ok": true})
+	writeJSON(w, map[string]any{"ok": true, "customCommands": config.CustomCommands})
+}
+
+// validateTelegramCustomCommands rejects malformed drafts instead of allowing
+// normalisation to silently remove them during a later config refresh.
+func validateTelegramCustomCommands(values []telegramCustomCommand) error {
+	seen := map[string]bool{}
+	for index, value := range values {
+		name := strings.ToLower(strings.TrimSpace(value.Name))
+		command := strings.TrimSpace(value.Command)
+		if name == "" && command == "" {
+			continue
+		}
+		if !isTelegramCustomCommandName(name) {
+			return fmt.Errorf("custom command %d: name must use lowercase letters, numbers, _ or -", index+1)
+		}
+		if command == "" {
+			return fmt.Errorf("custom command %d: system command is required", index+1)
+		}
+		if len(command) > 4096 {
+			return fmt.Errorf("custom command %d: system command is too long", index+1)
+		}
+		if seen[name] {
+			return fmt.Errorf("custom command %d: name %q is duplicated", index+1, name)
+		}
+		seen[name] = true
+	}
+	return nil
 }
 
 func normalizeTelegramCustomCommands(values []telegramCustomCommand) []telegramCustomCommand {

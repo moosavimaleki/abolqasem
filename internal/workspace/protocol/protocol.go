@@ -53,6 +53,7 @@ const (
 	CommandBrowserKillLocalHTTPServer      = "browser.killLocalHttpServer"
 	CommandProjectReadQuickActions         = "project.readQuickActions"
 	CommandProjectWriteQuickActions        = "project.writeQuickActions"
+	CommandProjectReadRunnableScripts      = "project.readRunnableScripts"
 	CommandUpdateCheck                     = "update.check"
 	CommandUpdateInstall                   = "update.install"
 	CommandAppReadManagement               = "app.readManagement"

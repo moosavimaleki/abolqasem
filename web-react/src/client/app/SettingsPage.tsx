@@ -106,6 +106,28 @@ type TelegramCustomCommandDraft = {
   timeoutSeconds: number
 }
 
+export function validateTelegramCustomCommandDrafts(commands: TelegramCustomCommandDraft[], locale: AppLocale): string | null {
+  const seen = new Set<string>()
+  for (let index = 0; index < commands.length; index += 1) {
+    const command = commands[index]!
+    const name = command.name.trim().toLowerCase()
+    const systemCommand = command.command.trim()
+    if (!name && !systemCommand) continue
+    const prefix = locale === "fa" ? `فرمان ${index + 1}` : `Command ${index + 1}`
+    if (!/^[a-z0-9_-]{1,32}$/.test(name)) {
+      return locale === "fa" ? `${prefix}: نام باید فقط حروف کوچک انگلیسی، عدد، _ یا - باشد.` : `${prefix}: name may only contain lowercase letters, numbers, _ or -.`
+    }
+    if (!systemCommand) {
+      return locale === "fa" ? `${prefix}: فرمان سیستم را وارد کنید.` : `${prefix}: enter the system command.`
+    }
+    if (seen.has(name)) {
+      return locale === "fa" ? `${prefix}: نام فرمان تکراری است.` : `${prefix}: command name is duplicated.`
+    }
+    seen.add(name)
+  }
+  return null
+}
+
 const sidebarItems = [
   {
     id: "general",
@@ -2450,6 +2472,11 @@ export function SettingsPage() {
   }, [isConnecting, refreshTelegram, selectedPage])
 
   const saveTelegram = useCallback(async () => {
+    const validationError = validateTelegramCustomCommandDrafts(telegramDraft.customCommands, locale)
+    if (validationError) {
+      setTelegramError(validationError)
+      return
+    }
     setTelegramSaving(true)
     setTelegramError(null)
     setTelegramNotice(null)
@@ -2465,13 +2492,24 @@ export function SettingsPage() {
         }),
       })
       if (!response.ok) throw new Error(await response.text())
+      const result = await response.json() as { customCommands?: TelegramCustomCommandDraft[] }
+      setTelegramDraft((current) => ({
+        ...current,
+        customCommands: (result.customCommands ?? current.customCommands).map((command) => ({
+          name: command.name ?? "",
+          description: command.description ?? "",
+          command: command.command ?? "",
+          workingDirectory: command.workingDirectory ?? "",
+          timeoutSeconds: command.timeoutSeconds ?? 30,
+        })),
+      }))
       await refreshTelegram()
     } catch (error) {
       setTelegramError(error instanceof Error ? error.message : String(error))
     } finally {
       setTelegramSaving(false)
     }
-  }, [refreshTelegram, telegramDraft])
+  }, [locale, refreshTelegram, telegramDraft])
 
   const updateTelegramCustomCommand = useCallback((index: number, patch: Partial<TelegramCustomCommandDraft>) => {
     setTelegramDraft((current) => ({
@@ -3519,7 +3557,7 @@ export function SettingsPage() {
                     >
                       <div className="flex w-full flex-col gap-3">
                         {telegramDraft.customCommands.map((command, index) => (
-                          <div key={`${command.name}-${index}`} className="rounded-lg border border-border bg-muted/20 p-3">
+                          <div key={index} className="rounded-lg border border-border bg-muted/20 p-3">
                             <div className="grid gap-2 md:grid-cols-[minmax(0,0.7fr)_minmax(0,1fr)_auto]">
                               <Input aria-label={locale === "fa" ? "نام فرمان تلگرام" : "Telegram command name"} dir="ltr" className="font-mono text-left" value={command.name} onChange={(event) => updateTelegramCustomCommand(index, { name: event.target.value.toLowerCase() })} placeholder="status" />
                               <Input aria-label={locale === "fa" ? "توضیح فرمان تلگرام" : "Telegram command description"} dir={direction} className={direction === "rtl" ? "text-right" : "text-left"} value={command.description} onChange={(event) => updateTelegramCustomCommand(index, { description: event.target.value })} placeholder={locale === "fa" ? "توضیحی که در /commands نمایش داده می‌شود" : "Description shown by /commands"} />
