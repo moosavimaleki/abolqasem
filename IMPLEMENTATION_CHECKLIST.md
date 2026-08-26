@@ -10,7 +10,7 @@
 - [x] جلوگیری از duplicate شدن `turn_aborted`
 - [x] takeover نشست‌های مشکل‌دار در وب
 - [x] takeover نشست‌های قفل‌شده از Telegram
-- [ ] custom commandهای Telegram با ذخیره و اجرای امن
-- [ ] usage/context/sidebar/cache مطابق Kanna
-- [ ] نمایش planهای native و proposed در UI
+- [x] custom commandهای Telegram با ذخیره و اجرای امن
+- [x] usage/context/sidebar/cache مطابق Kanna
+- [x] نمایش planهای native و proposed در UI
 - [ ] تست نهایی، release، tag و push
