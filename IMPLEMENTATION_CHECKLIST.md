@@ -2,7 +2,7 @@
 
 این فهرست تنها scope مورد توافق این مرحله است. هر مورد پس از پیاده‌سازی، تست و commit خط می‌خورد.
 
-- [ ] حذف کامل مسیرهای tmux و Gemini از runtime و UI
+- [x] حذف کامل مسیرهای tmux و Gemini از runtime و UI
 - [x] نمایش activity واقعی Codex (بدون وضعیت ساختگی)
 - [ ] پیوست تصویر و متن بلند با ارسال و preview صحیح
 - [x] حذف duplicate پیام optimistic و پیام واقعی session
