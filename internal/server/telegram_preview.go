@@ -52,15 +52,15 @@ var telegramMarkdownFileLink = regexp.MustCompile(`\[([^\]]+)\]\((/[^)\s]+)\)`)
 // Codex commonly writes source references as plain `path/to/file:line` text.
 // Keep this deliberately path-shaped and validate every match against the
 // selected project before creating a preview callback.
-var telegramPlainFileReference = regexp.MustCompile(`(?m)(^|[^[:alnum:]_])((?:/|[[:alnum:]_.~-]+/)[^:\n]*:[1-9][0-9]*)([[:space:],;)}\]]|$)`)
+var telegramPlainFileReference = regexp.MustCompile(`(?m)(^|[^[:alnum:]_])((?:/|[[:alnum:]_.~-]+/)[^:\n]*:[1-9][0-9]*(?::[1-9][0-9]*)?)([[:space:],;)}\]]|$)`)
 
 // sendTranscript keeps the readable transcript in Rich Markdown and places
 // heavyweight previews behind explicit callback buttons. Telegram callback data
 // has a 64-byte limit, so the file path/source is kept server-side only.
 func (b *telegramBridge) sendTranscript(ctx context.Context, token, telegramChatID, workspaceChatID, markdown string) {
 	markdown, buttons := b.telegramTranscriptPreviews(telegramChatID, workspaceChatID, markdown)
-	b.sendText(ctx, token, telegramChatID, markdown)
 	if len(buttons) == 0 {
+		b.sendText(ctx, token, telegramChatID, markdown)
 		return
 	}
 	rows := make([][]map[string]string, 0, len(buttons))
@@ -70,7 +70,10 @@ func (b *telegramBridge) sendTranscript(ctx context.Context, token, telegramChat
 			"callback_data": telegramPreviewCallbackPrefix + button.Token,
 		}})
 	}
-	b.sendTextWithMarkup(ctx, token, telegramChatID, "پیش‌نمایش فایل‌ها و نمودارها را از دکمه‌های زیر باز کنید.", map[string]any{"inline_keyboard": rows})
+	// Keep the buttons attached to the transcript itself. Sending a second
+	// message made the controls easy to miss (and could leave only the plain
+	// path visible when Telegram delayed the follow-up request).
+	b.sendTextWithMarkup(ctx, token, telegramChatID, markdown+"\n\nبرای باز کردن فایل‌ها یا نمودارها، گزینهٔ مربوط را انتخاب کنید.", map[string]any{"inline_keyboard": rows})
 }
 
 func (b *telegramBridge) telegramTranscriptPreviews(telegramChatID, workspaceChatID, markdown string) (string, []telegramPreviewButton) {
@@ -176,8 +179,17 @@ func telegramPreviewReferenceParts(raw string) (string, int, bool) {
 	}
 	line := 0
 	if colon := strings.LastIndex(decoded, ":"); colon > strings.LastIndex(decoded, "/") {
-		if parsed, err := strconv.Atoi(decoded[colon+1:]); err == nil && parsed > 0 {
-			line, decoded = parsed, decoded[:colon]
+		linePart := decoded[colon+1:]
+		// Source references may include a column (`file.py:29:4`). The
+		// preview is line-oriented, so discard the column while retaining 29.
+		if previousColon := strings.LastIndex(decoded[:colon], ":"); previousColon > strings.LastIndex(decoded[:colon], "/") {
+			linePart = decoded[previousColon+1 : colon]
+			decoded = decoded[:previousColon]
+		} else {
+			decoded = decoded[:colon]
+		}
+		if parsed, err := strconv.Atoi(linePart); err == nil && parsed > 0 {
+			line = parsed
 		}
 	}
 	if decoded == "" || filepath.Clean(decoded) == "." {
@@ -195,15 +207,32 @@ func telegramResolvePreviewFilePath(workspaceChatID, raw string) (string, int, b
 	if err != nil {
 		return "", 0, false
 	}
-	path := decoded
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(project.LocalPath, path)
+	var path string
+	if filepath.IsAbs(decoded) {
+		path, err = resolvePreviewPath([]string{project.LocalPath}, decoded)
+		if err != nil {
+			return "", 0, false
+		}
+		return path, line, true
 	}
-	path, err = resolvePreviewPath([]string{project.LocalPath}, path)
-	if err != nil {
-		return "", 0, false
+
+	// Codex often prefixes a project-relative path with the project directory
+	// name (for example `eitaa-apk/svg.py`) even when that directory is already
+	// the selected workspace root. Try both spellings while keeping resolution
+	// strictly inside the project root.
+	candidates := []string{filepath.Join(project.LocalPath, decoded)}
+	projectName := filepath.Base(filepath.Clean(project.LocalPath))
+	prefix := projectName + string(filepath.Separator)
+	if projectName != "." && strings.HasPrefix(decoded, prefix) {
+		candidates = append(candidates, filepath.Join(project.LocalPath, strings.TrimPrefix(decoded, prefix)))
 	}
-	return path, line, true
+	for _, candidate := range candidates {
+		path, err = resolvePreviewPath([]string{project.LocalPath}, candidate)
+		if err == nil {
+			return path, line, true
+		}
+	}
+	return "", 0, false
 }
 
 func telegramPreviewPathAllowed(workspaceChatID, path string) bool {

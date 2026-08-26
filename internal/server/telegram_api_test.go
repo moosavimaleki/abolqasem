@@ -508,6 +508,65 @@ func TestTelegramTranscriptPreviewsRecognizeRelativeSourceReferences(t *testing.
 	if !ok || item.FilePath != file || item.Line != 3 {
 		t.Fatalf("relative preview item = %#v, ok=%v", item, ok)
 	}
+	// Codex sometimes includes the selected project directory in an otherwise
+	// project-relative reference. It must still resolve to the same file.
+	_, prefixedButtons := bridge.telegramTranscriptPreviews("99", chat.ID, "فایل: "+filepath.Base(projectRoot)+"/Downloads/Eitaa Desktop/svg.py:3:2")
+	if len(prefixedButtons) != 1 {
+		t.Fatalf("project-prefixed source reference = %#v", prefixedButtons)
+	}
+	prefixed, ok := bridge.telegramPreviewForCallback(telegramPreviewCallbackPrefix+prefixedButtons[0].Token, "99", chat.ID)
+	if !ok || prefixed.FilePath != file || prefixed.Line != 3 {
+		t.Fatalf("project-prefixed preview item = %#v, ok=%v", prefixed, ok)
+	}
+}
+
+func TestTelegramSendTranscriptEmbedsPreviewButtonsWithTranscript(t *testing.T) {
+	withWorkspaceComposerStore(t)
+	projectRoot := t.TempDir()
+	file := filepath.Join(projectRoot, "scripts", "deploy.sh")
+	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, []byte("#!/bin/sh\necho deploy\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	project, err := workspaceOpenProject(projectRoot, "project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	chat, err := (&workspaceEventStore{store: workspaceStore()}).CreateChat(project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var payloads []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		var payload map[string]any
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			t.Errorf("decode Telegram payload: %v", err)
+		}
+		payloads = append(payloads, payload)
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"ok":true,"result":{}}`))
+	}))
+	defer server.Close()
+	bridge := &telegramBridge{client: server.Client(), apiBaseURL: server.URL, previewByToken: map[string]telegramPreviewItem{}}
+	bridge.sendTranscript(context.Background(), "123:test", "99", chat.ID, "فایل: scripts/deploy.sh:2")
+	if len(payloads) != 1 {
+		t.Fatalf("sendTranscript payload count = %d, want one combined message", len(payloads))
+	}
+	rich, ok := payloads[0]["rich_message"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing rich_message: %#v", payloads[0])
+	}
+	blocks, ok := rich["blocks"].([]any)
+	if !ok || len(blocks) < 2 {
+		t.Fatalf("preview message blocks = %#v", rich["blocks"])
+	}
+	last, ok := blocks[len(blocks)-1].(map[string]any)
+	if !ok || last["type"] != "buttons" {
+		t.Fatalf("preview button block = %#v", blocks[len(blocks)-1])
+	}
 }
 
 func TestTelegramCodePreviewCapsHugeFilesWithDownloadHint(t *testing.T) {
