@@ -96,6 +96,7 @@ import { getDictionary, getLocaleDirection, LOCALE_OPTIONS, normalizeLocale } fr
 import { useI18n } from "../i18n/context"
 import { HOOK_NOTIFICATION_SETTINGS_HASH, settingsRoute } from "./routes"
 import { UsageSettingsSection } from "./UsageSettingsSection"
+import { useAppSettingsStore } from "../stores/appSettingsStore"
 
 type TelegramCustomCommandDraft = {
   name: string
@@ -2145,6 +2146,59 @@ function SettingsRow({
   )
 }
 
+export function shouldShowSettingsContentLoading(
+  hasSettings: boolean,
+  connectionStatus: "connecting" | "connected" | "disconnected",
+  localProjectsReady: boolean,
+  hydrationStatus: "idle" | "loading" | "ready" | "error",
+) {
+  if (hasSettings) return false
+  if (hydrationStatus === "error") return false
+  return connectionStatus !== "connected" || !localProjectsReady || hydrationStatus === "idle" || hydrationStatus === "loading"
+}
+
+function SettingsContentPlaceholder({
+  locale,
+  error,
+  onRetry,
+}: {
+  locale: AppLocale
+  error: string | null
+  onRetry: () => void
+}) {
+  const fa = locale === "fa"
+  if (error) {
+    return (
+      <div className="mx-auto flex min-h-[240px] max-w-4xl items-center justify-center rounded-2xl border border-destructive/25 bg-card/40 px-5 py-8 text-center" role="alert">
+        <div className="max-w-md space-y-3">
+          <div className="text-sm font-medium text-foreground">{fa ? "تنظیمات هنوز در دسترس نیست" : "Settings are not available yet"}</div>
+          <p className="text-sm leading-6 text-muted-foreground">{fa ? "ارتباط با سرویس محلی کامل نشد. تنظیمات ذخیره‌شده تغییری نکرده‌اند." : "The local service did not return settings. Your saved settings have not changed."}</p>
+          <p className="text-xs text-destructive/90">{error}</p>
+          <Button type="button" size="sm" variant="outline" onClick={onRetry}><RefreshCw className="size-4" />{fa ? "تلاش دوباره" : "Try again"}</Button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="mx-auto max-w-4xl space-y-5" aria-busy="true" aria-live="polite">
+      <div className="space-y-2">
+        <div className="h-6 w-32 animate-pulse rounded-md bg-muted/60" />
+        <div className="h-4 w-72 max-w-full animate-pulse rounded-md bg-muted/35" />
+      </div>
+      <div className="overflow-hidden rounded-2xl border border-border bg-card/30">
+        {["one", "two", "three"].map((key) => (
+          <div key={key} className="flex min-h-24 items-center justify-between gap-6 border-b border-border px-5 py-5 last:border-b-0">
+            <div className="min-w-0 flex-1 space-y-2"><div className="h-4 w-40 animate-pulse rounded bg-muted/55" /><div className="h-3 w-72 max-w-full animate-pulse rounded bg-muted/30" /></div>
+            <div className="h-9 w-28 shrink-0 animate-pulse rounded-lg bg-muted/45" />
+          </div>
+        ))}
+      </div>
+      <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" /><span>{fa ? "در حال بازیابی تنظیمات…" : "Restoring settings…"}</span></div>
+    </div>
+  )
+}
+
 export function SettingsPage() {
   const location = useLocation()
   const navigate = useNavigate()
@@ -2167,6 +2221,13 @@ export function SettingsPage() {
   }, [location.hash, selectedPage])
   const isConnecting = state.connectionStatus === "connecting" || !state.localProjectsReady
   const appSettings = state.appSettings
+  const appSettingsHydrationStatus = useAppSettingsStore((store) => store.hydrationStatus)
+  const showSettingsContentLoading = shouldShowSettingsContentLoading(
+    Boolean(appSettings),
+    state.connectionStatus,
+    state.localProjectsReady,
+    appSettingsHydrationStatus,
+  )
   const settingsAvailableProviders = appSettings?.availableProviders?.length ? appSettings.availableProviders : PROVIDERS
   const providerModelCatalog = appSettings?.providerModelCatalog
   const locale = normalizeLocale(appSettings?.locale)
@@ -3233,13 +3294,10 @@ export function SettingsPage() {
           </div>
 
           <div className="w-full px-4 pb-32 pt-8 md:px-6 md:pt-16" dir={direction}>
-            {isConnecting ? (
-              <div className="flex min-h-[240px] items-center justify-center rounded-2xl border border-border bg-card/40 px-4 py-6 text-sm text-muted-foreground">
-                <div className="flex items-center gap-3">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>{dictionary.settings.loadingMachineSettings}</span>
-                </div>
-              </div>
+            {showSettingsContentLoading ? (
+              <SettingsContentPlaceholder locale={locale} error={null} onRetry={() => { void state.handleReadAppSettings() }} />
+            ) : appSettingsHydrationStatus === "error" && !appSettings ? (
+              <SettingsContentPlaceholder locale={locale} error={state.commandError ?? (locale === "fa" ? "تنظیمات از سرویس محلی دریافت نشد." : "Settings could not be retrieved from the local service.")} onRetry={() => { void state.handleReadAppSettings() }} />
             ) : (
               <div className="mx-auto max-w-4xl">
                 <div className="pb-6">

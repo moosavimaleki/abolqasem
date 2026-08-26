@@ -247,6 +247,22 @@ describe("AbolqasemSocket", () => {
     socket.dispose()
   })
 
+  test("rejects an unanswered command and reconnects instead of leaving the UI pending", async () => {
+    const socket = new AbolqasemSocket("ws://localhost/ws")
+    socket.start()
+    const firstWs = FakeWebSocket.instances[0]!
+    firstWs.open()
+    const command = socket.command({ type: "system.ping" })
+    const commandTimeoutId = [...timers.timeouts.keys()].find((id) => id !== (socket as any).heartbeatTimer)
+
+    expect(commandTimeoutId).toBeDefined()
+    timers.runTimeout(commandTimeoutId!)
+
+    await expect(command).rejects.toThrow("Request timed out")
+    expect(FakeWebSocket.instances).toHaveLength(2)
+    socket.dispose()
+  })
+
   test("does not replay queued subscribe envelopes after sending active subscriptions on open", () => {
     const socket = new AbolqasemSocket("ws://localhost/ws")
     socket.start()

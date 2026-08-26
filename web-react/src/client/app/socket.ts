@@ -17,6 +17,10 @@ type StatusListener = (status: SocketStatus) => void
 const STALE_CONNECTION_MS = 25_000
 const HEARTBEAT_INTERVAL_MS = 15_000
 const PING_TIMEOUT_MS = 4_000
+// Commands must never leave a view in an indeterminate state. The server is
+// local, so a response taking this long means the connection needs recovery,
+// not that the UI should wait forever.
+const COMMAND_TIMEOUT_MS = 15_000
 const SEND_TO_STARTING_PROFILE_STORAGE_KEY = "abolqasem:profile-send-to-starting"
 
 interface SubscriptionEntry<TSnapshot, TEvent = never> {
@@ -41,7 +45,11 @@ export class AbolqasemSocket {
   private reconnectTimer: number | null = null
   private reconnectDelayMs = 750
   private readonly subscriptions = new Map<string, SubscriptionEntry<unknown, unknown>>()
-  private readonly pending = new Map<string, { resolve: (value: unknown) => void; reject: (reason?: unknown) => void }>()
+  private readonly pending = new Map<string, {
+    resolve: (value: unknown) => void
+    reject: (reason?: unknown) => void
+    timeoutId: number
+  }>()
   private readonly outboundQueue: ClientEnvelope[] = []
   private readonly statusListeners = new Set<StatusListener>()
   private heartbeatTimer: number | null = null
@@ -94,6 +102,7 @@ export class AbolqasemSocket {
     this.ws?.close()
     this.ws = null
     for (const pending of this.pending.values()) {
+      window.clearTimeout(pending.timeoutId)
       pending.reject(new Error("Socket disposed"))
     }
     this.pending.clear()
@@ -150,7 +159,14 @@ export class AbolqasemSocket {
     const id = generateUUID()
     const envelope: ClientEnvelope = { v: 1, type: "command", id, command }
     return new Promise<TResult>((resolve, reject) => {
-      this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject })
+      const timeoutId = window.setTimeout(() => {
+        const pending = this.pending.get(id)
+        if (!pending) return
+        this.pending.delete(id)
+        pending.reject(new Error("Request timed out; reconnecting to the local server"))
+        this.reconnectNow()
+      }, COMMAND_TIMEOUT_MS)
+      this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject, timeoutId })
       this.enqueue(envelope)
     })
   }
@@ -248,6 +264,7 @@ export class AbolqasemSocket {
         const pending = this.pending.get(payload.id)
         if (!pending) return
         this.pending.delete(payload.id)
+        window.clearTimeout(pending.timeoutId)
         pending.resolve(payload.result)
         return
       }
@@ -260,6 +277,7 @@ export class AbolqasemSocket {
         const pending = this.pending.get(payload.id)
         if (!pending) return
         this.pending.delete(payload.id)
+        window.clearTimeout(pending.timeoutId)
         pending.reject(new Error(payload.message))
       }
     })
@@ -274,6 +292,7 @@ export class AbolqasemSocket {
       this.clearPingState()
       this.emitStatus("disconnected")
       for (const pending of this.pending.values()) {
+        window.clearTimeout(pending.timeoutId)
         pending.reject(new Error("Disconnected"))
       }
       this.pending.clear()

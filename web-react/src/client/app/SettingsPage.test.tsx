@@ -20,6 +20,7 @@ import {
   validateTelegramCustomCommandDrafts,
   McpSection,
   SkillsSection,
+  shouldShowSettingsContentLoading,
 } from "./SettingsPage"
 import { SettingsHeaderButton } from "../components/ui/settings-header-button"
 import type { UpdateSnapshot } from "../../shared/types"
@@ -179,6 +180,18 @@ describe("resolveSettingsSectionId", () => {
     expect(resolveSettingsSectionId("page-3")).toBeNull()
     expect(resolveSettingsSectionId("nope")).toBeNull()
     expect(resolveSettingsSectionId(undefined)).toBeNull()
+  })
+})
+
+describe("settings hydration", () => {
+  test("uses a stable placeholder until the first settings snapshot arrives", () => {
+    expect(shouldShowSettingsContentLoading(false, "connecting", false, "idle")).toBe(true)
+    expect(shouldShowSettingsContentLoading(false, "connected", true, "loading")).toBe(true)
+    expect(shouldShowSettingsContentLoading(true, "connecting", false, "loading")).toBe(false)
+  })
+
+  test("replaces the placeholder with recoverable error state after a timed out request", () => {
+    expect(shouldShowSettingsContentLoading(false, "connected", true, "error")).toBe(false)
   })
 })
 
