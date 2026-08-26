@@ -139,6 +139,8 @@ export const fa: TranslationDictionary = {
   composer: {
     addAttachment: "افزودن پیوست",
     buildSomething: "یک پیام بنویسید...",
+    connectionLost: "ارتباط قطع است؛ در حال اتصال مجدد…",
+    connectionLostPlaceholder: "ارتباط قطع است؛ پیام شما در پیش‌نویس می‌ماند.",
     checkSessionLock: "بررسی قفل نشست",
     checkingSessionLock: "در حال بررسی قفل نشست",
     lockedElsewhere: "قفل دست Codex دیگری است",
@@ -146,6 +148,8 @@ export const fa: TranslationDictionary = {
     openProjectBeforeUpload: "قبل از بارگذاری فایل، یک پروژه را باز کنید.",
     reloadCodexAccount: "بارگذاری مجدد حساب Codex",
     releaseSession: "آزاد کردن نشست",
+    reconnecting: "در حال اتصال مجدد…",
+    reconnectingPlaceholder: "در حال اتصال مجدد؛ پیام شما در پیش‌نویس می‌ماند.",
     sessionLockUnknown: "وضعیت قفل نشست نامشخص است",
     sessionLockUnknownPlaceholder: "مالک این نشست قابل‌بررسی نیست؛ ارسال پیام موقتاً در دسترس نیست.",
     sessionOwnedByUs: "قفل دست ماست",

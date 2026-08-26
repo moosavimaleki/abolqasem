@@ -13,6 +13,7 @@ interface ChatInputDockProps {
   previousPrompt: string | null
   onJumpToPreviousUserPrompt?: () => void | Promise<void>
   hasSelectedProject: boolean
+  connectionStatus: AbolqasemState["connectionStatus"]
   runtimeStatus: string | null
   canCancel: boolean
   projectId: string | null
@@ -45,6 +46,7 @@ export const ChatInputDock = memo(function ChatInputDock({
   previousPrompt,
   onJumpToPreviousUserPrompt,
   hasSelectedProject,
+  connectionStatus,
   runtimeStatus,
   canCancel,
   projectId,
@@ -81,6 +83,7 @@ export const ChatInputDock = memo(function ChatInputDock({
           onRuntimePlanModeChange={onRuntimePlanModeChange}
           onCancel={onCancel}
           disabled={!hasSelectedProject}
+          connectionStatus={connectionStatus}
           canCancel={canCancel}
           chatId={activeChatId}
           projectId={projectId}

@@ -138,6 +138,8 @@ export const en = {
   composer: {
     addAttachment: "Add attachment",
     buildSomething: "Build something...",
+    connectionLost: "Connection lost; reconnecting…",
+    connectionLostPlaceholder: "Connection lost; your message stays in drafts.",
     checkSessionLock: "Check session lock",
     checkingSessionLock: "Checking session lock",
     lockedElsewhere: "Locked by another Codex",
@@ -145,6 +147,8 @@ export const en = {
     openProjectBeforeUpload: "Open a project before uploading files.",
     reloadCodexAccount: "Reload Codex account",
     releaseSession: "Release session",
+    reconnecting: "Reconnecting…",
+    reconnectingPlaceholder: "Reconnecting; your message stays in drafts.",
     sessionLockUnknown: "Session lock is unknown",
     sessionLockUnknownPlaceholder: "This session's owner could not be verified; sending is temporarily unavailable.",
     sessionOwnedByUs: "Locked by us",

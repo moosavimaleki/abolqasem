@@ -158,6 +158,26 @@ describe("trimTrailingPastedNewlines", () => {
 })
 
 describe("ChatInput", () => {
+  test("keeps the draft editable but disables submission while disconnected", () => {
+    const html = renderToStaticMarkup(createElement(
+      I18nProvider,
+      { locale: "fa" },
+      createElement(ChatInput, {
+        onSubmit: async () => undefined,
+        disabled: false,
+        connectionStatus: "disconnected",
+        canCancel: false,
+        activeProvider: null,
+        availableProviders: PROVIDERS,
+      })
+    ))
+
+    expect(html).toContain("ارتباط قطع است؛ در حال اتصال مجدد…")
+    expect(html).toContain('placeholder="ارتباط قطع است؛ پیام شما در پیش‌نویس می‌ماند."')
+    expect(html.match(/<textarea[^>]*>/)?.[0]).not.toContain(' disabled=""')
+    expect(html).toContain('aria-label="ارتباط قطع است؛ در حال اتصال مجدد…"')
+  })
+
   test("renders the mobile attachment trigger as a native file input target", () => {
     const html = renderToStaticMarkup(createElement(
       I18nProvider,

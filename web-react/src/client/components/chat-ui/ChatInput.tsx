@@ -1,5 +1,5 @@
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react"
-import { ArrowUp, LoaderCircle, LockKeyhole, LockKeyholeOpen, Paperclip, RefreshCw } from "lucide-react"
+import { ArrowUp, LoaderCircle, LockKeyhole, LockKeyholeOpen, Paperclip, RefreshCw, WifiOff } from "lucide-react"
 import {
   type AgentProvider,
   type ChatAttachment,
@@ -141,6 +141,7 @@ interface Props {
   onLayoutChange?: () => void
   onCancel?: () => void
   disabled: boolean
+  connectionStatus?: "connecting" | "connected" | "disconnected"
   canCancel?: boolean
   chatId?: string | null
   projectId?: string | null
@@ -220,6 +221,7 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
   onLayoutChange,
   onCancel,
   disabled,
+  connectionStatus = "connected",
   canCancel,
   chatId,
   projectId,
@@ -298,6 +300,8 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const hasTextToSend = value.trim().length > 0
   const canSubmit = value.trim().length > 0 || uploadedAttachments.length > 0
   const inputDisabled = disabled || readOnly
+  const connectionUnavailable = connectionStatus !== "connected"
+  const submissionDisabled = inputDisabled || connectionUnavailable
   const isLockedElsewhere = codexLock?.state === "owned_elsewhere"
   const isLockUnknown = codexLock?.state === "unknown"
   const isOwnedByUs = codexLock?.state === "owned_by_us"
@@ -313,7 +317,14 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
     ? t.composer.lockedElsewherePlaceholder
     : isLockUnknown
       ? t.composer.sessionLockUnknownPlaceholder
-      : t.composer.buildSomething
+      : connectionStatus === "connecting"
+        ? t.composer.reconnectingPlaceholder
+        : connectionStatus === "disconnected"
+          ? t.composer.connectionLostPlaceholder
+          : t.composer.buildSomething
+  const connectionStatusLabel = connectionStatus === "connecting"
+    ? t.composer.reconnecting
+    : t.composer.connectionLost
   const orderedAttachments = [...attachments].sort((left, right) => {
     if (left.kind === right.kind) return 0
     return left.kind === "image" ? -1 : 1
@@ -697,7 +708,7 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
   }), [appendText, enqueueFiles, hasUnsavedDraft, hydrateDraft, insertText])
 
   async function handleSubmit() {
-    if (inputDisabled || !canSubmit || hasPendingUploads) return
+    if (submissionDisabled || !canSubmit || hasPendingUploads) return
 
     const nextValue = value
     const previousAttachments = attachmentsRef.current
@@ -777,7 +788,7 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
     }
 
     const isTouchDevice = "ontouchstart" in window || navigator.maxTouchPoints > 0
-    if (event.key === "Enter" && !event.shiftKey && !isTouchDevice && !inputDisabled && hasTextToSend && !hasPendingUploads) {
+    if (event.key === "Enter" && !event.shiftKey && !isTouchDevice && !submissionDisabled && hasTextToSend && !hasPendingUploads) {
       event.preventDefault()
       void handleSubmit()
     }
@@ -875,6 +886,20 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
     <div>
       <div className={cn("px-3 pt-0", isStandalone && "px-5")}>
         <div className="max-w-[840px] mx-auto rounded-[32px]">
+          {connectionUnavailable ? (
+            <div
+              role="status"
+              aria-live="polite"
+              className="mb-1.5 flex items-center justify-center gap-1.5 px-3 text-xs text-amber-600 dark:text-amber-300"
+            >
+              {connectionStatus === "connecting" ? (
+                <LoaderCircle className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+              ) : (
+                <WifiOff className="h-3.5 w-3.5" aria-hidden="true" />
+              )}
+              <span>{connectionStatusLabel}</span>
+            </div>
+          ) : null}
           {attachments.length > 0 ? (
             <ScrollArea className="overflow-x-auto overflow-y-hidden whitespace-nowrap px-2 pb-2">
               <div className="flex items-end gap-2 pt-2">
@@ -913,14 +938,14 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
               className={cn(
                 buttonVariants({ variant: "ghost", size: "icon" }),
                 "relative md:hidden flex-shrink-0 mx-1 mb-1 h-10 w-10 rounded-full text-muted-foreground hover:text-foreground",
-                inputDisabled && "pointer-events-none opacity-50",
+                submissionDisabled && "pointer-events-none opacity-50",
               )}
             >
               <Paperclip className="h-5 w-5" />
               <input
                 type="file"
                 multiple
-                disabled={inputDisabled}
+                disabled={submissionDisabled}
                 aria-label={t.composer.addAttachment}
                 className="absolute inset-0 cursor-pointer opacity-0"
                 onChange={(event) => {
@@ -982,22 +1007,28 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 type="button"
                 onPointerDown={(event) => {
                   event.preventDefault()
-                  if (!inputDisabled && hasTextToSend && !hasPendingUploads) {
+                  if (!submissionDisabled && hasTextToSend && !hasPendingUploads) {
                     void handleSubmit()
-                  } else if (canCancel) {
+                  } else if (!connectionUnavailable && canCancel) {
                     onCancel?.()
-                  } else if (!inputDisabled && canSubmit && !hasPendingUploads) {
+                  } else if (!submissionDisabled && canSubmit && !hasPendingUploads) {
                     void handleSubmit()
                   }
                 }}
-                disabled={inputDisabled || (!canCancel && !canSubmit) || hasPendingUploads}
+                disabled={submissionDisabled || (!canCancel && !canSubmit) || hasPendingUploads}
+                aria-label={connectionUnavailable ? connectionStatusLabel : undefined}
+                title={connectionUnavailable ? connectionStatusLabel : undefined}
                 size="icon"
                 className={cn(
                   "h-10 w-10 flex-shrink-0 cursor-pointer rounded-full bg-slate-600 text-white touch-manipulation disabled:bg-white/60 disabled:text-slate-700 md:h-11 md:w-11 dark:bg-white dark:text-slate-900",
                   isRtl ? "mb-1 -ml-0.5 md:mb-1.5 md:ml-0" : "mb-1 -mr-0.5 md:mb-1.5 md:mr-0",
                 )}
               >
-                {hasTextToSend ? (
+                {connectionStatus === "connecting" ? (
+                  <LoaderCircle className="h-5 w-5 animate-spin motion-reduce:animate-none md:h-6 md:w-6" />
+                ) : connectionStatus === "disconnected" ? (
+                  <WifiOff className="h-5 w-5 md:h-6 md:w-6" />
+                ) : hasTextToSend ? (
                   <ArrowUp className="h-5 w-5 md:h-6 md:w-6" />
                 ) : canCancel ? (
                   <div className="h-3 w-3 rounded-xs bg-current md:h-4 md:w-4" />
@@ -1026,7 +1057,7 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   type="button"
                   variant="ghost"
                   size="sm"
-                  disabled={lockBusy || !codexLock.canRelease || !onReleaseSession}
+                  disabled={connectionUnavailable || lockBusy || !codexLock.canRelease || !onReleaseSession}
                   onClick={onReleaseSession}
                   title={t.composer.releaseSession}
                   aria-label={t.composer.releaseSession}
@@ -1050,7 +1081,7 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 type="button"
                 variant="ghost"
                 size="sm"
-                disabled={lockBusy || Boolean(canCancel)}
+                disabled={connectionUnavailable || lockBusy || Boolean(canCancel)}
                 onClick={onReloadCodexAuth}
                 title={t.composer.reloadCodexAccount}
                 aria-label={t.composer.reloadCodexAccount}
@@ -1062,6 +1093,7 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
             <ChatPreferenceControls
               availableProviders={availableProviders}
               selectedProvider={selectedProvider}
+              disabled={connectionUnavailable}
               providerLocked={providerLocked}
               showCodexCliRequirementHints
               model={providerPrefs.model}

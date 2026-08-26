@@ -144,6 +144,7 @@ export type ModelOptionChange =
 interface ChatPreferenceControlsProps {
   availableProviders: ProviderCatalogEntry[]
   selectedProvider: AgentProvider
+  disabled?: boolean
   showProviderPicker?: boolean
   providerLocked?: boolean
   showCodexCliRequirementHints?: boolean
@@ -168,6 +169,7 @@ interface ChatPreferenceControlsProps {
 export function ChatPreferenceControls({
   availableProviders,
   selectedProvider,
+  disabled = false,
   showProviderPicker = true,
   providerLocked = false,
   showCodexCliRequirementHints = false,
@@ -211,7 +213,7 @@ export function ChatPreferenceControls({
 
       {showProviderPicker ? (
         <InputPopover
-          disabled={providerLocked || !onProviderChange}
+          disabled={disabled || providerLocked || !onProviderChange}
           trigger={(
             <>
               <ProviderIcon className="h-3.5 w-3.5" />
@@ -238,6 +240,7 @@ export function ChatPreferenceControls({
       ) : null}
 
       <InputPopover
+        disabled={disabled}
         trigger={(
           <>
             <ModelIcon className="h-3.5 w-3.5" />
@@ -289,6 +292,7 @@ export function ChatPreferenceControls({
 
       {showReasoningPicker ? (
       <InputPopover
+        disabled={disabled}
         trigger={(
           <>
             <Brain className="h-3.5 w-3.5" />
@@ -343,6 +347,7 @@ export function ChatPreferenceControls({
 
       {selectedProvider === "claude" && contextWindowOptions.length > 1 ? (
         <InputPopover
+          disabled={disabled}
           trigger={(
             <>
               <ContextWindowIcon className="h-3.5 w-3.5" />
@@ -370,7 +375,7 @@ export function ChatPreferenceControls({
 
       {selectedProvider === "codex" ? (
         <InputPopover
-          disabled={executionModeBusy}
+          disabled={disabled || executionModeBusy}
           trigger={(
             <>
               {codexExecutionMode === "dangerous"
@@ -409,6 +414,7 @@ export function ChatPreferenceControls({
 
       {selectedProvider === "codex" ? (
         <InputPopover
+          disabled={disabled}
           trigger={(
             <>
               {codexModelOptions?.fastMode
@@ -446,6 +452,7 @@ export function ChatPreferenceControls({
 
       {showPlanMode ? (
         <InputPopover
+          disabled={disabled}
           trigger={(
             <>
               {planMode ? <ListTodo className="h-3.5 w-3.5" /> : <LockOpen className="h-3.5 w-3.5" />}

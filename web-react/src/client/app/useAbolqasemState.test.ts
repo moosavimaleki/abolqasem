@@ -10,6 +10,7 @@ import {
   getTranscriptPaddingBottom,
   getUiUpdateReadinessPath,
   getUserPromptSignature,
+  isTransportConnectionError,
   mergeOptimisticQueuedMessages,
   getUiUpdateRestartReconnectAction,
   normalizeChatSnapshot,
@@ -117,6 +118,19 @@ describe("getNewestRemainingChatId", () => {
     const sidebarData = createSidebarData()
 
     expect(getNewestRemainingChatId(sidebarData.projectGroups, "missing")).toBeNull()
+  })
+})
+
+describe("isTransportConnectionError", () => {
+  test("identifies transient socket failures that must not remain as chat errors", () => {
+    expect(isTransportConnectionError("Disconnected")).toBe(true)
+    expect(isTransportConnectionError("Request timed out; reconnecting to the local server")).toBe(true)
+    expect(isTransportConnectionError("Socket disposed")).toBe(true)
+  })
+
+  test("keeps real command failures visible", () => {
+    expect(isTransportConnectionError("Codex authentication failed")).toBe(false)
+    expect(isTransportConnectionError(null)).toBe(false)
   })
 })
 

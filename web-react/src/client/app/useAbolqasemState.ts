@@ -704,6 +704,13 @@ export function getUiUpdateRestartReconnectAction(
   return "none"
 }
 
+export function isTransportConnectionError(message: string | null | undefined) {
+  const normalized = message?.trim().toLowerCase()
+  return normalized === "disconnected"
+    || normalized === "socket disposed"
+    || normalized === "request timed out; reconnecting to the local server"
+}
+
 export const TRANSCRIPT_PADDING_BOTTOM_OFFSET = 30
 const UI_UPDATE_RESTART_STORAGE_KEY = "abolqasem:ui-update-restart"
 const UI_UPDATE_RELOAD_REQUEST_STORAGE_KEY = "abolqasem:last-update-reload-request"
@@ -984,6 +991,11 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
   )
 
   useEffect(() => socket.onStatus(setConnectionStatus), [socket])
+
+  useEffect(() => {
+    if (connectionStatus !== "connected") return
+    setCommandError((current) => isTransportConnectionError(current) ? null : current)
+  }, [connectionStatus])
 
   useEffect(() => {
     return socket.subscribe<SidebarData>({ type: "sidebar" }, (snapshot) => {
@@ -1915,7 +1927,8 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
         return
       } catch (error) {
         setOptimisticQueuedMessages((current) => current.filter((item) => item.message.id !== optimisticQueueID && item.message.id !== acknowledgedQueueID))
-        setCommandError(error instanceof Error ? error.message : String(error))
+        const message = error instanceof Error ? error.message : String(error)
+        setCommandError(isTransportConnectionError(message) ? null : message)
         throw error
       }
     }
@@ -2049,7 +2062,8 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
         error: error instanceof Error ? error.message : String(error),
       })
       sendToStartingProfilesRef.current.delete(clientTraceId)
-      setCommandError(error instanceof Error ? error.message : String(error))
+      const message = error instanceof Error ? error.message : String(error)
+      setCommandError(isTransportConnectionError(message) ? null : message)
       throw error
     }
 	}, [activeChatId, fallbackLocalProjectPath, isProcessing, navigate, optimisticUserPrompts, queueDeliveryMode, selectedProjectId, serverTranscriptEntries, sidebarProjectGroups, socket])

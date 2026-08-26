@@ -1989,6 +1989,7 @@ export function ChatPage() {
           previousPrompt={state.previousPrompt}
           onJumpToPreviousUserPrompt={state.activeChatId ? handleJumpToPreviousUserPrompt : undefined}
           hasSelectedProject={state.hasSelectedProject}
+          connectionStatus={state.connectionStatus}
           runtimeStatus={state.runtimeStatus}
           canCancel={state.canCancel}
           projectId={projectId}
