@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { buildPositionedItems, type MessageIndexItem } from "./ConversationMinimap"
+import { buildPositionedItems, MAX_MINIMAP_ITEMS, type MessageIndexItem } from "./ConversationMinimap"
 
 function item(id: string, sequence: number, role: MessageIndexItem["role"], loaded = true): MessageIndexItem {
   return {
@@ -37,5 +37,15 @@ describe("buildPositionedItems", () => {
     expect(positioned[0]?.topPercent).toBeCloseTo(16.666, 2)
     expect(positioned[1]?.topPercent).toBeCloseTo(50, 2)
     expect(positioned[2]?.topPercent).toBeCloseTo(83.333, 2)
+  })
+
+  test("keeps only the latest one hundred user messages", () => {
+    const positioned = buildPositionedItems(
+      Array.from({ length: MAX_MINIMAP_ITEMS + 7 }, (_, sequence) => item(`user-${sequence}`, sequence, "user")),
+    )
+
+    expect(positioned).toHaveLength(MAX_MINIMAP_ITEMS)
+    expect(positioned[0]?.id).toBe("user-7")
+    expect(positioned.at(-1)?.id).toBe(`user-${MAX_MINIMAP_ITEMS + 6}`)
   })
 })

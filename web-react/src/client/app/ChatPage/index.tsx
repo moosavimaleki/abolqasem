@@ -36,7 +36,7 @@ import { useStickyChatFocus } from "../useStickyChatFocus"
 import { useTerminalToggleAnimation } from "../useTerminalToggleAnimation"
 import type { AbolqasemState } from "../useAbolqasemState"
 import { getNextMeasuredInputHeight, getTranscriptPaddingBottom } from "../useAbolqasemState"
-import type { ChatTranscriptIndexSnapshot, CodexExecutionMode, TranscriptIndexItem } from "../../../shared/types"
+import type { CodexExecutionMode } from "../../../shared/types"
 import { ChatInputDock } from "./ChatInputDock"
 import { ChatTranscriptViewport } from "./ChatTranscriptViewport"
 import { TerminalWorkspaceShell } from "./TerminalWorkspaceShell"
@@ -73,33 +73,6 @@ export {
 } from "./utils"
 
 const PROJECT_FILE_PREVIEW_NAVBAR_OFFSET_PX = 52
-const MIN_CONVERSATION_INDEX_SKELETON_MS = 360
-
-function useMinimumVisible(visible: boolean, minimumVisibleMs: number) {
-  const [isVisible, setIsVisible] = useState(visible)
-  const visibleSinceRef = useRef(visible ? performance.now() : 0)
-
-  useEffect(() => {
-    if (visible) {
-      visibleSinceRef.current = performance.now()
-      setIsVisible(true)
-      return
-    }
-
-    if (!isVisible) return
-
-    const elapsedMs = Math.max(0, performance.now() - visibleSinceRef.current)
-    const delayMs = Math.max(0, minimumVisibleMs - elapsedMs)
-    const timeoutId = window.setTimeout(() => {
-      setIsVisible(false)
-    }, delayMs)
-
-    return () => window.clearTimeout(timeoutId)
-  }, [isVisible, minimumVisibleMs, visible])
-
-  return isVisible
-}
-
 function useEmptyStateTyping(showEmptyState: boolean, activeChatId: string | null, emptyStateText: string) {
   const [typedEmptyStateText, setTypedEmptyStateText] = useState("")
   const [isEmptyStateTypingComplete, setIsEmptyStateTypingComplete] = useState(false)
@@ -885,7 +858,6 @@ export function ChatPage() {
   const transcriptListRef = useRef<LegendListRef | null>(null)
   const isAtEndRef = useRef(true)
   const showScrollTimeoutRef = useRef<number | null>(null)
-  const transcriptIndexRequestIdRef = useRef(0)
   const transcriptNavigationGenerationRef = useRef(0)
   const transcriptNavigationRequestIdRef = useRef(0)
   const chatCardRef = useRef<HTMLDivElement>(null)
@@ -902,9 +874,6 @@ export function ChatPage() {
   const { inputRef, syncInputHeight, transcriptPaddingBottom } = useTranscriptPaddingBottom()
   const [showScrollToBottom, setShowScrollToBottom] = useState(false)
   const [hasUnreadMessages, setHasUnreadMessages] = useState(false)
-  const [conversationIndex, setConversationIndex] = useState<TranscriptIndexItem[]>([])
-  const [conversationIndexLoading, setConversationIndexLoading] = useState(false)
-  const [conversationIndexChatId, setConversationIndexChatId] = useState<string | null>(null)
   const [pendingTerminalCommands, setPendingTerminalCommands] = useState<Record<string, string>>({})
   const [filesPanelFocusToken, setFilesPanelFocusToken] = useState(0)
   const [projectFilePreviewTarget, setProjectFilePreviewTarget] = useState<ProjectFilePreviewTarget | null>(null)
@@ -936,13 +905,6 @@ export function ChatPage() {
   const minColumnWidth = useTerminalPreferencesStore((store) => store.minColumnWidth)
   const editorPreset = useTerminalPreferencesStore((store) => store.editorPreset)
   const editorCommandTemplate = useTerminalPreferencesStore((store) => store.editorCommandTemplate)
-  const conversationIndexPending = Boolean(state.activeChatId) && (
-    conversationIndexLoading || conversationIndexChatId !== state.activeChatId
-  )
-  const conversationIndexSkeletonVisible = useMinimumVisible(
-    conversationIndexPending,
-    MIN_CONVERSATION_INDEX_SKELETON_MS,
-  )
   const resolvedKeybindings = useMemo(() => getResolvedKeybindings(state.keybindings), [state.keybindings])
   const baseContextWindowSnapshotRef = useRef<ReturnType<typeof deriveLatestContextWindowSnapshot>>(null)
   const [cachedUsageSnapshot, setCachedUsageSnapshot] = useState<UsageSnapshot["codex"]>(null)
@@ -1668,43 +1630,6 @@ export function ChatPage() {
   }, [clearShowScrollTimeout, state.activeChatId])
 
   useEffect(() => {
-    if (!state.activeChatId) {
-      transcriptIndexRequestIdRef.current += 1
-      setConversationIndex([])
-      setConversationIndexChatId(null)
-      setConversationIndexLoading(false)
-      return
-    }
-
-    const activeChatId = state.activeChatId
-    const requestId = ++transcriptIndexRequestIdRef.current
-    setConversationIndex([])
-    setConversationIndexChatId(activeChatId)
-    setConversationIndexLoading(true)
-
-    void state.socket.command<ChatTranscriptIndexSnapshot>({
-      type: "chat.readTranscriptIndex",
-      chatId: activeChatId,
-    })
-      .then((snapshot) => {
-        if (transcriptIndexRequestIdRef.current !== requestId || state.activeChatId !== activeChatId) {
-          return
-        }
-        setConversationIndex(snapshot.items ?? [])
-        setConversationIndexChatId(activeChatId)
-        setConversationIndexLoading(false)
-      })
-      .catch(() => {
-        if (transcriptIndexRequestIdRef.current !== requestId || state.activeChatId !== activeChatId) {
-          return
-        }
-        setConversationIndex([])
-        setConversationIndexChatId(activeChatId)
-        setConversationIndexLoading(false)
-      })
-  }, [state.activeChatId, state.socket])
-
-  useEffect(() => {
     function handleGlobalKeydown(event: KeyboardEvent) {
       if (!projectId) return
       if (event.key === "Shift" && !event.repeat) {
@@ -2017,8 +1942,6 @@ export function ChatPage() {
             activeChatId={state.activeChatId}
             listRef={transcriptListRef}
             messages={state.messages}
-            conversationIndex={conversationIndex}
-            conversationIndexLoading={conversationIndexSkeletonVisible}
             queuedMessages={state.queuedMessages}
             transcriptPaddingBottom={transcriptPaddingBottom}
             localPath={state.runtime?.localPath}

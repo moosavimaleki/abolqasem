@@ -3,6 +3,7 @@ import type { TranscriptIndexItem } from "../../../shared/types"
 import { cn } from "../../lib/utils"
 
 const DEFAULT_PREVIEW_DELAY_MS = 650
+export const MAX_MINIMAP_ITEMS = 100
 
 export type MessageIndexItem = TranscriptIndexItem & {
   loaded: boolean
@@ -19,6 +20,7 @@ export interface ConversationMinimapProps {
   bottomOffsetPx?: number
   ariaLabel?: string
   previewDelayMs?: number
+  hasOlderItems?: boolean
 }
 
 interface PositionedItem extends MessageIndexItem {
@@ -29,6 +31,7 @@ export function buildPositionedItems(items: readonly MessageIndexItem[]): Positi
   const users = [...items]
     .filter((item) => item.role === "user")
     .sort((left, right) => left.sequence - right.sequence)
+    .slice(-MAX_MINIMAP_ITEMS)
   const count = Math.max(1, users.length)
 
   return users.map((item, index) => ({
@@ -59,6 +62,7 @@ export const ConversationMinimap = memo(function ConversationMinimap({
   bottomOffsetPx = 0,
   ariaLabel = "Conversation minimap",
   previewDelayMs = DEFAULT_PREVIEW_DELAY_MS,
+  hasOlderItems = false,
 }: ConversationMinimapProps) {
   const [pendingMessageId, setPendingMessageId] = useState<string | null>(null)
   const [hoveredMessageId, setHoveredMessageId] = useState<string | null>(null)
@@ -66,6 +70,7 @@ export const ConversationMinimap = memo(function ConversationMinimap({
   const [flashedMessageId, setFlashedMessageId] = useState<string | null>(null)
 
   const positionedItems = useMemo(() => buildPositionedItems(items), [items])
+  const hasHiddenItems = hasOlderItems || items.filter((item) => item.role === "user").length > positionedItems.length
   const itemMap = useMemo(() => buildPositionedItemMap(positionedItems), [positionedItems])
   const previewItem = previewMessageId ? itemMap.get(previewMessageId) ?? null : null
 
@@ -119,7 +124,7 @@ export const ConversationMinimap = memo(function ConversationMinimap({
     )
   }
 
-  if (positionedItems.length === 0) {
+  if (positionedItems.length === 0 && !hasHiddenItems) {
     return null
   }
 
@@ -146,7 +151,16 @@ export const ConversationMinimap = memo(function ConversationMinimap({
       data-side={side}
     >
       <div className="pointer-events-auto relative h-full w-11 rounded-[22px] bg-black/18 shadow-[0_18px_44px_rgba(3,8,20,0.28)] backdrop-blur-md">
-        <div className="absolute inset-y-3 left-1/2 w-[24px] -translate-x-1/2">
+        {hasHiddenItems ? (
+          <span
+            className="absolute start-1/2 top-1 z-10 -translate-x-1/2 text-[13px] font-semibold leading-none tracking-[2px] text-white/56"
+            aria-label="Older messages are not shown in the minimap"
+            title="Older messages are not shown in the minimap"
+          >
+            …
+          </span>
+        ) : null}
+        <div className={cn("absolute bottom-3 left-1/2 w-[24px] -translate-x-1/2", hasHiddenItems ? "top-6" : "top-3")}>
           {positionedItems.map((item) => {
             const isPending = item.id === pendingMessageId
             const isFlashed = item.id === flashedMessageId

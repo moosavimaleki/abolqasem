@@ -29,7 +29,7 @@ import {
 import { READER_MODE_CHANGE_EVENT } from "../chatFocusPolicy"
 import { buildAssistantReaderDocument, type AssistantReaderDocument } from "./readerBlocks"
 import type { EditorPreset } from "../../../shared/protocol"
-import type { ChatCheckpointSummary, HydratedTranscriptMessage, TranscriptIndexItem } from "../../../shared/types"
+import type { ChatCheckpointSummary, HydratedTranscriptMessage } from "../../../shared/types"
 import { useI18n } from "../../i18n/context"
 import { getProcessingStatus } from "./processingStatus"
 
@@ -132,8 +132,6 @@ interface ChatTranscriptViewportProps {
   activeChatId: string | null
   listRef: React.RefObject<LegendListRef | null>
   messages: AbolqasemState["messages"]
-  conversationIndex?: TranscriptIndexItem[]
-  conversationIndexLoading?: boolean
   queuedMessages: AbolqasemState["queuedMessages"]
   transcriptPaddingBottom: number
   localPath: string | null | undefined
@@ -176,8 +174,6 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
   activeChatId,
   listRef,
   messages,
-  conversationIndex = [],
-  conversationIndexLoading = false,
   queuedMessages,
   transcriptPaddingBottom,
   localPath,
@@ -273,18 +269,7 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
     () => buildAssistantReaderDocument(messages, floatingReaderMessageId),
     [floatingReaderMessageId, messages],
   )
-  const loadedMessageIds = useMemo(() => new Set(messages.map((message) => message.id)), [messages])
-  const minimapItems = useMemo<MessageIndexItem[]>(() => {
-    if (hasTmuxRuntime) {
-      return buildLiveMinimapItems(messages)
-    }
-    return conversationIndex
-      .filter((item) => item.role === "user")
-      .map((item) => ({
-        ...item,
-        loaded: loadedMessageIds.has(item.id),
-      }))
-  }, [conversationIndex, hasTmuxRuntime, loadedMessageIds, messages])
+  const minimapItems = useMemo<MessageIndexItem[]>(() => buildLiveMinimapItems(messages), [messages])
 
   useEffect(() => {
     setToolGroupExpanded({})
@@ -619,10 +604,10 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
               ListHeaderComponent={listHeader}
               ListFooterComponent={listFooter}
             />
-            {(conversationIndexLoading || minimapItems.length > 0) && onMinimapScrollToMessage ? (
+            {(minimapItems.length > 0 || hasOlderHistory) && onMinimapScrollToMessage ? (
               <ConversationMinimap
                 items={minimapItems}
-                loading={conversationIndexLoading}
+                hasOlderItems={hasOlderHistory}
                 onScrollToMessage={onMinimapScrollToMessage}
                 side={direction === "rtl" ? "left" : "right"}
                 topOffsetPx={headerOffsetPx + 10}
