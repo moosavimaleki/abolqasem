@@ -6,7 +6,7 @@
 - [x] نمایش activity واقعی Codex (بدون وضعیت ساختگی)
 - [x] پیوست تصویر و متن بلند با ارسال و preview صحیح
 - [x] حذف duplicate پیام optimistic و پیام واقعی session
-- [ ] تکمیل صف و Steer و خالی‌شدن صف بعد از خطا
+- [x] تکمیل صف و Steer و خالی‌شدن صف بعد از خطا
 - [x] جلوگیری از duplicate شدن `turn_aborted`
 - [ ] takeover نشست‌های مشکل‌دار در وب
 - [ ] takeover نشست‌های قفل‌شده از Telegram
