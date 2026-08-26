@@ -3,20 +3,21 @@ import { Database, Gauge, Loader2, RefreshCw, Trash2 } from "lucide-react"
 import type { RateLimitWindowSnapshot } from "../../shared/types"
 import { Button } from "../components/ui/button"
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "../components/ui/dialog"
-import { formatBytes, formatRateLimitDuration, type ResourceUsageSnapshot, type UsageSnapshot } from "../lib/usage"
+import { formatBytes, formatLocalizedPercent, formatRateLimitDurationLocalized, formatRelativeResetTime, type ResourceUsageSnapshot, type UsageSnapshot } from "../lib/usage"
 
 function RateWindow({ value, locale }: { value: RateLimitWindowSnapshot; locale: "en" | "fa" }) {
   const used = Math.max(0, Math.min(100, value.usedPercent))
-  const reset = value.resetsAt ? new Date(value.resetsAt * 1000) : null
+  const remaining = 100 - used
+  const resetAfter = formatRelativeResetTime(value.resetsAt, locale)
   return (
     <div className="grid gap-2 rounded-xl border border-border/70 bg-muted/15 px-3 py-3 md:grid-cols-[90px_1fr_auto] md:items-center">
-      <div className="text-xs font-medium text-foreground">{formatRateLimitDuration(value.windowDurationMins)}</div>
+      <div className="text-xs font-medium text-foreground">{formatRateLimitDurationLocalized(value.windowDurationMins, locale)}</div>
       <div className="h-1.5 overflow-hidden rounded-full bg-muted">
         <div className="h-full rounded-full bg-foreground/60 transition-[width]" style={{ width: `${used}%` }} />
       </div>
       <div className="flex min-w-28 items-center justify-between gap-3 text-xs">
-        <span className="font-medium text-foreground">{Math.round(used)}%</span>
-        {reset ? <span className="text-muted-foreground">{reset.toLocaleString(locale === "fa" ? "fa-IR" : undefined)}</span> : null}
+        <span className="font-medium tabular-nums text-foreground">{locale === "fa" ? `باقی‌مانده ${formatLocalizedPercent(remaining, locale)}` : `${formatLocalizedPercent(remaining, locale)} remaining`}</span>
+        {resetAfter ? <span className="text-muted-foreground">{locale === "fa" ? `بازنشانی پس از ${resetAfter}` : `Resets in ${resetAfter}`}</span> : null}
       </div>
     </div>
   )

@@ -1,5 +1,5 @@
 import type { RateLimitSnapshot } from "../../../shared/types"
-import { formatRateLimitDuration, selectLongRateLimitWindow } from "../../lib/usage"
+import { formatLocalizedPercent, formatRateLimitDurationLocalized, formatRelativeResetTime, selectLongRateLimitWindow } from "../../lib/usage"
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip"
 import { useI18n } from "../../i18n/context"
 
@@ -9,21 +9,22 @@ export function UsageLimitMeter({ snapshot }: { snapshot: RateLimitSnapshot }) {
   const window = selectLongRateLimitWindow(snapshot)
   if (!window) return null
   const used = Math.max(0, Math.min(100, window.usedPercent))
-  const roundedUsed = Math.round(used)
-  const reset = window.resetsAt ? new Date(window.resetsAt * 1000) : null
+  const remaining = 100 - used
+  const resetAfter = formatRelativeResetTime(window.resetsAt, locale)
+  const windowLabel = formatRateLimitDurationLocalized(window.windowDurationMins, locale)
   const radius = 10
   const circumference = 2 * Math.PI * radius
-  const dashOffset = circumference - (used / 100) * circumference
-  const progressTone = used >= 95 ? "text-destructive/80" : "text-muted-foreground"
+  const dashOffset = circumference - (remaining / 100) * circumference
+  const progressTone = remaining <= 5 ? "text-destructive/80" : "text-muted-foreground"
   return (
     <Tooltip delayDuration={0}>
       <TooltipTrigger asChild>
         <button
           type="button"
-          className="group inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors duration-200 hover:bg-muted/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-          aria-label={fa ? `مصرف محدودیت ${formatRateLimitDuration(window.windowDurationMins)}، ${roundedUsed} درصد` : `${formatRateLimitDuration(window.windowDurationMins)} usage ${roundedUsed}%`}
+          className="group inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors duration-200 hover:bg-muted/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          aria-label={fa ? `باقی‌ماندهٔ سهمیهٔ ${windowLabel}: ${formatLocalizedPercent(remaining, locale)}` : `${formatLocalizedPercent(remaining, locale)} quota remaining for ${windowLabel}`}
         >
-          <span className="relative flex h-6 w-6 items-center justify-center" data-usage-limit-chart="radial">
+            <span className="relative flex h-7 w-7 items-center justify-center" data-usage-limit-chart="radial">
             <svg
               viewBox="0 0 24 24"
               className="absolute inset-0 h-full w-full -rotate-90 transform-gpu"
@@ -52,15 +53,18 @@ export function UsageLimitMeter({ snapshot }: { snapshot: RateLimitSnapshot }) {
               />
             </svg>
             <span className="relative text-[8px] font-medium tabular-nums leading-none text-muted-foreground group-hover:text-foreground">
-              {roundedUsed}
+              {Math.round(remaining)}
             </span>
           </span>
         </button>
       </TooltipTrigger>
-      <TooltipContent side="top" className="space-y-1 px-3 py-2 text-xs">
-        <div>{fa ? `مصرف ${formatRateLimitDuration(window.windowDurationMins)}` : `${formatRateLimitDuration(window.windowDurationMins)} usage`} · {roundedUsed}%</div>
-        {snapshot.planType ? <div className="text-muted-foreground">{snapshot.planType}</div> : null}
-        {reset ? <div className="text-muted-foreground">{fa ? "بازنشانی" : "Resets"} {reset.toLocaleString(fa ? "fa-IR" : undefined)}</div> : null}
+      <TooltipContent side="top" dir={fa ? "rtl" : "ltr"} className="w-52 space-y-2 px-3 py-2.5 text-xs shadow-lg">
+        <div className="flex items-baseline justify-between gap-3">
+          <span className="font-medium text-foreground">{fa ? "باقی‌ماندهٔ سهمیه" : "Quota remaining"}</span>
+          <span className="tabular-nums text-foreground">{formatLocalizedPercent(remaining, locale)}</span>
+        </div>
+        <div className="text-muted-foreground">{windowLabel}{snapshot.planType ? ` · ${snapshot.planType}` : ""}</div>
+        {resetAfter ? <div className="border-t border-border/70 pt-2 text-muted-foreground">{fa ? `بازنشانی پس از ${resetAfter}` : `Resets in ${resetAfter}`}</div> : null}
       </TooltipContent>
     </Tooltip>
   )

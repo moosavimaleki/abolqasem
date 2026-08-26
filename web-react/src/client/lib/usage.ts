@@ -35,6 +35,49 @@ export function formatRateLimitDuration(minutes?: number | null) {
   return `${minutes}m`
 }
 
+export function formatRateLimitDurationLocalized(minutes: number | null | undefined, locale: "en" | "fa"): string {
+  const total = Math.max(0, Math.round(minutes ?? 0))
+  const value = (number: number) => new Intl.NumberFormat(locale === "fa" ? "fa-IR" : "en-US").format(number)
+  const unit = (number: number, en: string, fa: string) => locale === "fa"
+    ? `${value(number)} ${fa}`
+    : `${value(number)} ${en}${number === 1 ? "" : "s"}`
+  if (total === 0) return locale === "fa" ? "بازهٔ سهمیه" : "Quota window"
+  if (total % 10_080 === 0) return unit(total / 10_080, "week", "هفته")
+  if (total % 1_440 === 0) return unit(total / 1_440, "day", "روز")
+  if (total % 60 === 0) return unit(total / 60, "hour", "ساعت")
+  return unit(total, "minute", "دقیقه")
+}
+
+/** A compact, locale-aware duration for quota reset affordances. */
+export function formatRelativeResetTime(resetsAtSeconds: number | null | undefined, locale: "en" | "fa", nowMs = Date.now()): string | null {
+  if (!Number.isFinite(resetsAtSeconds)) return null
+  let remainingMinutes = Math.max(0, Math.ceil(((resetsAtSeconds as number) * 1000 - nowMs) / 60_000))
+  if (remainingMinutes === 0) return locale === "fa" ? "اکنون" : "now"
+
+  const value = (number: number) => new Intl.NumberFormat(locale === "fa" ? "fa-IR" : "en-US").format(number)
+  const unit = (number: number, en: string, fa: string) => locale === "fa"
+    ? `${value(number)} ${fa}`
+    : `${value(number)} ${en}${number === 1 ? "" : "s"}`
+  const parts: string[] = []
+  const days = Math.floor(remainingMinutes / 1_440)
+  if (days > 0) {
+    parts.push(unit(days, "day", "روز"))
+    remainingMinutes -= days * 1_440
+  }
+  const hours = Math.floor(remainingMinutes / 60)
+  if (hours > 0 && parts.length < 2) {
+    parts.push(unit(hours, "hour", "ساعت"))
+    remainingMinutes -= hours * 60
+  }
+  if (parts.length < 2 && remainingMinutes > 0) parts.push(unit(remainingMinutes, "minute", "دقیقه"))
+  return parts.join(locale === "fa" ? " و " : " ")
+}
+
+export function formatLocalizedPercent(value: number, locale: "en" | "fa"): string {
+  const percent = Math.max(0, Math.min(100, Math.round(value)))
+  return `${new Intl.NumberFormat(locale === "fa" ? "fa-IR" : "en-US").format(percent)}${locale === "fa" ? "٪" : "%"}`
+}
+
 export function formatBytes(bytes: number) {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 B"
   const units = ["B", "KB", "MB", "GB", "TB"]

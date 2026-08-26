@@ -2,6 +2,7 @@ import { cn } from "../../lib/utils"
 import { type ContextWindowSnapshot, formatContextWindowTokens } from "../../lib/contextWindow"
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip"
 import { useI18n } from "../../i18n/context"
+import { formatLocalizedPercent } from "../../lib/usage"
 
 function formatPercentage(value: number | null): string | null {
   if (value === null || !Number.isFinite(value)) {
@@ -16,8 +17,8 @@ function formatPercentage(value: number | null): string | null {
 export function ContextWindowMeter({ usage }: { usage: ContextWindowSnapshot }) {
 	const { locale } = useI18n()
 	const fa = locale === "fa"
-  const usedPercentage = formatPercentage(usage.usedPercentage)
-  const normalizedPercentage = Math.max(0, Math.min(100, usage.usedPercentage ?? 0))
+  const remainingPercentage = formatPercentage(usage.remainingPercentage)
+  const normalizedPercentage = Math.max(0, Math.min(100, usage.remainingPercentage ?? 0))
   const radius = 9.75
   const circumference = 2 * Math.PI * radius
   const dashOffset = circumference - (normalizedPercentage / 100) * circumference
@@ -27,14 +28,14 @@ export function ContextWindowMeter({ usage }: { usage: ContextWindowSnapshot }) 
       <TooltipTrigger asChild>
         <button
           type="button"
-          className="group inline-flex items-center justify-center rounded-full transition-opacity hover:opacity-85"
+          className="group inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors duration-200 hover:bg-muted/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           aria-label={
-            usage.maxTokens !== undefined && usedPercentage
-              ? (fa ? `${usedPercentage} از کانتکست مصرف شده` : `Context window ${usedPercentage} used`)
-              : (fa ? `${formatContextWindowTokens(usage.usedTokens)} توکن مصرف شده` : `Context window ${formatContextWindowTokens(usage.usedTokens)} tokens used`)
+            usage.maxTokens !== undefined && remainingPercentage
+              ? (fa ? `باقی‌ماندهٔ کانتکست: ${formatLocalizedPercent(usage.remainingPercentage ?? 0, locale)}` : `${formatLocalizedPercent(usage.remainingPercentage ?? 0, locale)} context remaining`)
+              : (fa ? `اندازهٔ کانتکست جاری: ${formatContextWindowTokens(usage.usedTokens)} توکن` : `Current context size: ${formatContextWindowTokens(usage.usedTokens)} tokens`)
           }
         >
-          <span className="relative flex h-6 w-6 items-center justify-center">
+          <span className="relative flex h-7 w-7 items-center justify-center" data-context-window-chart="radial">
             <svg
               viewBox="0 0 24 24"
               className="-rotate-90 absolute inset-0 h-full w-full transform-gpu"
@@ -64,30 +65,30 @@ export function ContextWindowMeter({ usage }: { usage: ContextWindowSnapshot }) 
             </svg>
             <span
               className={cn(
-                "relative flex h-[15px] w-[15px] items-center justify-center rounded-full bg-background text-[9px] font-medium",
+                "relative flex h-[17px] w-[17px] items-center justify-center rounded-full bg-background text-[8px] font-medium tabular-nums",
                 "text-muted-foreground",
               )}
             >
-              {usage.usedPercentage !== null
-                ? Math.round(usage.usedPercentage)
+              {usage.remainingPercentage !== null
+                ? Math.round(usage.remainingPercentage)
                 : formatContextWindowTokens(usage.usedTokens)}
             </span>
           </span>
         </button>
       </TooltipTrigger>
-      <TooltipContent side="top" align="center" className="w-max max-w-none px-3 py-2">
+      <TooltipContent side="top" align="center" dir={fa ? "rtl" : "ltr"} className="w-52 space-y-2 px-3 py-2.5 shadow-lg">
         <div className="space-y-1.5 leading-tight">
-          {usage.maxTokens !== undefined && usedPercentage ? (
-            <div className="whitespace-nowrap text-xs font-medium text-foreground">
-              <span>{usedPercentage}</span>
-              <span className="mx-1">·</span>
-              <span>{formatContextWindowTokens(usage.usedTokens)}</span>
-              <span>/</span>
-              <span>{fa ? `از ${formatContextWindowTokens(usage.maxTokens)} کانتکست` : `${formatContextWindowTokens(usage.maxTokens)} context used`}</span>
-            </div>
+          {usage.maxTokens !== undefined && remainingPercentage ? (
+            <>
+              <div className="flex items-baseline justify-between gap-3 text-xs">
+                <span className="font-medium text-foreground">{fa ? "باقی‌ماندهٔ کانتکست" : "Context remaining"}</span>
+                <span className="tabular-nums text-foreground">{formatLocalizedPercent(usage.remainingPercentage ?? 0, locale)}</span>
+              </div>
+              <div className="text-muted-foreground">{fa ? `${formatContextWindowTokens(usage.remainingTokens)} توکن از ${formatContextWindowTokens(usage.maxTokens)}` : `${formatContextWindowTokens(usage.remainingTokens)} of ${formatContextWindowTokens(usage.maxTokens)} tokens`}</div>
+            </>
           ) : (
-            <div className="text-sm text-foreground">
-              {fa ? `${formatContextWindowTokens(usage.usedTokens)} توکن تا این لحظه مصرف شده` : `${formatContextWindowTokens(usage.usedTokens)} tokens used so far`}
+            <div className="text-xs text-foreground">
+              {fa ? `اندازهٔ کانتکست جاری: ${formatContextWindowTokens(usage.usedTokens)} توکن` : `Current context size: ${formatContextWindowTokens(usage.usedTokens)} tokens`}
             </div>
           )}
         </div>

@@ -21,7 +21,7 @@ describe("UsageLimitMeter", () => {
       secondary: {
         usedPercent: 89,
         windowDurationMins: 10_080,
-        resetsAt: 1_788_000_000,
+        resetsAt: Math.floor(Date.now() / 1000) + 24 * 60 * 60,
       },
     })
 
@@ -29,7 +29,9 @@ describe("UsageLimitMeter", () => {
     expect(html.match(/<circle/g)).toHaveLength(2)
     expect(html).toContain("stroke-dasharray")
     expect(html).toContain("89")
-    expect(html).toContain("مصرف محدودیت 1w، 89 درصد")
+    expect(html).toContain("باقی‌ماندهٔ سهمیه")
+    expect(html).toContain("۱۱٪")
+    expect(html).toContain('aria-label="باقی‌ماندهٔ سهمیهٔ ۱ هفته: ۱۱٪"')
   })
 
   test("uses a restrained danger tone only near exhaustion", () => {
