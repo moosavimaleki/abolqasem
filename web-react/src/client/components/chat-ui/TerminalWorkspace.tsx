@@ -158,47 +158,49 @@ const TerminalWorkspacePane = memo(function TerminalWorkspacePane({
             </div>
           </div>
 
-          {showScripts && scripts.length > 0 ? (
-            <div className="mx-3 mb-2 min-w-0 overflow-hidden rounded-md border border-border/60 bg-muted/10" dir="rtl">
-              <div className="flex h-7 items-center gap-1.5 border-b border-border/50 px-2 text-[11px] font-medium text-muted-foreground">
-                <ScrollText className="size-3.5" />
-                <span>{t.terminal.projectScripts}</span>
-                <span className="mr-auto tabular-nums text-[10px] opacity-70">{scripts.length}</span>
-              </div>
-              <div className="max-h-32 space-y-1 overflow-y-auto p-1.5 [scrollbar-width:thin]">
-                {scripts.map((script) => (
-                  <Button
-                    key={script.id}
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => onRunScript(script.command)}
-                    title={script.command}
-                    className="h-7 w-full justify-start gap-2 rounded px-2 font-mono text-[11px] text-foreground hover:bg-muted/60"
-                    aria-label={`${t.terminal.runScript}: ${script.label}`}
-                  >
-                    <Play className="size-3 shrink-0 text-muted-foreground" />
-                    <span className="min-w-0 flex-1 truncate text-left" dir="ltr">{script.label}</span>
-                  </Button>
-                ))}
-              </div>
-            </div>
-          ) : null}
+          <div className="flex min-h-0 min-w-0 flex-1 flex-row-reverse">
+            {showScripts && scripts.length > 0 ? (
+              <aside className="flex min-h-0 w-56 shrink-0 flex-col border-l border-border/60 bg-muted/5" dir="rtl">
+                <div className="flex h-8 shrink-0 items-center gap-1.5 border-b border-border/50 px-2 text-[11px] font-medium text-muted-foreground">
+                  <ScrollText className="size-3.5" />
+                  <span>{t.terminal.projectScripts}</span>
+                  <span className="mr-auto tabular-nums text-[10px] opacity-70">{scripts.length}</span>
+                </div>
+                <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-1.5 [scrollbar-width:thin]">
+                  {scripts.map((script) => (
+                    <Button
+                      key={script.id}
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onRunScript(script.command)}
+                      title={script.command}
+                      className="h-7 w-full justify-start gap-2 rounded px-2 font-mono text-[11px] text-foreground hover:bg-muted/60"
+                      aria-label={`${t.terminal.runScript}: ${script.label}`}
+                    >
+                      <Play className="size-3 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 flex-1 truncate text-left" dir="ltr">{script.label}</span>
+                    </Button>
+                  ))}
+                </div>
+              </aside>
+            ) : null}
 
-          <TerminalPane
-            projectId={projectId}
-            terminalId={terminalId}
-            socket={socket}
-            scrollback={scrollback}
-            connectionStatus={connectionStatus}
-            clearVersion={clearVersion}
-            focusRequestVersion={focusRequestVersion}
-            initialCommand={initialCommand}
-            scriptCommand={scriptCommand}
-            onCommandSent={onCommandSent}
-            onInitialCommandSent={onInitialCommandSent}
-            onPathChange={handlePathChange}
-          />
+            <TerminalPane
+              projectId={projectId}
+              terminalId={terminalId}
+              socket={socket}
+              scrollback={scrollback}
+              connectionStatus={connectionStatus}
+              clearVersion={clearVersion}
+              focusRequestVersion={focusRequestVersion}
+              initialCommand={initialCommand}
+              scriptCommand={scriptCommand}
+              onCommandSent={onCommandSent}
+              onInitialCommandSent={onInitialCommandSent}
+              onPathChange={handlePathChange}
+            />
+          </div>
         </div>
       </ResizablePanel>
       {!isLast ? <ResizableHandle withHandle orientation="horizontal" /> : null}

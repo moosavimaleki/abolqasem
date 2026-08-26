@@ -14,6 +14,12 @@ func TestDiscoverProjectRunnableScriptsListsRootFilesPackageAndMakeTargets(t *te
 	if err := os.WriteFile(filepath.Join(root, "package.json"), []byte(`{"scripts":{"test":"bun test","dev":"bun run dev"}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.MkdirAll(filepath.Join(root, "web-react"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "web-react", "package.json"), []byte(`{"scripts":{"check":"tsc --noEmit"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(root, "bun.lock"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -43,6 +49,9 @@ func TestDiscoverProjectRunnableScriptsListsRootFilesPackageAndMakeTargets(t *te
 	}
 	if byID["package:dev"].Command != "bun run dev" || byID["package:test"].Command != "bun run test" {
 		t.Fatalf("package scripts missing: %#v", scripts)
+	}
+	if byID["package:web-react:check"].Command != "npm --prefix web-react run check" {
+		t.Fatalf("nested package scripts missing: %#v", scripts)
 	}
 	if byID["make:build"].Command != "make build" {
 		t.Fatalf("make target missing: %#v", scripts)

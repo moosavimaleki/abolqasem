@@ -114,36 +114,89 @@ func isRunnableScriptFile(path string, entry os.DirEntry) bool {
 }
 
 func discoverPackageScripts(root string) []projectRunnableScript {
-	data, err := os.ReadFile(filepath.Join(root, "package.json"))
-	if err != nil {
+	var manifests []string
+	_ = filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return nil
+		}
+		if entry.IsDir() {
+			if path != root && skippedRunnableScriptDirectory(entry.Name()) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if entry.Name() == "package.json" {
+			manifests = append(manifests, path)
+		}
 		return nil
-	}
-	var manifest struct {
-		Scripts map[string]string `json:"scripts"`
-	}
-	if json.Unmarshal(data, &manifest) != nil {
-		return nil
-	}
-	runner := "npm run"
-	if fileExists(filepath.Join(root, "bun.lock")) || fileExists(filepath.Join(root, "bun.lockb")) {
-		runner = "bun run"
-	} else if fileExists(filepath.Join(root, "pnpm-lock.yaml")) {
-		runner = "pnpm run"
-	} else if fileExists(filepath.Join(root, "yarn.lock")) {
-		runner = "yarn"
-	}
-	names := make([]string, 0, len(manifest.Scripts))
-	for name := range manifest.Scripts {
-		if strings.TrimSpace(name) != "" {
-			names = append(names, name)
+	})
+	sort.Strings(manifests)
+	result := make([]projectRunnableScript, 0, len(manifests)*4)
+	for _, manifestPath := range manifests {
+		data, err := os.ReadFile(manifestPath)
+		if err != nil {
+			continue
+		}
+		var manifest struct {
+			Scripts map[string]string `json:"scripts"`
+		}
+		if json.Unmarshal(data, &manifest) != nil {
+			continue
+		}
+		manifestDir := filepath.Dir(manifestPath)
+		relDir, err := filepath.Rel(root, manifestDir)
+		if err != nil || strings.HasPrefix(relDir, ".."+string(filepath.Separator)) {
+			continue
+		}
+		prefix := ""
+		if relDir != "." {
+			prefix = filepath.ToSlash(relDir) + ":"
+		}
+		runner := packageRunner(manifestDir)
+		names := make([]string, 0, len(manifest.Scripts))
+		for name := range manifest.Scripts {
+			if strings.TrimSpace(name) != "" {
+				names = append(names, name)
+			}
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			command := runner + " " + shellQuote(name)
+			if relDir != "." {
+				command = packageCommandForSubdirectory(runner, filepath.ToSlash(relDir), name)
+			}
+			result = append(result, projectRunnableScript{ID: "package:" + prefix + name, Label: prefix + name, Command: command, Source: "package"})
 		}
 	}
-	sort.Strings(names)
-	result := make([]projectRunnableScript, 0, len(names))
-	for _, name := range names {
-		result = append(result, projectRunnableScript{ID: "package:" + name, Label: name, Command: runner + " " + shellQuote(name), Source: "package"})
-	}
 	return result
+}
+
+func packageCommandForSubdirectory(runner, relativeDir, name string) string {
+	dir := shellQuote(relativeDir)
+	quotedName := shellQuote(name)
+	switch runner {
+	case "bun run":
+		return "bun --cwd " + dir + " run " + quotedName
+	case "pnpm run":
+		return "pnpm --dir " + dir + " run " + quotedName
+	case "yarn":
+		return "yarn --cwd " + dir + " " + quotedName
+	default:
+		return "npm --prefix " + dir + " run " + quotedName
+	}
+}
+
+func packageRunner(root string) string {
+	if fileExists(filepath.Join(root, "bun.lock")) || fileExists(filepath.Join(root, "bun.lockb")) {
+		return "bun run"
+	}
+	if fileExists(filepath.Join(root, "pnpm-lock.yaml")) {
+		return "pnpm run"
+	}
+	if fileExists(filepath.Join(root, "yarn.lock")) {
+		return "yarn"
+	}
+	return "npm run"
 }
 
 func discoverMakeTargets(root string) []projectRunnableScript {
