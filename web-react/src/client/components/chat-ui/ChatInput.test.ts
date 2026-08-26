@@ -3,7 +3,7 @@ import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { PROVIDERS } from "../../../shared/types"
 import { I18nProvider } from "../../i18n/context"
-import { ChatInput, createPastedTextFile, getClipboardImageFiles, PASTED_TEXT_FILE_THRESHOLD, shouldApplyCodexExecutionModeToRuntime, trimTrailingPastedNewlines, willExceedAttachmentLimit } from "./ChatInput"
+import { ChatInput, createPastedTextFile, getClipboardImageFiles, isUsableUploadedAttachment, PASTED_TEXT_FILE_THRESHOLD, shouldApplyCodexExecutionModeToRuntime, trimTrailingPastedNewlines, willExceedAttachmentLimit } from "./ChatInput"
 
 function createClipboardItem(args: {
   kind?: string
@@ -125,6 +125,17 @@ describe("createPastedTextFile", () => {
     expect(file.name).toBe("pasted-text-2026-08-24-15-08-37.txt")
     expect(file.type.startsWith("text/plain")).toBe(true)
     expect(await file.text()).toBe("long text")
+  })
+})
+
+describe("isUsableUploadedAttachment", () => {
+  test("rejects incomplete image metadata returned by the upload API", () => {
+    expect(isUsableUploadedAttachment({ id: "img", kind: "image", displayName: "image.png", absolutePath: "/tmp/image.png", relativePath: "", contentUrl: "/api/image", mimeType: "image/png", size: 0 })).toBe(false)
+  })
+
+  test("accepts a non-empty image and text attachments", () => {
+    expect(isUsableUploadedAttachment({ id: "img", kind: "image", displayName: "image.png", absolutePath: "/tmp/image.png", relativePath: "", contentUrl: "/api/image", mimeType: "image/png", size: 12 })).toBe(true)
+    expect(isUsableUploadedAttachment({ id: "txt", kind: "file", displayName: "empty.txt", absolutePath: "/tmp/empty.txt", relativePath: "", contentUrl: "/api/text", mimeType: "text/plain", size: 0 })).toBe(true)
   })
 })
 

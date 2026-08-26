@@ -543,7 +543,7 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
           const payload = await response.json() as { attachments: ChatAttachment[] }
           const uploaded = payload.attachments[0]
-          if (!uploaded) {
+          if (!uploaded || !isUsableUploadedAttachment(uploaded)) {
             throw new Error(t.composer.uploadFailed)
           }
 
@@ -1196,6 +1196,15 @@ async function deleteUploadedAttachment(attachment: ChatAttachment) {
   if (!attachment.contentUrl) return
   const deleteUrl = attachment.contentUrl.replace(/\/content$/, "")
   await fetch(deleteUrl, { method: "DELETE" }).catch(() => undefined)
+}
+
+/** Reject incomplete server metadata instead of rendering a misleading 0 B card. */
+export function isUsableUploadedAttachment(attachment: ChatAttachment): boolean {
+  if (!attachment.contentUrl || !attachment.displayName || attachment.size < 0) return false
+  if (attachment.kind === "image" || attachment.mimeType.toLowerCase().startsWith("image/")) {
+    return attachment.size > 0
+  }
+  return true
 }
 
 function hydrateComposerAttachments(attachments: ChatAttachment[]): ComposerAttachment[] {

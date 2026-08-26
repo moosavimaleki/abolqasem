@@ -4,7 +4,7 @@
 
 - [x] حذف کامل مسیرهای tmux و Gemini از runtime و UI
 - [x] نمایش activity واقعی Codex (بدون وضعیت ساختگی)
-- [ ] پیوست تصویر و متن بلند با ارسال و preview صحیح
+- [x] پیوست تصویر و متن بلند با ارسال و preview صحیح
 - [x] حذف duplicate پیام optimistic و پیام واقعی session
 - [ ] تکمیل صف و Steer و خالی‌شدن صف بعد از خطا
 - [x] جلوگیری از duplicate شدن `turn_aborted`
