@@ -2,6 +2,7 @@ import { useState } from "react"
 import type { QueuedChatMessage } from "../../../shared/types"
 import { Button } from "../ui/button"
 import { Loader2, MessageSquare, Paperclip, Pencil, Send, Trash2 } from "lucide-react"
+import { useI18n } from "../../i18n/context"
 
 interface QueuedUserMessageProps {
   message: QueuedChatMessage
@@ -11,11 +12,13 @@ interface QueuedUserMessageProps {
 }
 
 export function QueuedUserMessage({ message, onRemove, onSteer, onEdit }: QueuedUserMessageProps) {
+  const { t } = useI18n()
   const [pendingAction, setPendingAction] = useState<"edit" | "steer" | "remove" | null>(null)
   const isSteering = message.deliveryState === "steering"
+  const isSubmitting = message.deliveryState === "submitting"
 
   async function runAction(action: "edit" | "steer" | "remove", operation: () => Promise<void>) {
-    if (pendingAction || isSteering) return
+    if (pendingAction || isSteering || isSubmitting) return
     setPendingAction(action)
     try {
       await operation()
@@ -34,7 +37,7 @@ export function QueuedUserMessage({ message, onRemove, onSteer, onEdit }: Queued
         <span className="min-w-0 flex-1 truncate text-start text-foreground" dir="auto">{preview}</span>
         {message.attachments.length > 0 ? <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground"><Paperclip className="size-3.5" />{message.attachments.length}</span> : null}
         <div className="ml-auto flex shrink-0 items-center gap-1">
-          {isSteering ? <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />Delivering</span> : <>
+          {isSubmitting ? <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />{t.chat.queueSubmitting}</span> : isSteering ? <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />{t.chat.queueDelivering}</span> : <>
             <Button type="button" variant="outline" size="sm" disabled={pendingAction !== null} onClick={() => void runAction("edit", onEdit)}>{pendingAction === "edit" ? <Loader2 className="size-3.5 animate-spin" /> : <Pencil className="size-3.5" />}Edit</Button>
             <Button type="button" variant="outline" size="sm" disabled={pendingAction !== null} onClick={() => void runAction("steer", onSteer)}>{pendingAction === "steer" ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}Steer</Button>
             <Button type="button" variant="ghost" size="icon" disabled={pendingAction !== null} aria-label="Delete queued message" onClick={() => void runAction("remove", onRemove)}>{pendingAction === "remove" ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}</Button>

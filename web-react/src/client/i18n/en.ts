@@ -129,6 +129,8 @@ export const en = {
     initGit: "Init Git",
     loadingMoreMessages: "Loading more messages...",
     moreActions: "More actions",
+    queueSubmitting: "Adding to queue…",
+    queueDelivering: "Delivering",
     setupGit: "Setup Git",
     toggleTerminal: "Toggle Terminal",
   },

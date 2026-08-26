@@ -604,6 +604,7 @@ func telegramTakeOverLockMarkupForStatus(chatID string, status readmodels.CodexL
 		"inline_keyboard": [][]map[string]string{{{
 			"text":          "🔓 گرفتن نشست",
 			"callback_data": telegramTakeOverLockCallbackPrefix + chatID,
+			"style":         "danger",
 		}}},
 	}
 }
@@ -848,10 +849,14 @@ func telegramProjectChatPickerMarkup(currentChatID string, choices []telegramCha
 		if choice.ChatID == currentChatID {
 			label = "✓ " + label
 		}
-		rows = append(rows, []map[string]string{{
+		button := map[string]string{
 			"text":          truncateTelegramButtonLabel(label, 60),
 			"callback_data": "chat:" + choice.ChatID,
-		}})
+		}
+		if choice.ChatID == currentChatID {
+			button["style"] = "success"
+		}
+		rows = append(rows, []map[string]string{button})
 	}
 	rows = appendTelegramPaginationRow(rows, page, pageCount, func(target int) string {
 		return telegramProjectChatsPageCallbackPrefix + strconv.Itoa(target) + ":" + choices[0].ProjectID
@@ -874,10 +879,10 @@ func telegramPageBounds(total int, page int) (start int, end int, normalizedPage
 func appendTelegramPaginationRow(rows [][]map[string]string, page int, pageCount int, callback func(int) string) [][]map[string]string {
 	buttons := make([]map[string]string, 0, 2)
 	if page > 1 {
-		buttons = append(buttons, map[string]string{"text": "« قبلی", "callback_data": callback(page - 1)})
+		buttons = append(buttons, map[string]string{"text": "« قبلی", "callback_data": callback(page - 1), "style": "link"})
 	}
 	if page < pageCount {
-		buttons = append(buttons, map[string]string{"text": "بعدی »", "callback_data": callback(page + 1)})
+		buttons = append(buttons, map[string]string{"text": "بعدی »", "callback_data": callback(page + 1), "style": "link"})
 	}
 	if len(buttons) > 0 {
 		rows = append(rows, buttons)
@@ -1112,7 +1117,7 @@ func telegramSessionSettingsMarkup(config telegramBridgeConfig, telegramChatID s
 
 func telegramDashboardMarkup() any {
 	return map[string]any{"inline_keyboard": [][]map[string]string{
-		{{"text": "🗂 انتخاب نشست", "callback_data": telegramTelegramPickerCallback}, {"text": "⚙️ تنظیمات نشست", "callback_data": "settings"}},
+		{{"text": "🗂 انتخاب نشست", "callback_data": telegramTelegramPickerCallback, "style": "primary"}, {"text": "⚙️ تنظیمات نشست", "callback_data": "settings"}},
 	}}
 }
 
@@ -1122,22 +1127,34 @@ func (b *telegramBridge) sendTelegramSessionSettings(ctx context.Context, config
 
 func (b *telegramBridge) sendTelegramModelPicker(ctx context.Context, config telegramBridgeConfig, telegramChatID string) {
 	models := telegramCodexModelChoices()
+	selectedModel, _ := telegramCodexSelection(config.Preferences[telegramChatID])
 	rows := make([][]map[string]string, 0, len(models)+1)
 	for index, model := range models {
 		label := firstNonEmptyString(model.Label, model.ID)
-		rows = append(rows, []map[string]string{{"text": truncateTelegramButtonLabel(label, 50), "callback_data": telegramModelCallbackPrefix + strconv.Itoa(index)}})
+		button := map[string]string{"text": truncateTelegramButtonLabel(label, 50), "callback_data": telegramModelCallbackPrefix + strconv.Itoa(index)}
+		if model.ID == selectedModel {
+			button["text"] = "✓ " + button["text"]
+			button["style"] = "success"
+		}
+		rows = append(rows, []map[string]string{button})
 	}
-	rows = append(rows, []map[string]string{{"text": "↩ بازگشت", "callback_data": "settings"}})
+	rows = append(rows, []map[string]string{{"text": "↩ بازگشت", "callback_data": "settings", "style": "link"}})
 	b.sendTextWithMarkup(ctx, config.BotToken, telegramChatID, "# انتخاب مدل\n\nمدل موردنظر را برای پیام‌های بعدی انتخاب کنید:", map[string]any{"inline_keyboard": rows})
 }
 
 func (b *telegramBridge) sendTelegramEffortPicker(ctx context.Context, config telegramBridgeConfig, telegramChatID string) {
 	efforts := telegramCodexEffortChoices()
+	_, selectedEffort := telegramCodexSelection(config.Preferences[telegramChatID])
 	rows := make([][]map[string]string, 0, len(efforts)+1)
 	for _, effort := range efforts {
-		rows = append(rows, []map[string]string{{"text": effort.Label, "callback_data": telegramEffortCallbackPrefix + effort.ID}})
+		button := map[string]string{"text": effort.Label, "callback_data": telegramEffortCallbackPrefix + effort.ID}
+		if effort.ID == selectedEffort {
+			button["text"] = "✓ " + button["text"]
+			button["style"] = "success"
+		}
+		rows = append(rows, []map[string]string{button})
 	}
-	rows = append(rows, []map[string]string{{"text": "↩ بازگشت", "callback_data": "settings"}})
+	rows = append(rows, []map[string]string{{"text": "↩ بازگشت", "callback_data": "settings", "style": "link"}})
 	b.sendTextWithMarkup(ctx, config.BotToken, telegramChatID, "# انتخاب سطح فکر\n\nسطح reasoning را برای پیام‌های بعدی انتخاب کنید:", map[string]any{"inline_keyboard": rows})
 }
 
@@ -1384,22 +1401,122 @@ func (b *telegramBridge) sendText(ctx context.Context, token string, chatID stri
 
 func (b *telegramBridge) sendTextWithMarkup(ctx context.Context, token string, chatID string, text string, replyMarkup any) {
 	for _, chunk := range splitTelegramText(text) {
+		content := map[string]any{
+			"markdown": chunk,
+			"is_rtl":   telegramMarkdownIsRTL(chunk),
+		}
+		// Telegram Bot API 10.3 models these actions as InputRichBlockButtons.
+		// Send the concrete block payload instead of silently falling back to an
+		// InlineKeyboardMarkup attached outside the rich message.
+		if blocks, ok := telegramRichMessageBlocks(chunk, replyMarkup); ok {
+			content = map[string]any{
+				"blocks": blocks,
+				"is_rtl": telegramMarkdownIsRTL(chunk),
+			}
+		}
 		payload := map[string]any{
-			"chat_id": chatID,
-			"rich_message": map[string]any{
-				"markdown": chunk,
-				"is_rtl":   telegramMarkdownIsRTL(chunk),
-			},
+			"chat_id":      chatID,
+			"rich_message": content,
 		}
-		if replyMarkup != nil {
+		// Unknown markup remains backwards compatible. All of our inline keyboard
+		// maps are converted above to native rich button rows.
+		if replyMarkup != nil && !telegramRichMarkupSupported(replyMarkup) {
 			payload["reply_markup"] = replyMarkup
-			replyMarkup = nil
 		}
+		replyMarkup = nil
 		if err := b.callTelegram(ctx, token, "sendRichMessage", payload); err != nil {
 			b.setError(err)
 			return
 		}
 	}
+}
+
+func telegramRichMarkupSupported(markup any) bool {
+	_, ok := telegramInputRichBlockButtons(markup)
+	return ok
+}
+
+// telegramInputRichBlockButtons converts the internal row builder into the
+// exact Bot API InputRichBlockButtons wire shape.
+func telegramInputRichBlockButtons(markup any) ([]map[string]any, bool) {
+	container, ok := markup.(map[string]any)
+	if !ok {
+		return nil, false
+	}
+	rows, ok := container["inline_keyboard"].([][]map[string]string)
+	if !ok || len(rows) == 0 {
+		return nil, false
+	}
+	blocks := make([]map[string]any, 0, len(rows))
+	for _, row := range rows {
+		buttons := make([]map[string]any, 0, len(row))
+		for _, button := range row {
+			text := strings.TrimSpace(button["text"])
+			callbackData := strings.TrimSpace(button["callback_data"])
+			if text == "" || callbackData == "" || len([]byte(callbackData)) > 64 {
+				continue
+			}
+			richButton := map[string]any{
+				"text":          text,
+				"callback_data": callbackData,
+			}
+			if style := strings.TrimSpace(button["style"]); style != "" {
+				richButton["style"] = style
+			}
+			buttons = append(buttons, richButton)
+		}
+		if len(buttons) == 0 {
+			continue
+		}
+		blocks = append(blocks, map[string]any{
+			"type":    "buttons",
+			"buttons": buttons,
+			"align":   "right",
+		})
+	}
+	if len(blocks) == 0 {
+		return nil, false
+	}
+	return blocks, true
+}
+
+func telegramRichMessageBlocks(markdown string, markup any) ([]map[string]any, bool) {
+	buttonBlocks, ok := telegramInputRichBlockButtons(markup)
+	if !ok {
+		return nil, false
+	}
+	blocks := telegramTextRichBlocks(markdown)
+	blocks = append(blocks, buttonBlocks...)
+	return blocks, true
+}
+
+func telegramTextRichBlocks(markdown string) []map[string]any {
+	paragraphs := strings.Split(strings.TrimSpace(markdown), "\n\n")
+	blocks := make([]map[string]any, 0, len(paragraphs))
+	for _, paragraph := range paragraphs {
+		paragraph = strings.TrimSpace(paragraph)
+		if paragraph == "" {
+			continue
+		}
+		if strings.HasPrefix(paragraph, "# ") && !strings.Contains(strings.TrimPrefix(paragraph, "# "), "\n") {
+			blocks = append(blocks, map[string]any{
+				"type": "heading",
+				"text": telegramRichPlainText(strings.TrimPrefix(paragraph, "# ")),
+				"size": 2,
+			})
+			continue
+		}
+		blocks = append(blocks, map[string]any{
+			"type": "paragraph",
+			"text": telegramRichPlainText(paragraph),
+		})
+	}
+	return blocks
+}
+
+func telegramRichPlainText(markdown string) string {
+	replacer := strings.NewReplacer("**", "", "__", "", "`", "", `\*`, "*", `\_`, "_", `\[`, "[", `\]`, "]")
+	return replacer.Replace(markdown)
 }
 
 func (b *telegramBridge) callTelegram(ctx context.Context, token string, method string, payload map[string]any) error {

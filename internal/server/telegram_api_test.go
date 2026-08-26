@@ -200,6 +200,56 @@ func TestTelegramBridgeSendsRichMarkdownWithRTLMetadata(t *testing.T) {
 	}
 }
 
+func TestTelegramBridgeSendsNativeRichButtonBlocks(t *testing.T) {
+	var payload struct {
+		ChatID      string `json:"chat_id"`
+		ReplyMarkup any    `json:"reply_markup"`
+		RichMessage struct {
+			Markdown string           `json:"markdown"`
+			HTML     string           `json:"html"`
+			Blocks   []map[string]any `json:"blocks"`
+			IsRTL    bool             `json:"is_rtl"`
+		} `json:"rich_message"`
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/bot123:test/sendRichMessage" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Errorf("decode payload: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"result":{}}`))
+	}))
+	defer server.Close()
+
+	bridge := &telegramBridge{client: server.Client(), apiBaseURL: server.URL}
+	bridge.sendTextWithMarkup(context.Background(), "123:test", "42", "# انتخاب نشست\n\nیکی را انتخاب کنید.", map[string]any{
+		"inline_keyboard": [][]map[string]string{{
+			{"text": "نشست‌ها", "callback_data": "picker", "style": "primary"},
+			{"text": "تنظیمات", "callback_data": "settings"},
+		}},
+	})
+
+	if payload.ChatID != "42" || !payload.RichMessage.IsRTL {
+		t.Fatalf("unexpected rich message metadata: %#v", payload)
+	}
+	if payload.ReplyMarkup != nil || payload.RichMessage.Markdown != "" || payload.RichMessage.HTML != "" {
+		t.Fatalf("native rich controls must not fall back to reply markup, markdown, or html: %#v", payload)
+	}
+	if len(payload.RichMessage.Blocks) != 3 || payload.RichMessage.Blocks[0]["type"] != "heading" || payload.RichMessage.Blocks[2]["type"] != "buttons" {
+		t.Fatalf("unexpected rich blocks: %#v", payload.RichMessage.Blocks)
+	}
+	buttons, ok := payload.RichMessage.Blocks[2]["buttons"].([]any)
+	if !ok || len(buttons) != 2 {
+		t.Fatalf("unexpected InputRichBlockButtons payload: %#v", payload.RichMessage.Blocks[2])
+	}
+	first, ok := buttons[0].(map[string]any)
+	if !ok || first["callback_data"] != "picker" || first["style"] != "primary" {
+		t.Fatalf("unexpected RichMessageButton: %#v", buttons[0])
+	}
+}
+
 func TestTelegramTestEndpointUsesKnownChatAndRichRTLMessage(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

@@ -42,7 +42,7 @@ describe("QueuedUserMessage", () => {
 
     expect(html).toContain('data-delivery-state="steering"')
     expect(html).toContain("Steered follow-up")
-    expect(html).toContain("Delivering")
+    expect(html).toContain("در حال تحویل")
     expect(html).not.toContain(">Steer<")
   })
 })

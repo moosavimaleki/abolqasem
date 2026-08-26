@@ -10,6 +10,7 @@ import {
   getTranscriptPaddingBottom,
   getUiUpdateReadinessPath,
   getUserPromptSignature,
+  mergeOptimisticQueuedMessages,
   getUiUpdateRestartReconnectAction,
   normalizeChatSnapshot,
   reconcileOptimisticUserPrompts,
@@ -20,7 +21,7 @@ import {
   shouldMarkActiveChatRead,
   shouldAutoFollowTranscript,
 } from "./useAbolqasemState"
-import type { ChatAttachment, ChatProviderPreferences, ChatSnapshot, SidebarData, UserPromptEntry } from "../../shared/types"
+import type { ChatAttachment, ChatProviderPreferences, ChatSnapshot, QueuedChatMessage, SidebarData, UserPromptEntry } from "../../shared/types"
 
 function createSidebarData(): SidebarData {
   return {
@@ -600,5 +601,22 @@ describe("optimistic user prompts", () => {
       "chat-1",
       [createUserPrompt("server-1", expandedServerPrompt)],
     )).toEqual([])
+  })
+})
+
+describe("optimistic queued messages", () => {
+  test("shows a submitting message immediately and removes it when the server copy arrives", () => {
+    const optimistic: QueuedChatMessage = {
+      id: "queued-1",
+      content: "ادامه بده",
+      attachments: [],
+      createdAt: 1,
+      deliveryState: "submitting",
+    }
+    expect(mergeOptimisticQueuedMessages([], [{ scopeId: "chat-1", message: optimistic }], "chat-1")).toEqual([optimistic])
+
+    const serverMessage = { ...optimistic, deliveryState: undefined }
+    expect(mergeOptimisticQueuedMessages([serverMessage], [{ scopeId: "chat-1", message: optimistic }], "chat-1")).toEqual([serverMessage])
+    expect(mergeOptimisticQueuedMessages([], [{ scopeId: "chat-2", message: optimistic }], "chat-1")).toEqual([])
   })
 })

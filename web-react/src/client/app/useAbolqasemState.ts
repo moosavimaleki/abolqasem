@@ -237,6 +237,25 @@ export interface OptimisticUserPrompt {
   entry: UserPromptEntry
 }
 
+interface OptimisticQueuedMessage {
+  scopeId: string
+  message: QueuedChatMessage
+}
+
+export function mergeOptimisticQueuedMessages(
+  serverMessages: QueuedChatMessage[],
+  optimisticMessages: OptimisticQueuedMessage[],
+  scopeId: string,
+): QueuedChatMessage[] {
+  const serverIDs = new Set(serverMessages.map((message) => message.id))
+  return [
+    ...serverMessages,
+    ...optimisticMessages
+      .filter((item) => item.scopeId === scopeId && !serverIDs.has(item.message.id))
+      .map((item) => item.message),
+  ]
+}
+
 interface OptimisticProcessingState {
   scopeId: string
   ackedAt: number | null
@@ -930,6 +949,7 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
   const [startingLocalPath, setStartingLocalPath] = useState<string | null>(null)
   const [pendingChatId, setPendingChatId] = useState<string | null>(null)
   const [optimisticUserPrompts, setOptimisticUserPrompts] = useState<OptimisticUserPrompt[]>([])
+  const [optimisticQueuedMessages, setOptimisticQueuedMessages] = useState<OptimisticQueuedMessage[]>([])
   const [optimisticProcessing, setOptimisticProcessing] = useState<OptimisticProcessingState | null>(null)
   const [focusEpoch, setFocusEpoch] = useState(0)
   const creatingChatProjectIdRef = useRef<string | null>(null)
@@ -1382,8 +1402,18 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
   )
   const optimisticScopeId = activeChatId ?? NEW_CHAT_OPTIMISTIC_SCOPE
   const runtime = activeChatSnapshot?.runtime ?? null
-  const queuedMessages = activeChatSnapshot?.queuedMessages ?? []
+  const serverQueuedMessages = activeChatSnapshot?.queuedMessages ?? []
+  const queuedMessages = useMemo(
+    () => mergeOptimisticQueuedMessages(serverQueuedMessages, optimisticQueuedMessages, optimisticScopeId),
+    [optimisticQueuedMessages, optimisticScopeId, serverQueuedMessages],
+  )
   const queueDeliveryMode = appSettings?.queueDeliveryMode ?? "queue"
+
+  useEffect(() => {
+    if (serverQueuedMessages.length === 0) return
+    const serverIDs = new Set(serverQueuedMessages.map((message) => message.id))
+    setOptimisticQueuedMessages((current) => current.filter((item) => !serverIDs.has(item.message.id)))
+  }, [serverQueuedMessages])
 
   useEffect(() => {
     if (!activeChatId) return
@@ -1844,6 +1874,23 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
 	if (shouldEnqueueUserPrompt(activeChatId, isProcessing)) {
       const queueChatId = activeChatId
       if (!queueChatId) return
+      const optimisticQueueID = `optimistic-queue:${generateUUID()}`
+      const optimisticMessage: OptimisticQueuedMessage = {
+        scopeId: queueChatId,
+        message: {
+          id: optimisticQueueID,
+          content,
+          attachments,
+          createdAt: Date.now(),
+          provider: options?.provider,
+          model: options?.model,
+          modelOptions: options?.modelOptions,
+          planMode: options?.planMode,
+          deliveryState: "submitting",
+        },
+      }
+      setOptimisticQueuedMessages((current) => [...current, optimisticMessage])
+      let acknowledgedQueueID = ""
       try {
 		const queued = await socket.command<{ queuedMessageId: string }>({
           type: "message.enqueue",
@@ -1855,12 +1902,19 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
           modelOptions: options?.modelOptions,
           planMode: options?.planMode,
 		})
+		acknowledgedQueueID = queued.queuedMessageId
+		setOptimisticQueuedMessages((current) => current.map((item) => (
+			item.message.id === optimisticQueueID
+				? { ...item, message: { ...item.message, id: queued.queuedMessageId, deliveryState: queueDeliveryMode === "steer" ? "steering" : undefined } }
+				: item
+		)))
 		if (queueDeliveryMode === "steer" && queued.queuedMessageId) {
 			await socket.command({ type: "message.steer", chatId: queueChatId, queuedMessageId: queued.queuedMessageId })
 		}
         setCommandError(null)
         return
       } catch (error) {
+        setOptimisticQueuedMessages((current) => current.filter((item) => item.message.id !== optimisticQueueID && item.message.id !== acknowledgedQueueID))
         setCommandError(error instanceof Error ? error.message : String(error))
         throw error
       }

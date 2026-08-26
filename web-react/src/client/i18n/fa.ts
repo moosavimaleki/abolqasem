@@ -130,6 +130,8 @@ export const fa: TranslationDictionary = {
     initGit: "راه‌اندازی گیت",
     loadingMoreMessages: "در حال بارگذاری پیام‌های بیشتر...",
     moreActions: "اقدام‌های بیشتر",
+    queueSubmitting: "در حال ثبت در صف…",
+    queueDelivering: "در حال تحویل",
     setupGit: "راه‌اندازی گیت",
     toggleTerminal: "تغییر وضعیت ترمینال",
   },
