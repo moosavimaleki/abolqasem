@@ -13,4 +13,4 @@
 - [x] custom commandهای Telegram با ذخیره و اجرای امن
 - [x] usage/context/sidebar/cache مطابق Kanna
 - [x] نمایش planهای native و proposed در UI
-- [x] تست نهایی، release، tag و push
+- [ ] انتشار GitHub Release (tag و push انجام شده؛ نیازمند credential API گیت‌هاب)
