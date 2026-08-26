@@ -49,6 +49,11 @@ type telegramPreviewButton struct {
 
 var telegramMarkdownFileLink = regexp.MustCompile(`\[([^\]]+)\]\((/[^)\s]+)\)`)
 
+// Codex commonly writes source references as plain `path/to/file:line` text.
+// Keep this deliberately path-shaped and validate every match against the
+// selected project before creating a preview callback.
+var telegramPlainFileReference = regexp.MustCompile(`(?m)(^|[^[:alnum:]_])((?:/|[[:alnum:]_.~-]+/)[^:\n]*:[1-9][0-9]*)([[:space:],;)}\]]|$)`)
+
 // sendTranscript keeps the readable transcript in Rich Markdown and places
 // heavyweight previews behind explicit callback buttons. Telegram callback data
 // has a 64-byte limit, so the file path/source is kept server-side only.
@@ -79,8 +84,8 @@ func (b *telegramBridge) telegramTranscriptPreviews(telegramChatID, workspaceCha
 		if len(parts) != 3 {
 			return raw
 		}
-		path, line, ok := telegramPreviewFilePath(parts[2])
-		if !ok || !telegramPreviewPathAllowed(workspaceChatID, path) {
+		path, line, ok := telegramResolvePreviewFilePath(workspaceChatID, parts[2])
+		if !ok {
 			return raw
 		}
 		token := b.rememberTelegramPreview(telegramPreviewItem{
@@ -91,6 +96,32 @@ func (b *telegramBridge) telegramTranscriptPreviews(telegramChatID, workspaceCha
 		}
 		buttons = append(buttons, telegramPreviewButton{Label: "📄 " + firstNonEmptyString(parts[1], filepath.Base(path)), Token: token})
 		return "`" + telegramMarkdownInline(parts[1]) + "`"
+	})
+	markdown = telegramPlainFileReference.ReplaceAllStringFunc(markdown, func(raw string) string {
+		if len(buttons) >= telegramPreviewButtonLimit {
+			return raw
+		}
+		parts := telegramPlainFileReference.FindStringSubmatch(raw)
+		if len(parts) != 4 {
+			return raw
+		}
+		// A Markdown link target has already been handled above. Do not create a
+		// second callback for the same path after it was rendered inline.
+		if parts[1] == "(" {
+			return raw
+		}
+		path, line, ok := telegramResolvePreviewFilePath(workspaceChatID, parts[2])
+		if !ok {
+			return raw
+		}
+		token := b.rememberTelegramPreview(telegramPreviewItem{
+			Kind: telegramPreviewFile, TelegramChatID: telegramChatID, WorkspaceChatID: workspaceChatID, FilePath: path, Line: line, CreatedAt: time.Now(),
+		})
+		if token == "" {
+			return raw
+		}
+		buttons = append(buttons, telegramPreviewButton{Label: "📄 " + filepath.Base(path), Token: token})
+		return parts[1] + "`" + telegramMarkdownInline(parts[2]) + "`" + parts[3]
 	})
 	return markdown, buttons
 }
@@ -131,6 +162,14 @@ func (b *telegramBridge) telegramReplaceMermaidBlocks(telegramChatID, workspaceC
 }
 
 func telegramPreviewFilePath(raw string) (string, int, bool) {
+	decoded, line, ok := telegramPreviewReferenceParts(raw)
+	if !ok || !filepath.IsAbs(decoded) {
+		return "", 0, false
+	}
+	return filepath.Clean(decoded), line, true
+}
+
+func telegramPreviewReferenceParts(raw string) (string, int, bool) {
 	decoded, err := url.PathUnescape(strings.TrimSpace(raw))
 	if err != nil {
 		return "", 0, false
@@ -141,10 +180,30 @@ func telegramPreviewFilePath(raw string) (string, int, bool) {
 			line, decoded = parsed, decoded[:colon]
 		}
 	}
-	if !filepath.IsAbs(decoded) {
+	if decoded == "" || filepath.Clean(decoded) == "." {
 		return "", 0, false
 	}
 	return filepath.Clean(decoded), line, true
+}
+
+func telegramResolvePreviewFilePath(workspaceChatID, raw string) (string, int, bool) {
+	decoded, line, ok := telegramPreviewReferenceParts(raw)
+	if !ok {
+		return "", 0, false
+	}
+	_, project, err := workspaceChatProjectRequired(workspaceChatID)
+	if err != nil {
+		return "", 0, false
+	}
+	path := decoded
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(project.LocalPath, path)
+	}
+	path, err = resolvePreviewPath([]string{project.LocalPath}, path)
+	if err != nil {
+		return "", 0, false
+	}
+	return path, line, true
 }
 
 func telegramPreviewPathAllowed(workspaceChatID, path string) bool {

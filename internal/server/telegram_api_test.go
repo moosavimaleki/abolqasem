@@ -481,6 +481,35 @@ func TestTelegramTranscriptPreviewsUseOpaqueCallbacksAndVectorDocuments(t *testi
 	}
 }
 
+func TestTelegramTranscriptPreviewsRecognizeRelativeSourceReferences(t *testing.T) {
+	withWorkspaceComposerStore(t)
+	projectRoot := t.TempDir()
+	file := filepath.Join(projectRoot, "Downloads", "Eitaa Desktop", "svg.py")
+	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, []byte("from pathlib import Path\n\nprint('svg')\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	project, err := workspaceOpenProject(projectRoot, "Eitaa")
+	if err != nil {
+		t.Fatal(err)
+	}
+	chat, err := (&workspaceEventStore{store: workspaceStore()}).CreateChat(project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bridge := &telegramBridge{previewByToken: map[string]telegramPreviewItem{}}
+	markdown, buttons := bridge.telegramTranscriptPreviews("99", chat.ID, "فایل مهم: Downloads/Eitaa Desktop/svg.py:3")
+	if !strings.Contains(markdown, "`Downloads/Eitaa Desktop/svg.py:3`") || len(buttons) != 1 {
+		t.Fatalf("relative source reference = %q, buttons=%#v", markdown, buttons)
+	}
+	item, ok := bridge.telegramPreviewForCallback(telegramPreviewCallbackPrefix+buttons[0].Token, "99", chat.ID)
+	if !ok || item.FilePath != file || item.Line != 3 {
+		t.Fatalf("relative preview item = %#v, ok=%v", item, ok)
+	}
+}
+
 func TestTelegramCodePreviewCapsHugeFilesWithDownloadHint(t *testing.T) {
 	lines := make([]filePreviewLine, telegramPreviewMaxCodeLines+25)
 	for index := range lines {
