@@ -38,6 +38,11 @@ export function mergeAppSettingsPatch(
       ...settings.commitMessageGenerator,
       ...patch.commitMessageGenerator,
     },
+    diskManagement: {
+      warningThresholdBytes: settings.diskManagement?.warningThresholdBytes ?? 2 * 1024 ** 3,
+      autoCleanup: settings.diskManagement?.autoCleanup ?? false,
+      ...patch.diskManagement,
+    },
     providerDefaults: {
       claude: {
         ...settings.providerDefaults.claude,

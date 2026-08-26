@@ -492,6 +492,10 @@ export interface AppSettingsSnapshot {
   providerDefaults: ChatProviderPreferences
   providerModelCatalog: ProviderModelCatalog
   commitMessageGenerator: CommitMessageGeneratorSettings
+  diskManagement?: {
+    warningThresholdBytes: number
+    autoCleanup: boolean
+  }
   availableProviders: ProviderCatalogEntry[]
   management?: AppManagementSnapshot
   warning: string | null
@@ -547,6 +551,10 @@ export interface AppSettingsPatch {
     customModels?: ProviderModelOption[]
   }>>
   commitMessageGenerator?: Partial<CommitMessageGeneratorSettings>
+  diskManagement?: {
+    warningThresholdBytes?: number
+    autoCleanup?: boolean
+  }
 }
 
 export interface LlmProviderFile {

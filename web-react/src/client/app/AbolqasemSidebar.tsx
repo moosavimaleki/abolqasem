@@ -445,7 +445,26 @@ function AbolqasemSidebarImpl({
   const [isResizingSidebar, setIsResizingSidebar] = useState(false)
   const [archivedProjectId, setArchivedProjectId] = useState<string | null>(null)
   const [sidebarView, setSidebarView] = useState<SidebarView>(readStoredSidebarView)
+  const [diskWarning, setDiskWarning] = useState<{ total: number; threshold: number } | null>(null)
   const resolvedKeybindings = useMemo(() => getResolvedKeybindings(keybindings), [keybindings])
+
+  useEffect(() => {
+    let cancelled = false
+    const checkDisk = () => {
+      void Promise.all([
+        fetch("/api/resources", { cache: "no-store" }).then((response) => response.ok ? response.json() as Promise<{ storage?: { total_bytes?: number } }> : null),
+        fetch("/api/settings", { cache: "no-store" }).then((response) => response.ok ? response.json() as Promise<{ disk_management?: { warning_threshold_bytes?: number } }> : null),
+      ]).then(([resources, settings]) => {
+        if (cancelled) return
+        const total = Number(resources?.storage?.total_bytes ?? 0)
+        const threshold = Number(settings?.disk_management?.warning_threshold_bytes ?? 2 * 1024 ** 3)
+        setDiskWarning(total > threshold ? { total, threshold } : null)
+      }).catch(() => undefined)
+    }
+    checkDisk()
+    const interval = window.setInterval(checkDisk, 60_000)
+    return () => { cancelled = true; window.clearInterval(interval) }
+  }, [])
   const visibleChats = useMemo(
     () => getVisibleSidebarChats(data.projectGroups, collapsedSections, expandedGroups),
     [collapsedSections, data.projectGroups, expandedGroups]
@@ -778,7 +797,18 @@ function AbolqasemSidebarImpl({
               >
                 DEV
               </span>
-            ) : showUpdateButton ? (
+            ) : diskWarning ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="hidden rounded-full !h-auto border-border bg-muted/40 px-2 py-0.5 text-[10px] font-bold tracking-wider text-muted-foreground hover:bg-muted hover:text-foreground md:inline-flex"
+                onClick={() => navigate(settingsRoute("usage"))}
+                title={locale === "fa" ? "مدیریت فضای دیسک" : "Manage disk space"}
+              >
+                {locale === "fa" ? "مدیریت دیسک" : "Manage disk"}
+              </Button>
+            ) : null}
+            {!showDevBadge && showUpdateButton ? (
               <Button
                 variant="outline"
                 size="sm"

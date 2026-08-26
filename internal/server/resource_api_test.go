@@ -114,3 +114,40 @@ func TestHandleAPIResourceCacheClearsOnlyDerivedSearchData(t *testing.T) {
 		}
 	}
 }
+
+func TestHandleAPIResourceCheckpointsAndArchivesClearOnlySelectedData(t *testing.T) {
+	withWorkspaceComposerStore(t)
+	checkpointFile := filepath.Join(workspaceCheckpointsDir(), "checkpoint-1", "checkpoint.json")
+	archiveFile := filepath.Join(workspaceDataDir(), events.StreamMessages+".jsonl.archived-test")
+	activeFile := filepath.Join(workspaceDataDir(), events.StreamMessages+".jsonl")
+	for path, content := range map[string]string{checkpointFile: "checkpoint", archiveFile: "archive", activeFile: "active"} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", path, err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
+	for _, endpoint := range []struct {
+		path    string
+		handler http.HandlerFunc
+		gone    string
+		keep    string
+	}{
+		{"/api/resources/checkpoints", handleAPIResourceCheckpoints, checkpointFile, activeFile},
+		{"/api/resources/archives", handleAPIResourceArchives, archiveFile, activeFile},
+	} {
+		recorder := httptest.NewRecorder()
+		handler := endpoint.handler
+		handler(recorder, httptest.NewRequest(http.MethodDelete, endpoint.path, nil))
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("%s status = %d: %s", endpoint.path, recorder.Code, recorder.Body.String())
+		}
+		if _, err := os.Stat(endpoint.gone); !os.IsNotExist(err) {
+			t.Fatalf("expected %s to be removed, stat err=%v", endpoint.gone, err)
+		}
+		if _, err := os.Stat(endpoint.keep); err != nil {
+			t.Fatalf("expected active stream to remain: %v", err)
+		}
+	}
+}

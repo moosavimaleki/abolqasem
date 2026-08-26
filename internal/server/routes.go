@@ -25,6 +25,8 @@ func setupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/resources", handleAPIResources)
 	mux.HandleFunc("/api/resources/compact", handleAPIResourceCompact)
 	mux.HandleFunc("/api/resources/cache", handleAPIResourceCache)
+	mux.HandleFunc("/api/resources/checkpoints", handleAPIResourceCheckpoints)
+	mux.HandleFunc("/api/resources/archives", handleAPIResourceArchives)
 	mux.HandleFunc("/api/usage", handleAPIUsage)
 	mux.HandleFunc("/api/usage/refresh", handleAPIUsageRefresh)
 	mux.HandleFunc("/api/actions/reload-sessions", handleAPIReloadSessions)

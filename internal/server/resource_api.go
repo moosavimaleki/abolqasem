@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"abolqasem/internal/parser"
+	"abolqasem/internal/state"
 	"abolqasem/internal/workspace/events"
 )
 
@@ -55,6 +56,8 @@ type resourceStorageStatsResponse struct {
 	SearchBytes             int64                         `json:"search_bytes"`
 	IndexBytes              int64                         `json:"index_bytes"`
 	CheckpointBytes         int64                         `json:"checkpoint_bytes"`
+	ArchiveBytes            int64                         `json:"archive_bytes"`
+	ArchiveCount            int                           `json:"archive_count"`
 	NativeTranscripts       resourceNativeTranscriptStats `json:"native_transcripts"`
 }
 
@@ -79,6 +82,7 @@ func handleAPIResources(w http.ResponseWriter, r *http.Request) {
 }
 
 func currentResourceUsage() resourceUsageResponse {
+	maybeAutoCleanupResources()
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)
 	checkpoints := checkpointStorageStats()
@@ -108,28 +112,92 @@ func currentResourceUsage() resourceUsageResponse {
 	}
 }
 
+func maybeAutoCleanupResources() {
+	settings, err := state.LoadSettings()
+	if err != nil || !settings.DiskManagement.AutoCleanup {
+		return
+	}
+	threshold := settings.DiskManagement.WarningThresholdBytes
+	if threshold <= 0 || directorySize(workspaceDataDir())+directorySize(resourceUploadRoot()) <= threshold {
+		return
+	}
+	// Automatic cleanup is intentionally limited to rebuildable/indexed data and
+	// checkpoints. Durable event streams and user attachments are never removed.
+	_, _ = clearResourceCache()
+	_ = os.RemoveAll(workspaceCheckpointsDir())
+	_ = os.MkdirAll(workspaceCheckpointsDir(), 0o755)
+}
+
 func handleAPIResourceCache(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	searchDir := filepath.Join(workspaceDataDir(), "search")
-	clearedBytes := directorySize(searchDir)
-	if err := os.RemoveAll(searchDir); err != nil {
+	clearedBytes, err := clearResourceCache()
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := os.MkdirAll(searchDir, 0o755); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	resetWorkspaceSearchCaches()
-	parser.ClearCache()
 	writeJSON(w, map[string]any{
 		"status":        "ok",
 		"cleared_bytes": clearedBytes,
 		"resources":     currentResourceUsage(),
 	})
+}
+
+func clearResourceCache() (int64, error) {
+	searchDir := filepath.Join(workspaceDataDir(), "search")
+	clearedBytes := directorySize(searchDir)
+	if err := os.RemoveAll(searchDir); err != nil {
+		return 0, err
+	}
+	if err := os.MkdirAll(searchDir, 0o755); err != nil {
+		return 0, err
+	}
+	resetWorkspaceSearchCaches()
+	parser.ClearCache()
+	return clearedBytes, nil
+}
+
+func handleAPIResourceCheckpoints(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	root := workspaceCheckpointsDir()
+	clearedBytes := directorySize(root)
+	if err := os.RemoveAll(root); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]any{"status": "ok", "cleared_bytes": clearedBytes, "resources": currentResourceUsage()})
+}
+
+func handleAPIResourceArchives(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var clearedBytes int64
+	for _, stream := range events.Streams() {
+		matches, err := filepath.Glob(filepath.Join(workspaceDataDir(), stream+".jsonl.archived-*"))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		for _, path := range matches {
+			clearedBytes += directorySize(path)
+			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+	}
+	writeJSON(w, map[string]any{"status": "ok", "cleared_bytes": clearedBytes, "resources": currentResourceUsage()})
 }
 
 func handleAPIResourceCompact(w http.ResponseWriter, r *http.Request) {
@@ -168,6 +236,8 @@ func resourceStorageStats(checkpoints resourceCheckpointStats) resourceStorageSt
 	searchBytes := directorySize(filepath.Join(workspaceDataDir(), "search"))
 	uploadBytes := directorySize(resourceUploadRoot())
 	archives := eventStreamArchiveSizes()
+	archiveBytes := sumInt64Map(archives)
+	archiveCount := eventStreamArchiveCount()
 	return resourceStorageStatsResponse{
 		TotalBytes:              dataBytes + uploadBytes,
 		CacheBytes:              searchBytes,
@@ -176,12 +246,34 @@ func resourceStorageStats(checkpoints resourceCheckpointStats) resourceStorageSt
 		DataBytes:               dataBytes,
 		EventStreams:            eventStreamSizes(),
 		EventStreamArchives:     archives,
-		EventStreamArchiveBytes: sumInt64Map(archives),
+		EventStreamArchiveBytes: archiveBytes,
 		SearchBytes:             searchBytes,
 		IndexBytes:              searchBytes,
 		CheckpointBytes:         checkpoints.Bytes,
+		ArchiveBytes:            archiveBytes,
+		ArchiveCount:            archiveCount,
 		NativeTranscripts:       nativeTranscriptStorageStats(),
 	}
+}
+
+func eventStreamArchiveCount() int {
+	count := 0
+	entries, err := os.ReadDir(workspaceDataDir())
+	if err != nil {
+		return 0
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		for _, stream := range events.Streams() {
+			if strings.HasPrefix(entry.Name(), stream+".jsonl.archived-") {
+				count++
+				break
+			}
+		}
+	}
+	return count
 }
 
 func resourceUploadRoot() string {

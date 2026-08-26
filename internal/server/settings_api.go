@@ -7,12 +7,18 @@ import (
 )
 
 type settingsPatch struct {
-	HookUpdates                     *bool             `json:"hook_updates"`
-	HookFollowMode                  *string           `json:"hook_follow_mode"`
-	IgnoreHookNavigationWhileTyping *bool             `json:"ignore_hook_navigation_while_typing"`
-	FilesystemDiscovery             *bool             `json:"filesystem_discovery"`
-	DefaultAgent                    *string           `json:"default_agent"`
-	AgentModels                     map[string]string `json:"agent_models"`
+	HookUpdates                     *bool                `json:"hook_updates"`
+	HookFollowMode                  *string              `json:"hook_follow_mode"`
+	IgnoreHookNavigationWhileTyping *bool                `json:"ignore_hook_navigation_while_typing"`
+	FilesystemDiscovery             *bool                `json:"filesystem_discovery"`
+	DefaultAgent                    *string              `json:"default_agent"`
+	AgentModels                     map[string]string    `json:"agent_models"`
+	DiskManagement                  *diskManagementPatch `json:"disk_management"`
+}
+
+type diskManagementPatch struct {
+	WarningThresholdBytes *int64 `json:"warning_threshold_bytes"`
+	AutoCleanup           *bool  `json:"auto_cleanup"`
 }
 
 func handleAPISettings(w http.ResponseWriter, r *http.Request) {
@@ -58,6 +64,10 @@ func handleAPISettings(w http.ResponseWriter, r *http.Request) {
 			for agent, model := range patch.AgentModels {
 				settings.AgentModels[agent] = model
 			}
+		}
+		if patch.DiskManagement != nil {
+			settingsPatch := state.DiskManagementSettingsPatch{WarningThresholdBytes: patch.DiskManagement.WarningThresholdBytes, AutoCleanup: patch.DiskManagement.AutoCleanup}
+			settings = state.ApplySettingsPatch(settings, state.AppSettingsPatch{DiskManagement: &settingsPatch})
 		}
 		if err := state.SaveSettings(settings); err != nil {
 			http.Error(w, "Failed to save settings", http.StatusInternalServerError)

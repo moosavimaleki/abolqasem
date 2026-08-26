@@ -14,6 +14,9 @@ export interface ResourceUsageSnapshot {
     cache_bytes: number
     upload_bytes: number
     workspace_bytes: number
+    checkpoint_bytes?: number
+    archive_bytes?: number
+    archive_count?: number
   }
 }
 

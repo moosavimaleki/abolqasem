@@ -1284,6 +1284,10 @@ func workspaceAppSettingsSnapshot() map[string]any {
 		"queueDeliveryMode":    settings.QueueDeliveryMode,
 		"providerDefaults":     providerDefaultsSnapshot(settings.ProviderDefaults),
 		"providerModelCatalog": providerModelCatalogSnapshot(settings.ProviderModelCatalog),
+		"diskManagement": map[string]any{
+			"warningThresholdBytes": settings.DiskManagement.WarningThresholdBytes,
+			"autoCleanup":           settings.DiskManagement.AutoCleanup,
+		},
 		"commitMessageGenerator": map[string]any{
 			"provider": settings.CommitMessageGenerator.Provider,
 			"model":    settings.CommitMessageGenerator.Model,

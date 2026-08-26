@@ -42,6 +42,7 @@ type AppSettings struct {
 	CommitMessageGenerator          CommitMessageGeneratorSettings           `json:"commit_message_generator"`
 	DefaultAgent                    string                                   `json:"default_agent"`
 	AgentModels                     map[string]string                        `json:"agent_models"`
+	DiskManagement                  DiskManagementSettings                   `json:"disk_management"`
 }
 
 type TerminalSettings struct {
@@ -68,6 +69,11 @@ type ProviderPreference struct {
 	PlanMode            bool           `json:"plan_mode"`
 }
 
+type DiskManagementSettings struct {
+	WarningThresholdBytes int64 `json:"warning_threshold_bytes"`
+	AutoCleanup           bool  `json:"auto_cleanup"`
+}
+
 type AppSettingsPatch struct {
 	BrowserSettingsMigrated *bool                                  `json:"browserSettingsMigrated"`
 	Locale                  string                                 `json:"locale"`
@@ -84,6 +90,7 @@ type AppSettingsPatch struct {
 	ProviderExecutables     map[string]string                      `json:"providerExecutables"`
 	TmuxCommands            map[string]string                      `json:"tmuxCommands"`
 	CommitMessageGenerator  *CommitMessageGeneratorPatch           `json:"commitMessageGenerator"`
+	DiskManagement          *DiskManagementSettingsPatch           `json:"diskManagement"`
 }
 
 type TerminalSettingsPatch struct {
@@ -123,6 +130,11 @@ type CommitMessageGeneratorSettings struct {
 type CommitMessageGeneratorPatch struct {
 	Provider string `json:"provider"`
 	Model    string `json:"model"`
+}
+
+type DiskManagementSettingsPatch struct {
+	WarningThresholdBytes *int64 `json:"warningThresholdBytes"`
+	AutoCleanup           *bool  `json:"autoCleanup"`
 }
 
 func DefaultAppSettings() AppSettings {
@@ -177,8 +189,9 @@ func DefaultAppSettings() AppSettings {
 			Provider: "codex",
 			Model:    catalog.CodexRuntimeDefaultModel(),
 		},
-		DefaultAgent: "codex",
-		AgentModels:  map[string]string{"codex": ""},
+		DefaultAgent:   "codex",
+		AgentModels:    map[string]string{"codex": ""},
+		DiskManagement: DiskManagementSettings{WarningThresholdBytes: 2 * 1024 * 1024 * 1024},
 	}
 }
 
@@ -257,6 +270,9 @@ func NormalizeSettings(settings AppSettings) AppSettings {
 	settings.CommitMessageGenerator = normalizeCommitMessageGenerator(settings.CommitMessageGenerator, settings.ProviderModelCatalog)
 	settings.ProviderDefaults = normalizeProviderDefaults(settings.ProviderDefaults, defaults.ProviderDefaults, settings.ProviderModelCatalog)
 	settings.AgentModels = normalizeAgentModels(settings.AgentModels)
+	if settings.DiskManagement.WarningThresholdBytes < 256*1024*1024 {
+		settings.DiskManagement.WarningThresholdBytes = defaults.DiskManagement.WarningThresholdBytes
+	}
 	return settings
 }
 
@@ -386,6 +402,14 @@ func ApplySettingsPatch(settings AppSettings, patch AppSettingsPatch) AppSetting
 		}
 		if model := strings.TrimSpace(patch.CommitMessageGenerator.Model); model != "" {
 			settings.CommitMessageGenerator.Model = model
+		}
+	}
+	if patch.DiskManagement != nil {
+		if patch.DiskManagement.WarningThresholdBytes != nil {
+			settings.DiskManagement.WarningThresholdBytes = *patch.DiskManagement.WarningThresholdBytes
+		}
+		if patch.DiskManagement.AutoCleanup != nil {
+			settings.DiskManagement.AutoCleanup = *patch.DiskManagement.AutoCleanup
 		}
 	}
 	return NormalizeSettings(settings)

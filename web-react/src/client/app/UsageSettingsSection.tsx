@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react"
-import { Database, Gauge, Loader2, RefreshCw, Trash2 } from "lucide-react"
+import { Archive, Database, Gauge, Loader2, RefreshCw, Trash2 } from "lucide-react"
 import type { RateLimitWindowSnapshot } from "../../shared/types"
 import { Button } from "../components/ui/button"
+import { Input } from "../components/ui/input"
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "../components/ui/dialog"
 import { formatBytes, formatLocalizedPercent, formatRateLimitDurationLocalized, formatRelativeResetTime, selectRateLimitWindows, type ResourceUsageSnapshot, type UsageSnapshot } from "../lib/usage"
 
@@ -30,6 +31,9 @@ export function UsageSettingsSection({ locale }: { locale: "en" | "fa" }) {
   const [loading, setLoading] = useState(true)
   const [clearing, setClearing] = useState(false)
   const [confirmClear, setConfirmClear] = useState(false)
+  const [confirmKind, setConfirmKind] = useState<"cache" | "checkpoints" | "archives" | null>(null)
+  const [thresholdGB, setThresholdGB] = useState("2")
+  const [autoCleanup, setAutoCleanup] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const refresh = useCallback(async (force = false) => {
@@ -54,6 +58,15 @@ export function UsageSettingsSection({ locale }: { locale: "en" | "fa" }) {
 
   useEffect(() => { void refresh(false) }, [refresh])
 
+  useEffect(() => {
+    void fetch("/api/settings", { cache: "no-store" }).then(async (response) => response.ok ? await response.json() as { disk_management?: { warning_threshold_bytes?: number; auto_cleanup?: boolean } } : null).then((settings) => {
+      const policy = settings?.disk_management
+      if (!policy) return
+      setThresholdGB(String(Math.max(0.25, (policy.warning_threshold_bytes ?? 2 * 1024 ** 3) / 1024 ** 3)))
+      setAutoCleanup(policy.auto_cleanup === true)
+    }).catch(() => undefined)
+  }, [])
+
   const clearCache = useCallback(async () => {
     setClearing(true)
     setError(null)
@@ -68,6 +81,28 @@ export function UsageSettingsSection({ locale }: { locale: "en" | "fa" }) {
     } finally {
       setClearing(false)
     }
+  }, [])
+
+  const clearResource = useCallback(async (kind: "cache" | "checkpoints" | "archives") => {
+    setClearing(true)
+    setError(null)
+    try {
+      const response = await fetch(`/api/resources/${kind}`, { method: "DELETE" })
+      if (!response.ok) throw new Error(await response.text())
+      const payload = await response.json() as { resources: ResourceUsageSnapshot }
+      setResources(payload.resources)
+      setConfirmKind(null)
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : String(nextError))
+    } finally {
+      setClearing(false)
+    }
+  }, [])
+
+  const saveDiskPolicy = useCallback(async (nextThresholdGB: string, nextAutoCleanup: boolean) => {
+    const threshold = Math.max(0.25, Number(nextThresholdGB) || 2)
+    const response = await fetch("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ disk_management: { warning_threshold_bytes: Math.round(threshold * 1024 ** 3), auto_cleanup: nextAutoCleanup } }) })
+    if (!response.ok) throw new Error(await response.text())
   }, [])
 
   if (loading && !usage && !resources) {
@@ -100,16 +135,27 @@ export function UsageSettingsSection({ locale }: { locale: "en" | "fa" }) {
 
       <section className="rounded-2xl border border-border bg-card/30 p-4" aria-labelledby="cache-usage-title">
         <div className="mb-4 flex items-center gap-2"><Database className="size-4 text-muted-foreground" /><h2 id="cache-usage-title" className="font-medium">{fa ? "کش و فضای ذخیره‌سازی ابوالقاسم" : "Abolqasem cache and storage"}</h2></div>
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-4">
           <div className="rounded-xl bg-muted/25 p-3"><div className="text-xs text-muted-foreground">{fa ? "کش قابل پاک‌سازی" : "Clearable cache"}</div><div className="mt-1 font-medium">{formatBytes(resources?.storage.cache_bytes ?? 0)}</div></div>
           <div className="rounded-xl bg-muted/25 p-3"><div className="text-xs text-muted-foreground">{fa ? "اتچمنت‌ها" : "Attachments"}</div><div className="mt-1 font-medium">{formatBytes(resources?.storage.upload_bytes ?? 0)}</div></div>
+          <div className="rounded-xl bg-muted/25 p-3"><div className="text-xs text-muted-foreground">{fa ? "چک‌پوینت‌ها" : "Checkpoints"}</div><div className="mt-1 font-medium">{formatBytes(resources?.storage.checkpoint_bytes ?? 0)}</div></div>
+          <div className="rounded-xl bg-muted/25 p-3"><div className="text-xs text-muted-foreground">{fa ? "آرشیو سشن‌ها" : "Archived sessions"}</div><div className="mt-1 font-medium">{formatBytes(resources?.storage.archive_bytes ?? 0)}</div><div className="text-[11px] text-muted-foreground">{resources?.storage.archive_count ?? 0}</div></div>
           <div className="rounded-xl bg-muted/25 p-3"><div className="text-xs text-muted-foreground">{fa ? "کل داده برنامه" : "Total app data"}</div><div className="mt-1 font-medium">{formatBytes(resources?.storage.total_bytes ?? 0)}</div></div>
         </div>
-        <div className="mt-4 flex items-center justify-between gap-4">
-          <p className="text-xs text-muted-foreground">{fa ? "فقط ایندکس‌های جست‌وجوی قابل بازسازی پاک می‌شوند؛ سشن‌ها، checkpointها و فایل‌ها باقی می‌مانند." : "Only rebuildable search indexes are cleared; sessions, checkpoints, and files remain."}</p>
-          <Button variant="outline" size="sm" onClick={() => setConfirmClear(true)} disabled={(resources?.storage.cache_bytes ?? 0) === 0}>
-            <Trash2 className="size-4" />{fa ? "پاک‌سازی کش" : "Clear cache"}
-          </Button>
+        <div className="mt-4 grid gap-2 sm:grid-cols-3">
+          <Button variant="outline" size="sm" onClick={() => setConfirmKind("cache")} disabled={(resources?.storage.cache_bytes ?? 0) === 0}><Trash2 className="size-4" />{fa ? "پاک‌سازی کش" : "Clear cache"}</Button>
+          <Button variant="outline" size="sm" onClick={() => setConfirmKind("checkpoints")} disabled={(resources?.storage.checkpoint_bytes ?? 0) === 0}><Trash2 className="size-4" />{fa ? "پاک‌سازی چک‌پوینت‌ها" : "Clear checkpoints"}</Button>
+          <Button variant="outline" size="sm" onClick={() => setConfirmKind("archives")} disabled={(resources?.storage.archive_bytes ?? 0) === 0}><Archive className="size-4" />{fa ? "پاک‌سازی آرشیو سشن‌ها" : "Clear archived sessions"}</Button>
+        </div>
+        <p className="mt-3 text-xs text-muted-foreground">{fa ? "اتچمنت‌ها و سشن‌های فعال حذف نمی‌شوند." : "Attachments and active sessions are never removed."}</p>
+      </section>
+
+      <section className="rounded-2xl border border-border bg-card/30 p-4" aria-labelledby="disk-policy-title">
+        <div className="mb-3 flex items-center gap-2"><Database className="size-4 text-muted-foreground" /><h2 id="disk-policy-title" className="font-medium">{fa ? "سیاست هشدار دیسک" : "Disk warning policy"}</h2></div>
+        <div className="grid gap-4 md:grid-cols-[minmax(0,12rem)_1fr_auto] md:items-end">
+          <label className="grid gap-1.5 text-sm font-medium"><span>{fa ? "هشدار از حجم" : "Warn above"}</span><div className="flex items-center gap-2"><Input dir="ltr" type="number" min="0.25" step="0.25" value={thresholdGB} onChange={(event) => setThresholdGB(event.target.value)} onBlur={() => void saveDiskPolicy(thresholdGB, autoCleanup).catch((nextError) => setError(String(nextError)))} /><span className="text-xs text-muted-foreground">GB</span></div></label>
+          <label className="flex items-center gap-3 text-sm"><input type="checkbox" checked={autoCleanup} onChange={(event) => { setAutoCleanup(event.target.checked); void saveDiskPolicy(thresholdGB, event.target.checked).catch((nextError) => setError(String(nextError))) }} /><span>{fa ? "پس از عبور از حد، کش و چک‌پوینت‌ها خودکار پاک شوند" : "Automatically clear cache and checkpoints above the limit"}</span></label>
+          <Button variant="ghost" size="sm" onClick={() => void refresh(true)} disabled={loading}>{fa ? "بررسی فضا" : "Check now"}</Button>
         </div>
       </section>
 
@@ -118,6 +164,9 @@ export function UsageSettingsSection({ locale }: { locale: "en" | "fa" }) {
           <DialogBody><DialogTitle>{fa ? "کش جست‌وجو پاک شود؟" : "Clear search cache?"}</DialogTitle><DialogDescription>{fa ? "ایندکس‌ها هنگام جست‌وجوی بعدی دوباره ساخته می‌شوند." : "Indexes will be rebuilt on the next search."}</DialogDescription></DialogBody>
           <DialogFooter><Button variant="ghost" onClick={() => setConfirmClear(false)}>{fa ? "انصراف" : "Cancel"}</Button><Button variant="destructive" onClick={() => void clearCache()} disabled={clearing}>{clearing ? <Loader2 className="size-4 animate-spin" /> : null}{fa ? "پاک کن" : "Clear"}</Button></DialogFooter>
         </DialogContent>
+      </Dialog>
+      <Dialog open={confirmKind !== null} onOpenChange={(open) => { if (!open) setConfirmKind(null) }}>
+        <DialogContent size="sm"><DialogBody><DialogTitle>{fa ? "این داده‌ها پاک شوند؟" : "Remove these files?"}</DialogTitle><DialogDescription>{fa ? "این عملیات قابل بازگشت نیست؛ سشن‌های فعال و اتچمنت‌ها دست‌نخورده می‌مانند." : "This cannot be undone. Active sessions and attachments remain untouched."}</DialogDescription></DialogBody><DialogFooter><Button variant="ghost" onClick={() => setConfirmKind(null)}>{fa ? "انصراف" : "Cancel"}</Button><Button variant="destructive" onClick={() => { if (confirmKind) void clearResource(confirmKind) }} disabled={clearing}>{clearing ? <Loader2 className="size-4 animate-spin" /> : null}{fa ? "پاک کن" : "Remove"}</Button></DialogFooter></DialogContent>
       </Dialog>
     </div>
   )
