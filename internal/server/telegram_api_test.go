@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"abolqasem/internal/workspace/readmodels"
+	"abolqasem/internal/workspace/transcript"
 )
 
 func TestTelegramConfigAPIStoresPrivateAllowlistedConfiguration(t *testing.T) {
@@ -714,6 +715,27 @@ func TestTelegramCodePreviewCapsHugeFilesWithDownloadHint(t *testing.T) {
 	}
 	if strings.Contains(svg, `>2425</text>`) {
 		t.Fatal("capped preview must not render lines beyond the safety limit")
+	}
+}
+
+func TestTelegramHistoryIsCompactDeduplicatedAndOmitsInternalContext(t *testing.T) {
+	long := strings.Repeat("پاسخ معتبر ", 80)
+	markdown := telegramChatHistoryMarkdownFromMessages([]readmodels.TranscriptEntry{
+		transcript.New(transcript.KindSystemInit, map[string]any{"model": "gpt-5.6"}),
+		transcript.New(transcript.KindUserPrompt, map[string]any{"content": "<environment_context>private</environment_context>"}),
+		transcript.New(transcript.KindUserPrompt, map[string]any{"content": "درخواست معتبر"}),
+		transcript.New(transcript.KindAssistantText, map[string]any{"text": long}),
+		transcript.New(transcript.KindAssistantText, map[string]any{"text": long}),
+		transcript.New(transcript.KindToolCall, map[string]any{"tool": "rg --files"}),
+	})
+	if strings.Contains(markdown, "environment_context") || strings.Contains(markdown, "private") || strings.Contains(markdown, "rg --files") {
+		t.Fatalf("history leaked internal context or tools: %q", markdown)
+	}
+	if got := strings.Count(markdown, "پاسخ معتبر"); got > telegramHistoryPreviewRunes/len([]rune("پاسخ معتبر"))+1 {
+		t.Fatalf("history must compact long responses and remove duplicates: count=%d text=%q", got, markdown)
+	}
+	if strings.Count(markdown, "**دستیار**") != 1 || !strings.Contains(markdown, "**شما**\nدرخواست معتبر") || !strings.Contains(markdown, "…") {
+		t.Fatalf("unexpected compact history: %q", markdown)
 	}
 }
 

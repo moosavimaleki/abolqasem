@@ -30,6 +30,8 @@ import (
 const telegramCustomCommandOutputLimit = 24 * 1024
 
 const telegramMessageLimit = 3500
+const telegramHistoryEntryLimit = 6
+const telegramHistoryPreviewRunes = 320
 
 const telegramTakeOverLockCallbackPrefix = "lock:takeover:"
 const telegramProjectCallbackPrefix = "project:"
@@ -1266,18 +1268,41 @@ func telegramChatHistoryMarkdown(chatID string) string {
 	if snapshot == nil {
 		return "تاریخچهٔ این نشست پیدا نشد."
 	}
-	rows := make([]string, 0, 12)
-	for index := len(snapshot.Messages) - 1; index >= 0 && len(rows) < 12; index-- {
-		kind, role, text := workspaceEntrySearchText(snapshot.Messages[index])
-		if text == "" || kind == transcript.KindToolCall || kind == transcript.KindToolResult || kind == transcript.KindStatus {
+	return telegramChatHistoryMarkdownFromMessages(snapshot.Messages)
+}
+
+// telegramChatHistoryMarkdownFromMessages is deliberately a compact activity
+// summary, not a second transcript renderer. The regular transcript path owns
+// full Markdown, attachments and file-preview actions. Replaying it here used
+// to duplicate long responses and expose internal context in one broken Rich
+// Message.
+func telegramChatHistoryMarkdownFromMessages(messages []readmodels.TranscriptEntry) string {
+	rows := make([]string, 0, telegramHistoryEntryLimit)
+	seen := map[string]struct{}{}
+	for index := len(messages) - 1; index >= 0 && len(rows) < telegramHistoryEntryLimit; index-- {
+		kind, role, text := workspaceEntrySearchText(messages[index])
+		if kind != transcript.KindUserPrompt && kind != transcript.KindAssistantText && kind != transcript.KindProposedPlan && kind != transcript.KindCompactSummary {
 			continue
 		}
+		text = telegramHistoryPreviewText(text)
+		if text == "" {
+			continue
+		}
+		label := ""
 		switch role {
 		case "user":
-			rows = append(rows, "## شما\n\n"+text)
+			label = "شما"
 		case "assistant":
-			rows = append(rows, "## دستیار\n\n"+text)
+			label = "دستیار"
+		default:
+			continue
 		}
+		fingerprint := label + "\x00" + text
+		if _, duplicate := seen[fingerprint]; duplicate {
+			continue
+		}
+		seen[fingerprint] = struct{}{}
+		rows = append(rows, "**"+label+"**\n"+text)
 	}
 	if len(rows) == 0 {
 		return "این نشست هنوز تاریخچهٔ پیامی ندارد."
@@ -1285,7 +1310,22 @@ func telegramChatHistoryMarkdown(chatID string) string {
 	for left, right := 0, len(rows)-1; left < right; left, right = left+1, right-1 {
 		rows[left], rows[right] = rows[right], rows[left]
 	}
-	return "# تاریخچهٔ اخیر\n\n" + strings.Join(rows, "\n\n")
+	return "# تاریخچهٔ اخیر\n\nآخرین گفت‌وگوها به‌صورت خلاصه نمایش داده می‌شوند. برای متن کامل، همان chat را در ابوالقاسم باز کنید.\n\n" + strings.Join(rows, "\n\n")
+}
+
+func telegramHistoryPreviewText(text string) string {
+	text = workspaceStripInternalAssistantMetadata(text)
+	for _, marker := range []string{"<environment_context", "<INSTRUCTIONS>", "# AGENTS.md instructions", "<turn_aborted>", "<oai-mem-citation>"} {
+		if strings.Contains(text, marker) {
+			return ""
+		}
+	}
+	text = strings.Join(strings.Fields(strings.TrimSpace(text)), " ")
+	runes := []rune(text)
+	if len(runes) > telegramHistoryPreviewRunes {
+		return string(runes[:telegramHistoryPreviewRunes-1]) + "…"
+	}
+	return text
 }
 
 func telegramMarkdownInline(value string) string {

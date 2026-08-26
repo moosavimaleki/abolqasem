@@ -801,11 +801,11 @@ function AbolqasemSidebarImpl({
               <Button
                 variant="outline"
                 size="sm"
-                className="hidden rounded-full !h-auto border-border bg-muted/40 px-2 py-0.5 text-[10px] font-bold tracking-wider text-muted-foreground hover:bg-muted hover:text-foreground md:inline-flex"
+                className="hidden rounded-full !h-auto border-amber-400/45 bg-amber-400/10 px-2 py-0.5 text-[10px] font-bold tracking-wider text-amber-200 hover:border-amber-300/60 hover:bg-amber-400/18 hover:text-amber-100 md:inline-flex"
                 onClick={() => navigate(settingsRoute("usage"))}
-                title={locale === "fa" ? "مدیریت فضای دیسک" : "Manage disk space"}
+                title={locale === "fa" ? `فضای ابوالقاسم از حد هشدار عبور کرده است؛ مدیریت فضای دیسک` : "Abolqasem storage exceeds the warning threshold; manage disk space"}
               >
-                {locale === "fa" ? "مدیریت دیسک" : "Manage disk"}
+                {locale === "fa" ? "هشدار دیسک" : "Disk warning"}
               </Button>
             ) : null}
             {!showDevBadge && showUpdateButton ? (
