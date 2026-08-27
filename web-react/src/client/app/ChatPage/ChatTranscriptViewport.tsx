@@ -309,10 +309,22 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
 
     onIsAtEndChange(true)
     const frameId = window.requestAnimationFrame(() => {
+      // When reopening a chat whose latest turn has finished, show the start
+      // of the agent response. Scrolling to the absolute end hides the first
+      // part of a long answer and makes returning to a chat disorienting.
+      const latestMessage = messages.at(-1)
+      if (latestMessage?.kind === "assistant_text") {
+        const row = Array.from(document.querySelectorAll<HTMLElement>("[data-reader-message-id]"))
+          .find((candidate) => candidate.dataset.readerMessageId === latestMessage.id)
+        if (row) {
+          row.scrollIntoView({ behavior: "auto", block: "start" })
+          return
+        }
+      }
       void listRef.current?.scrollToEnd?.({ animated: false })
     })
     return () => window.cancelAnimationFrame(frameId)
-  }, [listRef, onIsAtEndChange, rowsWithCheckpoints.length])
+  }, [listRef, messages, onIsAtEndChange, rowsWithCheckpoints.length])
 
   const updateFloatingReaderMessage = useCallback(() => {
     const scrollNode = listRef.current?.getScrollableNode?.()
