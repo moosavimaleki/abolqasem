@@ -126,6 +126,7 @@ const (
 	CommandMessageEnqueue                  = "message.enqueue"
 	CommandMessageEdit                     = "message.edit"
 	CommandMessageSteer                    = "message.steer"
+	CommandMessageInterrupt                = "message.interrupt"
 	CommandMessageDequeue                  = "message.dequeue"
 	CommandTerminalCreate                  = "terminal.create"
 	CommandTerminalInput                   = "terminal.input"

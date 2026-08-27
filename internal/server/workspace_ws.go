@@ -585,6 +585,18 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 		}
 		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
 		return &response
+	case protocol.CommandMessageInterrupt:
+		chatID, queuedID, err := decodeQueuedMessageCommand(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		if err := workspaceAgentCoordinator().InterruptQueued(context.Background(), chatID, queuedID); err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
+		return &response
 	case protocol.CommandChatCancel:
 		chatID, err := decodeChatID(envelope.Command)
 		if err != nil {

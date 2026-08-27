@@ -266,6 +266,11 @@ export type ClientCommand =
       queuedMessageId: string
     }
   | {
+      type: "message.interrupt"
+      chatId: string
+      queuedMessageId: string
+    }
+  | {
       type: "message.edit"
       chatId: string
       queuedMessageId: string

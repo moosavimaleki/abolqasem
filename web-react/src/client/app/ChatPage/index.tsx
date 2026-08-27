@@ -1956,6 +1956,7 @@ export function ChatPage() {
             onStopDraining={state.handleStopDraining}
             onRemoveQueuedMessage={state.handleRemoveQueuedMessage}
             onSteerQueuedMessage={state.handleSteerQueuedMessage}
+            onInterruptQueuedMessage={state.handleInterruptQueuedMessage}
             onEditQueuedMessage={handleEditQueuedMessage}
             onOpenLocalLink={state.handleOpenLocalLink}
             editorPreset={editorPreset}

@@ -425,6 +425,19 @@ func (c *Coordinator) SteerQueued(ctx context.Context, chatID string, queuedMess
 	return nil
 }
 
+// InterruptQueued cancels the active turn and starts the selected queued
+// message immediately, matching Codex TUI's Esc-then-send behaviour.
+func (c *Coordinator) InterruptQueued(ctx context.Context, chatID string, queuedMessageID string) error {
+	message, ok := c.store.GetQueuedMessage(chatID, queuedMessageID)
+	if !ok {
+		return ErrQueuedNotFound
+	}
+	if err := c.Cancel(chatID); err != nil {
+		return err
+	}
+	return c.startQueuedMessageNow(ctx, chatID, message)
+}
+
 func (c *Coordinator) startQueuedMessageNow(ctx context.Context, chatID string, message readmodels.QueuedChatMessage) error {
 	if err := c.store.RemoveQueuedMessage(chatID, message.ID); err != nil {
 		return err

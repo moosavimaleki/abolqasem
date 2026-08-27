@@ -1,23 +1,24 @@
 import { useState } from "react"
 import type { QueuedChatMessage } from "../../../shared/types"
 import { Button } from "../ui/button"
-import { Loader2, MessageSquare, Paperclip, Pencil, Send, Trash2 } from "lucide-react"
+import { Loader2, MessageSquare, Paperclip, Pencil, Send, Square, Trash2 } from "lucide-react"
 import { useI18n } from "../../i18n/context"
 
 interface QueuedUserMessageProps {
   message: QueuedChatMessage
   onRemove: () => Promise<void>
   onSteer: () => Promise<void>
+  onInterrupt: () => Promise<void>
   onEdit: () => Promise<void>
 }
 
-export function QueuedUserMessage({ message, onRemove, onSteer, onEdit }: QueuedUserMessageProps) {
+export function QueuedUserMessage({ message, onRemove, onSteer, onInterrupt, onEdit }: QueuedUserMessageProps) {
   const { t } = useI18n()
-  const [pendingAction, setPendingAction] = useState<"edit" | "steer" | "remove" | null>(null)
+  const [pendingAction, setPendingAction] = useState<"edit" | "steer" | "interrupt" | "remove" | null>(null)
   const isSteering = message.deliveryState === "steering"
   const isSubmitting = message.deliveryState === "submitting"
 
-  async function runAction(action: "edit" | "steer" | "remove", operation: () => Promise<void>) {
+  async function runAction(action: "edit" | "steer" | "interrupt" | "remove", operation: () => Promise<void>) {
     if (pendingAction || isSteering || isSubmitting) return
     setPendingAction(action)
     try {
@@ -40,6 +41,7 @@ export function QueuedUserMessage({ message, onRemove, onSteer, onEdit }: Queued
           {isSubmitting ? <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />{t.chat.queueSubmitting}</span> : isSteering ? <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />{t.chat.queueDelivering}</span> : <>
             <Button type="button" variant="outline" size="sm" disabled={pendingAction !== null} onClick={() => void runAction("edit", onEdit)}>{pendingAction === "edit" ? <Loader2 className="size-3.5 animate-spin" /> : <Pencil className="size-3.5" />}Edit</Button>
             <Button type="button" variant="outline" size="sm" disabled={pendingAction !== null} onClick={() => void runAction("steer", onSteer)}>{pendingAction === "steer" ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}Steer</Button>
+            <Button type="button" variant="outline" size="sm" disabled={pendingAction !== null} title="Stop the active turn and send now" onClick={() => void runAction("interrupt", onInterrupt)}>{pendingAction === "interrupt" ? <Loader2 className="size-3.5 animate-spin" /> : <Square className="size-3.5" />}Send now</Button>
             <Button type="button" variant="ghost" size="icon" disabled={pendingAction !== null} aria-label="Delete queued message" onClick={() => void runAction("remove", onRemove)}>{pendingAction === "remove" ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}</Button>
           </>}
         </div>
