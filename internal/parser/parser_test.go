@@ -344,6 +344,30 @@ func TestStreamSearchableMessagesCodexMapsPatchApplyEndToFileChange(t *testing.T
 	}
 }
 
+func TestStreamSearchableMessagesCodexMapsApplyPatchToolToFileChange(t *testing.T) {
+	path := writeTranscript(t, `{"timestamp":"2026-08-27T10:00:00Z","type":"response_item","payload":{"type":"custom_tool_call","call_id":"patch-1","name":"apply_patch","input":"*** Begin Patch\n*** Update File: /workspace/existing.go\n@@\n-old\n+new\n*** Add File: /workspace/new.go\n+package main\n*** End Patch"}}`+"\n")
+	messages := []SearchableMessage{}
+	if err := StreamSearchableMessages("codex", "session-1", path, func(message SearchableMessage) bool {
+		messages = append(messages, message)
+		return true
+	}); err != nil {
+		t.Fatalf("StreamSearchableMessages returned error: %v", err)
+	}
+	if len(messages) != 1 || messages[0].Kind != "file_change" {
+		t.Fatalf("expected apply_patch file-change event, got %#v", messages)
+	}
+	if messages[0].Fields["itemId"] != "patch-1" || messages[0].Fields["status"] != "completed" {
+		t.Fatalf("expected completed apply_patch event, got %#v", messages[0].Fields)
+	}
+	changes, ok := messages[0].Fields["changes"].([]map[string]any)
+	if !ok || len(changes) != 2 || changes[0]["path"] != "/workspace/existing.go" || changes[1]["kind"] != "add" {
+		t.Fatalf("expected both patched files, got %#v", messages[0].Fields["changes"])
+	}
+	if !strings.Contains(stringValue(changes[0]["diff"]), "+new") {
+		t.Fatalf("expected patch diff, got %#v", changes[0])
+	}
+}
+
 func TestParseMessagesClaudeArrayContent(t *testing.T) {
 	path := writeTranscript(t, strings.Join([]string{
 		`{"message":{"role":"user","content":[{"type":"text","text":"hello"}]}}`,

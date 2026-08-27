@@ -67,7 +67,7 @@ describe("migrateChatPreferencesState", () => {
           planMode: true,
         },
         codex: {
-          model: "gpt-5.5",
+          model: "gpt-5.3-codex",
           modelMode: "auto",
           reasoningEffortMode: "auto",
           modelOptions: { reasoningEffort: "minimal", fastMode: true },
@@ -113,7 +113,7 @@ describe("migrateChatPreferencesState", () => {
     })
   })
 
-  test("rewrites persisted Codex defaults to the Abolqasem default during migration", () => {
+  test("preserves a supported persisted Codex default during migration", () => {
     const migrated = migrateChatPreferencesState({
       defaultProvider: "last_used",
       providerDefaults: {
@@ -126,7 +126,7 @@ describe("migrateChatPreferencesState", () => {
     })
 
     expect(migrated.providerDefaults.codex).toEqual({
-      model: "gpt-5.5",
+      model: "gpt-5.3-codex",
       modelMode: "auto",
       reasoningEffortMode: "auto",
       modelOptions: { reasoningEffort: "low", fastMode: true },
@@ -134,7 +134,7 @@ describe("migrateChatPreferencesState", () => {
     })
   })
 
-  test("rewrites persisted Codex composer state to the Abolqasem default during migration", () => {
+  test("preserves isolated persisted Codex composer state during migration", () => {
     const migrated = migrateChatPreferencesState({
       defaultProvider: "codex",
       providerDefaults: {
@@ -161,7 +161,7 @@ describe("migrateChatPreferencesState", () => {
     })
 
     expect(migrated.providerDefaults.codex).toEqual({
-      model: "gpt-5.5",
+      model: "gpt-5.3-codex-spark",
       modelMode: "auto",
       reasoningEffortMode: "auto",
       modelOptions: { reasoningEffort: "low", fastMode: true },
@@ -169,13 +169,13 @@ describe("migrateChatPreferencesState", () => {
     })
     expect(migrated.chatStates.chatA).toEqual({
       provider: "codex",
-      model: "gpt-5.5",
+      model: "gpt-5.4",
       modelOptions: { reasoningEffort: "medium", fastMode: false },
       planMode: false,
     })
     expect(migrated.legacyComposerState).toEqual({
       provider: "codex",
-      model: "gpt-5.5",
+      model: "gpt-5.3-codex",
       modelOptions: { reasoningEffort: "xhigh", fastMode: true },
       planMode: true,
     })

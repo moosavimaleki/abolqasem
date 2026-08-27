@@ -26,8 +26,11 @@ describe("QueuedUserMessage", () => {
     expect(html).toContain('dir="auto"')
     expect(html).not.toContain("text-right")
     expect(html).not.toContain("textarea")
-    expect(html).toContain("Edit")
-    expect(html).toContain("Steer")
+    expect(html).toContain("ویرایش")
+    expect(html).toContain("ارسال")
+    expect(html).toContain("متن این پیامِ در صف")
+    expect(html).toContain("نخستین فرصت")
+    expect(html).toContain("متوقف می‌کند")
   })
 
   test("keeps a steered message visible until the native transcript confirms it", () => {

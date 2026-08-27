@@ -665,6 +665,16 @@ export function extractInternalSystemPayload(content: string) {
 		}
 	}
 
+	const standaloneInstructions = content.match(/<INSTRUCTIONS>\s*[\s\S]*?\s*<\/INSTRUCTIONS>/i)
+	if (standaloneInstructions) {
+		const payload = standaloneInstructions[0].trim()
+		return {
+			kind: "agents_instructions",
+			payload,
+			dedupeKey: `agents_instructions:${payload.replace(/\s+/g, " ")}`,
+		}
+	}
+
 	const match = content.match(/<(environment_context|turn_aborted)>\s*([\s\S]*?)\s*<\/\1>/i)
   if (match) {
     const kind = match[1]!.toLowerCase()

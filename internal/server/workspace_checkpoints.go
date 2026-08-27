@@ -73,6 +73,7 @@ type workspaceCheckpointSummary struct {
 	Commit           string `json:"commit,omitempty"`
 	FileCount        int    `json:"fileCount,omitempty"`
 	ChatMessageCount int    `json:"chatMessageCount"`
+	ChatRestorable   bool   `json:"chatRestorable"`
 }
 
 type workspaceCheckpointRestoreResult struct {
@@ -197,7 +198,9 @@ func workspaceRestoreCheckpoint(raw json.RawMessage) (workspaceCheckpointRestore
 	}
 	payload.ChatID = chatID
 	if status := workspaceAgentCoordinator().ActiveStatuses()[payload.ChatID]; status != "" {
-		return workspaceCheckpointRestoreResult{}, "", fmt.Errorf("chat is %s; cancel the active turn before restoring a checkpoint", status)
+		if err := workspaceAgentCoordinator().Cancel(payload.ChatID); err != nil {
+			return workspaceCheckpointRestoreResult{}, "", fmt.Errorf("cancel active %s turn before restore: %w", status, err)
+		}
 	}
 	chat, project, err := workspaceChatProjectRequired(payload.ChatID)
 	if err != nil {
@@ -341,6 +344,7 @@ func workspaceCheckpointSummaryFromRecord(record workspaceCheckpointRecord) work
 		Commit:           commit,
 		FileCount:        record.Code.FileCount,
 		ChatMessageCount: workspaceCheckpointMessageCount(record),
+		ChatRestorable:   record.BoundaryThreadID != "" && record.BoundaryTurnID != "",
 	}
 }
 

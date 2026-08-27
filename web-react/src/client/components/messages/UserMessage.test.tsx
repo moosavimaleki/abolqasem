@@ -56,4 +56,14 @@ describe("UserMessage", () => {
     expect(html).toContain("پیام واقعی کاربر")
     expect((html.match(/AGENTS\.md instructions/g) ?? [])).toHaveLength(1)
   })
+
+  test("collapses standalone instructions and leaves the real prompt visible", () => {
+    const html = renderToStaticMarkup(
+      <UserMessage content={"<INSTRUCTIONS>\nInternal repository rules\n</INSTRUCTIONS>\n\nپیام واقعی کاربر"} />,
+    )
+
+    expect(html).toContain("دستورالعمل‌های محیط پروژه")
+    expect(html).toContain("پیام واقعی کاربر")
+    expect((html.match(/&lt;INSTRUCTIONS&gt;/g) ?? [])).toHaveLength(1)
+  })
 })

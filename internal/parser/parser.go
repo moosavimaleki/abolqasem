@@ -879,7 +879,8 @@ func extractCodexMessage(raw map[string]any, sessionID string, index int) *Searc
 		}
 		return msg
 	case "custom_tool_call":
-		if explanation, plan, ok := extractCodexPlanUpdate(stringValue(payload["input"])); ok {
+		input := stringValue(payload["input"])
+		if explanation, plan, ok := extractCodexPlanUpdate(input); ok {
 			turnID := codexTurnID(payload)
 			if turnID == "" {
 				turnID = firstNonEmpty(stringValue(payload["call_id"]), stringValue(payload["id"]))
@@ -890,10 +891,22 @@ func extractCodexMessage(raw map[string]any, sessionID string, index int) *Searc
 			}
 			return msg
 		}
-		if !strings.EqualFold(strings.TrimSpace(stringValue(payload["name"])), "exec") {
+		toolName := strings.TrimSpace(stringValue(payload["name"]))
+		if changes := extractCodexPatchToolChanges(toolName, input); len(changes) > 0 {
+			itemID := firstNonEmpty(stringValue(payload["call_id"]), stringValue(payload["id"]))
+			msg := newCodexSearchableMessage(sessionID, index, "tool", "file_change", fmt.Sprintf("%d files changed", len(changes)), extractTimestamp(raw, payload), source)
+			if msg != nil {
+				// apply_patch is recorded as a custom tool call in newer Codex
+				// transcripts. Unlike patch_apply_end it has no separate change
+				// event, so render it as completed as soon as the patch is recorded.
+				msg.Fields = map[string]any{"itemId": itemID, "status": "completed", "changes": changes}
+			}
+			return msg
+		}
+		if !strings.EqualFold(toolName, "exec") {
 			return nil
 		}
-		command, cwd, ok := extractCodexExecCommand(stringValue(payload["input"]))
+		command, cwd, ok := extractCodexExecCommand(input)
 		if !ok {
 			return nil
 		}
@@ -1019,6 +1032,54 @@ func extractCodexFileChanges(value any) []map[string]any {
 		}
 		changes = append(changes, change)
 	}
+	return changes
+}
+
+// extractCodexPatchToolChanges turns the textual input of the apply_patch
+// custom tool into the native file-change shape consumed by the transcript UI.
+// New Codex sessions record apply_patch directly rather than emitting the older
+// patch_apply_end event, so without this the actual write is invisible.
+func extractCodexPatchToolChanges(toolName, input string) []map[string]any {
+	if !strings.Contains(strings.ToLower(strings.TrimSpace(toolName)), "patch") || !strings.Contains(input, "*** ") {
+		return nil
+	}
+
+	var changes []map[string]any
+	var current map[string]any
+	var diffLines []string
+	flush := func() {
+		if current == nil {
+			return
+		}
+		current["diff"] = strings.Join(diffLines, "\n")
+		changes = append(changes, current)
+		current = nil
+		diffLines = nil
+	}
+
+	for _, line := range strings.Split(strings.ReplaceAll(input, "\r\n", "\n"), "\n") {
+		var kind, path string
+		switch {
+		case strings.HasPrefix(line, "*** Update File: "):
+			kind, path = "update", strings.TrimSpace(strings.TrimPrefix(line, "*** Update File: "))
+		case strings.HasPrefix(line, "*** Add File: "):
+			kind, path = "add", strings.TrimSpace(strings.TrimPrefix(line, "*** Add File: "))
+		case strings.HasPrefix(line, "*** Delete File: "):
+			kind, path = "delete", strings.TrimSpace(strings.TrimPrefix(line, "*** Delete File: "))
+		case line == "*** End Patch":
+			flush()
+			continue
+		}
+		if path != "" {
+			flush()
+			current = map[string]any{"path": path, "kind": kind}
+			continue
+		}
+		if current != nil && line != "*** Begin Patch" {
+			diffLines = append(diffLines, line)
+		}
+	}
+	flush()
 	return changes
 }
 

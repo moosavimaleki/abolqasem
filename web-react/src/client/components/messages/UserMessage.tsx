@@ -171,8 +171,8 @@ export function UserMessage({ content, attachments = [], steered = false, checkp
     if (!checkpoint || !onRestoreCheckpoint || pendingRestoreMode) return
     setPendingRestoreMode(mode)
     try {
-      await onRestoreCheckpoint(checkpoint.id, mode, content)
-      setRestoreOpen(false)
+      const result = await onRestoreCheckpoint(checkpoint.id, mode, content)
+      if (result) setRestoreOpen(false)
     } finally {
       setPendingRestoreMode(null)
     }
@@ -208,14 +208,14 @@ export function UserMessage({ content, attachments = [], steered = false, checkp
           <RestoreOption
             icon={FileText}
             label={t.messages.restoreChatOnly}
-            disabled={pendingRestoreMode !== null}
+            disabled={pendingRestoreMode !== null || !checkpoint?.chatRestorable}
             loading={pendingRestoreMode === "chat"}
             onClick={() => void handleRestore("chat")}
           />
           <RestoreOption
             icon={Layers2}
             label={t.messages.restoreCodeAndChat}
-            disabled={pendingRestoreMode !== null || !codeSnapshotReady}
+            disabled={pendingRestoreMode !== null || !codeSnapshotReady || !checkpoint?.chatRestorable}
             loading={pendingRestoreMode === "code_and_chat"}
             onClick={() => void handleRestore("code_and_chat")}
           />

@@ -1084,6 +1084,7 @@ export interface ChatCheckpointSummary {
   commit?: string
   fileCount?: number
   chatMessageCount: number
+  chatRestorable: boolean
 }
 
 export interface CheckpointRestoreResult {

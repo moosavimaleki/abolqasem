@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { processTranscriptMessages, stripInternalAssistantMetadata, tmuxCaptureToReadableText, tmuxCaptureToTranscriptMessages } from "./parseTranscript"
+import { extractInternalSystemPayload, processTranscriptMessages, stripInternalAssistantMetadata, tmuxCaptureToReadableText, tmuxCaptureToTranscriptMessages } from "./parseTranscript"
 import { getLatestToolIds } from "../app/derived"
 import type { TranscriptEntry } from "../../shared/types"
 
@@ -257,6 +257,13 @@ describe("processTranscriptMessages", () => {
 
     expect(messages).toHaveLength(1)
     expect(messages[0]).toMatchObject({ kind: "user_prompt", content })
+  })
+
+  test("extracts standalone instructions as a collapsed internal payload", () => {
+    const content = "<INSTRUCTIONS>\nRun tests before committing.\n</INSTRUCTIONS>\n\nپیام واقعی"
+    const payload = extractInternalSystemPayload(content)
+    expect(payload?.kind).toBe("agents_instructions")
+    expect(payload?.payload).toContain("Run tests")
   })
 
   test("deduplicates turn-aborted assistant echoes", () => {

@@ -1,4 +1,5 @@
 import { create } from "zustand"
+import { persist } from "zustand/middleware"
 import {
   DEFAULT_CLAUDE_MODEL_OPTIONS,
   DEFAULT_CODEX_MODEL,
@@ -22,6 +23,7 @@ import {
 export type { ChatProviderPreferences, DefaultProviderPreference, ProviderPreference }
 
 const LAST_USED_COMPOSER_STORAGE_KEY = "abolqasem:last-used-composer"
+const CHAT_COMPOSER_STORAGE_KEY = "abolqasem:chat-composer-states"
 
 export type ComposerState =
   | {
@@ -160,40 +162,6 @@ export function normalizeCodexPreference(value?: {
     },
     planMode: Boolean(value?.planMode),
   }
-}
-
-function forcePersistedCodexCompatiblePreference<T extends {
-  model?: string
-  effort?: string
-  modelOptions?: Partial<CodexModelOptions>
-  planMode?: boolean
-}>(value?: T): T | undefined {
-  if (!value) return value
-  return {
-    ...value,
-    model: DEFAULT_CODEX_MODEL,
-  }
-}
-
-function forcePersistedCodexCompatibleComposerState<T extends PersistedComposerState | ComposerState>(value?: T): T | undefined {
-  if (!value || value.provider !== "codex") return value
-  return {
-    ...value,
-    model: DEFAULT_CODEX_MODEL,
-  }
-}
-
-function forcePersistedCodexCompatibleChatStates(
-  value?: Record<string, PersistedComposerState | ComposerState>
-): Record<string, PersistedComposerState | ComposerState> | undefined {
-  if (!value) return value
-
-  return Object.fromEntries(
-    Object.entries(value).map(([chatId, composerState]) => [
-      chatId,
-      forcePersistedCodexCompatibleComposerState(composerState) ?? composerState,
-    ])
-  )
 }
 
 export function createDefaultProviderDefaults(): ChatProviderPreferences {
@@ -547,12 +515,9 @@ interface ChatPreferencesState {
 export function migrateChatPreferencesState(
   persistedState: Partial<PersistedChatPreferencesState> | undefined
 ): Pick<ChatPreferencesState, "defaultProvider" | "providerDefaults" | "chatStates" | "legacyComposerState"> {
-  const providerDefaults = normalizeProviderDefaults({
-    ...persistedState?.providerDefaults,
-    codex: forcePersistedCodexCompatiblePreference(persistedState?.providerDefaults?.codex),
-  })
+  const providerDefaults = normalizeProviderDefaults(persistedState?.providerDefaults)
   const legacyComposerState = normalizePersistedComposerState(
-    forcePersistedCodexCompatibleComposerState(persistedState?.legacyComposerState ?? persistedState?.composerState),
+    persistedState?.legacyComposerState ?? persistedState?.composerState,
     providerDefaults
   )
   const legacyLiveComposerState = persistedState?.liveProvider
@@ -562,7 +527,7 @@ export function migrateChatPreferencesState(
       persistedState.liveProvider,
       {
         ...persistedState?.livePreferences,
-        codex: forcePersistedCodexCompatiblePreference(persistedState?.livePreferences?.codex),
+        codex: persistedState?.livePreferences?.codex,
       }
     )
     : null
@@ -570,13 +535,13 @@ export function migrateChatPreferencesState(
   return {
     defaultProvider: normalizeDefaultProvider(persistedState?.defaultProvider),
     providerDefaults,
-    chatStates: normalizeChatStates(forcePersistedCodexCompatibleChatStates(persistedState?.chatStates), providerDefaults),
+    chatStates: normalizeChatStates(persistedState?.chatStates, providerDefaults),
     legacyComposerState: legacyComposerState ?? legacyLiveComposerState,
   }
 }
 
 export const useChatPreferencesStore = create<ChatPreferencesState>()(
-  (set, get) => {
+  persist((set, get) => {
     const initialProviderDefaults = createDefaultProviderDefaults()
 
     return {
@@ -733,5 +698,18 @@ export const useChatPreferencesStore = create<ChatPreferencesState>()(
       resetChatComposerFromProvider: (chatId, provider) =>
         set((state) => withChatComposerStateAndLastUsed(state, chatId, () => composerFromProviderDefaults(provider, state.providerDefaults))),
     }
-  }
+  }, {
+    name: CHAT_COMPOSER_STORAGE_KEY,
+    version: 1,
+    partialize: (state) => ({
+      defaultProvider: state.defaultProvider,
+      providerDefaults: state.providerDefaults,
+      chatStates: state.chatStates,
+      legacyComposerState: state.legacyComposerState,
+    }),
+    merge: (persistedState, currentState) => ({
+      ...currentState,
+      ...migrateChatPreferencesState(persistedState as Partial<PersistedChatPreferencesState>),
+    }),
+  })
 )
