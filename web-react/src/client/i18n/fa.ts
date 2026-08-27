@@ -133,6 +133,8 @@ export const fa: TranslationDictionary = {
     moreActions: "اقدام‌های بیشتر",
     queueSubmitting: "در حال ثبت در صف…",
     queueDelivering: "در حال تحویل",
+    queueSteer: "هدایت",
+    queueInterrupt: "ارسال فوری",
     setupGit: "راه‌اندازی گیت",
     toggleTerminal: "تغییر وضعیت ترمینال",
   },

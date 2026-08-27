@@ -132,6 +132,8 @@ export const en = {
     moreActions: "More actions",
     queueSubmitting: "Adding to queue…",
     queueDelivering: "Delivering",
+    queueSteer: "Steer",
+    queueInterrupt: "Send now",
     setupGit: "Setup Git",
     toggleTerminal: "Toggle Terminal",
   },
