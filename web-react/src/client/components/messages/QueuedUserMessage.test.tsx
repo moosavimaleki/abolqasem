@@ -33,7 +33,7 @@ describe("QueuedUserMessage", () => {
     expect(html).toContain("متوقف می‌کند")
   })
 
-  test("keeps a steered message visible until the native transcript confirms it", () => {
+  test("renders a legacy steering record as a non-interactive transitional row", () => {
     const html = renderToStaticMarkup(
       <QueuedUserMessage
         message={{ id: "queued-steering", content: "Steered follow-up", attachments: [], createdAt: Date.now(), deliveryState: "steering" }}

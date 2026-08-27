@@ -964,7 +964,6 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
   const creatingChatProjectIdRef = useRef<string | null>(null)
   const sendToStartingProfilesRef = useRef<Map<string, SendToStartingTrace>>(new Map())
   const pendingArchiveChatIdsRef = useRef<Set<string>>(new Set())
-  const deliveryReconciliationsRef = useRef<Set<string>>(new Set())
   const draftChatIds = useChatInputStore(useShallow((state) => Object.keys(state.drafts).sort()))
   const attachmentDraftChatIds = useChatInputStore(
     useShallow((state) => Object.keys(state.attachmentDrafts).sort())
@@ -1442,25 +1441,6 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
     })
   }, [dismissedQueuedMessageIDs, serverQueuedMessages])
 
-  useEffect(() => {
-    if (!activeChatId) return
-    for (const message of queuedMessages) {
-      if (message.deliveryState !== "steering") continue
-      const reconciliationKey = `${activeChatId}:${message.id}`
-      if (deliveryReconciliationsRef.current.has(reconciliationKey)) continue
-      const delivered = serverTranscriptEntries.some((entry) => (
-        entry.kind === "user_prompt"
-        && entry.createdAt >= message.createdAt
-        && getUserPromptContentMatchKey(entry.content) === getUserPromptContentMatchKey(message.content)
-      ))
-      if (!delivered) continue
-      deliveryReconciliationsRef.current.add(reconciliationKey)
-      void socket.command({ type: "message.dequeue", chatId: activeChatId, queuedMessageId: message.id })
-        .catch(() => {
-          deliveryReconciliationsRef.current.delete(reconciliationKey)
-        })
-    }
-  }, [activeChatId, queuedMessages, serverTranscriptEntries, socket])
 	const shouldShowOptimisticWebPrompts = true
   const optimisticTranscriptEntries = useMemo(
     () => {
@@ -1937,6 +1917,9 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
 		)))
 		if (queueDeliveryMode === "steer" && queued.queuedMessageId) {
 			await socket.command({ type: "message.steer", chatId: queueChatId, queuedMessageId: queued.queuedMessageId })
+			setOptimisticQueuedMessages((current) => current.filter((item) => (
+				item.message.id !== optimisticQueueID && item.message.id !== queued.queuedMessageId
+			)))
 		}
         setCommandError(null)
         return
@@ -2093,7 +2076,8 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
       })
       setCommandError(null)
     } catch (error) {
-      setCommandError(error instanceof Error ? error.message : String(error))
+      const message = error instanceof Error ? error.message : String(error)
+      setCommandError(isTransportConnectionError(message) ? null : message)
       throw error
     }
   }, [activeChatId, socket])
@@ -2108,7 +2092,8 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
       setDismissedQueuedMessageIDs((current) => new Set(current).add(queuedMessageId))
       setCommandError(null)
     } catch (error) {
-      setCommandError(error instanceof Error ? error.message : String(error))
+      const message = error instanceof Error ? error.message : String(error)
+      setCommandError(isTransportConnectionError(message) ? null : message)
       throw error
     }
   }, [activeChatId, socket])
@@ -2119,7 +2104,8 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
       await socket.command({ type: "message.edit", chatId: activeChatId, queuedMessageId, content })
       setCommandError(null)
     } catch (error) {
-      setCommandError(error instanceof Error ? error.message : String(error))
+      const message = error instanceof Error ? error.message : String(error)
+      setCommandError(isTransportConnectionError(message) ? null : message)
       throw error
     }
   }, [activeChatId, socket])
@@ -2134,7 +2120,8 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
       })
       setCommandError(null)
     } catch (error) {
-      setCommandError(error instanceof Error ? error.message : String(error))
+      const message = error instanceof Error ? error.message : String(error)
+      setCommandError(isTransportConnectionError(message) ? null : message)
       throw error
     }
   }, [activeChatId, socket])

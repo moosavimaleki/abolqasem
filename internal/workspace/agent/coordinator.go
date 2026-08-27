@@ -397,6 +397,10 @@ func (c *Coordinator) SteerQueued(ctx context.Context, chatID string, queuedMess
 		return ErrQueuedNotFound
 	}
 	if message.DeliveryState == "steering" {
+		if err := c.store.RemoveQueuedMessage(chatID, queuedMessageID); err != nil {
+			return err
+		}
+		c.emitStateChange(chatID)
 		return nil
 	}
 	c.mu.Lock()
@@ -418,10 +422,33 @@ func (c *Coordinator) SteerQueued(ctx context.Context, chatID string, queuedMess
 		c.emitStateChange(chatID)
 		return c.startQueuedMessageNow(ctx, chatID, message)
 	}
-	if err := c.store.MarkQueuedMessageSteered(chatID, queuedMessageID); err != nil {
+	// A successful turn/steer response means Codex owns the prompt now. Keeping
+	// a second durable copy in Abolqasem's queue lets a lost websocket ACK or a
+	// reconnect strand the row forever and can even submit it again later.
+	if err := c.store.RemoveQueuedMessage(chatID, queuedMessageID); err != nil {
 		return err
 	}
 	c.emitStateChange(chatID)
+	return nil
+}
+
+// ReconcileQueued removes delivery records written by older versions after
+// Codex had already accepted them. It is safe to call while building snapshots
+// and before advancing the queue: undelivered records have no delivery state.
+func (c *Coordinator) ReconcileQueued(chatID string) error {
+	removed := false
+	for _, message := range c.store.GetQueuedMessages(chatID) {
+		if message.DeliveryState != "steering" {
+			continue
+		}
+		if err := c.store.RemoveQueuedMessage(chatID, message.ID); err != nil {
+			return err
+		}
+		removed = true
+	}
+	if removed {
+		c.emitStateChange(chatID)
+	}
 	return nil
 }
 
@@ -501,6 +528,9 @@ func (c *Coordinator) StopDraining(chatID string) {
 func (c *Coordinator) maybeStartNextQueuedMessage(ctx context.Context, chatID string) error {
 	if c.isActive(chatID) {
 		return nil
+	}
+	if err := c.ReconcileQueued(chatID); err != nil {
+		return err
 	}
 	queuedMessages := c.store.GetQueuedMessages(chatID)
 	if len(queuedMessages) == 0 {

@@ -341,7 +341,7 @@ func TestDequeueRemovesQueuedMessage(t *testing.T) {
 	}
 }
 
-func TestEditAndSteerQueuedMessageUsesActiveTurn(t *testing.T) {
+func TestEditAndSteerQueuedMessageRemovesAcceptedDelivery(t *testing.T) {
 	store := newFakeStore()
 	turn := &fakeTurn{}
 	coordinator := NewCoordinator(store, TurnStarterFunc(func(context.Context, TurnRequest) (Turn, error) { return turn, nil }), nil)
@@ -361,8 +361,28 @@ func TestEditAndSteerQueuedMessageUsesActiveTurn(t *testing.T) {
 	if turn.steeredContent != "new" {
 		t.Fatalf("expected edited content to be steered, got %q", turn.steeredContent)
 	}
-	if len(store.queued["chat-1"]) != 1 || store.queued["chat-1"][0].DeliveryState != "steering" {
-		t.Fatalf("expected steered message to remain queued until the native transcript confirms delivery, got %#v", store.queued["chat-1"])
+	if len(store.queued["chat-1"]) != 0 {
+		t.Fatalf("expected accepted steer to leave the durable queue, got %#v", store.queued["chat-1"])
+	}
+}
+
+func TestReconcileQueuedRemovesLegacySteeringMessages(t *testing.T) {
+	store := newFakeStore()
+	store.queued["chat-1"] = []readmodels.QueuedChatMessage{
+		{ID: "delivered", Content: "already sent", DeliveryState: "steering"},
+		{ID: "waiting", Content: "still queued"},
+	}
+	stateChanges := 0
+	coordinator := NewCoordinator(store, nil, func(string) { stateChanges++ })
+
+	if err := coordinator.ReconcileQueued("chat-1"); err != nil {
+		t.Fatalf("ReconcileQueued returned error: %v", err)
+	}
+	if len(store.queued["chat-1"]) != 1 || store.queued["chat-1"][0].ID != "waiting" {
+		t.Fatalf("expected only the undelivered message to remain, got %#v", store.queued["chat-1"])
+	}
+	if stateChanges != 1 {
+		t.Fatalf("expected one reconciliation state change, got %d", stateChanges)
 	}
 }
 

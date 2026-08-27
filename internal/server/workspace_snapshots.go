@@ -50,6 +50,11 @@ func workspaceChatSnapshot(chatID string, recentLimit int) any {
 	if chatID == "" {
 		return nil
 	}
+	// Version 1.5.0 and earlier could leave an already accepted steer in durable
+	// queue state when its websocket acknowledgement raced with reconnect.
+	// Reconcile before reading so that stale delivery rows cannot survive a
+	// refresh or be submitted as a later turn.
+	_ = workspaceAgentCoordinator().ReconcileQueued(chatID)
 	store := workspaceStore()
 	storeState, err := store.LoadStateLight()
 	if err != nil {

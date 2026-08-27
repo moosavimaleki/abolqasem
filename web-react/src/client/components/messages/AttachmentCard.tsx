@@ -101,13 +101,13 @@ export function AttachmentFileCard({
       <button
         type="button"
         onClick={onClick}
-        className="flex w-[200px] items-center gap-2 rounded-xl border border-border bg-background/85 p-1 pr-3 text-left transition-colors hover:bg-accent/50"
+        className="flex w-[200px] items-center gap-2 overflow-hidden rounded-xl border border-border bg-background/85 p-1 pr-3 text-left transition-colors hover:bg-accent/50"
       >
         <div className="flex min-h-10 min-w-10 items-center justify-center rounded-lg border border-border bg-muted text-muted-foreground">
           <Icon className="size-5" />
         </div>
-        <div className="min-w-0">
-          <div className="max-w-[150px] truncate text-[13px] font-medium text-foreground">{attachment.displayName}</div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[13px] font-medium text-foreground">{attachment.displayName}</div>
           <div className="truncate text-[11px] text-muted-foreground">
             {attachment.mimeType} · {formatAttachmentSize(attachment.size)}
           </div>
