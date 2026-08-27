@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import type { QueuedChatMessage } from "../../../shared/types"
 import { Button } from "../ui/button"
 import { Loader2, MessageSquare, Paperclip, Pencil, Send, Square, Trash2 } from "lucide-react"
@@ -17,6 +17,8 @@ export function QueuedUserMessage({ message, onRemove, onSteer, onInterrupt, onE
   const [pendingAction, setPendingAction] = useState<"edit" | "steer" | "interrupt" | "remove" | null>(null)
   const isSteering = message.deliveryState === "steering"
   const isSubmitting = message.deliveryState === "submitting"
+  const steerPending = pendingAction === "steer"
+  const interruptPending = pendingAction === "interrupt"
 
   async function runAction(action: "edit" | "steer" | "interrupt" | "remove", operation: () => Promise<void>) {
     if (pendingAction || isSteering || isSubmitting) return
@@ -25,10 +27,22 @@ export function QueuedUserMessage({ message, onRemove, onSteer, onInterrupt, onE
       await operation()
     } catch {
       // The owning chat state renders the command error. Keep the row available for retry.
-    } finally {
+      setPendingAction(null)
+      return
+    }
+    // Steer is acknowledged before the next snapshot arrives. Keep the
+    // controls disabled and show a spinner until the server marks delivery as
+    // steering (or removes the row after transcript reconciliation).
+    if (action !== "steer") {
       setPendingAction(null)
     }
   }
+
+  useEffect(() => {
+    if (pendingAction === "steer" && message.deliveryState === "steering") {
+      setPendingAction(null)
+    }
+  }, [message.deliveryState, pendingAction])
 
   const preview = message.content.trim() || message.attachments.map((attachment) => attachment.displayName).join(", ") || "Queued message"
   return (
@@ -38,10 +52,10 @@ export function QueuedUserMessage({ message, onRemove, onSteer, onInterrupt, onE
         <span className="min-w-0 flex-1 truncate text-start text-foreground" dir="auto">{preview}</span>
         {message.attachments.length > 0 ? <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground"><Paperclip className="size-3.5" />{message.attachments.length}</span> : null}
         <div className="ml-auto flex shrink-0 items-center gap-1">
-          {isSubmitting ? <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />{t.chat.queueSubmitting}</span> : isSteering ? <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />{t.chat.queueDelivering}</span> : <>
+          {isSubmitting || interruptPending ? <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />{t.chat.queueSubmitting}</span> : isSteering || steerPending ? <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />{t.chat.queueDelivering}</span> : <>
             <Button type="button" variant="outline" size="sm" disabled={pendingAction !== null} onClick={() => void runAction("edit", onEdit)}>{pendingAction === "edit" ? <Loader2 className="size-3.5 animate-spin" /> : <Pencil className="size-3.5" />}Edit</Button>
-            <Button type="button" variant="outline" size="sm" disabled={pendingAction !== null} onClick={() => void runAction("steer", onSteer)}>{pendingAction === "steer" ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}{t.chat.queueSteer}</Button>
-            <Button type="button" variant="outline" size="sm" disabled={pendingAction !== null} title={t.chat.queueInterrupt} onClick={() => void runAction("interrupt", onInterrupt)}>{pendingAction === "interrupt" ? <Loader2 className="size-3.5 animate-spin" /> : <Square className="size-3.5" />}{t.chat.queueInterrupt}</Button>
+            <Button type="button" variant="outline" size="sm" disabled={pendingAction !== null} onClick={() => void runAction("steer", onSteer)}>{steerPending ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}{t.chat.queueSteer}</Button>
+            <Button type="button" variant="outline" size="sm" disabled={pendingAction !== null} title={t.chat.queueInterrupt} onClick={() => void runAction("interrupt", onInterrupt)}>{interruptPending ? <Loader2 className="size-3.5 animate-spin" /> : <Square className="size-3.5" />}{t.chat.queueInterrupt}</Button>
             <Button type="button" variant="ghost" size="icon" disabled={pendingAction !== null} aria-label="Delete queued message" onClick={() => void runAction("remove", onRemove)}>{pendingAction === "remove" ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}</Button>
           </>}
         </div>
