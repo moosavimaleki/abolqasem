@@ -22,3 +22,14 @@ func TestUserInputMarshalMatchesAppServerUnion(t *testing.T) {
 		t.Fatalf("localImage must not contain text-only fields: %s", encoded)
 	}
 }
+
+func TestThreadForkParamsSupportsCheckpointTurnBoundary(t *testing.T) {
+	turnID := "turn-checkpoint"
+	payload, err := json.Marshal(ThreadForkParams{ThreadID: "thread-source", BeforeTurnID: &turnID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if encoded := string(payload); !strings.Contains(encoded, `"beforeTurnId":"turn-checkpoint"`) {
+		t.Fatalf("checkpoint fork must retain beforeTurnId: %s", encoded)
+	}
+}

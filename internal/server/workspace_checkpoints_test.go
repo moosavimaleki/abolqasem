@@ -121,6 +121,42 @@ func TestWorkspaceCoordinatorCreatesCheckpointBeforePrompt(t *testing.T) {
 	}
 }
 
+func TestWorkspaceCheckpointKeepsLightweightTranscriptBoundary(t *testing.T) {
+	withWorkspaceComposerStore(t)
+	project, err := workspaceOpenProject(newGitProject(t), "Project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	chat, err := workspaceCreateChat(project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	appendWorkspaceEvent(t, workspaceStore(), events.StreamMessages, events.TypeMessageAppended, 100, map[string]any{
+		"chatId": chat.ID,
+		"entry":  readmodels.TranscriptEntry{"_id": "before", "kind": "assistant_text", "createdAt": float64(100), "text": "before checkpoint"},
+	})
+
+	checkpoint, err := workspaceCreateCheckpoint(workspaceCreateCheckpointArgs{ChatID: chat.ID, Trigger: workspaceCheckpointTriggerPrompt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if checkpoint.Version != workspaceCheckpointVersion || checkpoint.ChatMessageCount != 1 {
+		t.Fatalf("expected current lightweight chat cursor, got %#v", checkpoint)
+	}
+	appendWorkspaceEvent(t, workspaceStore(), events.StreamMessages, events.TypeMessageAppended, 200, map[string]any{
+		"chatId": chat.ID,
+		"entry":  readmodels.TranscriptEntry{"_id": "after", "kind": "assistant_text", "createdAt": float64(200), "text": "after checkpoint"},
+	})
+
+	messages, err := workspaceCheckpointTranscriptEntries(checkpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != 1 || messages[0]["_id"] != "before" {
+		t.Fatalf("expected checkpoint transcript boundary, got %#v", messages)
+	}
+}
+
 func TestWorkspaceFilesystemCheckpointSkipsLocalToolingDirs(t *testing.T) {
 	projectDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(projectDir, "keep.txt"), []byte("keep"), 0o644); err != nil {

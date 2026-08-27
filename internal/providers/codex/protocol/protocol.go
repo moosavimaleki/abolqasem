@@ -41,6 +41,7 @@ type ThreadResumeParams struct {
 
 type ThreadForkParams struct {
 	ThreadID               string  `json:"threadId"`
+	BeforeTurnID           *string `json:"beforeTurnId,omitempty"`
 	Model                  *string `json:"model,omitempty"`
 	CWD                    *string `json:"cwd,omitempty"`
 	ServiceTier            *string `json:"serviceTier,omitempty"`

@@ -16,12 +16,14 @@ import (
 
 	codexprotocol "abolqasem/internal/providers/codex/protocol"
 	"abolqasem/internal/workspace/agent"
+	"abolqasem/internal/workspace/events"
 	"abolqasem/internal/workspace/gitservice"
 	"abolqasem/internal/workspace/readmodels"
 )
 
 const (
-	workspaceCheckpointVersion       = 2
+	workspaceCheckpointVersion       = 3
+	workspaceCheckpointVersionV2     = 2
 	workspaceCheckpointVersionLegacy = 1
 	workspaceCheckpointTriggerPrompt = "before_user_prompt"
 	workspaceCheckpointTriggerSafety = "before_restore"
@@ -130,6 +132,12 @@ func workspaceCreateCheckpoint(args workspaceCreateCheckpointArgs) (workspaceChe
 		}
 	}
 	record.Code = code
+	// This is only a lightweight cursor, not a transcript copy. It lets a
+	// restore redraw the web transcript at exactly the same point while Codex
+	// restores the authoritative, richer thread state through app-server.
+	if messages, messagesErr := workspaceChatMessages(chat.ID); messagesErr == nil {
+		record.ChatMessageCount = len(messages)
+	}
 
 	if err := workspaceWriteCheckpointRecord(record); err != nil {
 		return workspaceCheckpointRecord{}, err
@@ -300,27 +308,76 @@ func workspaceRestoreCheckpointChat(record workspaceCheckpointRecord) (bool, err
 	if err != nil {
 		return false, err
 	}
+	session.turnMu.Lock()
+	defer session.turnMu.Unlock()
 	session.stopIdleDrain()
 	defer session.startIdleDrain()
 
 	var fork codexprotocol.ThreadForkResponse
+	boundaryTurnID := record.BoundaryTurnID
 	if err := session.process.client.Call(context.Background(), "thread/fork", codexprotocol.ThreadForkParams{
-		ThreadID: record.BoundaryThreadID,
+		ThreadID:     record.BoundaryThreadID,
+		BeforeTurnID: &boundaryTurnID,
 	}, &fork); err != nil {
 		return false, session.process.wrapErr(err)
 	}
-	var result any
-	if err := session.process.client.Call(context.Background(), "thread/revert", codexprotocol.ThreadRevertParams{
-		ThreadID:     record.BoundaryThreadID,
-		BeforeTurnID: record.BoundaryTurnID,
-	}, &result); err != nil {
-		return false, session.process.wrapErr(err)
+	recoveryThreadID := strings.TrimSpace(fork.Thread.ID)
+	if recoveryThreadID == "" {
+		return false, errors.New("Codex returned an empty thread id while restoring checkpoint")
 	}
-	record.RecoveryThreadID = fork.Thread.ID
+	if err := (&workspaceEventStore{store: workspaceStore()}).SetSessionToken(chat.ID, recoveryThreadID); err != nil {
+		return false, err
+	}
+	// Keep the already-owned app-server process on the forked thread. The next
+	// user prompt must resume this fork, never the original thread that contains
+	// the work being rolled back.
+	session.threadID = recoveryThreadID
+	if err := workspaceRestoreCheckpointTranscript(record); err != nil {
+		return false, err
+	}
+	record.RecoveryThreadID = recoveryThreadID
 	if err := workspaceWriteCheckpointRecord(record); err != nil {
 		return false, err
 	}
 	return true, nil
+}
+
+func workspaceRestoreCheckpointTranscript(record workspaceCheckpointRecord) error {
+	messages, err := workspaceCheckpointTranscriptEntries(record)
+	if err != nil {
+		return err
+	}
+	event, err := events.New(events.TypeChatRestoredToCheckpoint, map[string]any{
+		"chatId":       record.ChatID,
+		"checkpointId": record.ID,
+		"messages":     messages,
+	})
+	if err != nil {
+		return err
+	}
+	return workspaceStore().Append(events.StreamMessages, event)
+}
+
+func workspaceCheckpointTranscriptEntries(record workspaceCheckpointRecord) ([]readmodels.TranscriptEntry, error) {
+	messages, err := workspaceChatMessages(record.ChatID)
+	if err != nil {
+		return nil, err
+	}
+	if record.Version >= workspaceCheckpointVersion {
+		return append([]readmodels.TranscriptEntry(nil), messages[:min(record.ChatMessageCount, len(messages))]...), nil
+	}
+	if record.ChatMessageCount > 0 {
+		return append([]readmodels.TranscriptEntry(nil), messages[:min(record.ChatMessageCount, len(messages))]...), nil
+	}
+	// Older checkpoints did not store a cursor. Their creation timestamp is the
+	// best durable boundary available and predates the prompt bound to the turn.
+	boundary := make([]readmodels.TranscriptEntry, 0, len(messages))
+	for _, message := range messages {
+		if timestamp := transcriptEntryTimestamp(message); timestamp > 0 && timestamp <= record.CreatedAt {
+			boundary = append(boundary, message)
+		}
+	}
+	return boundary, nil
 }
 
 func workspaceCheckpointSummaryFromRecord(record workspaceCheckpointRecord) workspaceCheckpointSummary {
@@ -415,7 +472,7 @@ func workspaceReadCheckpointRecord(checkpointID string) (workspaceCheckpointReco
 	if err := json.Unmarshal(data, &record); err != nil {
 		return workspaceCheckpointRecord{}, err
 	}
-	if (record.Version != workspaceCheckpointVersion && record.Version != workspaceCheckpointVersionLegacy) || record.ID == "" {
+	if (record.Version != workspaceCheckpointVersion && record.Version != workspaceCheckpointVersionV2 && record.Version != workspaceCheckpointVersionLegacy) || record.ID == "" {
 		return workspaceCheckpointRecord{}, errors.New("unsupported checkpoint record")
 	}
 	if record.ChatMessageCount == 0 {
