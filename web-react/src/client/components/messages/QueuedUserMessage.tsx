@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import type { QueuedChatMessage } from "../../../shared/types"
 import { Button } from "../ui/button"
 import { Loader2, MessageSquare, Paperclip, Pencil, Send, Square, Trash2 } from "lucide-react"
@@ -37,12 +37,6 @@ export function QueuedUserMessage({ message, onRemove, onSteer, onInterrupt, onE
       setPendingAction(null)
     }
   }
-
-  useEffect(() => {
-    if (pendingAction === "steer" && message.deliveryState === "steering") {
-      setPendingAction(null)
-    }
-  }, [message.deliveryState, pendingAction])
 
   const preview = message.content.trim() || message.attachments.map((attachment) => attachment.displayName).join(", ") || "Queued message"
   return (
