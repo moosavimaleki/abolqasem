@@ -442,6 +442,10 @@ func (c *Coordinator) startQueuedMessageNow(ctx context.Context, chatID string, 
 	if err := c.store.RemoveQueuedMessage(chatID, message.ID); err != nil {
 		return err
 	}
+	// The queued message has been accepted for a new turn. Publish that removal
+	// before starting the provider so the client never keeps showing it as queued
+	// while the provider handshake is still in progress.
+	c.emitStateChange(chatID)
 	return c.startTurn(ctx, chatID, message.Content, message.Attachments, derefString(message.Provider), message.Model, message.ModelOptions, "", derefBool(message.PlanMode), false)
 }
 

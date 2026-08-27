@@ -934,6 +934,7 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
   const [localProjects, setLocalProjects] = useState<LocalProjectsSnapshot | null>(null)
   const [updateSnapshot, setUpdateSnapshot] = useState<UpdateSnapshot | null>(null)
   const [chatSnapshot, setChatSnapshot] = useState<ChatSnapshot | null>(null)
+  const [dismissedQueuedMessageIDs, setDismissedQueuedMessageIDs] = useState<ReadonlySet<string>>(() => new Set())
   const [olderHistoryEntries, setOlderHistoryEntries] = useState<TranscriptEntry[]>([])
   const [isHistoryLoading, setIsHistoryLoading] = useState(false)
   const [historyCursor, setHistoryCursor] = useState<string | null>(null)
@@ -1420,6 +1421,10 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
     () => mergeOptimisticQueuedMessages(serverQueuedMessages, optimisticQueuedMessages, optimisticScopeId),
     [optimisticQueuedMessages, optimisticScopeId, serverQueuedMessages],
   )
+  const visibleQueuedMessages = useMemo(
+    () => queuedMessages.filter((message) => !dismissedQueuedMessageIDs.has(message.id)),
+    [dismissedQueuedMessageIDs, queuedMessages],
+  )
   const queueDeliveryMode = appSettings?.queueDeliveryMode ?? "queue"
 
   useEffect(() => {
@@ -1427,6 +1432,15 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
     const serverIDs = new Set(serverQueuedMessages.map((message) => message.id))
     setOptimisticQueuedMessages((current) => current.filter((item) => !serverIDs.has(item.message.id)))
   }, [serverQueuedMessages])
+
+  useEffect(() => {
+    if (dismissedQueuedMessageIDs.size === 0) return
+    const serverIDs = new Set(serverQueuedMessages.map((message) => message.id))
+    setDismissedQueuedMessageIDs((current) => {
+      const next = new Set([...current].filter((id) => serverIDs.has(id)))
+      return next.size === current.size ? current : next
+    })
+  }, [dismissedQueuedMessageIDs, serverQueuedMessages])
 
   useEffect(() => {
     if (!activeChatId) return
@@ -2088,6 +2102,10 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
     if (!activeChatId) return
     try {
       await socket.command({ type: "message.interrupt", chatId: activeChatId, queuedMessageId })
+      // An interrupt command only ACKs after the server has accepted this
+      // message as a new turn. Hide the queue row immediately; the next chat
+      // snapshot reconciles the durable queue state in the background.
+      setDismissedQueuedMessageIDs((current) => new Set(current).add(queuedMessageId))
       setCommandError(null)
     } catch (error) {
       setCommandError(error instanceof Error ? error.message : String(error))
@@ -2462,7 +2480,7 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
     sidebarOpen,
     sidebarCollapsed,
     messages,
-    queuedMessages,
+    queuedMessages: visibleQueuedMessages,
     previousPrompt,
     latestToolIds,
     runtime,

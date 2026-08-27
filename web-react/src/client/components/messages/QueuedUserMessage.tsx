@@ -30,10 +30,10 @@ export function QueuedUserMessage({ message, onRemove, onSteer, onInterrupt, onE
       setPendingAction(null)
       return
     }
-    // Steer is acknowledged before the next snapshot arrives. Keep the
-    // controls disabled and show a spinner until the server marks delivery as
-    // steering (or removes the row after transcript reconciliation).
-    if (action !== "steer") {
+    // Delivery commands are acknowledged before the next snapshot arrives.
+    // Keep the row non-interactive until that snapshot removes it (or marks it
+    // as steering), so a successful click can never look actionable again.
+    if (action === "edit") {
       setPendingAction(null)
     }
   }

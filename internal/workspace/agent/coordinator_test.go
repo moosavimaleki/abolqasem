@@ -366,6 +366,42 @@ func TestEditAndSteerQueuedMessageUsesActiveTurn(t *testing.T) {
 	}
 }
 
+func TestInterruptQueuedMessagePublishesRemovalBeforeStartingReplacementTurn(t *testing.T) {
+	store := newFakeStore()
+	stateChanges := 0
+	stateChangesBeforeReplacement := 0
+	var starts int
+	coordinator := NewCoordinator(store, TurnStarterFunc(func(context.Context, TurnRequest) (Turn, error) {
+		starts++
+		if starts == 2 {
+			stateChangesBeforeReplacement = stateChanges
+		}
+		return &fakeTurn{}, nil
+	}), func(string) {
+		stateChanges++
+	})
+
+	if _, err := coordinator.Send(context.Background(), SendCommand{ChatID: "chat-1", Content: "first"}); err != nil {
+		t.Fatal(err)
+	}
+	queuedID, err := coordinator.Enqueue(SendCommand{ChatID: "chat-1", Content: "send immediately"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := coordinator.InterruptQueued(context.Background(), "chat-1", queuedID); err != nil {
+		t.Fatal(err)
+	}
+	if starts != 2 {
+		t.Fatalf("expected replacement turn to start, got %d starts", starts)
+	}
+	if stateChangesBeforeReplacement < 4 {
+		t.Fatalf("expected queue removal to be published before replacement starts, got %d state changes", stateChangesBeforeReplacement)
+	}
+	if len(store.queued["chat-1"]) != 0 {
+		t.Fatalf("expected interrupted queued message to be removed, got %#v", store.queued["chat-1"])
+	}
+}
+
 func TestSteerQueuedMessageStartsNewTurnWhenProviderTurnAlreadyEnded(t *testing.T) {
 	store := newFakeStore()
 	staleTurn := &fakeTurn{steerErr: errors.New("codex app-server rpc turn/steer failed: no active turn to steer")}
