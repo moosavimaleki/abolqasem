@@ -82,6 +82,55 @@ func TestWorkspaceCodexInputsReferenceAttachedTextWithoutInliningIt(t *testing.T
 	}
 }
 
+func TestWorkspaceCodexTurnStartIncludesSelectedReasoningEffort(t *testing.T) {
+	transport := &workspaceCodexTestTransport{sent: make(chan []byte, 1)}
+	process := &workspaceCodexProcess{client: codexrpc.NewClient(transport)}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	resultCh := make(chan struct {
+		id  string
+		err error
+	}, 1)
+	go func() {
+		id, err := process.StartTurn(ctx, "thread-1", agent.TurnRequest{
+			Content: "use the selected effort",
+			Model:   "gpt-5.6",
+			Effort:  "xhigh",
+		})
+		resultCh <- struct {
+			id  string
+			err error
+		}{id: id, err: err}
+	}()
+
+	request := <-transport.sent
+	var envelope struct {
+		ID     string         `json:"id"`
+		Params map[string]any `json:"params"`
+	}
+	if err := json.Unmarshal(request, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.Params["effort"] != "xhigh" {
+		t.Fatalf("top-level effort = %#v", envelope.Params["effort"])
+	}
+	mode, ok := envelope.Params["collaborationMode"].(map[string]any)
+	if !ok {
+		t.Fatalf("collaboration mode missing from params: %#v", envelope.Params)
+	}
+	settings, ok := mode["settings"].(map[string]any)
+	if !ok || settings["reasoning_effort"] != "xhigh" {
+		t.Fatalf("collaboration reasoning effort = %#v", settings["reasoning_effort"])
+	}
+	response := []byte(`{"id":"` + envelope.ID + `","result":{"turn":{"id":"turn-1"}}}` + "\n")
+	process.scanStdout(strings.NewReader(string(response)))
+	result := <-resultCh
+	if result.err != nil || result.id != "turn-1" {
+		t.Fatalf("StartTurn result = %q, %v", result.id, result.err)
+	}
+}
+
 func TestWorkspaceCodexExecutionPolicy(t *testing.T) {
 	standard := workspaceCodexExecutionPolicyFor("standard")
 	if standard.approvalPolicy != "on-request" || standard.sandbox != "read-only" {

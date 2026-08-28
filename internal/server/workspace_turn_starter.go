@@ -675,8 +675,12 @@ func (p *workspaceCodexProcess) StartTurn(ctx context.Context, threadID string, 
 		CollaborationMode: &codexprotocol.CollaborationMode{
 			Mode: mode,
 			Settings: codexprotocol.CollaborationModeSettings{
-				Model:                 model,
-				ReasoningEffort:       nil,
+				Model: model,
+				// Newer app-server versions read the reasoning level from the
+				// collaboration settings. Keep the top-level effort field above for
+				// older servers, but do not leave this field nil or UI high/xhigh
+				// selections silently fall back to the server default.
+				ReasoningEffort:       effort,
 				DeveloperInstructions: nil,
 			},
 		},
