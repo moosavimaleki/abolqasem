@@ -341,6 +341,21 @@ func TestDequeueRemovesQueuedMessage(t *testing.T) {
 	}
 }
 
+func TestQueuedDeliveryCommandsAreIdempotentAfterRemoval(t *testing.T) {
+	store := newFakeStore()
+	coordinator := NewCoordinator(store, nil, nil)
+
+	if err := coordinator.Dequeue("chat-1", "already-removed"); err != nil {
+		t.Fatalf("repeated Dequeue returned error: %v", err)
+	}
+	if err := coordinator.SteerQueued(context.Background(), "chat-1", "already-removed"); err != nil {
+		t.Fatalf("repeated SteerQueued returned error: %v", err)
+	}
+	if err := coordinator.InterruptQueued(context.Background(), "chat-1", "already-removed"); err != nil {
+		t.Fatalf("repeated InterruptQueued returned error: %v", err)
+	}
+}
+
 func TestEditAndSteerQueuedMessageRemovesAcceptedDelivery(t *testing.T) {
 	store := newFakeStore()
 	turn := &fakeTurn{}

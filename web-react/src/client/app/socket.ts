@@ -20,7 +20,10 @@ const PING_TIMEOUT_MS = 4_000
 // Commands must never leave a view in an indeterminate state. The server is
 // local, so a response taking this long means the connection needs recovery,
 // not that the UI should wait forever.
-const COMMAND_TIMEOUT_MS = 15_000
+// Provider startup and a large local snapshot can briefly occupy the server's
+// websocket writer. Give commands enough time to cross that local boundary;
+// the heartbeat still detects a genuinely dead connection much sooner.
+const COMMAND_TIMEOUT_MS = 30_000
 const SEND_TO_STARTING_PROFILE_STORAGE_KEY = "abolqasem:profile-send-to-starting"
 
 interface SubscriptionEntry<TSnapshot, TEvent = never> {

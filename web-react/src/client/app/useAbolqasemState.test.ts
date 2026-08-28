@@ -10,10 +10,12 @@ import {
   getTranscriptPaddingBottom,
   getUiUpdateReadinessPath,
   getUserPromptSignature,
+  isQueuedMessageNotFoundError,
   isTransportConnectionError,
   mergeOptimisticQueuedMessages,
   getUiUpdateRestartReconnectAction,
   normalizeChatSnapshot,
+  reconcileOptimisticQueuedMessages,
   reconcileOptimisticUserPrompts,
   resolveComposeIntent,
   resolveProjectStartIntent,
@@ -630,7 +632,56 @@ describe("optimistic queued messages", () => {
     expect(mergeOptimisticQueuedMessages([], [{ scopeId: "chat-1", message: optimistic }], "chat-1")).toEqual([optimistic])
 
     const serverMessage = { ...optimistic, deliveryState: undefined }
-    expect(mergeOptimisticQueuedMessages([serverMessage], [{ scopeId: "chat-1", message: optimistic }], "chat-1")).toEqual([serverMessage])
+    expect(mergeOptimisticQueuedMessages([serverMessage], [{ scopeId: "chat-1", message: optimistic }], "chat-1")).toEqual([optimistic])
+    expect(reconcileOptimisticQueuedMessages(
+      [{ scopeId: "chat-1", message: optimistic }],
+      [serverMessage],
+      "chat-1",
+    )).toEqual([])
     expect(mergeOptimisticQueuedMessages([], [{ scopeId: "chat-2", message: optimistic }], "chat-1")).toEqual([])
+  })
+
+  test("coalesces the pre-ack optimistic row with the matching server row", () => {
+    const optimistic: QueuedChatMessage = {
+      id: "optimistic-queue:client-1",
+      content: "ادامه بده",
+      attachments: [],
+      createdAt: 1_000,
+      deliveryState: "steering",
+    }
+    const serverMessage: QueuedChatMessage = {
+      ...optimistic,
+      id: "queued-server-1",
+      createdAt: 1_010,
+      deliveryState: undefined,
+    }
+
+    expect(mergeOptimisticQueuedMessages(
+      [serverMessage],
+      [{ scopeId: "chat-1", message: optimistic, retainUntilSettled: true }],
+      "chat-1",
+    )).toEqual([{ ...serverMessage, deliveryState: "steering" }])
+  })
+
+  test("does not merge two intentional identical queued messages into one", () => {
+    const first: QueuedChatMessage = { id: "optimistic-1", content: "ادامه بده", attachments: [], createdAt: 1_000, deliveryState: "submitting" }
+    const second: QueuedChatMessage = { id: "optimistic-2", content: "ادامه بده", attachments: [], createdAt: 1_020, deliveryState: "submitting" }
+    const serverMessage: QueuedChatMessage = { id: "server-1", content: "ادامه بده", attachments: [], createdAt: 1_010 }
+
+    expect(mergeOptimisticQueuedMessages(
+      [serverMessage],
+      [
+        { scopeId: "chat-1", message: first, retainUntilSettled: false },
+        { scopeId: "chat-1", message: second, retainUntilSettled: false },
+      ],
+      "chat-1",
+    )).toHaveLength(2)
+  })
+})
+
+describe("queued command errors", () => {
+  test("treats an already removed queue record as an idempotent completion", () => {
+    expect(isQueuedMessageNotFoundError("queued message not found")).toBe(true)
+    expect(isQueuedMessageNotFoundError("permission denied")).toBe(false)
   })
 })

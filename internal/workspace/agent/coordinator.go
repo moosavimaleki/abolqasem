@@ -371,7 +371,9 @@ func (c *Coordinator) Enqueue(command SendCommand) (string, error) {
 
 func (c *Coordinator) Dequeue(chatID string, queuedMessageID string) error {
 	if _, ok := c.store.GetQueuedMessage(chatID, queuedMessageID); !ok {
-		return ErrQueuedNotFound
+		// Queue delivery commands are idempotent: a retry can arrive after the
+		// first command removed the durable row but before its ACK reached the UI.
+		return nil
 	}
 	if err := c.store.RemoveQueuedMessage(chatID, queuedMessageID); err != nil {
 		return err
@@ -394,7 +396,7 @@ func (c *Coordinator) EditQueued(chatID string, queuedMessageID string, content 
 func (c *Coordinator) SteerQueued(ctx context.Context, chatID string, queuedMessageID string) error {
 	message, ok := c.store.GetQueuedMessage(chatID, queuedMessageID)
 	if !ok {
-		return ErrQueuedNotFound
+		return nil
 	}
 	if message.DeliveryState == "steering" {
 		if err := c.store.RemoveQueuedMessage(chatID, queuedMessageID); err != nil {
@@ -457,7 +459,7 @@ func (c *Coordinator) ReconcileQueued(chatID string) error {
 func (c *Coordinator) InterruptQueued(ctx context.Context, chatID string, queuedMessageID string) error {
 	message, ok := c.store.GetQueuedMessage(chatID, queuedMessageID)
 	if !ok {
-		return ErrQueuedNotFound
+		return nil
 	}
 	if err := c.Cancel(chatID); err != nil {
 		return err

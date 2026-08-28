@@ -240,6 +240,45 @@ export interface OptimisticUserPrompt {
 interface OptimisticQueuedMessage {
   scopeId: string
   message: QueuedChatMessage
+  retainUntilSettled?: boolean
+}
+
+const OPTIMISTIC_QUEUE_MATCH_WINDOW_MS = 60_000
+
+function queuedMessagesReferToSameSubmission(left: QueuedChatMessage, right: QueuedChatMessage) {
+  if (left.id === right.id) return true
+  if (Math.abs(left.createdAt - right.createdAt) > OPTIMISTIC_QUEUE_MATCH_WINDOW_MS) return false
+  return getUserPromptSignature(left.content, left.attachments) === getUserPromptSignature(right.content, right.attachments)
+}
+
+function pairQueuedMessages(
+  serverMessages: QueuedChatMessage[],
+  optimisticMessages: OptimisticQueuedMessage[],
+) {
+  const usedOptimisticIndexes = new Set<number>()
+  const optimisticIndexByServerIndex = new Map<number, number>()
+  for (let serverIndex = 0; serverIndex < serverMessages.length; serverIndex += 1) {
+    const serverMessage = serverMessages[serverIndex]!
+    let matchIndex = optimisticMessages.findIndex((item, index) => (
+      !usedOptimisticIndexes.has(index) && item.message.id === serverMessage.id
+    ))
+    if (matchIndex < 0) {
+      let closestDelta = Number.POSITIVE_INFINITY
+      optimisticMessages.forEach((item, index) => {
+        if (usedOptimisticIndexes.has(index) || !queuedMessagesReferToSameSubmission(serverMessage, item.message)) return
+        const delta = Math.abs(serverMessage.createdAt - item.message.createdAt)
+        if (delta < closestDelta) {
+          matchIndex = index
+          closestDelta = delta
+        }
+      })
+    }
+    if (matchIndex >= 0) {
+      usedOptimisticIndexes.add(matchIndex)
+      optimisticIndexByServerIndex.set(serverIndex, matchIndex)
+    }
+  }
+  return { optimisticIndexByServerIndex, usedOptimisticIndexes }
 }
 
 export function mergeOptimisticQueuedMessages(
@@ -247,13 +286,37 @@ export function mergeOptimisticQueuedMessages(
   optimisticMessages: OptimisticQueuedMessage[],
   scopeId: string,
 ): QueuedChatMessage[] {
-  const serverIDs = new Set(serverMessages.map((message) => message.id))
+  const scopedOptimisticMessages = optimisticMessages.filter((item) => item.scopeId === scopeId)
+  const { optimisticIndexByServerIndex, usedOptimisticIndexes } = pairQueuedMessages(serverMessages, scopedOptimisticMessages)
   return [
-    ...serverMessages,
-    ...optimisticMessages
-      .filter((item) => item.scopeId === scopeId && !serverIDs.has(item.message.id))
+    ...serverMessages.map((message, index) => {
+      const optimisticIndex = optimisticIndexByServerIndex.get(index)
+      if (optimisticIndex === undefined) return message
+      const optimistic = scopedOptimisticMessages[optimisticIndex]!.message
+      return optimistic.deliveryState
+        ? { ...message, deliveryState: optimistic.deliveryState }
+        : message
+    }),
+    ...scopedOptimisticMessages
+      .filter((_, index) => !usedOptimisticIndexes.has(index))
       .map((item) => item.message),
   ]
+}
+
+export function reconcileOptimisticQueuedMessages(
+  optimisticMessages: OptimisticQueuedMessage[],
+  serverMessages: QueuedChatMessage[],
+  scopeId: string,
+) {
+  const scopedOptimisticMessages = optimisticMessages.filter((item) => item.scopeId === scopeId)
+  const { usedOptimisticIndexes } = pairQueuedMessages(serverMessages, scopedOptimisticMessages)
+  let scopedIndex = 0
+  return optimisticMessages.filter((item) => {
+    if (item.scopeId !== scopeId) return true
+    const matched = usedOptimisticIndexes.has(scopedIndex)
+    scopedIndex += 1
+    return !matched || Boolean(item.retainUntilSettled)
+  })
 }
 
 interface OptimisticProcessingState {
@@ -708,7 +771,11 @@ export function isTransportConnectionError(message: string | null | undefined) {
   const normalized = message?.trim().toLowerCase()
   return normalized === "disconnected"
     || normalized === "socket disposed"
-    || normalized === "request timed out; reconnecting to the local server"
+    || normalized?.startsWith("request timed out") === true
+}
+
+export function isQueuedMessageNotFoundError(message: string | null | undefined) {
+  return message?.trim().toLowerCase() === "queued message not found"
 }
 
 export const TRANSCRIPT_PADDING_BOTTOM_OFFSET = 30
@@ -997,6 +1064,14 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
     if (connectionStatus !== "connected") return
     setCommandError((current) => isTransportConnectionError(current) ? null : current)
   }, [connectionStatus])
+
+  // Transport recovery is represented by the connection indicator and the
+  // command's loading state. Never leave a transient timeout banner attached
+  // to the transcript after the socket has begun reconnecting.
+  useEffect(() => {
+    if (!isTransportConnectionError(commandError)) return
+    setCommandError(null)
+  }, [commandError])
 
   useEffect(() => {
     return socket.subscribe<SidebarData>({ type: "sidebar" }, (snapshot) => {
@@ -1428,9 +1503,8 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
 
   useEffect(() => {
     if (serverQueuedMessages.length === 0) return
-    const serverIDs = new Set(serverQueuedMessages.map((message) => message.id))
-    setOptimisticQueuedMessages((current) => current.filter((item) => !serverIDs.has(item.message.id)))
-  }, [serverQueuedMessages])
+    setOptimisticQueuedMessages((current) => reconcileOptimisticQueuedMessages(current, serverQueuedMessages, optimisticScopeId))
+  }, [optimisticScopeId, serverQueuedMessages])
 
   useEffect(() => {
     if (dismissedQueuedMessageIDs.size === 0) return
@@ -1884,6 +1958,7 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
       const optimisticQueueID = `optimistic-queue:${generateUUID()}`
       const optimisticMessage: OptimisticQueuedMessage = {
         scopeId: queueChatId,
+        retainUntilSettled: queueDeliveryMode === "steer",
         message: {
           id: optimisticQueueID,
           content,
@@ -1917,6 +1992,7 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
 		)))
 		if (queueDeliveryMode === "steer" && queued.queuedMessageId) {
 			await socket.command({ type: "message.steer", chatId: queueChatId, queuedMessageId: queued.queuedMessageId })
+			setDismissedQueuedMessageIDs((current) => new Set(current).add(queued.queuedMessageId))
 			setOptimisticQueuedMessages((current) => current.filter((item) => (
 				item.message.id !== optimisticQueueID && item.message.id !== queued.queuedMessageId
 			)))
@@ -1926,6 +2002,14 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
       } catch (error) {
         setOptimisticQueuedMessages((current) => current.filter((item) => item.message.id !== optimisticQueueID && item.message.id !== acknowledgedQueueID))
         const message = error instanceof Error ? error.message : String(error)
+        if (acknowledgedQueueID && isQueuedMessageNotFoundError(message)) {
+          // A concurrent snapshot or an earlier delivery can win the race with
+          // this command. The missing durable row means delivery is already
+          // settled, so keep stale snapshots from resurrecting it in the UI.
+          setDismissedQueuedMessageIDs((current) => new Set(current).add(acknowledgedQueueID))
+          setCommandError(null)
+          return
+        }
         setCommandError(isTransportConnectionError(message) ? null : message)
         throw error
       }
@@ -2066,6 +2150,11 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
     }
 	}, [activeChatId, fallbackLocalProjectPath, isProcessing, navigate, optimisticUserPrompts, queueDeliveryMode, selectedProjectId, serverTranscriptEntries, sidebarProjectGroups, socket])
 
+  const settleQueuedMessage = useCallback((queuedMessageId: string) => {
+    setDismissedQueuedMessageIDs((current) => new Set(current).add(queuedMessageId))
+    setOptimisticQueuedMessages((current) => current.filter((item) => item.message.id !== queuedMessageId))
+  }, [])
+
   const handleSteerQueuedMessage = useCallback(async (queuedMessageId: string) => {
     if (!activeChatId) return
     try {
@@ -2074,13 +2163,19 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
         chatId: activeChatId,
         queuedMessageId,
       })
+      settleQueuedMessage(queuedMessageId)
       setCommandError(null)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
+      if (isQueuedMessageNotFoundError(message)) {
+        settleQueuedMessage(queuedMessageId)
+        setCommandError(null)
+        return
+      }
       setCommandError(isTransportConnectionError(message) ? null : message)
       throw error
     }
-  }, [activeChatId, socket])
+  }, [activeChatId, settleQueuedMessage, socket])
 
   const handleInterruptQueuedMessage = useCallback(async (queuedMessageId: string) => {
     if (!activeChatId) return
@@ -2089,14 +2184,19 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
       // An interrupt command only ACKs after the server has accepted this
       // message as a new turn. Hide the queue row immediately; the next chat
       // snapshot reconciles the durable queue state in the background.
-      setDismissedQueuedMessageIDs((current) => new Set(current).add(queuedMessageId))
+      settleQueuedMessage(queuedMessageId)
       setCommandError(null)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
+      if (isQueuedMessageNotFoundError(message)) {
+        settleQueuedMessage(queuedMessageId)
+        setCommandError(null)
+        return
+      }
       setCommandError(isTransportConnectionError(message) ? null : message)
       throw error
     }
-  }, [activeChatId, socket])
+  }, [activeChatId, settleQueuedMessage, socket])
 
   const handleEditQueuedMessage = useCallback(async (queuedMessageId: string, content: string) => {
     if (!activeChatId) return
@@ -2105,10 +2205,15 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
       setCommandError(null)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
+      if (isQueuedMessageNotFoundError(message)) {
+        settleQueuedMessage(queuedMessageId)
+        setCommandError(null)
+        return
+      }
       setCommandError(isTransportConnectionError(message) ? null : message)
       throw error
     }
-  }, [activeChatId, socket])
+  }, [activeChatId, settleQueuedMessage, socket])
 
   const handleRemoveQueuedMessage = useCallback(async (queuedMessageId: string) => {
     if (!activeChatId) return
@@ -2118,13 +2223,19 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
         chatId: activeChatId,
         queuedMessageId,
       })
+      settleQueuedMessage(queuedMessageId)
       setCommandError(null)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
+      if (isQueuedMessageNotFoundError(message)) {
+        settleQueuedMessage(queuedMessageId)
+        setCommandError(null)
+        return
+      }
       setCommandError(isTransportConnectionError(message) ? null : message)
       throw error
     }
-  }, [activeChatId, socket])
+  }, [activeChatId, settleQueuedMessage, socket])
 
   const handleCancel = useCallback(async () => {
     if (!activeChatId) return
