@@ -339,6 +339,68 @@ func TestHandleAPISearchGlobalKeepsStoredWorkspaceChatAfterCompaction(t *testing
 	}
 }
 
+func TestHandleAPISearchGlobalSkipsArchivedChatsAndScopesToProject(t *testing.T) {
+	withWorkspaceComposerStore(t)
+	withEmptySearchLegacyState(t)
+	firstProject, err := workspaceOpenProject(t.TempDir(), "First project")
+	if err != nil {
+		t.Fatalf("workspaceOpenProject first project: %v", err)
+	}
+	secondProject, err := workspaceOpenProject(t.TempDir(), "Second project")
+	if err != nil {
+		t.Fatalf("workspaceOpenProject second project: %v", err)
+	}
+	appendChatWithSearchEntry := func(chatID, projectID, text string, archived bool) {
+		t.Helper()
+		appendWorkspaceEvent(t, workspaceStore(), events.StreamChats, events.TypeChatCreated, time.Now().UnixMilli(), map[string]any{
+			"chatId": chatID, "projectId": projectID, "title": chatID,
+		})
+		appendWorkspaceEvent(t, workspaceStore(), events.StreamMessages, events.TypeMessageAppended, time.Now().UnixMilli(), map[string]any{
+			"chatId": chatID,
+			"entry":  readmodels.TranscriptEntry{"_id": chatID + "-message", "kind": transcript.KindAssistantText, "text": text},
+		})
+		if archived {
+			appendWorkspaceEvent(t, workspaceStore(), events.StreamChats, events.TypeChatArchived, time.Now().UnixMilli(), map[string]any{"chatId": chatID})
+		}
+	}
+	appendChatWithSearchEntry("chat-first-active", firstProject.ID, "shared project_search_needle active", false)
+	appendChatWithSearchEntry("chat-first-archived", firstProject.ID, "shared project_search_needle archived", true)
+	appendChatWithSearchEntry("chat-second-active", secondProject.ID, "shared project_search_needle second", false)
+
+	response := performSearchAPIRequest(t, "/api/search?q=project_search_needle&limit=10")
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected global status 200, got %d: %s", response.Code, response.Body.String())
+	}
+	var global struct {
+		Items []sessionSearchResult `json:"items"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &global); err != nil {
+		t.Fatalf("unmarshal global response: %v", err)
+	}
+	if len(global.Items) != 2 {
+		t.Fatalf("expected only active chats in global search, got %#v", global.Items)
+	}
+	for _, item := range global.Items {
+		if item.ChatID == "chat-first-archived" {
+			t.Fatalf("archived chat leaked into global search: %#v", global.Items)
+		}
+	}
+
+	response = performSearchAPIRequest(t, "/api/search?q=project_search_needle&project_id="+url.QueryEscape(firstProject.ID)+"&limit=10")
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected project status 200, got %d: %s", response.Code, response.Body.String())
+	}
+	var projectScoped struct {
+		Items []sessionSearchResult `json:"items"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &projectScoped); err != nil {
+		t.Fatalf("unmarshal project response: %v", err)
+	}
+	if len(projectScoped.Items) != 1 || projectScoped.Items[0].ChatID != "chat-first-active" {
+		t.Fatalf("expected only the active chat in requested project, got %#v", projectScoped.Items)
+	}
+}
+
 func withEmptySearchLegacyState(t *testing.T) {
 	t.Helper()
 	previous := workspaceLoadLegacyState

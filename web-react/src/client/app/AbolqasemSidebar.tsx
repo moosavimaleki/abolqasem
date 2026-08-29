@@ -61,12 +61,20 @@ function SidebarSearch({
   const { t } = useI18n()
   const [query, setQuery] = useState("")
   const [scope, setScope] = useState<SearchScope>("names")
+	const [projectId, setProjectId] = useState("")
   const [globalResults, setGlobalResults] = useState<BackendSearchResult[]>([])
   const [globalNextOffset, setGlobalNextOffset] = useState(0)
   const [globalTotal, setGlobalTotal] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const trimmedQuery = query.trim()
+  const searchableProjects = useMemo(() => data.projectGroups.filter((group) => group.chats.length > 0), [data.projectGroups])
+
+  useEffect(() => {
+    if (projectId && !searchableProjects.some((project) => project.groupKey === projectId)) {
+      setProjectId("")
+    }
+  }, [projectId, searchableProjects])
 
   const nameResults = useMemo(() => {
     if (!trimmedQuery || scope !== "names") return []
@@ -95,6 +103,7 @@ function SidebarSearch({
       setLoading(true)
       setError(null)
       const params = new URLSearchParams({ q: trimmedQuery, limit: "30" })
+		if (projectId) params.set("project_id", projectId)
       fetch(`/api/search?${params.toString()}`, {
         signal: controller.signal,
         headers: { Accept: "application/json" },
@@ -123,7 +132,7 @@ function SidebarSearch({
       window.clearTimeout(timeout)
       controller.abort()
     }
-  }, [scope, trimmedQuery])
+  }, [projectId, scope, trimmedQuery])
 
   const loadMoreGlobalResults = useCallback(() => {
     if (!trimmedQuery || scope !== "content" || globalNextOffset <= 0 || loading) return
@@ -134,6 +143,7 @@ function SidebarSearch({
       limit: "30",
       offset: String(globalNextOffset),
     })
+	if (projectId) params.set("project_id", projectId)
     fetch(`/api/search?${params.toString()}`, {
       headers: { Accept: "application/json" },
       cache: "no-store",
@@ -151,7 +161,7 @@ function SidebarSearch({
         setError(err instanceof Error ? err.message : String(err))
       })
       .finally(() => setLoading(false))
-  }, [globalNextOffset, globalTotal, loading, scope, trimmedQuery])
+  }, [globalNextOffset, globalTotal, loading, projectId, scope, trimmedQuery])
 
   return (
     <div data-sidebar-control="search" className="mb-2">
@@ -191,6 +201,28 @@ function SidebarSearch({
           </button>
         ) : null}
       </div>
+
+      {scope === "content" ? (
+        <div className="mt-1.5 space-y-1.5 rounded-lg border border-border/60 bg-muted/25 px-2.5 py-2" role="status">
+          <p className="text-[11px] leading-5 text-muted-foreground">{t.sidebar.searchActiveChatsHint}</p>
+          {searchableProjects.length > 0 ? (
+            <label className="flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
+              <span className="shrink-0">{t.sidebar.searchProjectScope}</span>
+              <select
+                value={projectId}
+                onChange={(event) => setProjectId(event.target.value)}
+                className="h-7 min-w-0 flex-1 rounded-md border border-border/70 bg-background px-1.5 text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-label={t.sidebar.searchProjectScope}
+              >
+                <option value="">{t.sidebar.searchAllActiveChats}</option>
+                {searchableProjects.map((project) => (
+                  <option key={project.groupKey} value={project.groupKey}>{project.sidebarTitle || project.title || project.realTitle}</option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+        </div>
+      ) : null}
 
       {trimmedQuery ? (
         <div className="mt-2 max-h-[35vh] space-y-1 overflow-y-auto">
@@ -368,7 +400,6 @@ function allSidebarSearchChats(data: SidebarData) {
       ...group.chats,
       ...group.previewChats,
       ...group.olderChats,
-      ...(group.archivedChats ?? []),
     ].flatMap((chat) => {
       if (seen.has(chat.chatId)) return []
       seen.add(chat.chatId)

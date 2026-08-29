@@ -24,12 +24,13 @@ import (
 )
 
 const (
-	sessionSearchIndexBatchSize    = 500
-	sessionSearchIndexStoredRunes  = 2000
-	sessionSearchIndexPathPrefix   = "sessions-v1"
-	sessionSearchIndexMaxTopDocs   = 5000
-	sessionSearchIndexMinTopDocs   = 500
-	sessionSearchIndexDocsPerGroup = searchPerSessionLimit * 8
+	sessionSearchIndexBatchSize     = 500
+	sessionSearchIndexStoredRunes   = 2000
+	sessionSearchIndexPathPrefix    = "sessions-v1"
+	sessionSearchIndexSchemaVersion = "2"
+	sessionSearchIndexMaxTopDocs    = 5000
+	sessionSearchIndexMinTopDocs    = 500
+	sessionSearchIndexDocsPerGroup  = searchPerSessionLimit * 8
 )
 
 type sessionSearchIndexState struct {
@@ -66,7 +67,7 @@ func sessionSearchIndexStatsSnapshot() sessionSearchIndexStats {
 	return stats
 }
 
-func searchSessionsWithIndex(ctx context.Context, appState *state.AppState, query string, offset int, limit int) ([]sessionSearchResult, int, int, int, error) {
+func searchSessionsWithIndex(ctx context.Context, appState *state.AppState, query string, projectID string, offset int, limit int) ([]sessionSearchResult, int, int, int, error) {
 	if appState == nil {
 		return nil, 0, 0, 0, errors.New("state is required")
 	}
@@ -81,7 +82,14 @@ func searchSessionsWithIndex(ctx context.Context, appState *state.AppState, quer
 	defer reader.Close()
 
 	topN := sessionSearchTopN(offset, limit)
-	iterator, err := reader.Search(ctx, bluge.NewTopNSearch(topN, bluge.NewMatchQuery(query).SetField("body")))
+	searchQuery := bluge.Query(bluge.NewMatchQuery(query).SetField("body"))
+	if projectID != "" {
+		searchQuery = bluge.NewBooleanQuery().AddMust(
+			searchQuery,
+			bluge.NewTermQuery(projectID).SetField("project_id"),
+		)
+	}
+	iterator, err := reader.Search(ctx, bluge.NewTopNSearch(topN, searchQuery))
 	if err != nil {
 		return nil, 0, 0, 0, err
 	}
@@ -278,7 +286,7 @@ func indexWorkspaceSessions(ctx context.Context, addDoc func(*bluge.Document, st
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if chat.DeletedAt != 0 {
+		if chat.DeletedAt != 0 || chat.ArchivedAt != 0 {
 			continue
 		}
 		project, ok := storeState.ProjectsByID[chat.ProjectID]
@@ -348,6 +356,7 @@ func newLegacySessionSearchDocument(meta state.SessionMeta, message parser.Searc
 		AddField(blugeStoredField("transcript_path", meta.TranscriptPath)).
 		AddField(blugeStoredField("cwd", meta.Cwd)).
 		AddField(blugeStoredField("project_name", meta.ProjectName)).
+		AddField(blugeIndexedStoredField("project_id", "")).
 		AddField(blugeStoredField("model", meta.Model)).
 		AddField(blugeStoredField("updated_at", formatSearchIndexTime(meta.UpdatedAt))).
 		AddField(blugeStoredField("first_preview", meta.FirstPreview)).
@@ -381,6 +390,7 @@ func newWorkspaceSessionSearchDocument(chat readmodels.ChatRecord, project readm
 		AddField(blugeStoredField("transcript_path", "")).
 		AddField(blugeStoredField("cwd", project.LocalPath)).
 		AddField(blugeStoredField("project_name", project.Title)).
+		AddField(blugeIndexedStoredField("project_id", project.ID)).
 		AddField(blugeStoredField("model", "")).
 		AddField(blugeStoredField("updated_at", formatSearchIndexTime(updatedAt))).
 		AddField(blugeStoredField("first_preview", "")).
@@ -411,6 +421,7 @@ func newWorkspaceNativeSessionSearchDocument(chat readmodels.ChatRecord, project
 		AddField(blugeStoredField("transcript_path", meta.TranscriptPath)).
 		AddField(blugeStoredField("cwd", project.LocalPath)).
 		AddField(blugeStoredField("project_name", project.Title)).
+		AddField(blugeIndexedStoredField("project_id", project.ID)).
 		AddField(blugeStoredField("model", "")).
 		AddField(blugeStoredField("updated_at", formatSearchIndexTime(updatedAt))).
 		AddField(blugeStoredField("first_preview", "")).
@@ -471,8 +482,15 @@ func blugeStoredField(name string, value string) *bluge.TermField {
 	return field
 }
 
+func blugeIndexedStoredField(name string, value string) *bluge.TermField {
+	field := bluge.NewKeywordField(name, value)
+	field.FieldOptions = bluge.Index | bluge.Store
+	return field
+}
+
 func sessionSearchSignature(appState *state.AppState) string {
-	parts := make([]string, 0, len(appState.Sessions)+8)
+	parts := make([]string, 0, len(appState.Sessions)+9)
+	parts = append(parts, "schema:"+sessionSearchIndexSchemaVersion)
 	for _, meta := range appState.Sessions {
 		parts = append(parts, strings.Join([]string{
 			meta.Key,
@@ -490,7 +508,12 @@ func sessionSearchSignature(appState *state.AppState) string {
 	if storeState, err := workspaceStore().LoadStateLight(); err == nil {
 		maxUpdated := int64(0)
 		for _, chat := range storeState.ChatsByID {
-			maxUpdated = max(maxUpdated, chat.UpdatedAt, chat.LastMessageAt, chat.CreatedAt, chat.DeletedAt)
+			maxUpdated = max(maxUpdated, chat.UpdatedAt, chat.LastMessageAt, chat.CreatedAt, chat.DeletedAt, chat.ArchivedAt)
+			parts = append(parts, strings.Join([]string{
+				"chat",
+				chat.ID,
+				strconv.FormatInt(chat.ArchivedAt, 10),
+			}, "\x00"))
 			if path := strings.TrimSpace(chat.NativeTranscriptPath); path != "" {
 				if info, err := os.Stat(path); err == nil {
 					parts = append(parts, strings.Join([]string{

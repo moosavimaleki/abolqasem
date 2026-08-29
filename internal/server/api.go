@@ -83,6 +83,7 @@ func handleAPIState(w http.ResponseWriter, r *http.Request) {
 
 func handleAPISearch(w http.ResponseWriter, r *http.Request) {
 	chatID := strings.TrimSpace(r.URL.Query().Get("chat_id"))
+	projectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	limit := clampInt(parsePositiveInt(r.URL.Query().Get("limit"), searchDefaultLimit), 1, searchMaxLimit)
 	if chatID != "" {
@@ -107,7 +108,7 @@ func handleAPISearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if items, nextOffset, total, scannedSessions, err := searchSessionsWithIndex(r.Context(), appState, query, offset, limit); err == nil {
+	if items, nextOffset, total, scannedSessions, err := searchSessionsWithIndex(r.Context(), appState, query, projectID, offset, limit); err == nil {
 		writeJSON(w, map[string]any{
 			"items":            items,
 			"next_offset":      nextOffset,
@@ -133,6 +134,11 @@ func handleAPISearch(w http.ResponseWriter, r *http.Request) {
 	candidates := []sessionSearchResult{}
 	scannedSessions := 0
 	for _, meta := range sessions {
+		if projectID != "" {
+			// Project-scoped search is intentionally limited to managed workspace
+			// chats. Legacy sessions do not have a stable workspace project ID.
+			continue
+		}
 		scannedSessions++
 		if meta.MetadataOnly || strings.TrimSpace(meta.TranscriptPath) == "" {
 			continue
@@ -160,7 +166,7 @@ func handleAPISearch(w http.ResponseWriter, r *http.Request) {
 		candidates = append(candidates, newSessionSearchResult(enriched, result.Matches))
 	}
 
-	workspaceItems, workspaceScanned := searchWorkspaceSessions(query, searchPerSessionLimit)
+	workspaceItems, workspaceScanned := searchWorkspaceSessions(query, searchPerSessionLimit, projectID)
 	candidates = append(candidates, workspaceItems...)
 	scannedSessions += workspaceScanned
 
@@ -356,7 +362,7 @@ func workspaceStoredChatSet() map[string]struct{} {
 	return chats
 }
 
-func searchWorkspaceSessions(query string, perChatLimit int) ([]sessionSearchResult, int) {
+func searchWorkspaceSessions(query string, perChatLimit int, projectID string) ([]sessionSearchResult, int) {
 	store := workspaceStore()
 	storeState, err := store.LoadStateLight()
 	if err != nil {
@@ -366,7 +372,10 @@ func searchWorkspaceSessions(query string, perChatLimit int) ([]sessionSearchRes
 	items := []sessionSearchResult{}
 	scanned := 0
 	for _, chat := range storeState.ChatsByID {
-		if chat.DeletedAt != 0 {
+		if chat.DeletedAt != 0 || chat.ArchivedAt != 0 {
+			continue
+		}
+		if projectID != "" && chat.ProjectID != projectID {
 			continue
 		}
 		project, ok := storeState.ProjectsByID[chat.ProjectID]
