@@ -1,6 +1,6 @@
 import { LegendList, type LegendListRef } from "@legendapp/list/react"
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { ArrowDown, ArrowUp, BookOpen, Loader2, Upload } from "lucide-react"
+import { AlertTriangle, ArrowDown, ArrowUp, BookOpen, Loader2, Trash2, Upload } from "lucide-react"
 import { AnimatedShinyText } from "../../components/ui/animated-shiny-text"
 import { AbolqasemLogo } from "../../components/AbolqasemLogo"
 import { ConversationMinimap, type MessageIndexItem } from "../../components/chat-ui/ConversationMinimap"
@@ -32,6 +32,7 @@ import type { EditorPreset } from "../../../shared/protocol"
 import type { ChatCheckpointSummary, HydratedTranscriptMessage } from "../../../shared/types"
 import { useI18n } from "../../i18n/context"
 import { getProcessingStatus } from "./processingStatus"
+import { Button } from "../../components/ui/button"
 
 const CHECKPOINT_PROMPT_PREVIEW_MAX = 120
 const PROMPT_CHECKPOINT_MAX_DELAY_MS = 30 * 60 * 1000
@@ -141,6 +142,7 @@ interface ChatTranscriptViewportProps {
   isProcessing: boolean
   hasTmuxRuntime?: boolean
   runtimeStatus: string | null
+  readOnly?: boolean
   isDraining: boolean
   commandError: string | null
   loadOlderHistory: () => Promise<void>
@@ -149,6 +151,7 @@ interface ChatTranscriptViewportProps {
   onSteerQueuedMessage: (queuedMessageId: string) => Promise<void>
   onInterruptQueuedMessage: (queuedMessageId: string) => Promise<void>
   onEditQueuedMessage: (queuedMessageId: string) => Promise<void>
+  onRemoveAllQueuedMessages?: () => Promise<void>
   onOpenLocalLink: AbolqasemState["handleOpenLocalLink"]
   onAskUserQuestionSubmit: AbolqasemState["handleAskUserQuestion"]
   onApprovalRequestSubmit: AbolqasemState["handleApprovalRequest"]
@@ -184,6 +187,7 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
   isProcessing,
   hasTmuxRuntime = false,
   runtimeStatus,
+  readOnly = false,
   isDraining,
   commandError,
   loadOlderHistory,
@@ -192,6 +196,7 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
   onSteerQueuedMessage,
   onInterruptQueuedMessage,
   onEditQueuedMessage,
+  onRemoveAllQueuedMessages = async () => {},
   onOpenLocalLink,
   onAskUserQuestionSubmit,
   onApprovalRequestSubmit,
@@ -570,6 +575,16 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
   const listFooter = (
     <div className={cn("mx-auto w-full max-w-[800px]", transcriptAppearanceClassName)} dir={direction} style={transcriptAppearanceStyle}>
       {isProcessing && !hasTmuxRuntime ? <ProcessingMessage status={processingStatus} /> : null}
+      {readOnly && queuedMessages.length > 0 ? (
+        <div className="flex items-center gap-3 border-b border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200" role="status">
+          <AlertTriangle className="size-4 shrink-0" />
+          <span className="min-w-0 flex-1">{t.chat.queueBlockedDescription}</span>
+          <Button type="button" variant="outline" size="sm" className="shrink-0 border-amber-400/40 text-amber-100 hover:bg-amber-500/15" onClick={() => void onRemoveAllQueuedMessages()}>
+            <Trash2 className="size-3.5" />
+            {t.chat.queueClearAll}
+          </Button>
+        </div>
+      ) : null}
       {queuedMessages.map((message) => (
         <QueuedUserMessage
           key={message.id}

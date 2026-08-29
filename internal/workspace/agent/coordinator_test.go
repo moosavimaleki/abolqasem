@@ -401,6 +401,26 @@ func TestReconcileQueuedRemovesLegacySteeringMessages(t *testing.T) {
 	}
 }
 
+func TestRecoverQueuedStartsDurableMessageAfterRestart(t *testing.T) {
+	store := newFakeStore()
+	store.queued["chat-1"] = []readmodels.QueuedChatMessage{{ID: "queued-1", Content: "resume me"}}
+	var request TurnRequest
+	coordinator := NewCoordinator(store, TurnStarterFunc(func(_ context.Context, got TurnRequest) (Turn, error) {
+		request = got
+		return &fakeTurn{}, nil
+	}), nil)
+
+	if err := coordinator.RecoverQueued(context.Background(), "chat-1"); err != nil {
+		t.Fatalf("RecoverQueued returned error: %v", err)
+	}
+	if request.Content != "resume me" {
+		t.Fatalf("expected durable message to be resumed, got %q", request.Content)
+	}
+	if len(store.GetQueuedMessages("chat-1")) != 0 {
+		t.Fatalf("expected resumed message to leave the queue, got %#v", store.GetQueuedMessages("chat-1"))
+	}
+}
+
 func TestInterruptQueuedMessagePublishesRemovalBeforeStartingReplacementTurn(t *testing.T) {
 	store := newFakeStore()
 	stateChanges := 0

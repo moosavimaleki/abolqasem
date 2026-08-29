@@ -369,6 +369,17 @@ func (c *Coordinator) Enqueue(command SendCommand) (string, error) {
 	return queued.ID, nil
 }
 
+// RecoverQueued resumes the first durable queued message when the coordinator
+// has no in-memory turn for the chat. This is used after a server/Codex crash:
+// queue rows survive on disk, while the in-memory active map is rebuilt empty.
+// Callers should perform any provider/session lock check before invoking it.
+func (c *Coordinator) RecoverQueued(ctx context.Context, chatID string) error {
+	if strings.TrimSpace(chatID) == "" {
+		return nil
+	}
+	return c.maybeStartNextQueuedMessage(ctx, chatID)
+}
+
 func (c *Coordinator) Dequeue(chatID string, queuedMessageID string) error {
 	if _, ok := c.store.GetQueuedMessage(chatID, queuedMessageID); !ok {
 		// Queue delivery commands are idempotent: a retry can arrive after the

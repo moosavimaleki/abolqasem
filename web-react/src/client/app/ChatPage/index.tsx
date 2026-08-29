@@ -1501,6 +1501,23 @@ export function ChatPage() {
     composer.hydrateDraft(message.content, message.attachments)
   }, [dialog, state.handleRemoveQueuedMessage, state.queuedMessages, t.common.cancel])
 
+  const handleRemoveAllQueuedMessages = useCallback(async () => {
+    const queuedMessageIds = state.queuedMessages.map((message) => message.id)
+    if (queuedMessageIds.length === 0) return
+    const confirmed = await dialog.confirm({
+      title: "حذف پیام‌های متوقف‌شده؟",
+      description: `${queuedMessageIds.length} پیام در صف این نشست باقی مانده است. این کار آن‌ها را حذف می‌کند و قابل بازگردانی نیست.`,
+      confirmLabel: "حذف همه",
+      cancelLabel: t.common.cancel,
+      confirmVariant: "destructive",
+      dir: "rtl",
+    })
+    if (!confirmed) return
+    for (const queuedMessageId of queuedMessageIds) {
+      await state.handleRemoveQueuedMessage(queuedMessageId)
+    }
+  }, [dialog, state.handleRemoveQueuedMessage, state.queuedMessages, t.common.cancel])
+
   const refreshCodexLock = useCallback(async () => {
     if (!state.activeChatId) return
     setCodexLockActionPending(true)
@@ -1950,6 +1967,7 @@ export function ChatPage() {
             hasOlderHistory={state.hasOlderHistory}
             isProcessing={state.isProcessing}
             runtimeStatus={state.runtimeStatus}
+            readOnly={codexChatReadOnly}
             isDraining={state.isDraining}
             commandError={state.commandError}
             loadOlderHistory={state.loadOlderHistory}
@@ -1958,6 +1976,7 @@ export function ChatPage() {
             onSteerQueuedMessage={state.handleSteerQueuedMessage}
             onInterruptQueuedMessage={state.handleInterruptQueuedMessage}
             onEditQueuedMessage={handleEditQueuedMessage}
+            onRemoveAllQueuedMessages={handleRemoveAllQueuedMessages}
             onOpenLocalLink={state.handleOpenLocalLink}
             editorPreset={editorPreset}
             editorCommandTemplate={editorCommandTemplate}

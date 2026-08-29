@@ -138,6 +138,8 @@ export const en = {
     queueSteerDescription: "Deliver this message to the active Codex turn at its next safe point; it stays queued if the turn is unavailable.",
     queueInterrupt: "Send now",
     queueInterruptDescription: "Stop the active turn and send this message immediately as a new turn.",
+    queueBlockedDescription: "These messages are stuck because another Codex process owns the session. Take over the lock or clear the queue.",
+    queueClearAll: "Clear queue",
     setupGit: "Setup Git",
     toggleTerminal: "Toggle Terminal",
   },

@@ -139,6 +139,8 @@ export const fa: TranslationDictionary = {
     queueSteerDescription: "پیام را در نخستین فرصت به turn فعال Codex تحویل می‌دهد؛ اگر turn آماده نباشد در صف می‌ماند.",
     queueInterrupt: "ارسال فوری",
     queueInterruptDescription: "turn فعال را متوقف می‌کند و این پیام را فوراً به‌عنوان turn جدید ارسال می‌کند.",
+    queueBlockedDescription: "این پیام‌ها به‌دلیل قفل بودن نشست توسط Codex دیگر، پس از کرش متوقف مانده‌اند. قفل را بگیرید یا صف را پاک کنید.",
+    queueClearAll: "پاک کردن صف",
     setupGit: "راه‌اندازی گیت",
     toggleTerminal: "تغییر وضعیت ترمینال",
   },

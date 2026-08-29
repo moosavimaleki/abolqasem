@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"path/filepath"
@@ -234,6 +235,50 @@ func workspaceAgentCoordinator() *agent.Coordinator {
 		workspaceTelegramBridge.chatStateChanged(chatID)
 	})
 	return workspaceCoordinator
+}
+
+// RecoverQueuedMessages rebuilds delivery after an app-server restart. Queue
+// records are durable, but Coordinator.active is intentionally in-memory; a
+// restart therefore needs an explicit pass to resume idle chats. A session
+// owned by another Codex process is left untouched and remains actionable in
+// the UI (take over or remove the queued rows).
+func RecoverQueuedMessages() {
+	store := workspaceStore()
+	state, err := store.LoadStateLight()
+	if err != nil {
+		return
+	}
+	coordinator := workspaceAgentCoordinator()
+	for chatID := range state.QueuedMessagesByChatID {
+		workspaceRecoverQueuedMessage(state, coordinator, chatID)
+	}
+}
+
+func workspaceRecoverQueuedMessage(state readmodels.StoreState, coordinator *agent.Coordinator, chatID string) bool {
+	if len(state.QueuedMessagesByChatID[chatID]) == 0 {
+		return false
+	}
+	chat, ok := state.ChatsByID[chatID]
+	if !ok || chat.DeletedAt != 0 {
+		return false
+	}
+	lock := workspaceCodexLockStatus(chat)
+	if lock.State != codexLockAvailable && lock.State != codexLockOwnedByUs {
+		return false
+	}
+	_ = coordinator.RecoverQueued(context.Background(), chatID)
+	return true
+}
+
+// RecoverQueuedMessageForChat retries delivery after a user refreshes a chat
+// or releases/takes over its Codex lock.
+func RecoverQueuedMessageForChat(chatID string) {
+	store := workspaceStore()
+	state, err := store.LoadStateLight()
+	if err != nil {
+		return
+	}
+	workspaceRecoverQueuedMessage(state, workspaceAgentCoordinator(), chatID)
 }
 
 func (s *workspaceEventStore) CreateChat(projectID string) (readmodels.ChatRecord, error) {

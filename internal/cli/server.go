@@ -49,6 +49,9 @@ var serverCmd = &cobra.Command{
 
 		server.SetWebFS(viewer.WebAssets)
 		go server.DiscoverSessionsOnce()
+		// Queue entries are durable; resume idle chats left behind by a
+		// previous app-server/Codex crash as soon as the server starts.
+		go server.RecoverQueuedMessages()
 		server.StartDiscoveryLoop(90 * time.Second)
 		if err := server.Serve(listener); err != nil {
 			log.Fatalf("Server error: %v", err)

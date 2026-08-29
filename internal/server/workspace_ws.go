@@ -640,6 +640,7 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
 		}
+		RecoverQueuedMessageForChat(chatID)
 		workspaceConnections.broadcast(chatID)
 		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
 		return &response
@@ -654,6 +655,7 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
 		}
+		RecoverQueuedMessageForChat(chatID)
 		workspaceConnections.broadcast(chatID)
 		response := protocol.AckEnvelope(envelope.ID, status)
 		return &response
@@ -668,6 +670,7 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
 		}
+		RecoverQueuedMessageForChat(chatID)
 		workspaceConnections.broadcast(chatID)
 		response := protocol.AckEnvelope(envelope.ID, status)
 		return &response
@@ -686,6 +689,7 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
 		}
+		RecoverQueuedMessageForChat(payload.ChatID)
 		workspaceConnections.broadcast(payload.ChatID)
 		response := protocol.AckEnvelope(envelope.ID, status)
 		return &response
