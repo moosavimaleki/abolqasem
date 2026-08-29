@@ -1,10 +1,11 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
-import { FolderKanban, Loader2, MessageSquare, PanelLeft, PanelRight, X, Menu, Settings, Search as SearchIcon } from "lucide-react"
+import { Check, ChevronDown, FolderKanban, Loader2, MessageSquare, PanelLeft, PanelRight, X, Menu, Settings, Search as SearchIcon } from "lucide-react"
 import { useLocation, useNavigate } from "react-router-dom"
 import { APP_NAME } from "../../shared/branding"
 import { AbolqasemLogo } from "../components/AbolqasemLogo"
 import { Button } from "../components/ui/button"
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../components/ui/dialog"
+import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover"
 import { formatSidebarAgeLabel } from "../lib/formatters"
 import { getSidebarChatTimestamp } from "../lib/sidebarChats"
 import { cn } from "../lib/utils"
@@ -61,7 +62,9 @@ function SidebarSearch({
   const { t } = useI18n()
   const [query, setQuery] = useState("")
   const [scope, setScope] = useState<SearchScope>("names")
-	const [projectId, setProjectId] = useState("")
+  const [projectId, setProjectId] = useState("")
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false)
+  const [projectFilter, setProjectFilter] = useState("")
   const [globalResults, setGlobalResults] = useState<BackendSearchResult[]>([])
   const [globalNextOffset, setGlobalNextOffset] = useState(0)
   const [globalTotal, setGlobalTotal] = useState(0)
@@ -69,6 +72,18 @@ function SidebarSearch({
   const [error, setError] = useState<string | null>(null)
   const trimmedQuery = query.trim()
   const searchableProjects = useMemo(() => data.projectGroups.filter((group) => group.chats.length > 0), [data.projectGroups])
+  const filteredProjects = useMemo(() => {
+    const needle = projectFilter.trim().toLowerCase()
+    if (!needle) return searchableProjects
+    return searchableProjects.filter((project) => (
+      (project.sidebarTitle || project.title || project.realTitle).toLowerCase().includes(needle)
+      || project.localPath.toLowerCase().includes(needle)
+    ))
+  }, [projectFilter, searchableProjects])
+  const selectedProject = searchableProjects.find((project) => project.groupKey === projectId)
+  const selectedProjectLabel = selectedProject
+    ? (selectedProject.sidebarTitle || selectedProject.title || selectedProject.realTitle)
+    : t.sidebar.searchAllActiveChats
 
   useEffect(() => {
     if (projectId && !searchableProjects.some((project) => project.groupKey === projectId)) {
@@ -208,17 +223,67 @@ function SidebarSearch({
           {searchableProjects.length > 0 ? (
             <label className="flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
               <span className="shrink-0">{t.sidebar.searchProjectScope}</span>
-              <select
-                value={projectId}
-                onChange={(event) => setProjectId(event.target.value)}
-                className="h-7 min-w-0 flex-1 rounded-md border border-border/70 bg-background px-1.5 text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                aria-label={t.sidebar.searchProjectScope}
-              >
-                <option value="">{t.sidebar.searchAllActiveChats}</option>
-                {searchableProjects.map((project) => (
-                  <option key={project.groupKey} value={project.groupKey}>{project.sidebarTitle || project.title || project.realTitle}</option>
-                ))}
-              </select>
+              <Popover open={projectPickerOpen} onOpenChange={(open) => {
+                setProjectPickerOpen(open)
+                if (open) setProjectFilter("")
+              }}>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className="flex h-7 min-w-0 flex-1 items-center justify-between gap-1 rounded-md border border-border/70 bg-background px-1.5 text-start text-xs text-foreground outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+                    aria-label={t.sidebar.searchProjectScope}
+                    aria-expanded={projectPickerOpen}
+                  >
+                    <span className="truncate">{selectedProjectLabel}</span>
+                    <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="start" sideOffset={4} className="w-[min(260px,calc(100vw-2rem))] p-1.5" dir="ltr">
+                  <div className="flex h-8 items-center gap-1.5 rounded-md border border-border/70 bg-background px-2 focus-within:ring-2 focus-within:ring-ring">
+                    <SearchIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    <input
+                      value={projectFilter}
+                      onChange={(event) => setProjectFilter(event.target.value)}
+                      placeholder={t.sidebar.searchProjectPlaceholder}
+                      aria-label={t.sidebar.searchProjectPlaceholder}
+                      autoFocus
+                      className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
+                    />
+                  </div>
+                  <div className="mt-1 max-h-56 overflow-y-auto" role="listbox" aria-label={t.sidebar.searchProjectScope}>
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={!projectId}
+                      onClick={() => { setProjectId(""); setProjectPickerOpen(false) }}
+                      className="flex min-h-8 w-full items-center gap-2 rounded-md px-2 py-1.5 text-start text-xs hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <Check className={cn("h-3.5 w-3.5 shrink-0", projectId ? "invisible" : "text-primary")} aria-hidden="true" />
+                      <span className="truncate">{t.sidebar.searchAllActiveChats}</span>
+                    </button>
+                    {filteredProjects.length > 0 ? filteredProjects.map((project) => {
+                      const label = project.sidebarTitle || project.title || project.realTitle
+                      const selected = project.groupKey === projectId
+                      return (
+                        <button
+                          key={project.groupKey}
+                          type="button"
+                          role="option"
+                          aria-selected={selected}
+                          onClick={() => { setProjectId(project.groupKey); setProjectPickerOpen(false) }}
+                          className="flex min-h-8 w-full items-center gap-2 rounded-md px-2 py-1.5 text-start text-xs hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          title={project.localPath}
+                        >
+                          <Check className={cn("h-3.5 w-3.5 shrink-0", selected ? "text-primary" : "invisible")} aria-hidden="true" />
+                          <span className="min-w-0 truncate">{label}</span>
+                        </button>
+                      )
+                    }) : (
+                      <p className="px-2 py-2 text-xs text-muted-foreground">{t.sidebar.searchProjectNoResults}</p>
+                    )}
+                  </div>
+                </PopoverContent>
+              </Popover>
             </label>
           ) : null}
         </div>
