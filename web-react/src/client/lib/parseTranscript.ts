@@ -2,7 +2,8 @@ import { hydrateToolResult } from "../../shared/tools"
 import type { HydratedToolCall, HydratedTranscriptMessage, NormalizedToolCall, TranscriptEntry } from "../../shared/types"
 
 function createTimestamp(createdAt: number): string {
-  return new Date(createdAt).toISOString()
+  const date = new Date(createdAt)
+  return Number.isNaN(date.getTime()) ? new Date(0).toISOString() : date.toISOString()
 }
 
 function createBaseMessage(entry: TranscriptEntry) {

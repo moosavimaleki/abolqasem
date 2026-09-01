@@ -247,6 +247,9 @@ func TestStreamSearchableMessagesOpenCodeReadsPartsUnderInfo(t *testing.T) {
 	if len(messages) != 2 || messages[0].Role != "user" || messages[0].Text != "سلام" || messages[1].Role != "assistant" || messages[1].Text != "در خدمتم" {
 		t.Fatalf("unexpected OpenCode messages: %#v", messages)
 	}
+	if messages[0].CreatedAt == nil || messages[0].CreatedAt.UnixMilli() != 1788275902202 {
+		t.Fatalf("expected OpenCode numeric timestamp, got %#v", messages[0].CreatedAt)
+	}
 }
 
 func TestStreamSearchableMessagesCodexKeepsCustomExecEvents(t *testing.T) {

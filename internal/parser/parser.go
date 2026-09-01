@@ -827,7 +827,38 @@ func extractOpenCodeMessage(raw map[string]any, sessionID string, index int) *Se
 	if text == "" {
 		return nil
 	}
-	return newSearchableMessage(sessionID, index, role, "message", text, extractTimestamp(raw, info))
+	return newSearchableMessage(sessionID, index, role, "message", text, extractOpenCodeTimestamp(raw, info))
+}
+
+func extractOpenCodeTimestamp(raw, info map[string]any) *time.Time {
+	if created := openCodeCreatedAt(info); created > 0 {
+		parsed := time.UnixMilli(created)
+		return &parsed
+	}
+	if created := openCodeCreatedAt(raw); created > 0 {
+		parsed := time.UnixMilli(created)
+		return &parsed
+	}
+	return extractTimestamp(raw, info)
+}
+
+func openCodeCreatedAt(value map[string]any) int64 {
+	timeValue := asMap(value["time"])
+	for _, candidate := range []any{timeValue["created"], value["created"], value["createdAt"]} {
+		switch typed := candidate.(type) {
+		case float64:
+			return int64(typed)
+		case int64:
+			return typed
+		case int:
+			return int64(typed)
+		case json.Number:
+			if parsed, err := typed.Int64(); err == nil {
+				return parsed
+			}
+		}
+	}
+	return 0
 }
 
 func extractCodexMessage(raw map[string]any, sessionID string, index int) *SearchableMessage {
