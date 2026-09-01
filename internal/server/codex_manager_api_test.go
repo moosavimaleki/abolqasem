@@ -250,11 +250,17 @@ func TestCodexManagerAccountsReconcilesDuplicateIdentityRecords(t *testing.T) {
 }
 
 func TestCodexManagerAccountActivationReplacesLiveAuth(t *testing.T) {
-	previousDir, previousLiveRoot := codexManagerStateDir, codexManagerLiveAuthRoot
+	previousDir, previousLiveRoot, previousCheck := codexManagerStateDir, codexManagerLiveAuthRoot, startCodexManagerPostSwitchCheck
 	stateDir, codexRoot := t.TempDir(), t.TempDir()
 	codexManagerStateDir = func() string { return stateDir }
 	codexManagerLiveAuthRoot = func() string { return codexRoot }
-	t.Cleanup(func() { codexManagerStateDir, codexManagerLiveAuthRoot = previousDir, previousLiveRoot })
+	// Activation schedules a background quota check. Keep this unit test
+	// deterministic and prevent that goroutine from writing into TempDir after
+	// the test has returned and cleanup has started.
+	startCodexManagerPostSwitchCheck = func(string) {}
+	t.Cleanup(func() {
+		codexManagerStateDir, codexManagerLiveAuthRoot, startCodexManagerPostSwitchCheck = previousDir, previousLiveRoot, previousCheck
+	})
 	repository := account.Repository{Paths: codexManagerPaths()}
 	if err := repository.Add(context.Background(), "chosen", map[string]any{"email": "chosen@example.com", "tokens": map[string]any{"refresh_token": "chosen-refresh"}}, false); err != nil {
 		t.Fatal(err)
