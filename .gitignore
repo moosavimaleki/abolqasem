@@ -14,6 +14,9 @@ web-react/node_modules/
 .playwright-mcp
 web-react/dist/
 
+# Rust build artifacts
+sidecars/*/target/
+
 # Test binary, built with `go test -c`
 *.test
 
@@ -39,4 +42,3 @@ go.work.sum
 
 # Local exports
 .abolqasem/
-
