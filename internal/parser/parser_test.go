@@ -38,8 +38,12 @@ func TestParseMessagesCodexShowsReasoningEffortChanges(t *testing.T) {
 		`{"type":"event_msg","payload":{"type":"thread_settings_applied","thread_settings":{"model":"gpt-5.6-sol","reasoning_effort":"high"}}}`,
 	}, "\n"))
 	result, err := ParseMessages("codex", "session-1", path, ParseOptions{Limit: 10})
-	if err != nil || len(result.Items) != 2 { t.Fatalf("expected two model changes, got %#v err=%v", result.Items, err) }
-	if result.Items[0].Kind != "model_change" || !strings.Contains(result.Items[0].Text, "low") || !strings.Contains(result.Items[1].Text, "high") { t.Fatalf("unexpected model changes: %#v", result.Items) }
+	if err != nil || len(result.Items) != 2 {
+		t.Fatalf("expected two model changes, got %#v err=%v", result.Items, err)
+	}
+	if result.Items[0].Kind != "model_change" || !strings.Contains(result.Items[0].Text, "low") || !strings.Contains(result.Items[1].Text, "high") {
+		t.Fatalf("unexpected model changes: %#v", result.Items)
+	}
 }
 
 func TestParseMessagesCodexPreservesEnvironmentContext(t *testing.T) {
@@ -224,6 +228,24 @@ func TestStreamSearchableMessagesCodexExposesTaskCompleteError(t *testing.T) {
 	}
 	if message.Fields["subtype"] != "error" || message.Fields["isError"] != true || message.Fields["durationMs"] != float64(4028) {
 		t.Fatalf("expected result metadata, got %#v", message.Fields)
+	}
+}
+
+func TestStreamSearchableMessagesOpenCodeReadsPartsUnderInfo(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "session.json")
+	body := `{"info":{"id":"ses-1"},"messages":[{"info":{"role":"user","time":{"created":1788275902202},"parts":[{"type":"text","text":"سلام"}]}},{"info":{"role":"assistant","time":{"created":1788275902203},"parts":[{"type":"text","text":"در خدمتم"}]}}]}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var messages []SearchableMessage
+	if err := StreamSearchableMessages("opencode", "ses-1", path, func(message SearchableMessage) bool {
+		messages = append(messages, message)
+		return true
+	}); err != nil {
+		t.Fatalf("StreamSearchableMessages returned error: %v", err)
+	}
+	if len(messages) != 2 || messages[0].Role != "user" || messages[0].Text != "سلام" || messages[1].Role != "assistant" || messages[1].Text != "در خدمتم" {
+		t.Fatalf("unexpected OpenCode messages: %#v", messages)
 	}
 }
 

@@ -803,9 +803,31 @@ func extractSearchableMessage(agent string, raw map[string]any, sessionID string
 		return extractCodexMessage(raw, sessionID, index)
 	case "claude":
 		return extractClaudeMessage(raw, sessionID, index)
+	case "opencode":
+		return extractOpenCodeMessage(raw, sessionID, index)
 	default:
 		return extractGenericMessage(raw, sessionID, index)
 	}
+}
+
+func extractOpenCodeMessage(raw map[string]any, sessionID string, index int) *SearchableMessage {
+	info := asMap(raw["info"])
+	role := normalizeRole(firstNonEmpty(stringValue(info["role"]), stringValue(raw["role"])))
+	if role != "user" && role != "assistant" {
+		return nil
+	}
+	parts := info["parts"]
+	if parts == nil {
+		parts = raw["parts"]
+	}
+	if parts == nil {
+		parts = raw["part"]
+	}
+	text := strings.TrimSpace(flattenText(parts))
+	if text == "" {
+		return nil
+	}
+	return newSearchableMessage(sessionID, index, role, "message", text, extractTimestamp(raw, info))
 }
 
 func extractCodexMessage(raw map[string]any, sessionID string, index int) *SearchableMessage {

@@ -41,7 +41,7 @@ func TestImportLegacySessionCodexCurrentFormatSkipsInternalAndImageBlocks(t *tes
 func TestImportLegacySessionOpenCodeExportReadsUserAndAssistantText(t *testing.T) {
 	root := t.TempDir()
 	transcriptPath := filepath.Join(root, "ses_open.json")
-	body := `{"info":{"id":"ses_open","directory":"/tmp/project"},"messages":[{"info":{"role":"user","time":{"created":1788012630706}},"parts":[{"type":"text","text":"hello"}]},{"info":{"role":"assistant","time":{"created":1788012630724}},"parts":[{"type":"reasoning","text":"private"},{"type":"text","text":"world"}]}]}`
+	body := `{"info":{"id":"ses_open","directory":"/tmp/project"},"messages":[{"info":{"role":"user","time":{"created":1788012630706},"parts":[{"type":"text","text":"hello"}]}},{"info":{"role":"assistant","time":{"created":1788012630724},"parts":[{"type":"reasoning","text":"private"},{"type":"text","text":"world"}]}}]}`
 	if err := os.WriteFile(transcriptPath, []byte(body), 0o600); err != nil {
 		t.Fatalf("write transcript: %v", err)
 	}

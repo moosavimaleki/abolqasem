@@ -111,7 +111,11 @@ func importOpenCodeExport(sessionID string, raw map[string]any) []readmodels.Tra
 		info := mapValue(message["info"])
 		role := strings.ToLower(strings.TrimSpace(stringValue(info["role"])))
 		createdAt := parseUnixMilli(mapValue(info["time"])["created"])
-		entries = append(entries, importOpenCodeParts(sessionID, role, message["parts"], createdAt, index)...)
+		// OpenCode stores parts under message.info (the top-level message
+		// contains metadata only). Accept the older top-level shape as well so
+		// already-exported sessions remain readable.
+		parts := firstNonNil(info["parts"], message["parts"])
+		entries = append(entries, importOpenCodeParts(sessionID, role, parts, createdAt, index)...)
 	}
 	return dedupeAdjacentTranscriptEntries(entries)
 }
