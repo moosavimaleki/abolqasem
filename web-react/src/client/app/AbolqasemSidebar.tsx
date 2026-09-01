@@ -426,6 +426,7 @@ interface AbolqasemSidebarProps {
   keybindings: KeybindingsSnapshot | null
   onRenameChat: (chat: SidebarChatRow) => void
   onArchiveChat: (chat: SidebarChatRow) => void
+  onPinChat?: (chat: SidebarChatRow) => void
   onOpenArchivedChat: (chatId: string) => void
   onDeleteChat: (chat: SidebarChatRow) => void
   onOpenAddProjectModal: () => void
@@ -514,6 +515,7 @@ function AbolqasemSidebarImpl({
   keybindings,
   onRenameChat,
   onArchiveChat,
+  onPinChat = () => undefined,
   onOpenArchivedChat,
   onDeleteChat,
   onOpenAddProjectModal,
@@ -672,11 +674,12 @@ function AbolqasemSidebarImpl({
         onForkChat={() => onForkChat(chat)}
         onConvertChat={(_, provider) => onConvertChat(chat, provider)}
         onArchiveChat={() => onArchiveChat(chat)}
+        onPinChat={() => onPinChat(chat)}
         onDeleteChat={() => onDeleteChat(chat)}
         isArchiving={pendingArchiveChatIds.has(chat.chatId)}
       />
     )
-  }, [activeChatId, navigate, nowMs, onArchiveChat, onClose, onConvertChat, onDeleteChat, onForkChat, onOpenExternalPath, onRenameChat, pendingArchiveChatIds, resolvedKeybindings, showNumberJumpHints, visibleIndexByChatId])
+  }, [activeChatId, navigate, nowMs, onArchiveChat, onClose, onConvertChat, onDeleteChat, onForkChat, onOpenExternalPath, onPinChat, onRenameChat, pendingArchiveChatIds, resolvedKeybindings, showNumberJumpHints, visibleIndexByChatId])
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {

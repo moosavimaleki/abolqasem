@@ -86,7 +86,7 @@ func handleAPIReloadSessions(w http.ResponseWriter, r *http.Request) {
 	}
 	report, err := runDiscovery()
 	if err != nil {
-		http.Error(w, "Failed to reload sessions", http.StatusInternalServerError)
+		http.Error(w, "Failed to reload sessions: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	writeJSON(w, map[string]any{

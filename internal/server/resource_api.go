@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
+	"time"
 
 	"abolqasem/internal/parser"
 	"abolqasem/internal/state"
@@ -72,20 +74,35 @@ type resourceCheckpointStats struct {
 	Bytes int64 `json:"bytes"`
 }
 
+const resourceUsageCacheTTL = 30 * time.Second
+
+var resourceUsageCache = struct {
+	sync.Mutex
+	storage     resourceStorageStatsResponse
+	checkpoints resourceCheckpointStats
+	measuredAt  time.Time
+	refreshing  bool
+}{}
+
+var resourceAutoCleanup = struct {
+	sync.Mutex
+	lastChecked time.Time
+}{}
+
 func handleAPIResources(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	writeJSON(w, currentResourceUsage())
+	writeJSON(w, currentResourceUsage(r.URL.Query().Get("fresh") == "1"))
 }
 
-func currentResourceUsage() resourceUsageResponse {
+func currentResourceUsage(forceStorageRefresh bool) resourceUsageResponse {
 	maybeAutoCleanupResources()
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)
-	checkpoints := checkpointStorageStats()
+	storage, checkpoints := cachedResourceStorageStats(forceStorageRefresh)
 	return resourceUsageResponse{
 		Memory: runtimeMemStatsResponse{
 			Alloc:      mem.Alloc,
@@ -107,9 +124,62 @@ func currentResourceUsage() resourceUsageResponse {
 			SessionIndex: sessionSearchIndexStatsSnapshot(),
 			FileIndexes:  projectFileSearchIndexStatsSnapshot(),
 		},
-		Storage:     resourceStorageStats(checkpoints),
+		Storage:     storage,
 		Checkpoints: checkpoints,
 	}
+}
+
+// cachedResourceStorageStats keeps the expensive filesystem walks off normal
+// page navigation. The sidebar asks for this endpoint on every page; a stale
+// but recent disk number is preferable to blocking Chrome for seconds while
+// walking thousands of transcripts and cache files.
+func cachedResourceStorageStats(force bool) (resourceStorageStatsResponse, resourceCheckpointStats) {
+	resourceUsageCache.Lock()
+	fresh := !resourceUsageCache.measuredAt.IsZero() && time.Since(resourceUsageCache.measuredAt) < resourceUsageCacheTTL
+	if fresh && !force {
+		storage, checkpoints := resourceUsageCache.storage, resourceUsageCache.checkpoints
+		resourceUsageCache.Unlock()
+		return storage, checkpoints
+	}
+	if !force {
+		storage, checkpoints := resourceUsageCache.storage, resourceUsageCache.checkpoints
+		if !resourceUsageCache.refreshing {
+			resourceUsageCache.refreshing = true
+			go refreshResourceUsageCache()
+		}
+		resourceUsageCache.Unlock()
+		return storage, checkpoints
+	}
+	resourceUsageCache.Unlock()
+	storage, checkpoints := collectResourceStorageStats()
+	resourceUsageCache.Lock()
+	resourceUsageCache.storage = storage
+	resourceUsageCache.checkpoints = checkpoints
+	resourceUsageCache.measuredAt = time.Now()
+	resourceUsageCache.refreshing = false
+	resourceUsageCache.Unlock()
+	return storage, checkpoints
+}
+
+func refreshResourceUsageCache() {
+	storage, checkpoints := collectResourceStorageStats()
+	resourceUsageCache.Lock()
+	resourceUsageCache.storage = storage
+	resourceUsageCache.checkpoints = checkpoints
+	resourceUsageCache.measuredAt = time.Now()
+	resourceUsageCache.refreshing = false
+	resourceUsageCache.Unlock()
+}
+
+func collectResourceStorageStats() (resourceStorageStatsResponse, resourceCheckpointStats) {
+	checkpoints := checkpointStorageStats()
+	return resourceStorageStats(checkpoints), checkpoints
+}
+
+func invalidateResourceUsageCache() {
+	resourceUsageCache.Lock()
+	resourceUsageCache.measuredAt = time.Time{}
+	resourceUsageCache.Unlock()
 }
 
 func maybeAutoCleanupResources() {
@@ -117,15 +187,29 @@ func maybeAutoCleanupResources() {
 	if err != nil || !settings.DiskManagement.AutoCleanup {
 		return
 	}
-	threshold := settings.DiskManagement.WarningThresholdBytes
-	if threshold <= 0 || directorySize(workspaceDataDir())+directorySize(resourceUploadRoot()) <= threshold {
+	resourceAutoCleanup.Lock()
+	if !resourceAutoCleanup.lastChecked.IsZero() && time.Since(resourceAutoCleanup.lastChecked) < resourceUsageCacheTTL {
+		resourceAutoCleanup.Unlock()
 		return
 	}
-	// Automatic cleanup is intentionally limited to rebuildable/indexed data and
-	// checkpoints. Durable event streams and user attachments are never removed.
-	_, _ = clearResourceCache()
-	_ = os.RemoveAll(workspaceCheckpointsDir())
-	_ = os.MkdirAll(workspaceCheckpointsDir(), 0o755)
+	resourceAutoCleanup.lastChecked = time.Now()
+	resourceAutoCleanup.Unlock()
+	threshold := settings.DiskManagement.WarningThresholdBytes
+	if threshold <= 0 {
+		return
+	}
+	go func() {
+		storage, _ := collectResourceStorageStats()
+		if storage.TotalBytes <= threshold {
+			return
+		}
+		// Automatic cleanup is intentionally limited to rebuildable/indexed data and
+		// checkpoints. Durable event streams and user attachments are never removed.
+		_, _ = clearResourceCache()
+		_ = os.RemoveAll(workspaceCheckpointsDir())
+		_ = os.MkdirAll(workspaceCheckpointsDir(), 0o755)
+		invalidateResourceUsageCache()
+	}()
 }
 
 func handleAPIResourceCache(w http.ResponseWriter, r *http.Request) {
@@ -141,7 +225,7 @@ func handleAPIResourceCache(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{
 		"status":        "ok",
 		"cleared_bytes": clearedBytes,
-		"resources":     currentResourceUsage(),
+		"resources":     currentResourceUsage(true),
 	})
 }
 
@@ -156,6 +240,7 @@ func clearResourceCache() (int64, error) {
 	}
 	resetWorkspaceSearchCaches()
 	parser.ClearCache()
+	invalidateResourceUsageCache()
 	return clearedBytes, nil
 }
 
@@ -174,7 +259,8 @@ func handleAPIResourceCheckpoints(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, map[string]any{"status": "ok", "cleared_bytes": clearedBytes, "resources": currentResourceUsage()})
+	invalidateResourceUsageCache()
+	writeJSON(w, map[string]any{"status": "ok", "cleared_bytes": clearedBytes, "resources": currentResourceUsage(true)})
 }
 
 func handleAPIResourceArchives(w http.ResponseWriter, r *http.Request) {
@@ -197,7 +283,8 @@ func handleAPIResourceArchives(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	writeJSON(w, map[string]any{"status": "ok", "cleared_bytes": clearedBytes, "resources": currentResourceUsage()})
+	invalidateResourceUsageCache()
+	writeJSON(w, map[string]any{"status": "ok", "cleared_bytes": clearedBytes, "resources": currentResourceUsage(true)})
 }
 
 // handleAPIResourceAttachments removes only uploaded attachment payloads. It
@@ -218,7 +305,8 @@ func handleAPIResourceAttachments(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, map[string]any{"status": "ok", "cleared_bytes": clearedBytes, "resources": currentResourceUsage()})
+	invalidateResourceUsageCache()
+	writeJSON(w, map[string]any{"status": "ok", "cleared_bytes": clearedBytes, "resources": currentResourceUsage(true)})
 }
 
 func handleAPIResourceCompact(w http.ResponseWriter, r *http.Request) {

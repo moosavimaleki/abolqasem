@@ -29,6 +29,14 @@ var EventBroker = &Broker{
 	clients: make(map[chan []byte]bool),
 }
 
+// broadcastGlobalEvent keeps the legacy SSE endpoint available for older
+// clients while the workspace UI receives the same event through its existing
+// websocket. New browser tabs must not create a second long-lived connection.
+func broadcastGlobalEvent(event SSEEvent) {
+	EventBroker.Broadcast(event)
+	workspaceConnections.broadcastGlobalEvent(event)
+}
+
 func (b *Broker) AddClient(client chan []byte) {
 	b.mu.Lock()
 	defer b.mu.Unlock()

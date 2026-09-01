@@ -32,6 +32,16 @@ func TestParseMessagesCodex(t *testing.T) {
 	}
 }
 
+func TestParseMessagesCodexShowsReasoningEffortChanges(t *testing.T) {
+	path := writeTranscript(t, strings.Join([]string{
+		`{"type":"event_msg","payload":{"type":"thread_settings_applied","thread_settings":{"model":"gpt-5.6-sol","reasoning_effort":"low"}}}`,
+		`{"type":"event_msg","payload":{"type":"thread_settings_applied","thread_settings":{"model":"gpt-5.6-sol","reasoning_effort":"high"}}}`,
+	}, "\n"))
+	result, err := ParseMessages("codex", "session-1", path, ParseOptions{Limit: 10})
+	if err != nil || len(result.Items) != 2 { t.Fatalf("expected two model changes, got %#v err=%v", result.Items, err) }
+	if result.Items[0].Kind != "model_change" || !strings.Contains(result.Items[0].Text, "low") || !strings.Contains(result.Items[1].Text, "high") { t.Fatalf("unexpected model changes: %#v", result.Items) }
+}
+
 func TestParseMessagesCodexPreservesEnvironmentContext(t *testing.T) {
 	path := writeTranscript(t, strings.Join([]string{
 		`{"type":"event_msg","payload":{"type":"user_message","message":"<environment_context>\n<current_date>2026-08-25</current_date>\n</environment_context>"}}`,

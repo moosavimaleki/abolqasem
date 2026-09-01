@@ -89,6 +89,30 @@ func TestStartSessionFallsBackWhenResumeIsRecoverablyMissing(t *testing.T) {
 	}
 }
 
+func TestStartSessionRecoversLegacyCompletedSubagentItem(t *testing.T) {
+	client := &fakeRPCClient{handler: func(call rpcCall) error {
+		switch call.Method {
+		case "initialize":
+			return nil
+		case "thread/resume":
+			return errors.New("json-rpc error -32603: failed to deserialize stored thread item subagent-completed-1: unknown variant `completed`")
+		case "thread/start":
+			result := call.Result.(*codexprotocol.ThreadStartResponse)
+			result.Thread.ID = "fresh-thread"
+			result.Model = "gpt-5.6"
+			return nil
+		default:
+			t.Fatalf("unexpected method %s", call.Method)
+		}
+		return nil
+	}}
+	manager := NewManager(client)
+	token, err := manager.StartSession(context.Background(), StartSessionArgs{ChatID: "chat-1", CWD: "/tmp/project", SessionToken: "legacy-thread"})
+	if err != nil || token != "fresh-thread" {
+		t.Fatalf("expected fresh recovery, token=%q err=%v", token, err)
+	}
+}
+
 func TestStartSessionForksPendingForkToken(t *testing.T) {
 	client := &fakeRPCClient{
 		handler: func(call rpcCall) error {

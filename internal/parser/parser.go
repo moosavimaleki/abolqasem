@@ -825,6 +825,19 @@ func extractCodexMessage(raw map[string]any, sessionID string, index int) *Searc
 	}
 
 	switch eventType {
+	case "thread_settings_applied":
+		settings := asMap(payload["thread_settings"])
+		model := firstNonEmpty(stringValue(settings["model"]), stringValue(payload["model"]))
+		effort := firstNonEmpty(stringValue(settings["reasoning_effort"]), stringValue(settings["reasoningEffort"]), stringValue(payload["reasoning_effort"]))
+		if model == "" && effort == "" {
+			return nil
+		}
+		summary := strings.TrimSpace(strings.Join([]string{model, effort}, " · "))
+		msg := newCodexSearchableMessage(sessionID, index, "system", "model_change", summary, extractTimestamp(raw, payload), source)
+		if msg != nil {
+			msg.Fields = map[string]any{"model": model, "reasoningEffort": effort}
+		}
+		return msg
 	case "item_completed":
 		item := asMap(payload["item"])
 		if !strings.EqualFold(strings.TrimSpace(stringValue(item["type"])), "plan") {

@@ -215,6 +215,7 @@ describe("ChatInput", () => {
           ownerPid: 123,
         },
         onTakeOverSession: () => undefined,
+        onRefreshSessionLock: () => undefined,
       })
     ))
 
@@ -223,6 +224,8 @@ describe("ChatInput", () => {
     expect(html).toContain('disabled=""')
     expect(html).toContain('aria-label="Take over session"')
     expect(html).toContain('title="Take over session"')
+    expect(html).toContain('aria-label="Refresh session text"')
+    expect(html).toContain('title="Refresh session text"')
     expect(html).not.toContain(">Locked by another Codex<")
     expect(html).not.toContain("bg-amber")
     expect(html).not.toContain("text-amber")

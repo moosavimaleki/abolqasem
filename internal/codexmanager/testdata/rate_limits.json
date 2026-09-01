@@ -1,0 +1,27 @@
+{
+  "plan_type": "plus",
+  "rate_limit_reached_type": {"type": "weekly"},
+  "credits": {"has_credits": true, "unlimited": false, "balance": "12.5"},
+  "rate_limit": {
+    "allowed": true,
+    "limit_reached": false,
+    "primary_window": {
+      "used_percent": 17.5,
+      "limit_window_seconds": 18000,
+      "reset_at": 1770000000
+    },
+    "secondary_window": {
+      "used_percent": 39,
+      "limit_window_seconds": 604800,
+      "reset_at": 1770600000
+    }
+  },
+  "additional_rate_limits": [{
+    "limit_name": "Sora-Pro",
+    "metered_feature": "sora-pro",
+    "rate_limit": {
+      "allowed": true,
+      "primary_window": {"used_percent": 5, "limit_window_seconds": 3600}
+    }
+  }]
+}

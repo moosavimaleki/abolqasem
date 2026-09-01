@@ -48,7 +48,47 @@ func (n *StreamNormalizer) HandleNotification(notification codexrpc.Notification
 	case "thread/compacted":
 		return []HarnessEvent{{Type: "transcript", Entry: transcript.New(transcript.KindCompactBoundary, nil)}}
 	case "turn/started":
-		return activityEvents(notification.Params, "thinking")
+		events := activityEvents(notification.Params, "thinking")
+		var params struct {
+			Model           string `json:"model"`
+			Effort          string `json:"effort"`
+			ReasoningEffort string `json:"reasoning_effort"`
+			Collaboration   struct {
+				Settings struct {
+					Model           string `json:"model"`
+					ReasoningEffort string `json:"reasoning_effort"`
+				} `json:"settings"`
+			} `json:"collaborationMode"`
+			CollaborationSnake struct {
+				Settings struct {
+					Model           string `json:"model"`
+					ReasoningEffort string `json:"reasoning_effort"`
+				} `json:"settings"`
+			} `json:"collaboration_mode"`
+		}
+		if decodeParams(notification.Params, &params) == nil {
+			effort := params.Effort
+			if effort == "" {
+				effort = params.ReasoningEffort
+			}
+			if params.Model == "" {
+				params.Model = params.Collaboration.Settings.Model
+			}
+			if params.Model == "" {
+				params.Model = params.CollaborationSnake.Settings.Model
+			}
+			if effort == "" {
+				effort = params.Collaboration.Settings.ReasoningEffort
+			}
+			if effort == "" {
+				effort = params.CollaborationSnake.Settings.ReasoningEffort
+			}
+			if params.Model == "" && effort == "" {
+				return events
+			}
+			events = append(events, HarnessEvent{Type: "transcript", Entry: transcript.New(transcript.KindModelChange, map[string]any{"model": params.Model, "reasoningEffort": effort})})
+		}
+		return events
 	case "turn/plan/updated":
 		return turnPlanEvents(notification.Params)
 	case "item/commandExecution/outputDelta":
@@ -76,6 +116,8 @@ func itemStartedEvents(raw json.RawMessage) []HarnessEvent {
 	switch asString(params.Item["type"]) {
 	case "plan":
 		return planItemEvents(params.Item)
+	case "mcpToolCall", "mcp_tool_call":
+		return mcpToolCallStartedEvents(params.Item)
 	case "commandExecution":
 		command := asString(params.Item["command"])
 		if command == "" {
@@ -126,6 +168,8 @@ func itemCompletedEvents(raw json.RawMessage) []HarnessEvent {
 	switch asString(params.Item["type"]) {
 	case "plan":
 		return planItemEvents(params.Item)
+	case "mcpToolCall", "mcp_tool_call":
+		return mcpToolCallCompletedEvents(params.Item)
 	case "agentMessage":
 		text := asString(params.Item["text"])
 		if text == "" {
@@ -142,6 +186,66 @@ func itemCompletedEvents(raw json.RawMessage) []HarnessEvent {
 	default:
 		return nil
 	}
+}
+
+// Codex app-server exposes MCP invocations as native items. Keep them as
+// regular tool calls in the transcript so the web client renders the same
+// expandable tool card used by Claude and other providers.
+func mcpToolCallStartedEvents(item map[string]any) []HarnessEvent {
+	toolCall := mcpToolCallEntry(item)
+	if toolCall == nil {
+		return nil
+	}
+	return []HarnessEvent{
+		{Type: "transcript", Entry: toolCall},
+		{Type: "transcript", Entry: transcript.New(transcript.KindTurnActivity, map[string]any{"activity": "running_mcp_tool"})},
+	}
+}
+
+func mcpToolCallCompletedEvents(item map[string]any) []HarnessEvent {
+	itemID := asString(item["id"])
+	if itemID == "" {
+		return nil
+	}
+
+	result := firstNonNil(item["result"], item["output"], item["content"])
+	status := firstStringValue(item, "status")
+	errorValue := firstNonNil(item["error"], item["failure"])
+	isError := status == "failed" || status == "error" || errorValue != nil
+	if result == nil && errorValue != nil {
+		result = errorValue
+	}
+	return []HarnessEvent{{Type: "transcript", Entry: transcript.New(transcript.KindToolResult, map[string]any{
+		"toolId":  itemID,
+		"content": result,
+		"isError": isError,
+	})}}
+}
+
+func mcpToolCallEntry(item map[string]any) readmodels.TranscriptEntry {
+	itemID := asString(item["id"])
+	server := firstStringValue(item, "server", "serverName", "server_name")
+	tool := firstStringValue(item, "tool", "toolName", "tool_name")
+	if itemID == "" || tool == "" {
+		return nil
+	}
+	arguments := firstNonNil(item["arguments"], item["input"], item["params"])
+	if arguments == nil {
+		arguments = map[string]any{}
+	}
+	return transcript.New(transcript.KindToolCall, map[string]any{
+		"tool": map[string]any{
+			"kind":     "tool",
+			"toolKind": "mcp_generic",
+			"toolName": "mcp__" + server + "__" + tool,
+			"toolId":   itemID,
+			"input": map[string]any{
+				"server":  server,
+				"tool":    tool,
+				"payload": arguments,
+			},
+		},
+	})
 }
 
 func commandExecutionFields(item map[string]any) map[string]any {

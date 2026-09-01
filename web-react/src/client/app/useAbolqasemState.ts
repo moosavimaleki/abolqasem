@@ -22,6 +22,16 @@ import { chatRoute } from "./routes"
 import type { EditorOpenSettings, OpenExternalAction } from "../../shared/protocol"
 import { RESTORE_CHAT_INPUT_FOCUS_EVENT } from "./chatFocusPolicy"
 
+// A session can be receiving work in a separate Codex client. The hook stream
+// delivers updates immediately when that client emits them; this lightweight
+// refresh is the reliable fallback for in-progress transcript writes.
+export const ACTIVE_CHAT_REFRESH_INTERVAL_MS = 1_000
+export const BACKGROUND_CHAT_REFRESH_INTERVAL_MS = 15_000
+
+export function getActiveChatRefreshDelay(doc: Pick<Document, "visibilityState"> = document) {
+  return doc.visibilityState === "visible" ? ACTIVE_CHAT_REFRESH_INTERVAL_MS : BACKGROUND_CHAT_REFRESH_INTERVAL_MS
+}
+
 function sameRuntime(left: ChatSnapshot["runtime"] | null | undefined, right: ChatSnapshot["runtime"] | null | undefined) {
   if (left === right) return true
   if (!left || !right) return false
@@ -43,20 +53,17 @@ function sameRuntime(left: ChatSnapshot["runtime"] | null | undefined, right: Ch
     && JSON.stringify(left.codexLock) === JSON.stringify(right.codexLock)
 }
 
-function sameTranscriptEntries(left: ChatSnapshot["messages"] | null | undefined, right: ChatSnapshot["messages"] | null | undefined) {
+export function sameTranscriptEntries(left: ChatSnapshot["messages"] | null | undefined, right: ChatSnapshot["messages"] | null | undefined) {
   if (left === right) return true
   if (!left || !right) return false
   if (left.length !== right.length) return false
   return left.every((entry, index) => {
     const other = right[index]
     if (!other || entry._id !== other._id) return false
-    if (entry._id.startsWith("tmux-capture-") || other._id.startsWith("tmux-capture-")) {
-      return entry.kind === other.kind
-        && entry.kind === "assistant_text"
-        && other.kind === "assistant_text"
-        && entry.text === other.text
-    }
-    return true
+    // Native Codex writes streaming output by updating the existing item. Its
+    // id is stable, so comparing ids alone made fresh snapshots look unchanged
+    // and delayed the visible transcript until a later item was appended.
+    return JSON.stringify(entry) === JSON.stringify(other)
   })
 }
 
@@ -718,6 +725,15 @@ function composerStateFromSendOptions(options?: {
     }
   }
 
+  if (options?.provider === "opencode" && options.model) {
+    return {
+      provider: "opencode",
+      model: options.model,
+      modelOptions: { ...options.modelOptions?.opencode },
+      planMode: Boolean(options.planMode),
+    }
+  }
+
   return null
 }
 
@@ -735,6 +751,15 @@ export function getComposerStateForActiveProvider(
       provider: "claude",
       model: providerDefaults.claude.model,
       modelOptions: { ...providerDefaults.claude.modelOptions },
+      planMode: composerState.planMode,
+    }
+  }
+
+  if (activeProvider === "opencode") {
+    return {
+      provider: "opencode",
+      model: providerDefaults.opencode.model,
+      modelOptions: { ...providerDefaults.opencode.modelOptions },
       planMode: composerState.planMode,
     }
   }
@@ -962,6 +987,7 @@ export interface AbolqasemState {
   handleRenameChat: (chat: SidebarChatRow) => Promise<void>
   handleRenameProject: (projectId: string, sidebarTitle: string | undefined, realTitle: string) => Promise<void>
   handleArchiveChat: (chat: SidebarChatRow) => Promise<void>
+  handlePinChat: (chat: SidebarChatRow) => Promise<void>
   handleOpenArchivedChat: (chatId: string) => Promise<void>
   handleDeleteChat: (chat: SidebarChatRow) => Promise<void>
   handleHideProject: (projectId: string) => Promise<void>
@@ -1371,6 +1397,55 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
       unsubscribe()
     }
   }, [activeChatId, socket])
+
+  useEffect(() => {
+    if (!activeChatId || connectionStatus !== "connected") return
+
+    let cancelled = false
+    let inFlight = false
+    let timerId: number | null = null
+
+    const clearTimer = () => {
+      if (timerId === null) return
+      window.clearTimeout(timerId)
+      timerId = null
+    }
+    const schedule = (delay: number) => {
+      clearTimer()
+      timerId = window.setTimeout(refresh, delay)
+    }
+    const refresh = () => {
+      if (cancelled) return
+      if (inFlight) {
+        schedule(getActiveChatRefreshDelay())
+        return
+      }
+      inFlight = true
+      void socket.command({ type: "chat.refresh", chatId: activeChatId })
+        // This is an opportunistic sync. Connection recovery already owns the
+        // user-facing error state, so a transient background miss stays quiet.
+        .catch(() => undefined)
+        .finally(() => {
+          inFlight = false
+          if (!cancelled) schedule(getActiveChatRefreshDelay())
+        })
+    }
+    const refreshImmediately = () => {
+      if (document.visibilityState !== "visible") return
+      clearTimer()
+      refresh()
+    }
+
+    document.addEventListener("visibilitychange", refreshImmediately)
+    window.addEventListener("focus", refreshImmediately)
+    refresh()
+    return () => {
+      cancelled = true
+      clearTimer()
+      document.removeEventListener("visibilitychange", refreshImmediately)
+      window.removeEventListener("focus", refreshImmediately)
+    }
+  }, [activeChatId, connectionStatus, socket])
 
   useEffect(() => {
     if (selectedProjectId) return
@@ -1835,7 +1910,7 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
         targetProvider: provider,
       })
       setSessionForkOperation(null)
-		const providerLabel = provider === "claude" ? "Claude" : "Codex"
+		const providerLabel = provider === "claude" ? "Claude" : provider === "opencode" ? "OpenCode" : "Codex"
       const confirmed = await dialog.confirm({
         dir: direction,
         title: locale === "fa" ? `Fork به ${providerLabel}؟` : `Fork to ${providerLabel}?`,
@@ -2329,6 +2404,15 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
     }
   }, [activeChatId, navigate, sidebarProjectGroups, socket])
 
+  const handlePinChat = useCallback(async (chat: SidebarChatRow) => {
+    try {
+      setCommandError(null)
+      await socket.command({ type: "chat.pin", chatId: chat.chatId, pinned: !chat.pinned })
+    } catch (error) {
+      setCommandError(error instanceof Error ? error.message : String(error))
+    }
+  }, [socket])
+
   const handleOpenArchivedChat = useCallback(async (chatId: string) => {
     try {
       setPendingChatId(chatId)
@@ -2624,6 +2708,7 @@ export function useAbolqasemState(activeChatId: string | null): AbolqasemState {
     handleRenameChat,
     handleRenameProject,
     handleArchiveChat,
+    handlePinChat,
     handleOpenArchivedChat,
     handleDeleteChat,
     handleHideProject,

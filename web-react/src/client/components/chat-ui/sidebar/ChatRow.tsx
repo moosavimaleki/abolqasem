@@ -1,5 +1,5 @@
 import { memo, useState } from "react"
-import { Archive, ChevronDown, Loader2, Split } from "lucide-react"
+import { Archive, ChevronDown, Loader2, Pin, Split } from "lucide-react"
 import type { AgentProvider, SidebarChatRow } from "../../../../shared/types"
 import { AnimatedShinyText } from "../../ui/animated-shiny-text"
 import { Button } from "../../ui/button"
@@ -16,6 +16,7 @@ const loadingStatuses = new Set(["starting", "running"])
 const providerLabels: Record<AgentProvider, string> = {
   claude: "Claude",
   codex: "Codex",
+  opencode: "OpenCode",
 }
 interface Props {
   chat: SidebarChatRow
@@ -30,6 +31,7 @@ interface Props {
   onForkChat: (chatId: string) => void
   onConvertChat: (chatId: string, provider: AgentProvider) => void
   onArchiveChat: (chatId: string) => void
+  onPinChat?: (chatId: string, pinned: boolean) => void
   onDeleteChat: (chatId: string) => void
   isArchiving?: boolean
 }
@@ -47,6 +49,7 @@ function ChatRowImpl({
   onForkChat,
   onConvertChat,
   onArchiveChat,
+  onPinChat = () => undefined,
   onDeleteChat,
   isArchiving = false,
 }: Props) {
@@ -137,6 +140,7 @@ function ChatRowImpl({
           <span dir="auto" className="text-muted-foreground">{displayTitle}</span>
         )}
       </span>
+      {chat.pinned ? <Pin className="size-3 shrink-0 text-primary" aria-label="Pinned" /> : null}
       {chat.readOnly ? (
         <span dir={direction} className="hidden rounded-full border border-border/70 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground md:inline-flex">
           {t.sidebar.readOnly}
@@ -196,8 +200,8 @@ function ChatRowImpl({
                     <span>{t.common.fork}</span>
                     <Split className="size-3.5 text-muted-foreground" />
                   </button>
-                  {(["claude", "codex"] as const).map((provider) => {
-                    const label = provider === "claude" ? "Claude" : "Codex"
+                  {(["claude", "codex", "opencode"] as const).map((provider) => {
+                    const label = provider === "claude" ? "Claude" : provider === "codex" ? "Codex" : "OpenCode"
                     return (
                       <button
                         key={provider}
@@ -243,6 +247,8 @@ function ChatRowImpl({
       onFork={() => onForkChat(chat.chatId)}
       onConvert={(provider) => onConvertChat(chat.chatId, provider)}
       onArchive={() => onArchiveChat(chat.chatId)}
+      onPin={() => onPinChat(chat.chatId, !chat.pinned)}
+      pinned={Boolean(chat.pinned)}
       onDelete={() => onDeleteChat(chat.chatId)}
     >
       {row}

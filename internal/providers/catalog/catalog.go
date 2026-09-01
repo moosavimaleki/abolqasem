@@ -21,6 +21,7 @@ import (
 type ProviderCatalogEntry struct {
 	ID               string                 `json:"id"`
 	Label            string                 `json:"label"`
+	Available        bool                   `json:"available,omitempty"`
 	DefaultModel     string                 `json:"defaultModel"`
 	DefaultEffort    string                 `json:"defaultEffort,omitempty"`
 	SupportsPlanMode bool                   `json:"supportsPlanMode"`
@@ -92,6 +93,7 @@ const (
 	MinGPT55CodexCLIVersion      = "0.124.0"
 	DefaultCodexReasoningEffort  = "high"
 	DefaultCodexExecutionMode    = "dangerous"
+	DefaultOpenCodeModel         = "opencode/nemotron-3.5-lightning-free"
 	ServiceTierFast              = "fast"
 )
 
@@ -600,6 +602,16 @@ var serverProviders = []ProviderCatalogEntry{
 			{ID: "gpt-5.4", Label: "GPT-5.4", SupportsEffort: false},
 			{ID: "gpt-5.3-codex", Label: "GPT-5.3 Codex", SupportsEffort: false},
 			{ID: "gpt-5.3-codex-spark", Label: "GPT-5.3 Codex Spark", SupportsEffort: false},
+		},
+		Efforts: []ProviderEffortOption{},
+	},
+	{
+		ID:               "opencode",
+		Label:            "OpenCode",
+		DefaultModel:     DefaultOpenCodeModel,
+		SupportsPlanMode: false,
+		Models: []ProviderModelOption{
+			{ID: DefaultOpenCodeModel, Label: "Nemotron 3.5 Lightning (OpenCode Free)", SupportsEffort: false},
 		},
 		Efforts: []ProviderEffortOption{},
 	},

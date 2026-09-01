@@ -40,10 +40,7 @@ interface AuthStatusResponse {
   authenticated: boolean
 }
 
-type AppAuthState =
-  | { status: "checking" }
-  | { status: "ready" }
-  | { status: "locked"; error: string | null }
+type AppAuthState = { status: "checking" } | { status: "ready" } | { status: "locked"; error: string | null }
 
 export interface HookStreamEvent {
   source?: string
@@ -73,27 +70,10 @@ export function getHookToastMode(appSettings: AppSettingsSnapshot | null): "foll
   return hookNotifications.followMode === "notice" ? "notice" : "follow"
 }
 
-export function shouldShowHookUpdateToast(
-  event: HookStreamEvent | null,
-  activeChatId: string | null,
-  appSettings: AppSettingsSnapshot | null
-) {
+export function shouldShowHookUpdateToast(event: HookStreamEvent | null, activeChatId: string | null, appSettings: AppSettingsSnapshot | null) {
   return Boolean(
-    event?.source === "hook"
-      && event.response_complete === true
-      && event.chat_id
-      && event.chat_id !== activeChatId
-      && getHookToastMode(appSettings)
+    event?.source === "hook" && event.response_complete === true && event.chat_id && event.chat_id !== activeChatId && getHookToastMode(appSettings)
   )
-}
-
-function parseHookStreamEvent(data: string): HookStreamEvent | null {
-  try {
-    const parsed = JSON.parse(data) as HookStreamEvent
-    return parsed && typeof parsed === "object" ? parsed : null
-  } catch {
-    return null
-  }
 }
 
 function SplashScreen({
@@ -110,10 +90,7 @@ function SplashScreen({
   return (
     <div
       dir={getLocaleDirection(locale)}
-      className={cn(
-        "abolqasem-splash-screen min-h-[100dvh] overflow-hidden bg-background text-foreground",
-        appearanceClassName,
-      )}
+      className={cn("abolqasem-splash-screen min-h-[100dvh] overflow-hidden bg-background text-foreground", appearanceClassName)}
     >
       <main className="abolqasem-splash" aria-label={`${title} loading screen`}>
         <div className="abolqasem-splash-aura" />
@@ -152,12 +129,8 @@ function HookUpdateToast({
   const dismissLabel = locale === "fa" ? "بستن" : "Dismiss"
   const settingsLabel = locale === "fa" ? "تنظیمات" : "Settings"
   const isFollowMode = toast.mode === "follow"
-  const primaryLabel = isFollowMode
-    ? (locale === "fa" ? "رفتن" : "Open")
-    : (locale === "fa" ? "ماندن" : "Stay")
-  const secondaryLabel = isFollowMode
-    ? (locale === "fa" ? "ماندن" : "Stay")
-    : (locale === "fa" ? "باز کردن" : "Open")
+  const primaryLabel = isFollowMode ? (locale === "fa" ? "رفتن" : "Open") : locale === "fa" ? "ماندن" : "Stay"
+  const secondaryLabel = isFollowMode ? (locale === "fa" ? "ماندن" : "Stay") : locale === "fa" ? "باز کردن" : "Open"
   const isRtl = getLocaleDirection(locale) === "rtl"
   const sessionName = toast.sessionName || (locale === "fa" ? "سشن" : "Session")
 
@@ -176,7 +149,7 @@ function HookUpdateToast({
       dir={getLocaleDirection(locale)}
       className={cn(
         "fixed top-4 z-[1100] w-[calc(100vw-2rem)] max-w-sm rounded-lg border border-border bg-popover p-3 text-popover-foreground shadow-lg pointer-events-auto",
-        isRtl ? "left-4" : "right-4",
+        isRtl ? "left-4" : "right-4"
       )}
     >
       <div className="flex items-start gap-3">
@@ -186,9 +159,7 @@ function HookUpdateToast({
         <div className="min-w-0 flex-1">
           <div className="text-sm font-semibold">{title}</div>
           <div className="mt-0.5 truncate text-sm text-muted-foreground">{sessionName}</div>
-          {toast.projectName ? (
-            <div className="mt-0.5 truncate text-xs text-muted-foreground">{toast.projectName}</div>
-          ) : null}
+          {toast.projectName ? <div className="mt-0.5 truncate text-xs text-muted-foreground">{toast.projectName}</div> : null}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <Button
               type="button"
@@ -196,10 +167,7 @@ function HookUpdateToast({
               onClick={isFollowMode ? onOpen : onDismiss}
               className="relative overflow-hidden border border-border/70 bg-muted/70 text-foreground hover:bg-muted"
             >
-              <span
-                aria-hidden="true"
-                className="absolute inset-0 bg-muted/70"
-              />
+              <span aria-hidden="true" className="absolute inset-0 bg-muted/70" />
               <span
                 aria-hidden="true"
                 className="absolute inset-y-0 start-0 bg-primary/55 transition-[width] ease-linear"
@@ -220,7 +188,9 @@ function HookUpdateToast({
               />
               <span className="relative z-10">{primaryLabel}</span>
             </Button>
-            <Button type="button" variant="ghost" size="sm" onClick={isFollowMode ? onDismiss : onOpen}>{secondaryLabel}</Button>
+            <Button type="button" variant="ghost" size="sm" onClick={isFollowMode ? onDismiss : onOpen}>
+              {secondaryLabel}
+            </Button>
             <Button type="button" variant="ghost" size="sm" onClick={onOpenSettings}>
               <Settings2 className="me-1 h-4 w-4" />
               {settingsLabel}
@@ -251,28 +221,24 @@ function providerDisplayName(provider: SessionForkOperation["targetProvider"]) {
   }
 }
 
-function SessionForkLockOverlay({
-  operation,
-  locale,
-}: {
-  operation: SessionForkOperation
-  locale: "fa" | "en"
-}) {
+function SessionForkLockOverlay({ operation, locale }: { operation: SessionForkOperation; locale: "fa" | "en" }) {
   const providerName = providerDisplayName(operation.targetProvider)
-  const title = locale === "fa"
-    ? operation.kind === "convert_preview"
-      ? "در حال آماده‌سازی Fork"
-      : operation.kind === "convert"
-        ? `در حال ساخت سشن ${providerName}`
-        : "در حال Fork کردن چت"
-    : operation.kind === "convert_preview"
-      ? "Preparing fork"
-      : operation.kind === "convert"
-        ? `Creating ${providerName} session`
-        : "Forking chat"
-  const detail = locale === "fa"
-    ? "چند لحظه صبر کنید؛ تاریخچه و فایل native سشن در حال آماده‌سازی است."
-    : "Please wait while the chat history and native session file are prepared."
+  const title =
+    locale === "fa"
+      ? operation.kind === "convert_preview"
+        ? "در حال آماده‌سازی Fork"
+        : operation.kind === "convert"
+          ? `در حال ساخت سشن ${providerName}`
+          : "در حال Fork کردن چت"
+      : operation.kind === "convert_preview"
+        ? "Preparing fork"
+        : operation.kind === "convert"
+          ? `Creating ${providerName} session`
+          : "Forking chat"
+  const detail =
+    locale === "fa"
+      ? "چند لحظه صبر کنید؛ تاریخچه و فایل native سشن در حال آماده‌سازی است."
+      : "Please wait while the chat history and native session file are prepared."
 
   return (
     <div
@@ -292,9 +258,7 @@ function SessionForkLockOverlay({
             <div className="min-w-0">
               <div className="text-base font-semibold">{title}</div>
               <div className="mt-1 line-clamp-2 text-sm text-muted-foreground">{operation.sourceTitle}</div>
-              <div className="mt-4 rounded-2xl border border-border/60 bg-muted/35 px-4 py-3 text-sm text-muted-foreground">
-                {detail}
-              </div>
+              <div className="mt-4 rounded-2xl border border-border/60 bg-muted/35 px-4 py-3 text-sm text-muted-foreground">{detail}</div>
             </div>
           </div>
         </div>
@@ -346,13 +310,7 @@ export function shouldShowStartupSplash(initialBootComplete: boolean, sidebarRea
   return !initialBootComplete && (!sidebarReady || !chatReady)
 }
 
-function PasswordScreen({
-  error,
-  onSubmit,
-}: {
-  error: string | null
-  onSubmit: (password: string) => Promise<void>
-}) {
+function PasswordScreen({ error, onSubmit }: { error: string | null; onSubmit: (password: string) => Promise<void> }) {
   const [password, setPassword] = useState("")
   const [submitting, setSubmitting] = useState(false)
   const dictionary = getDictionary(normalizeLocale(document.documentElement.lang))
@@ -379,17 +337,11 @@ function PasswordScreen({
               <CardTitle className="font-logo text-xl uppercase text-slate-600 dark:text-slate-100">{APP_NAME}</CardTitle>
             </div>
           </div>
-          <CardDescription className="leading-6">
-            {dictionary.app.passwordDescription}
-          </CardDescription>
+          <CardDescription className="leading-6">{dictionary.app.passwordDescription}</CardDescription>
         </CardHeader>
         <CardContent className="px-6 pb-6">
           <form className="space-y-4" onSubmit={(event) => void handleSubmit(event)}>
-            {error ? (
-              <div className="rounded-2xl border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-foreground">
-                {error}
-              </div>
-            ) : null}
+            {error ? <div className="rounded-2xl border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-foreground">{error}</div> : null}
             <Input
               id="abolqasem-password"
               type="password"
@@ -400,11 +352,7 @@ function PasswordScreen({
               disabled={submitting}
               className="h-11 rounded-2xl bg-background"
             />
-            <Button
-              type="submit"
-              disabled={submitting || password.length === 0}
-              className="h-11 w-full"
-            >
+            <Button type="submit" disabled={submitting || password.length === 0} className="h-11 w-full">
               {submitting ? dictionary.app.unlocking : dictionary.app.unlock}
             </Button>
           </form>
@@ -424,7 +372,7 @@ function useAppAuthState() {
       retryTimeoutRef.current = null
     }
 
-    setState((current) => current.status === "ready" ? current : { status: "checking" })
+    setState((current) => (current.status === "ready" ? current : { status: "checking" }))
 
     let response: Response
     try {
@@ -449,7 +397,7 @@ function useAppAuthState() {
       return
     }
 
-    const payload = await response.json() as Partial<AuthStatusResponse>
+    const payload = (await response.json()) as Partial<AuthStatusResponse>
     setState(getAppAuthStateFromStatus(payload))
   }, [])
 
@@ -462,23 +410,32 @@ function useAppAuthState() {
     }
   }, [refresh])
 
-  const submitPassword = useCallback(async (password: string) => {
-    const response = await fetch("/auth/login", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify({ password, next: window.location.pathname + window.location.search }),
-    })
+  const submitPassword = useCallback(
+    async (password: string) => {
+      const response = await fetch("/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          password,
+          next: window.location.pathname + window.location.search,
+        }),
+      })
 
-    if (!response.ok) {
-      setState({ status: "locked", error: getDictionary(normalizeLocale(document.documentElement.lang)).app.incorrectPassword })
-      return
-    }
+      if (!response.ok) {
+        setState({
+          status: "locked",
+          error: getDictionary(normalizeLocale(document.documentElement.lang)).app.incorrectPassword,
+        })
+        return
+      }
 
-    await refresh()
-  }, [refresh])
+      await refresh()
+    },
+    [refresh]
+  )
 
   return {
     state,
@@ -543,115 +500,156 @@ function AbolqasemLayout() {
   const [isReaderOpen, setIsReaderOpen] = useState(false)
   const hookEventKeysRef = useRef<Set<string>>(new Set())
   const [hookToast, setHookToast] = useState<HookUpdateToastState | null>(null)
-  const handleSidebarCreateChat = useCallback((projectId: string) => {
-    void state.handleCreateChat(projectId)
-  }, [state.handleCreateChat])
-  const handleSidebarForkChat = useCallback((chat: Parameters<typeof state.handleForkChat>[0]) => {
-    void state.handleForkChat(chat)
-  }, [state.handleForkChat])
-  const handleSidebarConvertChat = useCallback((chat: Parameters<typeof state.handleConvertChat>[0], provider: Parameters<typeof state.handleConvertChat>[1]) => {
-    void state.handleConvertChat(chat, provider)
-  }, [state.handleConvertChat])
-  const handleSidebarRenameChat = useCallback((chat: Parameters<typeof state.handleRenameChat>[0]) => {
-    void state.handleRenameChat(chat)
-  }, [state.handleRenameChat])
-  const handleSidebarRenameProject = useCallback((projectId: string, sidebarTitle: string | undefined, realTitle: string) => {
-    void state.handleRenameProject(projectId, sidebarTitle, realTitle)
-  }, [state.handleRenameProject])
-  const handleSidebarArchiveChat = useCallback((chat: Parameters<typeof state.handleArchiveChat>[0]) => {
-    void state.handleArchiveChat(chat)
-  }, [state.handleArchiveChat])
-  const handleOpenArchivedChat = useCallback((chatId: string) => {
-    void state.handleOpenArchivedChat(chatId)
-  }, [state.handleOpenArchivedChat])
+  const handleSidebarCreateChat = useCallback(
+    (projectId: string) => {
+      void state.handleCreateChat(projectId)
+    },
+    [state.handleCreateChat]
+  )
+  const handleSidebarForkChat = useCallback(
+    (chat: Parameters<typeof state.handleForkChat>[0]) => {
+      void state.handleForkChat(chat)
+    },
+    [state.handleForkChat]
+  )
+  const handleSidebarConvertChat = useCallback(
+    (chat: Parameters<typeof state.handleConvertChat>[0], provider: Parameters<typeof state.handleConvertChat>[1]) => {
+      void state.handleConvertChat(chat, provider)
+    },
+    [state.handleConvertChat]
+  )
+  const handleSidebarRenameChat = useCallback(
+    (chat: Parameters<typeof state.handleRenameChat>[0]) => {
+      void state.handleRenameChat(chat)
+    },
+    [state.handleRenameChat]
+  )
+  const handleSidebarRenameProject = useCallback(
+    (projectId: string, sidebarTitle: string | undefined, realTitle: string) => {
+      void state.handleRenameProject(projectId, sidebarTitle, realTitle)
+    },
+    [state.handleRenameProject]
+  )
+  const handleSidebarArchiveChat = useCallback(
+    (chat: Parameters<typeof state.handleArchiveChat>[0]) => {
+      void state.handleArchiveChat(chat)
+    },
+    [state.handleArchiveChat]
+  )
+  const handleOpenArchivedChat = useCallback(
+    (chatId: string) => {
+      void state.handleOpenArchivedChat(chatId)
+    },
+    [state.handleOpenArchivedChat]
+  )
   const handleOpenAddProjectModal = useCallback(() => {
     state.openAddProjectModal()
   }, [state])
-  const handleSidebarDeleteChat = useCallback((chat: Parameters<typeof state.handleDeleteChat>[0]) => {
-    void state.handleDeleteChat(chat)
-  }, [state.handleDeleteChat])
-  const handleSidebarCopyPath = useCallback((localPath: string) => {
-    void state.handleCopyPath(localPath)
-  }, [state.handleCopyPath])
-  const handleSidebarOpenExternalPath = useCallback((action: "open_finder" | "open_editor", localPath: string) => {
-    void state.handleOpenExternalPath(action, localPath)
-  }, [state.handleOpenExternalPath])
-  const handleSidebarHideProject = useCallback((projectId: string) => {
-    void state.handleHideProject(projectId)
-  }, [state.handleHideProject])
-  const handleSidebarReorderProjectGroups = useCallback((projectIds: string[]) => {
-    void state.handleReorderProjectGroups(projectIds)
-  }, [state.handleReorderProjectGroups])
+  const handleSidebarDeleteChat = useCallback(
+    (chat: Parameters<typeof state.handleDeleteChat>[0]) => {
+      void state.handleDeleteChat(chat)
+    },
+    [state.handleDeleteChat]
+  )
+  const handleSidebarCopyPath = useCallback(
+    (localPath: string) => {
+      void state.handleCopyPath(localPath)
+    },
+    [state.handleCopyPath]
+  )
+  const handleSidebarOpenExternalPath = useCallback(
+    (action: "open_finder" | "open_editor", localPath: string) => {
+      void state.handleOpenExternalPath(action, localPath)
+    },
+    [state.handleOpenExternalPath]
+  )
+  const handleSidebarHideProject = useCallback(
+    (projectId: string) => {
+      void state.handleHideProject(projectId)
+    },
+    [state.handleHideProject]
+  )
+  const handleSidebarReorderProjectGroups = useCallback(
+    (projectIds: string[]) => {
+      void state.handleReorderProjectGroups(projectIds)
+    },
+    [state.handleReorderProjectGroups]
+  )
   const handleOpenChangelog = useCallback(() => {
     navigate(settingsRoute("changelog"))
   }, [navigate])
-  const sidebarElement = useMemo(() => (
-    <AbolqasemSidebar
-      data={state.sidebarData}
-      activeChatId={state.activeChatId}
-      connectionStatus={state.connectionStatus}
-      ready={state.sidebarReady}
-      pendingArchiveChatIds={state.pendingArchiveChatIds}
-      open={state.sidebarOpen}
-      collapsed={state.sidebarCollapsed}
-      showMobileOpenButton={showMobileOpenButton}
-      onOpen={state.openSidebar}
-      onClose={state.closeSidebar}
-      onCollapse={state.collapseSidebar}
-      onExpand={state.expandSidebar}
-      onCreateChat={handleSidebarCreateChat}
-      onForkChat={handleSidebarForkChat}
-      onConvertChat={handleSidebarConvertChat}
-      currentProjectId={state.activeProjectId}
-      creatingChatProjectId={state.creatingChatProjectId}
-      keybindings={state.keybindings}
-      onRenameChat={handleSidebarRenameChat}
-      onArchiveChat={handleSidebarArchiveChat}
-      onOpenArchivedChat={handleOpenArchivedChat}
-      onDeleteChat={handleSidebarDeleteChat}
-      onOpenAddProjectModal={handleOpenAddProjectModal}
-      onCopyPath={handleSidebarCopyPath}
-      onOpenExternalPath={handleSidebarOpenExternalPath}
-      onRenameProject={handleSidebarRenameProject}
-      onHideProject={handleSidebarHideProject}
-      onReorderProjectGroups={handleSidebarReorderProjectGroups}
-      editorLabel={state.editorLabel}
-      updateSnapshot={state.updateSnapshot}
-      onOpenChangelog={handleOpenChangelog}
-    />
-  ), [
-    handleOpenChangelog,
-    handleOpenAddProjectModal,
-    handleSidebarCopyPath,
-    handleSidebarCreateChat,
-    handleSidebarConvertChat,
-    handleSidebarArchiveChat,
-    handleSidebarDeleteChat,
-    handleOpenArchivedChat,
-    handleSidebarForkChat,
-    handleSidebarOpenExternalPath,
-    handleSidebarRenameProject,
-    handleSidebarRenameChat,
-    handleSidebarReorderProjectGroups,
-    handleSidebarHideProject,
-    showMobileOpenButton,
-    state.activeChatId,
-    state.activeProjectId,
-    state.keybindings,
-    state.closeSidebar,
-    state.collapseSidebar,
-    state.connectionStatus,
-    state.editorLabel,
-    state.expandSidebar,
-    state.openSidebar,
-    state.pendingArchiveChatIds,
-    state.sidebarCollapsed,
-    state.sidebarData,
-    state.sidebarOpen,
-    state.sidebarReady,
-    state.updateSnapshot,
-    state.creatingChatProjectId,
-  ])
+  const sidebarElement = useMemo(
+    () => (
+      <AbolqasemSidebar
+        data={state.sidebarData}
+        activeChatId={state.activeChatId}
+        connectionStatus={state.connectionStatus}
+        ready={state.sidebarReady}
+        pendingArchiveChatIds={state.pendingArchiveChatIds}
+        open={state.sidebarOpen}
+        collapsed={state.sidebarCollapsed}
+        showMobileOpenButton={showMobileOpenButton}
+        onOpen={state.openSidebar}
+        onClose={state.closeSidebar}
+        onCollapse={state.collapseSidebar}
+        onExpand={state.expandSidebar}
+        onCreateChat={handleSidebarCreateChat}
+        onForkChat={handleSidebarForkChat}
+        onConvertChat={handleSidebarConvertChat}
+        currentProjectId={state.activeProjectId}
+        creatingChatProjectId={state.creatingChatProjectId}
+        keybindings={state.keybindings}
+        onRenameChat={handleSidebarRenameChat}
+        onArchiveChat={handleSidebarArchiveChat}
+        onPinChat={state.handlePinChat}
+        onOpenArchivedChat={handleOpenArchivedChat}
+        onDeleteChat={handleSidebarDeleteChat}
+        onOpenAddProjectModal={handleOpenAddProjectModal}
+        onCopyPath={handleSidebarCopyPath}
+        onOpenExternalPath={handleSidebarOpenExternalPath}
+        onRenameProject={handleSidebarRenameProject}
+        onHideProject={handleSidebarHideProject}
+        onReorderProjectGroups={handleSidebarReorderProjectGroups}
+        editorLabel={state.editorLabel}
+        updateSnapshot={state.updateSnapshot}
+        onOpenChangelog={handleOpenChangelog}
+      />
+    ),
+    [
+      handleOpenChangelog,
+      handleOpenAddProjectModal,
+      handleSidebarCopyPath,
+      handleSidebarCreateChat,
+      handleSidebarConvertChat,
+      handleSidebarArchiveChat,
+      state.handlePinChat,
+      handleSidebarDeleteChat,
+      handleOpenArchivedChat,
+      handleSidebarForkChat,
+      handleSidebarOpenExternalPath,
+      handleSidebarRenameProject,
+      handleSidebarRenameChat,
+      handleSidebarReorderProjectGroups,
+      handleSidebarHideProject,
+      showMobileOpenButton,
+      state.activeChatId,
+      state.activeProjectId,
+      state.keybindings,
+      state.closeSidebar,
+      state.collapseSidebar,
+      state.connectionStatus,
+      state.editorLabel,
+      state.expandSidebar,
+      state.openSidebar,
+      state.pendingArchiveChatIds,
+      state.sidebarCollapsed,
+      state.sidebarData,
+      state.sidebarOpen,
+      state.sidebarReady,
+      state.updateSnapshot,
+      state.creatingChatProjectId,
+    ]
+  )
 
   useEffect(() => {
     if (!bootReady || initialBootComplete) return
@@ -670,7 +668,7 @@ function AbolqasemLayout() {
 
   useEffect(() => {
     function handleReaderModeChange(event: Event) {
-      const detail = event instanceof CustomEvent ? event.detail as { open?: boolean } | undefined : undefined
+      const detail = event instanceof CustomEvent ? (event.detail as { open?: boolean } | undefined) : undefined
       const nextOpen = Boolean(detail?.open)
       isReaderOpenRef.current = nextOpen
       setIsReaderOpen(nextOpen)
@@ -681,40 +679,41 @@ function AbolqasemLayout() {
   }, [])
 
   useEffect(() => {
-    if (typeof window === "undefined" || typeof window.EventSource === "undefined") return
+    return state.socket.subscribe<null, HookStreamEvent>(
+      { type: "global-events" },
+      () => {
+        // Global events have no initial state. The tiny subscribe snapshot is
+        // intentionally ignored; only later event envelopes are actionable.
+      },
+      (event) => {
+        if (!event || event.source !== "hook") return
+        if (isReaderOpenRef.current) return
 
-    const eventSource = new window.EventSource("/api/events")
-    eventSource.onmessage = (message) => {
-      const event = parseHookStreamEvent(message.data)
-      if (!event || event.source !== "hook") return
-      if (isReaderOpenRef.current) return
+        if (!shouldShowHookUpdateToast(event, activeChatIdRef.current, appSettingsRef.current)) return
 
-      if (!shouldShowHookUpdateToast(event, activeChatIdRef.current, appSettingsRef.current)) return
-
-      const eventKey = event.event_key || `${event.chat_id ?? ""}:${event.updated_at ?? ""}`
-      if (eventKey && hookEventKeysRef.current.has(eventKey)) return
-      if (eventKey) {
-        hookEventKeysRef.current.add(eventKey)
-        if (hookEventKeysRef.current.size > 80) {
-          hookEventKeysRef.current.clear()
+        const eventKey = event.event_key || `${event.chat_id ?? ""}:${event.updated_at ?? ""}`
+        if (eventKey && hookEventKeysRef.current.has(eventKey)) return
+        if (eventKey) {
           hookEventKeysRef.current.add(eventKey)
+          if (hookEventKeysRef.current.size > 80) {
+            hookEventKeysRef.current.clear()
+            hookEventKeysRef.current.add(eventKey)
+          }
         }
+
+        const toastMode = getHookToastMode(appSettingsRef.current)
+        if (!toastMode) return
+
+        setHookToast({
+          id: eventKey || String(Date.now()),
+          chatId: event.chat_id || "",
+          sessionName: event.session_name || event.session_id || "",
+          projectName: event.project_name || "",
+          mode: toastMode,
+        })
       }
-
-      const toastMode = getHookToastMode(appSettingsRef.current)
-      if (!toastMode) return
-
-      setHookToast({
-        id: eventKey || String(Date.now()),
-        chatId: event.chat_id || "",
-        sessionName: event.session_name || event.session_id || "",
-        projectName: event.project_name || "",
-        mode: toastMode,
-      })
-    }
-
-    return () => eventSource.close()
-  }, [])
+    )
+  }, [state.socket])
 
   useEffect(() => {
     if (!hookToast) return
@@ -722,7 +721,7 @@ function AbolqasemLayout() {
       if (hookToast.mode === "follow" && !isReaderOpenRef.current) {
         navigate(chatRoute(hookToast.chatId))
       }
-      setHookToast((current) => current?.id === hookToast.id ? null : current)
+      setHookToast((current) => (current?.id === hookToast.id ? null : current))
     }, HOOK_TOAST_TIMEOUT_MS)
     return () => window.clearTimeout(timeout)
   }, [hookToast, navigate])
@@ -809,9 +808,7 @@ function AbolqasemLayout() {
             onDismiss={() => setHookToast(null)}
           />
         ) : null}
-        {state.sessionForkOperation ? (
-          <SessionForkLockOverlay operation={state.sessionForkOperation} locale={locale} />
-        ) : null}
+        {state.sessionForkOperation ? <SessionForkLockOverlay operation={state.sessionForkOperation} locale={locale} /> : null}
       </div>
     </I18nProvider>
   )

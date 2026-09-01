@@ -26,15 +26,17 @@ func Streams() []string {
 }
 
 const (
-	TypeProjectOpened         = "project_opened"
-	TypeProjectSidebarRenamed = "project_sidebar_renamed"
-	TypeProjectRemoved        = "project_removed"
+	TypeProjectOpened           = "project_opened"
+	TypeProjectSidebarRenamed   = "project_sidebar_renamed"
+	TypeProjectSidebarReordered = "project_sidebar_reordered"
+	TypeProjectRemoved          = "project_removed"
 
 	TypeChatCreated      = "chat_created"
 	TypeChatRenamed      = "chat_renamed"
 	TypeChatDeleted      = "chat_deleted"
 	TypeChatArchived     = "chat_archived"
 	TypeChatUnarchived   = "chat_unarchived"
+	TypeChatPinned       = "chat_pinned"
 	TypeChatProviderSet  = "chat_provider_set"
 	TypeChatPlanModeSet  = "chat_plan_mode_set"
 	TypeChatReadStateSet = "chat_read_state_set"

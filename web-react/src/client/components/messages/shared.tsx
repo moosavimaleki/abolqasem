@@ -28,6 +28,7 @@ import {
   SquareX,
   Terminal,
   ToyBrick,
+  Plug,
   type LucideIcon,
   File,
   FilePen,
@@ -100,6 +101,9 @@ export const defaultToolIcon: LucideIcon = ToyBrick
 
 // Get icon for a tool.
 export function getToolIcon(toolName: string): LucideIcon {
+  if (toolName.startsWith("mcp__")) {
+    return Plug
+  }
   if (toolIcons[toolName]) {
     return toolIcons[toolName]
   }

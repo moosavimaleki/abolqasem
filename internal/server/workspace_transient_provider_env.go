@@ -31,6 +31,11 @@ func workspaceTransientProviderEnv(provider string) ([]string, func(), error) {
 	env := baseEnv
 
 	switch provider {
+	case "opencode":
+		// OpenCode keeps its own state; no credential copy is needed for a
+		// one-shot commit message. Keep the configured proxy environment.
+		cleanup()
+		return baseEnv, func() {}, nil
 	case "codex":
 		sourceRoot = workspaceCodexRootDir()
 		targetRoot = filepath.Join(tempHome, ".codex")

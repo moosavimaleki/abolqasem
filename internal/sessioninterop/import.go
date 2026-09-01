@@ -57,9 +57,12 @@ func importEntries(agent string, sessionID string, transcriptPath string) ([]rea
 		if err != nil {
 			return nil, err
 		}
-		var raw any
+		var raw map[string]any
 		if err := json.Unmarshal(data, &raw); err != nil {
 			return nil, err
+		}
+		if agent == "opencode" {
+			return importOpenCodeExport(sessionID, raw), nil
 		}
 		return nil, nil
 	}
@@ -89,6 +92,8 @@ func importEntries(agent string, sessionID string, transcriptPath string) ([]rea
 			chunk = importClaudeLine(sessionID, raw, index)
 		case "codex":
 			chunk = importCodexLine(sessionID, raw, index, codexCustomCommands)
+		case "opencode":
+			chunk = importOpenCodeLine(sessionID, raw, index)
 		}
 		entries = append(entries, chunk...)
 	}
@@ -96,6 +101,53 @@ func importEntries(agent string, sessionID string, transcriptPath string) ([]rea
 		return entries, err
 	}
 	return dedupeAdjacentTranscriptEntries(entries), nil
+}
+
+func importOpenCodeExport(sessionID string, raw map[string]any) []readmodels.TranscriptEntry {
+	messages, _ := raw["messages"].([]any)
+	entries := make([]readmodels.TranscriptEntry, 0, len(messages)*2)
+	for index, messageRaw := range messages {
+		message := mapValue(messageRaw)
+		info := mapValue(message["info"])
+		role := strings.ToLower(strings.TrimSpace(stringValue(info["role"])))
+		createdAt := parseUnixMilli(mapValue(info["time"])["created"])
+		entries = append(entries, importOpenCodeParts(sessionID, role, message["parts"], createdAt, index)...)
+	}
+	return dedupeAdjacentTranscriptEntries(entries)
+}
+
+func importOpenCodeLine(sessionID string, raw map[string]any, index int) []readmodels.TranscriptEntry {
+	role := strings.ToLower(strings.TrimSpace(firstNonEmptyString(stringValue(raw["role"]), stringValue(mapValue(raw["info"])["role"]))))
+	createdAt := parseUnixMilli(firstNonNil(raw["created"], raw["timestamp"], mapValue(mapValue(raw["info"])["time"])["created"]))
+	return importOpenCodeParts(sessionID, role, firstNonNil(raw["parts"], raw["part"]), createdAt, index)
+}
+
+func importOpenCodeParts(sessionID string, role string, rawParts any, createdAt int64, index int) []readmodels.TranscriptEntry {
+	parts, _ := rawParts.([]any)
+	entries := make([]readmodels.TranscriptEntry, 0, len(parts))
+	for partIndex, partRaw := range parts {
+		part := mapValue(partRaw)
+		if stringValue(part["type"]) != "text" {
+			continue
+		}
+		text := strings.TrimSpace(stringValue(part["text"]))
+		if text == "" {
+			continue
+		}
+		fields := map[string]any{
+			"_id":       fmt.Sprintf("opencode-%s-%s-%d-%d", role, sessionID, index, partIndex),
+			"createdAt": float64(createdAt),
+		}
+		switch role {
+		case "user":
+			fields["content"] = text
+			entries = append(entries, newEntryAt(transcript.KindUserPrompt, fields))
+		case "assistant":
+			fields["text"] = text
+			entries = append(entries, newEntryAt(transcript.KindAssistantText, fields))
+		}
+	}
+	return entries
 }
 
 func importClaudeLine(sessionID string, raw map[string]any, index int) []readmodels.TranscriptEntry {
@@ -265,12 +317,17 @@ func importCodexLine(sessionID string, raw map[string]any, index int, customComm
 		case "function_call":
 			toolName := stringValue(payload["name"])
 			input := parseJSONStringOrRaw(stringValue(payload["arguments"]))
+			toolKind := inferToolKind(toolName)
+			if server, tool, ok := splitMCPToolName(toolName); ok {
+				input = map[string]any{"server": server, "tool": tool, "payload": input}
+				toolKind = "mcp_generic"
+			}
 			return []readmodels.TranscriptEntry{newEntryAt(transcript.KindToolCall, map[string]any{
 				"_id":       fmt.Sprintf("codex-tool-call-%s-%d", sessionID, index),
 				"createdAt": float64(createdAt),
 				"tool": map[string]any{
 					"kind":     "tool",
-					"toolKind": inferToolKind(toolName),
+					"toolKind": toolKind,
 					"toolName": toolName,
 					"toolId":   stringValue(payload["call_id"]),
 					"input":    input,
@@ -437,6 +494,9 @@ func isEmbeddedDataURL(text string) bool {
 
 func inferToolKind(toolName string) string {
 	normalized := strings.ToLower(strings.TrimSpace(toolName))
+	if _, _, ok := splitMCPToolName(toolName); ok {
+		return "mcp_generic"
+	}
 	switch normalized {
 	case "bash", "exec_command":
 		return "bash"
@@ -464,6 +524,18 @@ func inferToolKind(toolName string) string {
 		}
 		return normalized
 	}
+}
+
+func splitMCPToolName(toolName string) (string, string, bool) {
+	name := strings.TrimSpace(toolName)
+	if len(name) < len("mcp____") || !strings.EqualFold(name[:len("mcp__")], "mcp__") {
+		return "", "", false
+	}
+	parts := strings.SplitN(name[len("mcp__"):], "__", 2)
+	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+		return "", "", false
+	}
+	return parts[0], parts[1], true
 }
 
 func flattenUnknown(value any) string {

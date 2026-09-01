@@ -170,6 +170,8 @@ esac
 
 BINARY="$(find "$EXTRACT_DIR" -type f -name "$APP$TARGET_SUFFIX" | head -n 1)"
 [ -n "$BINARY" ] || die "binary not found in $ASSET"
+SIDECAR="$(find "$EXTRACT_DIR" -type f -name "codex-manager-gateway$TARGET_SUFFIX" | head -n 1)"
+[ -n "$SIDECAR" ] || die "Codex Manager sidecar not found in $ASSET"
 
 INSTALL_DIR="$(default_bin_dir)"
 INSTALL_PATH="$INSTALL_DIR/$APP$TARGET_SUFFIX"
@@ -178,6 +180,7 @@ if [ -x "$INSTALL_PATH" ]; then
   "$INSTALL_PATH" service stop >/dev/null 2>&1 || true
 fi
 install_file "$BINARY" "$INSTALL_PATH"
+install_file "$SIDECAR" "$INSTALL_DIR/codex-manager-gateway$TARGET_SUFFIX"
 "$INSTALL_PATH" --help >/dev/null
 
 log "Installed $APP to $INSTALL_PATH"

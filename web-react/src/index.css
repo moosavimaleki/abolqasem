@@ -442,13 +442,21 @@
   /* Restore list styles for markdown content */
   .prose ul {
     list-style-type: disc;
-    padding-left: 1.5em;
+    /* `padding-left` only creates a gutter on the physical left. In an RTL
+       message the marker is on the right, so it escaped cards and callouts.
+       Use logical padding so the marker always receives an in-content gutter
+       on the writing-direction start edge. */
+    padding-inline-start: 1.5em;
+    padding-inline-end: 0;
+    padding-left: 0;
     margin: 0.5em 0;
   }
 
   .prose ol {
     list-style-type: decimal;
-    padding-left: 1.5em;
+    padding-inline-start: 1.5em;
+    padding-inline-end: 0;
+    padding-left: 0;
     margin: 0.5em 0;
   }
 

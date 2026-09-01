@@ -38,6 +38,22 @@ func TestImportLegacySessionCodexCurrentFormatSkipsInternalAndImageBlocks(t *tes
 	}
 }
 
+func TestImportLegacySessionOpenCodeExportReadsUserAndAssistantText(t *testing.T) {
+	root := t.TempDir()
+	transcriptPath := filepath.Join(root, "ses_open.json")
+	body := `{"info":{"id":"ses_open","directory":"/tmp/project"},"messages":[{"info":{"role":"user","time":{"created":1788012630706}},"parts":[{"type":"text","text":"hello"}]},{"info":{"role":"assistant","time":{"created":1788012630724}},"parts":[{"type":"reasoning","text":"private"},{"type":"text","text":"world"}]}]}`
+	if err := os.WriteFile(transcriptPath, []byte(body), 0o600); err != nil {
+		t.Fatalf("write transcript: %v", err)
+	}
+	result, err := ImportLegacySession(state.SessionMeta{Agent: "opencode", SessionID: "ses_open", TranscriptPath: transcriptPath, Cwd: "/tmp/project"})
+	if err != nil {
+		t.Fatalf("ImportLegacySession returned error: %v", err)
+	}
+	if len(result.Entries) != 2 || result.Entries[0]["content"] != "hello" || result.Entries[1]["text"] != "world" {
+		t.Fatalf("entries = %#v", result.Entries)
+	}
+}
+
 func TestImportLegacySessionCodexCustomExecAsCommandExecution(t *testing.T) {
 	root := t.TempDir()
 	transcriptPath := filepath.Join(root, "codex-custom-exec.jsonl")
@@ -69,6 +85,31 @@ func TestImportLegacySessionCodexCustomExecAsCommandExecution(t *testing.T) {
 	}
 	if !strings.Contains(stringValue(completed["aggregatedOutput"]), "./examples/text_basic.py") {
 		t.Fatalf("expected command output, got %#v", completed)
+	}
+}
+
+func TestImportLegacySessionCodexMCPFunctionCall(t *testing.T) {
+	root := t.TempDir()
+	transcriptPath := filepath.Join(root, "codex-mcp.jsonl")
+	body := strings.Join([]string{
+		`{"timestamp":"2026-08-24T12:23:00.756Z","type":"response_item","payload":{"type":"function_call","call_id":"mcp-1","name":"mcp__filesystem__read_file","arguments":"{\"path\":\"/tmp/report.txt\"}"}}`,
+		`{"timestamp":"2026-08-24T12:23:00.927Z","type":"response_item","payload":{"type":"function_call_output","call_id":"mcp-1","output":"hello"}}`,
+	}, "\n")
+	if err := os.WriteFile(transcriptPath, []byte(body), 0o644); err != nil {
+		t.Fatalf("write transcript: %v", err)
+	}
+
+	result, err := ImportLegacySession(state.SessionMeta{Agent: "codex", SessionID: "codex-mcp", TranscriptPath: transcriptPath})
+	if err != nil {
+		t.Fatalf("ImportLegacySession returned error: %v", err)
+	}
+	if len(result.Entries) != 2 || transcript.Kind(result.Entries[0]) != transcript.KindToolCall || transcript.Kind(result.Entries[1]) != transcript.KindToolResult {
+		t.Fatalf("unexpected MCP entries: %#v", result.Entries)
+	}
+	tool := result.Entries[0]["tool"].(map[string]any)
+	input := tool["input"].(map[string]any)
+	if tool["toolKind"] != "mcp_generic" || input["server"] != "filesystem" || input["tool"] != "read_file" {
+		t.Fatalf("unexpected MCP tool: %#v", tool)
 	}
 }
 

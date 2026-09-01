@@ -38,6 +38,27 @@ function Build-Target {
     go build -trimpath -ldflags="-s -w" -o $Out $Pkg
 }
 
+function Build-SidecarTarget {
+    param(
+        [string]$Goos,
+        [string]$Goarch
+    )
+
+    if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
+        throw "Rust cargo is required to build the Codex Manager sidecar"
+    }
+    $Target = "$Goos-$Goarch"
+    $Script = Join-Path $PSScriptRoot "build-sidecar.sh"
+    if (Get-Command sh -ErrorAction SilentlyContinue) {
+        & sh $Script --target $Target
+    } else {
+        throw "sh is required to run the shared sidecar build script"
+    }
+    if ($LASTEXITCODE -ne 0) {
+        throw "Codex Manager sidecar build failed for $Target"
+    }
+}
+
 function Build-AllTargets {
     if (Test-Path $Dist) {
         Remove-Item -Recurse -Force $Dist
@@ -48,6 +69,13 @@ function Build-AllTargets {
     Build-Target "darwin" "arm64"
     Build-Target "windows" "amd64"
     Build-Target "windows" "arm64"
+    if (-not (Get-Command sh -ErrorAction SilentlyContinue)) {
+        throw "sh, Zig, and cargo-zigbuild are required for --BuildAll sidecar builds"
+    }
+    & sh (Join-Path $PSScriptRoot "build-sidecar.sh") --all
+    if ($LASTEXITCODE -ne 0) {
+        throw "Codex Manager cross-platform sidecar build failed"
+    }
 }
 
 function Install-GoIfMissing {
@@ -88,10 +116,15 @@ if ($BuildAll) {
     Build-AllTargets
 } elseif (!$NoBuild) {
     Build-Target "windows" $Arch
+    Build-SidecarTarget "windows" $Arch
 }
 
 if (!(Test-Path $TargetBinary)) {
     throw "Expected binary not found: $TargetBinary"
+}
+$SidecarBinary = Join-Path $Dist "sidecars\windows-$Arch\codex-manager-gateway.exe"
+if (!(Test-Path $SidecarBinary)) {
+    throw "Expected Codex Manager sidecar not found: $SidecarBinary"
 }
 
 New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
@@ -100,6 +133,7 @@ if (Test-Path $InstallPath) {
     & $InstallPath service stop *> $null
 }
 Copy-Item -Force $TargetBinary $InstallPath
+Copy-Item -Force $SidecarBinary (Join-Path $BinDir "codex-manager-gateway.exe")
 
 Write-Host "Installed $App to $InstallPath"
 

@@ -169,6 +169,10 @@ build_target() {
   CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags="-s -w" -o "$out" "$PKG"
 }
 
+build_sidecar_target() {
+  sh "$(dirname "$0")/build-sidecar.sh" --target "$1-$2"
+}
+
 prepare_web_assets() {
   command -v npm >/dev/null 2>&1 || die "npm is required to build the embedded web app"
   sh "$(dirname "$0")/prepare-web-assets.sh"
@@ -183,6 +187,7 @@ build_all_targets() {
   build_target darwin arm64
   build_target windows amd64
   build_target windows arm64
+  sh "$(dirname "$0")/build-sidecar.sh" --all
 }
 
 install_file() {
@@ -213,15 +218,19 @@ if [ "$BUILD_ALL" = "1" ]; then
 else
   if [ "$BUILD" = "1" ]; then
     build_target "$TARGET_OS" "$TARGET_ARCH"
+    build_sidecar_target "$TARGET_OS" "$TARGET_ARCH"
   fi
 fi
 
 [ -f "$TARGET_BIN" ] || die "expected binary not found: $TARGET_BIN"
+SIDECAR_BIN="$DIST/sidecars/$TARGET_OS-$TARGET_ARCH/codex-manager-gateway$TARGET_SUFFIX"
+[ -f "$SIDECAR_BIN" ] || die "expected sidecar binary not found: $SIDECAR_BIN"
 if [ -x "$INSTALL_PATH" ]; then
   log "Stopping existing service"
   "$INSTALL_PATH" service stop >/dev/null 2>&1 || true
 fi
 install_file "$TARGET_BIN" "$INSTALL_PATH"
+install_file "$SIDECAR_BIN" "$INSTALL_DIR/codex-manager-gateway$TARGET_SUFFIX"
 
 log "Installed $APP to $INSTALL_PATH"
 

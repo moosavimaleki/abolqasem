@@ -880,7 +880,7 @@ func eventPriority(eventType string) int {
 		return 0
 	case events.TypeChatCreated:
 		return 1
-	case events.TypeChatRenamed, events.TypeChatProviderSet, events.TypeChatPlanModeSet:
+	case events.TypeChatRenamed, events.TypeChatProviderSet, events.TypeChatPlanModeSet, events.TypeChatPinned:
 		return 2
 	case events.TypeMessageAppended:
 		return 3

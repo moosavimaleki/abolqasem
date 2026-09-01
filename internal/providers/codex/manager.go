@@ -178,5 +178,8 @@ func isRecoverableResumeError(err error) bool {
 	return strings.Contains(message, "thread not found") ||
 		strings.Contains(message, "not found") ||
 		strings.Contains(message, "unknown thread") ||
+		strings.Contains(message, "failed to deserialize stored thread item") ||
+		strings.Contains(message, "unknown variant `completed`") ||
+		strings.Contains(message, "stored thread item") ||
 		strings.Contains(message, "method not found")
 }

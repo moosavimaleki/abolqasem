@@ -160,6 +160,7 @@ type TurnRequest struct {
 	PlanMode                bool
 	SessionToken            string
 	PendingForkSessionToken string
+	CodexModelProvider      string
 	Env                     []string
 }
 
@@ -868,6 +869,13 @@ func providerSettings(provider string, model string, modelOptions *catalog.Model
 			serviceTier:   catalog.CodexServiceTierFromModelOptions(options),
 			executionMode: options.ExecutionMode,
 			planMode:      entry.SupportsPlanMode && planMode,
+		}
+	}
+	if entry.ID == "opencode" {
+		return resolvedProviderSettings{
+			model:    catalog.NormalizeServerModel(entry.ID, model),
+			effort:   strings.TrimSpace(legacyEffort),
+			planMode: false,
 		}
 	}
 

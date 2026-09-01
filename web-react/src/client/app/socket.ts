@@ -1,11 +1,4 @@
-import type {
-  ClientCommand,
-  ClientEnvelope,
-  ServerEnvelope,
-  SubscriptionTopic,
-  TerminalEvent,
-  TerminalSnapshot,
-} from "../../shared/protocol"
+import type { ClientCommand, ClientEnvelope, ServerEnvelope, SubscriptionTopic, TerminalEvent, TerminalSnapshot } from "../../shared/protocol"
 import { LOG_PREFIX } from "../../shared/branding"
 import { generateUUID } from "../lib/utils"
 
@@ -13,6 +6,7 @@ type SnapshotListener<T> = (value: T) => void
 type EventListener<T> = (value: T) => void
 export type SocketStatus = "connecting" | "connected" | "disconnected"
 type StatusListener = (status: SocketStatus) => void
+type SharedWorkerResponse = { type: "status"; status: SocketStatus } | { type: "message"; payload: string }
 
 const STALE_CONNECTION_MS = 25_000
 const HEARTBEAT_INTERVAL_MS = 15_000
@@ -34,8 +28,9 @@ interface SubscriptionEntry<TSnapshot, TEvent = never> {
 
 function isSendToStartingProfilingEnabled() {
   try {
-    return window.sessionStorage.getItem(SEND_TO_STARTING_PROFILE_STORAGE_KEY) === "1"
-      || window.localStorage.getItem(SEND_TO_STARTING_PROFILE_STORAGE_KEY) === "1"
+    return (
+      window.sessionStorage.getItem(SEND_TO_STARTING_PROFILE_STORAGE_KEY) === "1" || window.localStorage.getItem(SEND_TO_STARTING_PROFILE_STORAGE_KEY) === "1"
+    )
   } catch {
     return false
   }
@@ -44,15 +39,20 @@ function isSendToStartingProfilingEnabled() {
 export class AbolqasemSocket {
   private readonly url: string
   private ws: WebSocket | null = null
+  private sharedPort: MessagePort | null = null
+  private sharedStatus: SocketStatus = "disconnected"
   private started = false
   private reconnectTimer: number | null = null
   private reconnectDelayMs = 750
   private readonly subscriptions = new Map<string, SubscriptionEntry<unknown, unknown>>()
-  private readonly pending = new Map<string, {
-    resolve: (value: unknown) => void
-    reject: (reason?: unknown) => void
-    timeoutId: number
-  }>()
+  private readonly pending = new Map<
+    string,
+    {
+      resolve: (value: unknown) => void
+      reject: (reason?: unknown) => void
+      timeoutId: number
+    }
+  >()
   private readonly outboundQueue: ClientEnvelope[] = []
   private readonly statusListeners = new Set<StatusListener>()
   private heartbeatTimer: number | null = null
@@ -102,8 +102,15 @@ export class AbolqasemSocket {
     window.removeEventListener("focus", this.handleWindowFocus)
     window.removeEventListener("online", this.handleOnline)
     document.removeEventListener("visibilitychange", this.handleVisibilityChange)
-    this.ws?.close()
-    this.ws = null
+    if (this.sharedPort) {
+      this.sharedPort.postMessage({ type: "dispose" })
+      this.sharedPort.close()
+      this.sharedPort = null
+      this.sharedStatus = "disconnected"
+    } else {
+      this.ws?.close()
+      this.ws = null
+    }
     for (const pending of this.pending.values()) {
       window.clearTimeout(pending.timeoutId)
       pending.reject(new Error("Socket disposed"))
@@ -119,11 +126,7 @@ export class AbolqasemSocket {
     }
   }
 
-  subscribe<TSnapshot, TEvent = never>(
-    topic: SubscriptionTopic,
-    listener: SnapshotListener<TSnapshot>,
-    eventListener?: EventListener<TEvent>
-  ) {
+  subscribe<TSnapshot, TEvent = never>(topic: SubscriptionTopic, listener: SnapshotListener<TSnapshot>, eventListener?: EventListener<TEvent>) {
     const id = generateUUID()
     this.subscriptions.set(id, {
       topic,
@@ -166,6 +169,7 @@ export class AbolqasemSocket {
         const pending = this.pending.get(id)
         if (!pending) return
         this.pending.delete(id)
+        this.cancelSharedCommand(id)
         pending.reject(new Error("Request timed out; reconnecting to the local server"))
         this.reconnectNow()
       }, COMMAND_TIMEOUT_MS)
@@ -175,6 +179,17 @@ export class AbolqasemSocket {
   }
 
   ensureHealthyConnection() {
+    if (this.usesSharedWorker()) {
+      if (this.sharedStatus === "disconnected") {
+        this.reconnectNow()
+        return Promise.resolve()
+      }
+      if (this.sharedStatus === "connecting" || !this.isConnectionStale()) {
+        return Promise.resolve()
+      }
+      return this.sendPing()
+    }
+
     if (!this.ws || this.ws.readyState === WebSocket.CLOSED || this.ws.readyState === WebSocket.CLOSING) {
       this.reconnectNow()
       return Promise.resolve()
@@ -193,6 +208,10 @@ export class AbolqasemSocket {
 
   private connect() {
     if (!this.started) {
+      return
+    }
+    if (this.usesSharedWorker()) {
+      this.connectShared()
       return
     }
     this.emitStatus("connecting")
@@ -219,71 +238,7 @@ export class AbolqasemSocket {
       }
     })
 
-    this.ws.addEventListener("message", (event) => {
-      this.lastMessageAt = Date.now()
-      const receivedAt = performance.now()
-      const rawText = String(event.data)
-      let payload: ServerEnvelope
-      try {
-        payload = JSON.parse(rawText) as ServerEnvelope
-      } catch {
-        return
-      }
-
-      if (isSendToStartingProfilingEnabled() && payload.type === "snapshot" && payload.snapshot.type === "chat" && payload.snapshot.data?.runtime.status === "starting") {
-        const messageCount = Array.isArray(payload.snapshot.data.messages) ? payload.snapshot.data.messages.length : 0
-        console.debug("[abolqasem/send->starting][client-ws]", {
-          stage: "socket_message_received",
-          receivedAt,
-          payloadBytes: rawText.length,
-          chatId: payload.snapshot.data.runtime.chatId,
-          status: payload.snapshot.data.runtime.status,
-          messageCount,
-        })
-      }
-
-      if (isSendToStartingProfilingEnabled() && payload.type === "ack") {
-        console.debug("[abolqasem/send->starting][client-ws]", {
-          stage: "socket_ack_received",
-          receivedAt,
-          payloadBytes: rawText.length,
-          commandId: payload.id,
-        })
-      }
-
-      if (payload.type === "snapshot") {
-        const subscription = this.subscriptions.get(payload.id)
-        subscription?.listener(payload.snapshot.data)
-        return
-      }
-
-      if (payload.type === "event") {
-        const subscription = this.subscriptions.get(payload.id)
-        subscription?.eventListener?.(payload.event)
-        return
-      }
-
-      if (payload.type === "ack") {
-        const pending = this.pending.get(payload.id)
-        if (!pending) return
-        this.pending.delete(payload.id)
-        window.clearTimeout(pending.timeoutId)
-        pending.resolve(payload.result)
-        return
-      }
-
-      if (payload.type === "error") {
-        if (!payload.id) {
-          console.error(LOG_PREFIX, payload.message)
-          return
-        }
-        const pending = this.pending.get(payload.id)
-        if (!pending) return
-        this.pending.delete(payload.id)
-        window.clearTimeout(pending.timeoutId)
-        pending.reject(new Error(payload.message))
-      }
-    })
+    this.ws.addEventListener("message", (event) => this.handleServerMessage(String(event.data)))
 
     this.ws.addEventListener("close", () => {
       if (!this.started) {
@@ -294,17 +249,145 @@ export class AbolqasemSocket {
       this.stopHeartbeat()
       this.clearPingState()
       this.emitStatus("disconnected")
-      for (const pending of this.pending.values()) {
-        window.clearTimeout(pending.timeoutId)
-        pending.reject(new Error("Disconnected"))
-      }
-      this.pending.clear()
+      this.rejectPendingCommands("Disconnected")
       if (reconnectImmediately) {
         this.connect()
         return
       }
       this.scheduleReconnect()
     })
+  }
+
+  private usesSharedWorker() {
+    return typeof SharedWorker !== "undefined"
+  }
+
+  private connectShared() {
+    if (this.sharedPort) return
+    this.sharedStatus = "connecting"
+    this.emitStatus("connecting")
+    const worker = new SharedWorker(new URL("./socket.shared-worker.ts", import.meta.url), {
+      type: "module",
+      name: "abolqasem-workspace-socket",
+    })
+    const port = worker.port
+    this.sharedPort = port
+    port.addEventListener("message", (event: MessageEvent<SharedWorkerResponse>) => {
+      this.handleSharedWorkerMessage(event.data)
+    })
+    port.start()
+    port.postMessage({ type: "start", url: this.url })
+    for (const [id, subscription] of this.subscriptions.entries()) {
+      port.postMessage({ type: "send", envelope: { v: 1, type: "subscribe", id, topic: subscription.topic } })
+    }
+    while (this.outboundQueue.length > 0) {
+      const envelope = this.outboundQueue.shift()
+      if (envelope && envelope.type !== "subscribe" && envelope.type !== "unsubscribe") {
+        port.postMessage({ type: "send", envelope })
+      }
+    }
+  }
+
+  private handleSharedWorkerMessage(message: SharedWorkerResponse) {
+    if (message.type === "message") {
+      this.handleServerMessage(message.payload)
+      return
+    }
+    this.sharedStatus = message.status
+    if (message.status === "connected") {
+      this.reconnectDelayMs = 750
+      this.lastOpenAt = Date.now()
+      this.lastMessageAt = this.lastOpenAt
+      this.startHeartbeat()
+      this.emitStatus("connected")
+      return
+    }
+    if (message.status === "connecting") {
+      this.emitStatus("connecting")
+      return
+    }
+    this.stopHeartbeat()
+    this.clearPingState()
+    this.emitStatus("disconnected")
+    this.rejectPendingCommands("Disconnected")
+  }
+
+  private handleServerMessage(rawText: string) {
+    this.lastMessageAt = Date.now()
+    const receivedAt = performance.now()
+    let payload: ServerEnvelope
+    try {
+      payload = JSON.parse(rawText) as ServerEnvelope
+    } catch {
+      return
+    }
+
+    if (
+      isSendToStartingProfilingEnabled() &&
+      payload.type === "snapshot" &&
+      payload.snapshot.type === "chat" &&
+      payload.snapshot.data?.runtime.status === "starting"
+    ) {
+      const messageCount = Array.isArray(payload.snapshot.data.messages) ? payload.snapshot.data.messages.length : 0
+      console.debug("[abolqasem/send->starting][client-ws]", {
+        stage: "socket_message_received",
+        receivedAt,
+        payloadBytes: rawText.length,
+        chatId: payload.snapshot.data.runtime.chatId,
+        status: payload.snapshot.data.runtime.status,
+        messageCount,
+      })
+    }
+
+    if (isSendToStartingProfilingEnabled() && payload.type === "ack") {
+      console.debug("[abolqasem/send->starting][client-ws]", {
+        stage: "socket_ack_received",
+        receivedAt,
+        payloadBytes: rawText.length,
+        commandId: payload.id,
+      })
+    }
+
+    if (payload.type === "snapshot") {
+      this.subscriptions.get(payload.id)?.listener(payload.snapshot.data)
+      return
+    }
+    if (payload.type === "event") {
+      this.subscriptions.get(payload.id)?.eventListener?.(payload.event)
+      return
+    }
+    if (payload.type === "ack") {
+      const pending = this.pending.get(payload.id)
+      if (!pending) return
+      this.pending.delete(payload.id)
+      window.clearTimeout(pending.timeoutId)
+      pending.resolve(payload.result)
+      return
+    }
+    if (payload.type === "error") {
+      if (!payload.id) {
+        console.error(LOG_PREFIX, payload.message)
+        return
+      }
+      const pending = this.pending.get(payload.id)
+      if (!pending) return
+      this.pending.delete(payload.id)
+      window.clearTimeout(pending.timeoutId)
+      pending.reject(new Error(payload.message))
+    }
+  }
+
+  private rejectPendingCommands(message: string) {
+    for (const [id, pending] of this.pending) {
+      window.clearTimeout(pending.timeoutId)
+      this.cancelSharedCommand(id)
+      pending.reject(new Error(message))
+    }
+    this.pending.clear()
+  }
+
+  private cancelSharedCommand(id: string) {
+    if (this.usesSharedWorker()) this.sharedPort?.postMessage({ type: "cancel-command", id })
   }
 
   private scheduleReconnect() {
@@ -317,6 +400,7 @@ export class AbolqasemSocket {
   }
 
   private getStatus(): SocketStatus {
+    if (this.usesSharedWorker()) return this.sharedStatus
     if (this.ws?.readyState === WebSocket.OPEN) {
       return "connected"
     }
@@ -362,6 +446,10 @@ export class AbolqasemSocket {
   }
 
   private reconnectNow() {
+    if (this.usesSharedWorker()) {
+      this.sharedPort?.postMessage({ type: "reconnect" })
+      return
+    }
     if (this.reconnectTimer !== null) {
       window.clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
@@ -394,7 +482,7 @@ export class AbolqasemSocket {
         this.stopHeartbeat()
         return
       }
-      if (this.ws?.readyState !== WebSocket.OPEN) {
+      if (this.getStatus() !== "connected") {
         return
       }
       void this.ensureHealthyConnection()
@@ -417,6 +505,14 @@ export class AbolqasemSocket {
   }
 
   private enqueue(envelope: ClientEnvelope) {
+    if (this.usesSharedWorker()) {
+      if (this.sharedPort) {
+        this.sharedPort.postMessage({ type: "send", envelope })
+      } else {
+        this.outboundQueue.push(envelope)
+      }
+      return
+    }
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.sendNow(envelope)
       return
@@ -425,6 +521,10 @@ export class AbolqasemSocket {
   }
 
   private sendNow(envelope: ClientEnvelope) {
+    if (this.usesSharedWorker()) {
+      this.sharedPort?.postMessage({ type: "send", envelope })
+      return
+    }
     this.ws?.send(JSON.stringify(envelope))
   }
 }

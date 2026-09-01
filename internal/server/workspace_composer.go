@@ -23,6 +23,7 @@ const (
 	localProjectsSubscription = "__local_projects__"
 	updateSubscription        = "__update__"
 	appSettingsSubscription   = "__app_settings__"
+	globalEventsSubscription  = "__global_events__"
 	terminalSubscription      = "terminal:"
 	chatSubscription          = "chat:"
 	projectGitSubscription    = "project_git:"
@@ -148,6 +149,7 @@ func (r *workspaceConnectionRegistry) topicSubscribers(topicKey string) map[*wor
 }
 
 func (r *workspaceConnectionRegistry) broadcast(chatID string) {
+	workspaceInvalidateSidebarSnapshot()
 	r.broadcastTopic(sidebarSubscription, protocol.SnapshotSidebar, workspaceSidebarSnapshot())
 	r.broadcastTopic(localProjectsSubscription, protocol.SnapshotLocalProjects, workspaceLocalProjectsSnapshot())
 	if chatID != "" {
@@ -189,6 +191,17 @@ func (r *workspaceConnectionRegistry) broadcastUpdate(snapshot map[string]any) {
 
 func (r *workspaceConnectionRegistry) broadcastAppSettings(snapshot map[string]any) {
 	r.broadcastTopic(appSettingsSubscription, protocol.SnapshotAppSettings, snapshot)
+}
+
+// broadcastGlobalEvent delivers a process-wide notification through each
+// tab's existing websocket. It deliberately does not use a snapshot: events
+// are transient and must not make a newly opened tab replay old alerts.
+func (r *workspaceConnectionRegistry) broadcastGlobalEvent(event any) {
+	for conn, subscriptionIDs := range r.topicSubscribers(globalEventsSubscription) {
+		for _, subscriptionID := range subscriptionIDs {
+			_ = conn.write(protocol.EventEnvelope(subscriptionID, event))
+		}
+	}
 }
 
 func (r *workspaceConnectionRegistry) broadcastProjectGit(projectID string) {
@@ -538,7 +551,14 @@ func (s *workspaceEventStore) appendTurn(eventType string, chatID string, extra 
 	if err != nil {
 		return err
 	}
-	return s.store.Append(events.StreamTurns, event)
+	if err := s.store.Append(events.StreamTurns, event); err != nil {
+		return err
+	}
+	// Turn outcomes can be written by the coordinator without going through a
+	// websocket command broadcast. Their sidebar status must still replace a
+	// cached snapshot immediately.
+	workspaceInvalidateSidebarSnapshot()
+	return nil
 }
 
 func (s *workspaceEventStore) requireProject(projectID string) (readmodels.ProjectRecord, error) {

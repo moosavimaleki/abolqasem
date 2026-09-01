@@ -64,6 +64,9 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: stable
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: mlugg/setup-zig@v2
+      - run: cargo install cargo-zigbuild --locked
       - uses: actions/setup-node@v6
         with:
           node-version: 24
@@ -71,6 +74,13 @@ jobs:
           cache-dependency-path: web-react/package-lock.json
       - run: sh scripts/prepare-web-assets.sh
       - run: make build-all
+      - run: |
+          test -x dist/sidecars/linux-amd64/codex-manager-gateway
+          test -x dist/sidecars/linux-arm64/codex-manager-gateway
+          test -x dist/sidecars/darwin-amd64/codex-manager-gateway
+          test -x dist/sidecars/darwin-arm64/codex-manager-gateway
+          test -f dist/sidecars/windows-amd64/codex-manager-gateway.exe
+          test -f dist/sidecars/windows-arm64/codex-manager-gateway.exe
 
   install-source-unix:
     strategy:
@@ -85,6 +95,7 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: stable
+      - uses: dtolnay/rust-toolchain@stable
 
       - name: Run build-from-source installer
         run: BIN_DIR="$RUNNER_TEMP/bin" sh scripts/build-from-source.sh
@@ -108,6 +119,7 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: stable
+      - uses: dtolnay/rust-toolchain@stable
 
       - name: Run build-from-source installer
         shell: pwsh
@@ -150,6 +162,7 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: stable
+      - uses: dtolnay/rust-toolchain@stable
 
       - name: Run release installer against local asset server
         run: |
@@ -172,7 +185,9 @@ jobs:
 
           mkdir -p "$WEBROOT/releases/latest/download" "$PKGROOT" "$BINDIR"
           CGO_ENABLED=0 GOOS="$TARGET_OS" GOARCH="$TARGET_ARCH" go build -trimpath -ldflags="-s -w" -o "$PKGROOT/abolqasem" ./cmd/abolqasem
-          tar -C "$PKGROOT" -czf "$WEBROOT/releases/latest/download/$ASSET" abolqasem
+          sh scripts/build-sidecar.sh --target "$TARGET_OS-$TARGET_ARCH"
+          cp "dist/sidecars/$TARGET_OS-$TARGET_ARCH/codex-manager-gateway" "$PKGROOT/codex-manager-gateway"
+          tar -C "$PKGROOT" -czf "$WEBROOT/releases/latest/download/$ASSET" abolqasem codex-manager-gateway
 
           python3 -m http.server 18080 --bind 127.0.0.1 --directory "$WEBROOT" >/tmp/abolqasem-http.log 2>&1 &
           SERVER_PID=$!
@@ -206,6 +221,7 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: stable
+      - uses: dtolnay/rust-toolchain@stable
 
       - name: Run release installer against local asset server
         shell: pwsh
@@ -233,7 +249,10 @@ jobs:
           $env:GOOS = "windows"
           $env:GOARCH = $TargetArch
           go build -trimpath -ldflags="-s -w" -o $BinaryPath ./cmd/abolqasem
-          Compress-Archive -Path $BinaryPath -DestinationPath $ArchivePath -Force
+          cargo build --release --manifest-path sidecars/codex-manager-gateway/Cargo.toml
+          $SidecarPath = Join-Path $PkgRoot "codex-manager-gateway.exe"
+          Copy-Item -Force "sidecars/codex-manager-gateway/target/release/codex-manager-gateway.exe" $SidecarPath
+          Compress-Archive -Path $BinaryPath,$SidecarPath -DestinationPath $ArchivePath -Force
 
           $Python = if (Get-Command py -ErrorAction SilentlyContinue) { "py" } elseif (Get-Command python -ErrorAction SilentlyContinue) { "python" } else { throw "Python is required for the local asset server" }
           $Args = if ($Python -eq "py") { @("-3", "-m", "http.server", "18080", "--bind", "127.0.0.1", "--directory", $WebRoot) } else { @("-m", "http.server", "18080", "--bind", "127.0.0.1", "--directory", $WebRoot) }

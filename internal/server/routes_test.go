@@ -76,6 +76,12 @@ func TestAppIndexRouteRewritesRelativeAssetsForDeepRoutes(t *testing.T) {
 	if body := response.Body.String(); strings.Contains(body, `src="./`) || strings.Contains(body, `href="./`) {
 		t.Fatalf("expected deep app route to use root-relative asset paths, got %q", body)
 	}
+	if cacheControl := response.Header().Get("Cache-Control"); cacheControl != "no-store, no-cache, must-revalidate" {
+		t.Fatalf("expected app index to disable caching, got %q", cacheControl)
+	}
+	if response.Header().Get("Pragma") != "no-cache" || response.Header().Get("Expires") != "0" {
+		t.Fatalf("expected legacy cache directives on app index, headers=%v", response.Header())
+	}
 }
 
 func TestWorkspaceAuthDisabledEndpointsMatchAbolqasemShape(t *testing.T) {

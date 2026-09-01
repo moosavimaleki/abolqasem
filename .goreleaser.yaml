@@ -6,6 +6,7 @@ before:
   hooks:
     - go mod tidy
     - sh scripts/prepare-web-assets.sh
+    - sh scripts/build-sidecar.sh --all
     - go test ./...
 
 builds:
@@ -34,6 +35,8 @@ archives:
       - README.md
       - scripts/install-release.sh
       - scripts/install-release.ps1
+      - src: "dist/sidecars/{{ .Os }}-{{ .Arch }}/codex-manager-gateway{{ if eq .Os \"windows\" }}.exe{{ end }}"
+        dst: "."
 
 checksum:
   name_template: "checksums.txt"

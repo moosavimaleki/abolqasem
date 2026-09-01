@@ -65,12 +65,16 @@ func workspaceLegacyImportedSessionCacheStats() workspaceLegacyImportedCacheStat
 }
 
 func mergeLegacySidebarData(sidebar readmodels.SidebarData) readmodels.SidebarData {
-	sessions := workspaceLegacySessionMetas()
+	stateSnapshot, _ := workspaceStore().LoadStateLight()
+	return mergeLegacySidebarDataWithStoreState(sidebar, stateSnapshot)
+}
+
+func mergeLegacySidebarDataWithStoreState(sidebar readmodels.SidebarData, stateSnapshot readmodels.StoreState) readmodels.SidebarData {
+	appState, _ := workspaceLoadLegacyState()
+	sessions := workspaceLegacySessionMetasFromAppState(appState)
 	if len(sessions) == 0 {
 		return sidebar
 	}
-	appState, _ := workspaceLoadLegacyState()
-	stateSnapshot, _ := workspaceStore().LoadStateLight()
 
 	groupIndexByPath := map[string]int{}
 	for index, group := range sidebar.ProjectGroups {
@@ -289,6 +293,13 @@ func workspaceLegacySessions() []state.SessionMeta {
 func workspaceLegacySessionMetas() []state.SessionMeta {
 	appState, err := workspaceLoadLegacyState()
 	if err != nil || appState == nil {
+		return nil
+	}
+	return workspaceLegacySessionMetasFromAppState(appState)
+}
+
+func workspaceLegacySessionMetasFromAppState(appState *state.AppState) []state.SessionMeta {
+	if appState == nil {
 		return nil
 	}
 	sessions := make([]state.SessionMeta, 0, len(appState.Sessions))
@@ -979,6 +990,11 @@ func workspaceLegacyImportedEntryPrefixes(meta state.SessionMeta) []string {
 			"codex-tool-result-" + sessionID + "-",
 			"codex-message-" + sessionID + "-",
 			"codex-compact-" + sessionID + "-",
+		}
+	case "opencode":
+		return []string{
+			"opencode-user-" + sessionID + "-",
+			"opencode-assistant-" + sessionID + "-",
 		}
 	default:
 		return nil

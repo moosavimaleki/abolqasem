@@ -1,5 +1,5 @@
 import { Fragment, useState, type ComponentType, type SVGProps } from "react"
-import { Box, Brain, Gauge, ListTodo, LockOpen, ShieldCheck, ShieldOff, SquareMenu, SquareMinus } from "lucide-react"
+import { Box, Brain, Gauge, ListTodo, LockOpen, ShieldCheck, ShieldOff, SquareMenu, SquareMinus, Terminal } from "lucide-react"
 import {
   CLAUDE_CONTEXT_WINDOW_OPTIONS,
   CLAUDE_REASONING_OPTIONS,
@@ -9,6 +9,7 @@ import {
   type ClaudeModelOptions,
   type ClaudeReasoningEffort,
   type CodexModelOptions,
+  type OpenCodeModelOptions,
   type CodexExecutionMode,
   type CodexReasoningEffort,
   type ProviderCatalogEntry,
@@ -51,6 +52,7 @@ function OpenAIIcon({ className, ...props }: SVGProps<SVGSVGElement>) {
 export const PROVIDER_ICONS: Record<AgentProvider, IconComponent> = {
   claude: AnthropicIcon,
   codex: OpenAIIcon,
+  opencode: Terminal,
 }
 
 export function PopoverMenuItem({
@@ -91,11 +93,13 @@ export function InputPopover({
   trigger,
   triggerClassName,
   disabled = false,
+  contentClassName,
   children,
 }: {
   trigger: React.ReactNode
   triggerClassName?: string
   disabled?: boolean
+  contentClassName?: string
   children: React.ReactNode | ((close: () => void) => React.ReactNode)
 }) {
   const [open, setOpen] = useState(false)
@@ -127,7 +131,7 @@ export function InputPopover({
           {trigger}
         </button>
       </PopoverTrigger>
-      <PopoverContent align="center" className="w-64 p-1">
+      <PopoverContent align="center" className={cn("w-64 p-1", contentClassName)}>
         <div className="space-y-1">{typeof children === "function" ? children(() => setOpen(false)) : children}</div>
       </PopoverContent>
     </Popover>
@@ -149,7 +153,7 @@ interface ChatPreferenceControlsProps {
   providerLocked?: boolean
   showCodexCliRequirementHints?: boolean
   model: string
-  modelOptions: ClaudeModelOptions | CodexModelOptions
+  modelOptions: ClaudeModelOptions | CodexModelOptions | OpenCodeModelOptions
   onProviderChange?: (provider: AgentProvider) => void
   onModelChange: (provider: AgentProvider, model: string) => void
   onModelOptionChange: (change: ModelOptionChange) => void
@@ -201,7 +205,9 @@ export function ChatPreferenceControls({
   const showReasoningPicker = selectedProvider === "claude" || selectedProvider === "codex"
   const reasoningLabel = selectedProvider === "claude"
     ? CLAUDE_REASONING_OPTIONS.find((effort) => effort.id === claudeModelOptions?.reasoningEffort)?.label ?? claudeModelOptions?.reasoningEffort
-    : CODEX_REASONING_OPTIONS.find((effort) => effort.id === codexModelOptions?.reasoningEffort)?.label ?? codexModelOptions?.reasoningEffort
+    : selectedProvider === "codex"
+      ? CODEX_REASONING_OPTIONS.find((effort) => effort.id === codexModelOptions?.reasoningEffort)?.label ?? codexModelOptions?.reasoningEffort
+      : undefined
   const contextWindowOptions = providerConfig.models.find((candidate) => candidate.id === model)?.contextWindowOptions ?? []
   const selectedContextWindow = claudeModelOptions?.contextWindow ?? CLAUDE_CONTEXT_WINDOW_OPTIONS[0].id
   const ContextWindowIcon = selectedContextWindow === "1m" ? SquareMenu : SquareMinus
@@ -227,12 +233,15 @@ export function ChatPreferenceControls({
               <PopoverMenuItem
                 key={provider.id}
                 onClick={() => {
+                  if (provider.available === false) return
                   onProviderChange?.(provider.id)
                   close()
                 }}
                 selected={selectedProvider === provider.id}
                 icon={<Icon className="h-4 w-4 text-muted-foreground" />}
                 label={provider.label}
+                description={provider.available === false ? "CLI not detected" : undefined}
+                disabled={provider.available === false}
               />
             )
           })}
@@ -241,6 +250,7 @@ export function ChatPreferenceControls({
 
       <InputPopover
         disabled={disabled}
+        contentClassName="max-h-[min(70vh,32rem)] overflow-y-auto overscroll-contain"
         trigger={(
           <>
             <ModelIcon className="h-3.5 w-3.5" />

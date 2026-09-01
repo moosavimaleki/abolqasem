@@ -58,6 +58,7 @@ export type SubscriptionTopic =
   | { type: "chat"; chatId: string; recentLimit?: number }
   | { type: "project-git"; projectId: string }
   | { type: "terminal"; terminalId: string }
+  | { type: "global-events" }
 
 export interface TerminalSnapshot {
   terminalId: string
@@ -75,7 +76,12 @@ export interface TerminalSnapshot {
 
 export type TerminalEvent =
   | { type: "terminal.output"; terminalId: string; data: string }
-  | { type: "terminal.exit"; terminalId: string; exitCode: number; signal?: number }
+  | {
+      type: "terminal.exit"
+      terminalId: string
+      exitCode: number
+      signal?: number
+    }
 
 export type ClientCommand =
   | { type: "project.open"; localPath: string }
@@ -88,7 +94,11 @@ export type ClientCommand =
   | { type: "browser.listLocalHttpServers"; projectId?: string }
   | { type: "browser.killLocalHttpServer"; port: number }
   | { type: "project.readQuickActions"; projectId: string }
-  | { type: "project.writeQuickActions"; projectId: string; quickActions: ProjectQuickAction[] }
+  | {
+      type: "project.writeQuickActions"
+      projectId: string
+      quickActions: ProjectQuickAction[]
+    }
   | { type: "project.readRunnableScripts"; projectId: string }
   | { type: "update.check"; force?: boolean }
   | { type: "update.install" }
@@ -106,7 +116,10 @@ export type ClientCommand =
   | { type: "app.restart" }
   | { type: "app.readHooksStatus" }
   | { type: "settings.readKeybindings" }
-  | { type: "settings.writeKeybindings"; bindings: KeybindingsSnapshot["bindings"] }
+  | {
+      type: "settings.writeKeybindings"
+      bindings: KeybindingsSnapshot["bindings"]
+    }
   | { type: "settings.readAppSettings" }
   | { type: "settings.writeAppSettingsPatch"; patch: AppSettingsPatch }
   | { type: "settings.refreshProviderModels" }
@@ -120,7 +133,11 @@ export type ClientCommand =
   | { type: "mcp.save"; server: McpServerConfig }
   | { type: "mcp.remove"; name: string }
   | { type: "mcp.registrySearch"; query: string; limit?: number }
-  | { type: "mcp.registryInstall"; config: McpServerConfig; installCommand?: string[] }
+  | {
+      type: "mcp.registryInstall"
+      config: McpServerConfig
+      installCommand?: string[]
+    }
   | {
       type: "settings.writeLlmProvider"
       provider: LlmProviderSnapshot["provider"]
@@ -145,20 +162,45 @@ export type ClientCommand =
     }
   | { type: "chat.create"; projectId: string; provider?: AgentProvider }
   | { type: "chat.fork"; chatId: string }
-  | { type: "chat.convertPreview"; chatId: string; targetProvider: AgentProvider; targetProjectId?: string }
-  | { type: "chat.convert"; chatId: string; targetProvider: AgentProvider; targetProjectId?: string }
-  | { type: "chat.exportTranscript"; chatId: string; targetProvider?: AgentProvider; targetProjectId?: string }
+  | {
+      type: "chat.convertPreview"
+      chatId: string
+      targetProvider: AgentProvider
+      targetProjectId?: string
+    }
+  | {
+      type: "chat.convert"
+      chatId: string
+      targetProvider: AgentProvider
+      targetProjectId?: string
+    }
+  | {
+      type: "chat.exportTranscript"
+      chatId: string
+      targetProvider?: AgentProvider
+      targetProjectId?: string
+    }
   | { type: "chat.rename"; chatId: string; title: string }
   | { type: "chat.archive"; chatId: string }
   | { type: "chat.unarchive"; chatId: string }
+  | { type: "chat.pin"; chatId: string; pinned: boolean }
   | { type: "chat.delete"; chatId: string }
   | { type: "chat.setDraftProtection"; chatIds: string[] }
   | { type: "chat.markRead"; chatId: string }
   | { type: "chat.refresh"; chatId: string }
   | { type: "chat.claimCodexSession"; chatId: string }
   | { type: "chat.releaseCodexSession"; chatId: string }
-  | { type: "chat.takeOverCodexSession"; chatId: string; confirm: boolean; executionMode?: CodexExecutionMode }
-  | { type: "chat.setCodexExecutionMode"; chatId: string; executionMode: CodexExecutionMode }
+  | {
+      type: "chat.takeOverCodexSession"
+      chatId: string
+      confirm: boolean
+      executionMode?: CodexExecutionMode
+    }
+  | {
+      type: "chat.setCodexExecutionMode"
+      chatId: string
+      executionMode: CodexExecutionMode
+    }
   | { type: "chat.setPlanMode"; chatId: string; planMode: boolean }
   | { type: "chat.reloadCodexAuth"; chatId: string }
   | {
@@ -177,7 +219,12 @@ export type ClientCommand =
   | { type: "chat.refreshDiffs"; chatId: string }
   | { type: "chat.initGit"; chatId: string }
   | { type: "chat.getGitHubPublishInfo"; chatId: string }
-  | { type: "chat.checkGitHubRepoAvailability"; chatId: string; owner: string; name: string }
+  | {
+      type: "chat.checkGitHubRepoAvailability"
+      chatId: string
+      owner: string
+      name: string
+    }
   | {
       type: "chat.publishToGitHub"
       chatId: string
@@ -191,65 +238,101 @@ export type ClientCommand =
       type: "chat.previewMergeBranch"
       chatId: string
       branch:
-      | { kind: "local"; name: string }
-      | { kind: "remote"; name: string; remoteRef: string }
-      | {
-          kind: "pull_request"
-          name: string
-          prNumber: number
-          headRefName: string
-          headRepoCloneUrl?: string
-          isCrossRepository?: boolean
-          remoteRef?: string
-        }
+        | { kind: "local"; name: string }
+        | { kind: "remote"; name: string; remoteRef: string }
+        | {
+            kind: "pull_request"
+            name: string
+            prNumber: number
+            headRefName: string
+            headRepoCloneUrl?: string
+            isCrossRepository?: boolean
+            remoteRef?: string
+          }
     }
   | {
       type: "chat.mergeBranch"
       chatId: string
       branch:
-      | { kind: "local"; name: string }
-      | { kind: "remote"; name: string; remoteRef: string }
-      | {
-          kind: "pull_request"
-          name: string
-          prNumber: number
-          headRefName: string
-          headRepoCloneUrl?: string
-          isCrossRepository?: boolean
-          remoteRef?: string
-        }
+        | { kind: "local"; name: string }
+        | { kind: "remote"; name: string; remoteRef: string }
+        | {
+            kind: "pull_request"
+            name: string
+            prNumber: number
+            headRefName: string
+            headRepoCloneUrl?: string
+            isCrossRepository?: boolean
+            remoteRef?: string
+          }
     }
-  | { type: "chat.syncBranch"; chatId: string; action: "fetch" | "pull" | "push" | "publish" }
+  | {
+      type: "chat.syncBranch"
+      chatId: string
+      action: "fetch" | "pull" | "push" | "publish"
+    }
   | {
       type: "chat.checkoutBranch"
       chatId: string
       branch:
-      | { kind: "local"; name: string }
-      | { kind: "remote"; name: string; remoteRef: string }
-      | {
-          kind: "pull_request"
-          name: string
-          prNumber: number
-          headRefName: string
-          headRepoCloneUrl?: string
-          isCrossRepository?: boolean
-          remoteRef?: string
-        }
+        | { kind: "local"; name: string }
+        | { kind: "remote"; name: string; remoteRef: string }
+        | {
+            kind: "pull_request"
+            name: string
+            prNumber: number
+            headRefName: string
+            headRepoCloneUrl?: string
+            isCrossRepository?: boolean
+            remoteRef?: string
+          }
       bringChanges?: boolean
     }
-  | { type: "chat.createBranch"; chatId: string; name: string; baseBranchName?: string }
+  | {
+      type: "chat.createBranch"
+      chatId: string
+      name: string
+      baseBranchName?: string
+    }
   | { type: "chat.generateCommitMessage"; chatId: string; paths: string[] }
-  | { type: "chat.commitDiffs"; chatId: string; paths: string[]; summary: string; description?: string; mode: DiffCommitMode }
+  | {
+      type: "chat.commitDiffs"
+      chatId: string
+      paths: string[]
+      summary: string
+      description?: string
+      mode: DiffCommitMode
+    }
   | { type: "chat.discardDiffFile"; chatId: string; path: string }
   | { type: "chat.ignoreDiffFile"; chatId: string; path: string }
   | { type: "chat.listCheckpoints"; chatId: string }
-  | { type: "chat.restoreCheckpoint"; chatId: string; checkpointId: string; mode: CheckpointRestoreMode }
+  | {
+      type: "chat.restoreCheckpoint"
+      chatId: string
+      checkpointId: string
+      mode: CheckpointRestoreMode
+    }
   | { type: "chat.cancel"; chatId: string }
   | { type: "chat.stopDraining"; chatId: string }
   | { type: "chat.readTranscriptIndex"; chatId: string }
-  | { type: "chat.loadHistory"; chatId: string; beforeCursor: string; limit: number }
-  | { type: "chat.loadHistoryAround"; chatId: string; targetCursor: string; limit: number }
-  | { type: "chat.respondTool"; chatId: string; toolUseId: string; result: unknown }
+  | {
+      type: "chat.loadHistory"
+      chatId: string
+      beforeCursor: string
+      limit: number
+    }
+  | {
+      type: "chat.loadHistoryAround"
+      chatId: string
+      targetCursor: string
+      limit: number
+    }
+  | {
+      type: "chat.respondTool"
+      chatId: string
+      toolUseId: string
+      result: unknown
+    }
   | {
       type: "message.enqueue"
       chatId: string

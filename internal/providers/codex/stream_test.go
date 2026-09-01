@@ -74,6 +74,15 @@ func TestStreamNormalizerMapsCoreTurnTranscriptEvents(t *testing.T) {
 	}
 }
 
+func TestStreamNormalizerEmitsModelChange(t *testing.T) {
+	events := NewStreamNormalizer().HandleNotification(notification("turn/started", map[string]any{
+		"turnId": "turn-1", "collaborationMode": map[string]any{"settings": map[string]any{"model": "gpt-5.6-sol", "reasoning_effort": "high"}},
+	}))
+	if len(events) != 2 || events[1].Entry["kind"] != "model_change" || events[1].Entry["reasoningEffort"] != "high" {
+		t.Fatalf("unexpected model change events: %#v", events)
+	}
+}
+
 func TestStreamNormalizerMapsTokenUsage(t *testing.T) {
 	events := NewStreamNormalizer().HandleNotification(notification("thread/tokenUsage/updated", map[string]any{
 		"threadId": "thread-usage",
@@ -243,6 +252,39 @@ func TestStreamNormalizerMapsPlanToPlanCard(t *testing.T) {
 	input := tool["input"].(map[string]any)
 	if tool["toolKind"] != "exit_plan_mode" || input["plan"] != "1. Inspect\n2. Implement" {
 		t.Fatalf("unexpected plan card payload: %#v", tool)
+	}
+}
+
+func TestStreamNormalizerMapsMCPToolCalls(t *testing.T) {
+	normalizer := NewStreamNormalizer()
+	started := normalizer.HandleNotification(notification("item/started", map[string]any{
+		"item": map[string]any{
+			"type":      "mcpToolCall",
+			"id":        "mcp-1",
+			"server":    "filesystem",
+			"tool":      "read_file",
+			"arguments": map[string]any{"path": "/tmp/report.txt"},
+			"status":    "inProgress",
+		},
+	}))
+	if len(started) != 2 || started[0].Entry["kind"] != "tool_call" || started[1].Entry["kind"] != "turn_activity" {
+		t.Fatalf("unexpected MCP started events: %#v", started)
+	}
+	tool := started[0].Entry["tool"].(map[string]any)
+	if tool["toolKind"] != "mcp_generic" || tool["toolName"] != "mcp__filesystem__read_file" || tool["toolId"] != "mcp-1" {
+		t.Fatalf("unexpected MCP tool payload: %#v", tool)
+	}
+
+	completed := normalizer.HandleNotification(notification("item/completed", map[string]any{
+		"item": map[string]any{
+			"type":   "mcpToolCall",
+			"id":     "mcp-1",
+			"status": "completed",
+			"result": map[string]any{"content": "hello"},
+		},
+	}))
+	if len(completed) != 1 || completed[0].Entry["kind"] != "tool_result" || completed[0].Entry["toolId"] != "mcp-1" {
+		t.Fatalf("unexpected MCP completed events: %#v", completed)
 	}
 }
 

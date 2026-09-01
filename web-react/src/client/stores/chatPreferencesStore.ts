@@ -4,9 +4,12 @@ import {
   DEFAULT_CLAUDE_MODEL_OPTIONS,
   DEFAULT_CODEX_MODEL,
   DEFAULT_CODEX_MODEL_OPTIONS,
+  DEFAULT_OPENCODE_MODEL,
+  DEFAULT_OPENCODE_MODEL_OPTIONS,
   normalizeClaudeContextWindow,
   normalizeClaudeModelId,
   normalizeCodexModelId,
+  normalizeOpenCodeModelId,
   isClaudeReasoningEffort,
   isCodexExecutionMode,
   isCodexReasoningEffort,
@@ -15,6 +18,7 @@ import {
   type ChatProviderPreferences,
   type ClaudeModelOptions,
   type CodexModelOptions,
+  type OpenCodeModelOptions,
   type DefaultProviderPreference,
   type ProviderPreference,
   type ProviderModelOptionsByProvider,
@@ -30,6 +34,12 @@ export type ComposerState =
     provider: "claude"
     model: string
     modelOptions: ClaudeModelOptions
+    planMode: boolean
+  }
+  | {
+    provider: "opencode"
+    model: string
+    modelOptions: OpenCodeModelOptions
     planMode: boolean
   }
   | {
@@ -56,6 +66,12 @@ type LegacyPersistedChatPreferencesState = Partial<{
       modelOptions?: Partial<CodexModelOptions>
       planMode?: boolean
     }
+    opencode?: {
+      model?: string
+      effort?: string
+      modelOptions?: Partial<OpenCodeModelOptions>
+      planMode?: boolean
+    }
   }
   composerState: PersistedComposerState
   liveProvider: AgentProvider
@@ -72,6 +88,12 @@ type LegacyPersistedChatPreferencesState = Partial<{
       modelOptions?: Partial<CodexModelOptions>
       planMode?: boolean
     }
+    opencode?: {
+      model?: string
+      effort?: string
+      modelOptions?: Partial<OpenCodeModelOptions>
+      planMode?: boolean
+    }
   }
 }>
 
@@ -81,6 +103,13 @@ type PersistedComposerState =
     model?: string
     effort?: string
     modelOptions?: Partial<ClaudeModelOptions>
+    planMode?: boolean
+  }
+  | {
+    provider: "opencode"
+    model?: string
+    effort?: string
+    modelOptions?: Partial<OpenCodeModelOptions>
     planMode?: boolean
   }
   | {
@@ -97,7 +126,7 @@ type PersistedChatPreferencesState = Pick<
 > & LegacyPersistedChatPreferencesState
 
 export function normalizeDefaultProvider(value?: string): DefaultProviderPreference {
-  if (value === "claude" || value === "codex") return value
+  if (value === "claude" || value === "codex" || value === "opencode") return value
   return "last_used"
 }
 
@@ -164,6 +193,22 @@ export function normalizeCodexPreference(value?: {
   }
 }
 
+export function normalizeOpenCodePreference(value?: {
+  model?: string
+  modelMode?: string
+  reasoningEffortMode?: string
+  modelOptions?: Partial<OpenCodeModelOptions>
+  planMode?: boolean
+}): ProviderPreference<OpenCodeModelOptions> {
+  return {
+    model: normalizeOpenCodeModelId(value?.model),
+    modelMode: normalizeSelectionMode(value?.modelMode),
+    reasoningEffortMode: "auto",
+    modelOptions: { ...DEFAULT_OPENCODE_MODEL_OPTIONS },
+    planMode: false,
+  }
+}
+
 export function createDefaultProviderDefaults(): ChatProviderPreferences {
   return {
     claude: {
@@ -178,6 +223,13 @@ export function createDefaultProviderDefaults(): ChatProviderPreferences {
       modelMode: "auto",
       reasoningEffortMode: "auto",
       modelOptions: { ...DEFAULT_CODEX_MODEL_OPTIONS },
+      planMode: false,
+    },
+    opencode: {
+      model: DEFAULT_OPENCODE_MODEL,
+      modelMode: "auto",
+      reasoningEffortMode: "auto",
+      modelOptions: { ...DEFAULT_OPENCODE_MODEL_OPTIONS },
       planMode: false,
     },
   }
@@ -200,10 +252,19 @@ export function normalizeProviderDefaults(value?: {
     modelOptions?: Partial<CodexModelOptions>
     planMode?: boolean
   }
+  opencode?: {
+    model?: string
+    modelMode?: string
+    reasoningEffortMode?: string
+    effort?: string
+    modelOptions?: Partial<OpenCodeModelOptions>
+    planMode?: boolean
+  }
 }): ChatProviderPreferences {
   return {
     claude: normalizeClaudePreference(value?.claude),
     codex: normalizeCodexPreference(value?.codex),
+    opencode: normalizeOpenCodePreference(value?.opencode),
   }
 }
 
@@ -215,8 +276,9 @@ function normalizeProviderPreference<TProvider extends AgentProvider>(
     case "claude":
       return normalizeClaudePreference(value as Partial<ProviderPreference<ClaudeModelOptions>> & { effort?: string }) as ProviderPreference<ProviderModelOptionsByProvider[TProvider]>
     case "codex":
-    default:
       return normalizeCodexPreference(value as Partial<ProviderPreference<CodexModelOptions>> & { effort?: string }) as ProviderPreference<ProviderModelOptionsByProvider[TProvider]>
+    case "opencode":
+      return normalizeOpenCodePreference(value as Partial<ProviderPreference<OpenCodeModelOptions>>) as ProviderPreference<ProviderModelOptionsByProvider[TProvider]>
   }
 }
 
@@ -244,7 +306,7 @@ function composerFromProviderDefaults(
       }
     }
     case "codex":
-    default: {
+    {
       const preference = providerDefaults.codex
       return {
         provider: "codex",
@@ -252,6 +314,10 @@ function composerFromProviderDefaults(
         modelOptions: { ...preference.modelOptions },
         planMode: preference.planMode,
       }
+    }
+    case "opencode": {
+      const preference = providerDefaults.opencode
+      return { provider: "opencode", model: preference.model, modelOptions: { ...preference.modelOptions }, planMode: false }
     }
   }
 }
@@ -278,6 +344,8 @@ function sameComposerState(left: ComposerState | undefined, right: ComposerState
       && (left.modelOptions.executionMode ?? DEFAULT_CODEX_MODEL_OPTIONS.executionMode)
         === (right.modelOptions.executionMode ?? DEFAULT_CODEX_MODEL_OPTIONS.executionMode)
   }
+
+  if (left.provider === "opencode" && right.provider === "opencode") return true
 
   return false
 }
@@ -308,6 +376,11 @@ function normalizeComposerState(
     }
   }
 
+  if (value?.provider === "opencode") {
+    const preference = normalizeOpenCodePreference(value)
+    return { provider: "opencode", model: preference.model, modelOptions: preference.modelOptions, planMode: false }
+  }
+
   if (legacyLiveProvider === "claude") {
     const preference = normalizeClaudePreference(legacyLivePreferences?.claude)
     return {
@@ -326,6 +399,11 @@ function normalizeComposerState(
       modelOptions: preference.modelOptions,
       planMode: preference.planMode,
     }
+  }
+
+  if (legacyLiveProvider === "opencode") {
+    const preference = normalizeOpenCodePreference(legacyLivePreferences?.opencode)
+    return { provider: "opencode", model: preference.model, modelOptions: preference.modelOptions, planMode: false }
   }
 
   return composerFromProviderDefaults("claude", providerDefaults)
@@ -506,7 +584,7 @@ interface ChatPreferencesState {
   setChatComposerModel: (chatId: string, model: string) => void
   setChatComposerModelOptions: (
     chatId: string,
-    modelOptions: Partial<ClaudeModelOptions> | Partial<CodexModelOptions>
+    modelOptions: Partial<ClaudeModelOptions> | Partial<CodexModelOptions> | Partial<OpenCodeModelOptions>
   ) => void
   setChatComposerPlanMode: (chatId: string, planMode: boolean) => void
   resetChatComposerFromProvider: (chatId: string, provider: AgentProvider) => void
@@ -594,6 +672,9 @@ export const useChatPreferencesStore = create<ChatPreferencesState>()(
                 }),
               },
             }
+          }
+          if (provider === "opencode") {
+            return { providerDefaults: { ...state.providerDefaults, opencode: normalizeOpenCodePreference({ ...state.providerDefaults.opencode }) } }
           }
           return state
         }),
@@ -688,6 +769,7 @@ export const useChatPreferencesStore = create<ChatPreferencesState>()(
               planMode: composerState.planMode,
             }
           }
+          if (composerState.provider === "opencode") return composerState
           return composerState
         })),
       setChatComposerPlanMode: (chatId, planMode) =>

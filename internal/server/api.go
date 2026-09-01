@@ -701,7 +701,7 @@ func handleAPIHook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	eventKey := meta.Key + ":" + normalizedHookEventName(event.HookEventName) + ":" + meta.UpdatedAt.Format(time.RFC3339Nano)
-	EventBroker.Broadcast(SSEEvent{
+	broadcastGlobalEvent(SSEEvent{
 		Source:           "hook",
 		EventKey:         eventKey,
 		SessionKey:       meta.Key,

@@ -11,6 +11,7 @@ import {
   type ModelOptions,
   type ProviderCatalogEntry,
   type RateLimitSnapshot,
+  DEFAULT_OPENCODE_MODEL_OPTIONS,
   normalizeClaudeContextWindow,
   resolveClaudeContextWindowTokens,
 } from "../../../shared/types"
@@ -27,6 +28,7 @@ import { SessionHealthPopover } from "./SessionHealthPopover"
 import { AttachmentFileCard, AttachmentImageCard } from "../messages/AttachmentCard"
 import { AttachmentPreviewModal } from "../messages/AttachmentPreviewModal"
 import { classifyAttachmentPreview } from "../messages/attachmentPreview"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/tooltip"
 import { overrideContextWindowMaxTokens, type ContextWindowSnapshot } from "../../lib/contextWindow"
 import { useI18n } from "../../i18n/context"
 
@@ -205,6 +207,15 @@ function getEffectiveComposerState(
     }
   }
 
+  if (activeProvider === "opencode") {
+    return {
+      provider: "opencode",
+      model: providerDefaults.opencode.model,
+      modelOptions: { ...providerDefaults.opencode.modelOptions },
+      planMode: composerState.planMode,
+    }
+  }
+
   return {
     provider: "codex",
     model: providerDefaults.codex.model,
@@ -313,6 +324,7 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
     : selectedCodexExecutionMode
   const lockActionLabel = isLockedElsewhere ? t.composer.takeOverSession : t.composer.checkSessionLock
   const effectiveLockActionLabel = lockBusy ? t.composer.checkingSessionLock : lockActionLabel
+  const refreshSessionTextLabel = isRtl ? "رفرش متن نشست" : "Refresh session text"
   const lockedPlaceholder = isLockedElsewhere
     ? t.composer.lockedElsewherePlaceholder
     : isLockUnknown
@@ -504,7 +516,7 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
   function modelOptionsPayloadForState(state: ComposerState): ModelOptions {
     if (state.provider === "claude") return { claude: { ...state.modelOptions } }
     if (state.provider === "codex") return { codex: { ...state.modelOptions } }
-    return { codex: {} }
+    return { opencode: { ...DEFAULT_OPENCODE_MODEL_OPTIONS } }
   }
 
   function applyRuntimeComposerState(nextState: ComposerState) {
@@ -720,7 +732,9 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
       modelOptions = { claude: { ...providerPrefs.modelOptions } }
     } else if (providerPrefs.provider === "codex") {
       modelOptions = { codex: { ...providerPrefs.modelOptions } }
-    } else { modelOptions = { codex: {} } }
+    } else {
+      modelOptions = { opencode: { ...DEFAULT_OPENCODE_MODEL_OPTIONS } }
+    }
     const submitOptions = {
       provider: selectedProvider,
       model: providerPrefs.model,
@@ -977,31 +991,52 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
               className="flex-1 text-base px-2 py-3 md:px-4 md:py-4 resize-none max-h-[200px] outline-none bg-transparent border-0 shadow-none disabled:cursor-not-allowed disabled:opacity-60"
             />
             {readOnly && (isLockedElsewhere || isLockUnknown) ? (
-              <Button
-                type="button"
-                onPointerDown={(event) => {
-                  event.preventDefault()
-                  if (lockBusy) return
-                  if (isLockedElsewhere) onTakeOverSession?.(selectedCodexExecutionMode)
-                  else onRefreshSessionLock?.()
-                }}
-                disabled={lockBusy || (isLockedElsewhere ? !codexLock?.canTakeOver || !onTakeOverSession : !onRefreshSessionLock)}
-                size="icon"
-                aria-label={effectiveLockActionLabel}
-                title={effectiveLockActionLabel}
-                className={cn(
-                  "h-10 w-10 flex-shrink-0 cursor-pointer rounded-full bg-muted text-muted-foreground touch-manipulation hover:bg-muted/80 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 md:h-11 md:w-11",
-                  isRtl ? "mb-1 -ml-0.5 md:mb-1.5 md:ml-0" : "mb-1 -mr-0.5 md:mb-1.5 md:mr-0",
-                )}
-              >
-                {lockBusy ? (
-                  <LoaderCircle className="h-5 w-5 animate-spin md:h-6 md:w-6" aria-hidden="true" />
-                ) : isLockedElsewhere ? (
-                  <LockKeyhole className="h-5 w-5 md:h-6 md:w-6" aria-hidden="true" />
-                ) : (
-                  <RefreshCw className="h-5 w-5 md:h-6 md:w-6" aria-hidden="true" />
-                )}
-              </Button>
+              <TooltipProvider delayDuration={200}>
+                <div className={cn("flex shrink-0 items-center gap-1", isRtl ? "mb-1 -ml-0.5 md:mb-1.5 md:ml-0" : "mb-1 -mr-0.5 md:mb-1.5 md:mr-0")}>
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      if (lockBusy) return
+                      if (isLockedElsewhere) onTakeOverSession?.(selectedCodexExecutionMode)
+                      else onRefreshSessionLock?.()
+                    }}
+                    disabled={lockBusy || (isLockedElsewhere ? !codexLock?.canTakeOver || !onTakeOverSession : !onRefreshSessionLock)}
+                    size="icon"
+                    aria-label={effectiveLockActionLabel}
+                    title={effectiveLockActionLabel}
+                    className="h-10 w-10 cursor-pointer rounded-full bg-muted text-muted-foreground touch-manipulation hover:bg-muted/80 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 md:h-11 md:w-11"
+                  >
+                    {lockBusy ? (
+                      <LoaderCircle className="h-5 w-5 animate-spin md:h-6 md:w-6" aria-hidden="true" />
+                    ) : isLockedElsewhere ? (
+                      <LockKeyhole className="h-5 w-5 md:h-6 md:w-6" aria-hidden="true" />
+                    ) : (
+                      <RefreshCw className="h-5 w-5 md:h-6 md:w-6" aria-hidden="true" />
+                    )}
+                  </Button>
+                  {isLockedElsewhere ? (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => {
+                            if (!lockBusy) onRefreshSessionLock?.()
+                          }}
+                          disabled={lockBusy || !onRefreshSessionLock}
+                          aria-label={refreshSessionTextLabel}
+                          title={refreshSessionTextLabel}
+                          className="h-8 w-8 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-wait disabled:opacity-50"
+                        >
+                          {lockBusy ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent dir={isRtl ? "rtl" : "ltr"}>{refreshSessionTextLabel}</TooltipContent>
+                    </Tooltip>
+                  ) : null}
+                </div>
+              </TooltipProvider>
             ) : (
               <Button
                 type="button"
@@ -1083,8 +1118,9 @@ const ChatInputInner = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 size="sm"
                 disabled={connectionUnavailable || lockBusy || Boolean(canCancel)}
                 onClick={onReloadCodexAuth}
-                title={t.composer.reloadCodexAccount}
-                aria-label={t.composer.reloadCodexAccount}
+                title={lockBusy ? "در حال بازنشانی حساب Codex…" : t.composer.reloadCodexAccount}
+                aria-label={lockBusy ? "در حال بازنشانی حساب Codex…" : t.composer.reloadCodexAccount}
+                aria-busy={lockBusy}
                 className="mx-1 h-8 w-8 shrink-0 cursor-pointer rounded-md p-0 text-muted-foreground hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed"
               >
                 {lockBusy ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />}

@@ -21,6 +21,7 @@ import (
 	codexprovider "abolqasem/internal/providers/codex"
 	codexprotocol "abolqasem/internal/providers/codex/protocol"
 	codexrpc "abolqasem/internal/providers/codex/rpc"
+	opencodeprovider "abolqasem/internal/providers/opencode"
 	"abolqasem/internal/providers/providerexec"
 	"abolqasem/internal/state"
 	"abolqasem/internal/workspace/agent"
@@ -36,20 +37,27 @@ type workspaceTurnStarter struct {
 var workspaceCodexSessions = newWorkspaceCodexSessionManager()
 var workspaceLoadProviderSettings = state.LoadSettings
 
+// workspaceCodexCredentialSwitch prevents a new turn from taking ownership of
+// an app-server while a user is atomically replacing ~/.codex/auth.json. A
+// read lock is held until the turn owns session.turnMu; a writer therefore
+// either sees an idle process or cleanly asks the user to wait for the turn.
+var workspaceCodexCredentialSwitch sync.RWMutex
+
 type workspaceCodexSessionManager struct {
 	mu       sync.Mutex
 	sessions map[string]*workspaceCodexSession
 }
 
 type workspaceCodexSession struct {
-	chatID          string
-	cwd             string
-	threadID        string
-	executionMode   string
-	process         *workspaceCodexProcess
-	turnMu          sync.Mutex
-	idleDrainCancel context.CancelFunc
-	idleDrainDone   chan struct{}
+	chatID              string
+	cwd                 string
+	threadID            string
+	executionMode       string
+	providerFingerprint string
+	process             *workspaceCodexProcess
+	turnMu              sync.Mutex
+	idleDrainCancel     context.CancelFunc
+	idleDrainDone       chan struct{}
 }
 
 type workspaceAsyncTurn struct {
@@ -77,6 +85,13 @@ func newWorkspaceCodexSessionManager() *workspaceCodexSessionManager {
 }
 
 func (m *workspaceCodexSessionManager) session(ctx context.Context, request agent.TurnRequest) (*workspaceCodexSession, error) {
+	workspaceCodexCredentialSwitch.RLock()
+	defer workspaceCodexCredentialSwitch.RUnlock()
+	preparedRequest, runtime, err := workspacePrepareCodexTurn(request)
+	if err != nil {
+		return nil, err
+	}
+	request = preparedRequest
 	m.mu.Lock()
 	existingKey, existing := m.matchingSessionLocked(request.ChatID, request.SessionToken)
 	if existing != nil && existing.reusableFor(request) {
@@ -106,11 +121,12 @@ func (m *workspaceCodexSessionManager) session(ctx context.Context, request agen
 		return nil, process.wrapErr(err)
 	}
 	session := &workspaceCodexSession{
-		chatID:        request.ChatID,
-		cwd:           request.LocalPath,
-		threadID:      threadID,
-		executionMode: workspaceCodexExecutionPolicyFor(request.ExecutionMode).mode,
-		process:       process,
+		chatID:              request.ChatID,
+		cwd:                 request.LocalPath,
+		threadID:            threadID,
+		executionMode:       workspaceCodexExecutionPolicyFor(request.ExecutionMode).mode,
+		providerFingerprint: runtime.Fingerprint,
+		process:             process,
 	}
 
 	m.mu.Lock()
@@ -126,6 +142,70 @@ func (m *workspaceCodexSessionManager) session(ctx context.Context, request agen
 	m.sessions[request.ChatID] = session
 	m.mu.Unlock()
 	return session, nil
+}
+
+// resetForCredentialSwitch closes every idle app-server process. It is called
+// under workspaceCodexCredentialSwitch's write lock, so a new turn cannot race
+// the inspection. A running turn is deliberately skipped: it keeps the token
+// it already loaded and finishes normally, while later turns read auth.json.
+func (m *workspaceCodexSessionManager) resetForCredentialSwitch() int {
+	locked := m.lockIdleSessionsForCredentialSwitch()
+	defer func() {
+		for _, session := range locked {
+			session.turnMu.Unlock()
+		}
+	}()
+	for _, session := range locked {
+		session.close()
+	}
+	m.mu.Lock()
+	for key, session := range m.sessions {
+		for _, closed := range locked {
+			if session == closed {
+				delete(m.sessions, key)
+				break
+			}
+		}
+	}
+	m.mu.Unlock()
+	return len(locked)
+}
+
+func (m *workspaceCodexSessionManager) lockIdleSessionsForCredentialSwitch() []*workspaceCodexSession {
+	m.mu.Lock()
+	sessions := make([]*workspaceCodexSession, 0, len(m.sessions))
+	for _, session := range m.sessions {
+		if session != nil {
+			sessions = append(sessions, session)
+		}
+	}
+	m.mu.Unlock()
+
+	locked := make([]*workspaceCodexSession, 0, len(sessions))
+	for _, session := range sessions {
+		if !session.turnMu.TryLock() {
+			continue
+		}
+		locked = append(locked, session)
+	}
+	return locked
+}
+
+// resetIdleThread closes only this chat's app-server after its active turn has
+// completed. The next message creates a fresh process and reads the currently
+// selected auth.json without disturbing any other chat.
+func (m *workspaceCodexSessionManager) resetIdleThread(chatID, threadID string) bool {
+	m.mu.Lock()
+	key, session := m.matchingSessionLocked(chatID, threadID)
+	if session == nil || !session.turnMu.TryLock() {
+		m.mu.Unlock()
+		return false
+	}
+	delete(m.sessions, key)
+	m.mu.Unlock()
+	defer session.turnMu.Unlock()
+	session.close()
+	return true
 }
 
 func (m *workspaceCodexSessionManager) remove(chatID string, process *workspaceCodexProcess) {
@@ -236,7 +316,10 @@ func (s *workspaceCodexSession) reusableFor(request agent.TurnRequest) bool {
 	if request.SessionToken != "" && s.threadID != request.SessionToken {
 		return false
 	}
-	return s.cwd == request.LocalPath && s.threadID != "" && s.executionMode == workspaceCodexExecutionPolicyFor(request.ExecutionMode).mode
+	return s.cwd == request.LocalPath &&
+		s.threadID != "" &&
+		s.executionMode == workspaceCodexExecutionPolicyFor(request.ExecutionMode).mode &&
+		s.providerFingerprint == workspaceCodexProviderFingerprint(request.CodexModelProvider)
 }
 
 type workspaceCodexExecutionPolicy struct {
@@ -310,6 +393,8 @@ func (s *workspaceTurnStarter) StartTurn(ctx context.Context, request agent.Turn
 		return startWorkspaceCodexTurn(ctx, request), nil
 	case "claude":
 		return startWorkspaceClaudeTurn(ctx, request), nil
+	case "opencode":
+		return startWorkspaceOpenCodeTurn(ctx, request), nil
 	default:
 		return nil, fmt.Errorf("unsupported provider: %s", request.Provider)
 	}
@@ -444,6 +529,91 @@ func startWorkspaceClaudeTurn(parent context.Context, request agent.TurnRequest)
 	return turn
 }
 
+func startWorkspaceOpenCodeTurn(parent context.Context, request agent.TurnRequest) agent.Turn {
+	ctx, cancel := context.WithCancel(parent)
+	turn := &workspaceAsyncTurn{
+		cancel: func() error {
+			cancel()
+			return nil
+		},
+		events:        make(chan agent.TurnEvent, 32),
+		toolResponses: map[string]chan workspaceToolResponse{},
+	}
+	go func() {
+		defer close(turn.events)
+		if settings, err := workspaceLoadProviderSettings(); err == nil {
+			providerexec.SetConfiguredExecutables(settings.ProviderExecutables)
+		}
+		sessionToken := request.SessionToken
+		forkSession := false
+		if request.PendingForkSessionToken != "" {
+			sessionToken = request.PendingForkSessionToken
+			forkSession = true
+		}
+		prompt := workspacePromptText(request.Content, request.Attachments)
+		if sessionToken == "" {
+			prompt = workspaceOpenCodePromptWithContext(request.ChatID, prompt)
+		}
+		result, err := opencodeprovider.NewAdapter(providerexec.ExecutableOrName("opencode")).RunPromptResult(ctx, opencodeprovider.PromptRequest{
+			CWD:          request.LocalPath,
+			Model:        request.Model,
+			Effort:       request.Effort,
+			SessionToken: sessionToken,
+			ForkSession:  forkSession,
+			Prompt:       prompt,
+			Env:          request.Env,
+		})
+		if err != nil {
+			if ctx.Err() != nil {
+				turn.events <- agent.TurnEvent{Type: agent.TurnEventCancelled}
+				return
+			}
+			turn.events <- agent.TurnEvent{Type: agent.TurnEventFailed, Error: err}
+			return
+		}
+		if result.SessionToken != "" {
+			turn.events <- agent.TurnEvent{Type: agent.TurnEventSessionToken, SessionToken: result.SessionToken}
+		}
+		for _, entry := range result.Entries {
+			turn.events <- agent.TurnEvent{Type: agent.TurnEventTranscript, Entry: entry}
+		}
+		turn.events <- agent.TurnEvent{Type: agent.TurnEventFinished}
+	}()
+	return turn
+}
+
+func workspaceOpenCodePromptWithContext(chatID string, prompt string) string {
+	source, err := workspaceConversionSource(chatID)
+	if err != nil || len(source.Entries) == 0 {
+		return prompt
+	}
+	entries := source.Entries
+	if len(entries) > 0 && transcript.Kind(entries[len(entries)-1]) == transcript.KindUserPrompt && strings.TrimSpace(stringValue(entries[len(entries)-1]["content"])) == strings.TrimSpace(prompt) {
+		entries = entries[:len(entries)-1]
+	}
+	var history strings.Builder
+	for _, entry := range entries {
+		switch transcript.Kind(entry) {
+		case transcript.KindUserPrompt:
+			if text := strings.TrimSpace(stringValue(entry["content"])); text != "" {
+				history.WriteString("User: ")
+				history.WriteString(text)
+				history.WriteString("\n\n")
+			}
+		case transcript.KindAssistantText:
+			if text := strings.TrimSpace(stringValue(entry["text"])); text != "" {
+				history.WriteString("Assistant: ")
+				history.WriteString(text)
+				history.WriteString("\n\n")
+			}
+		}
+	}
+	if history.Len() == 0 {
+		return prompt
+	}
+	return "Continue this conversation. The transcript below is context; answer the final user message.\n\n" + history.String() + "User: " + prompt
+}
+
 func startWorkspaceCodexTurn(parent context.Context, request agent.TurnRequest) agent.Turn {
 	ctx, cancel := context.WithCancel(parent)
 	turn := &workspaceAsyncTurn{
@@ -460,13 +630,24 @@ func startWorkspaceCodexTurn(parent context.Context, request agent.TurnRequest) 
 
 func runWorkspaceCodexTurn(ctx context.Context, turnCancel context.CancelFunc, request agent.TurnRequest, turn *workspaceAsyncTurn) {
 	defer close(turn.events)
-
-	session, err := workspaceCodexSessions.session(ctx, request)
+	preparedRequest, _, err := workspacePrepareCodexTurn(request)
 	if err != nil {
 		turn.events <- agent.TurnEvent{Type: agent.TurnEventFailed, Error: err}
 		return
 	}
+	request = preparedRequest
+
+	// Keep the credential-switch read lock through acquisition of turnMu. This
+	// makes an account switch all-or-nothing relative to a new turn.
+	workspaceCodexCredentialSwitch.RLock()
+	session, err := workspaceCodexSessions.session(ctx, request)
+	if err != nil {
+		workspaceCodexCredentialSwitch.RUnlock()
+		turn.events <- agent.TurnEvent{Type: agent.TurnEventFailed, Error: err}
+		return
+	}
 	session.turnMu.Lock()
+	workspaceCodexCredentialSwitch.RUnlock()
 	defer session.turnMu.Unlock()
 	session.stopIdleDrain()
 	process := session.process
@@ -600,6 +781,7 @@ func (p *workspaceCodexProcess) OpenThread(ctx context.Context, request agent.Tu
 	sandbox := executionPolicy.sandbox
 	persistExtendedHistory := false
 	model := optionalWorkspaceString(request.Model)
+	modelProvider := optionalWorkspaceString(request.CodexModelProvider)
 	cwd := optionalWorkspaceString(request.LocalPath)
 	serviceTier := optionalWorkspaceString(request.ServiceTier)
 
@@ -607,6 +789,7 @@ func (p *workspaceCodexProcess) OpenThread(ctx context.Context, request agent.Tu
 		var response codexprotocol.ThreadForkResponse
 		err := p.client.Call(ctx, "thread/fork", codexprotocol.ThreadForkParams{
 			ThreadID:               request.PendingForkSessionToken,
+			ModelProvider:          modelProvider,
 			Model:                  model,
 			CWD:                    cwd,
 			ServiceTier:            serviceTier,
@@ -624,6 +807,7 @@ func (p *workspaceCodexProcess) OpenThread(ctx context.Context, request agent.Tu
 		var response codexprotocol.ThreadResumeResponse
 		err := p.client.Call(ctx, "thread/resume", codexprotocol.ThreadResumeParams{
 			ThreadID:               request.SessionToken,
+			ModelProvider:          modelProvider,
 			Model:                  model,
 			CWD:                    cwd,
 			ServiceTier:            serviceTier,
@@ -641,6 +825,7 @@ func (p *workspaceCodexProcess) OpenThread(ctx context.Context, request agent.Tu
 
 	var response codexprotocol.ThreadStartResponse
 	err := p.client.Call(ctx, "thread/start", codexprotocol.ThreadStartParams{
+		ModelProvider:          modelProvider,
 		Model:                  model,
 		CWD:                    cwd,
 		ServiceTier:            serviceTier,
@@ -1162,6 +1347,9 @@ func isWorkspaceRecoverableCodexResumeError(err error) bool {
 	return strings.Contains(message, "thread not found") ||
 		strings.Contains(message, "not found") ||
 		strings.Contains(message, "unknown thread") ||
+		strings.Contains(message, "failed to deserialize stored thread item") ||
+		strings.Contains(message, "unknown variant `completed`") ||
+		strings.Contains(message, "stored thread item") ||
 		strings.Contains(message, "method not found")
 }
 

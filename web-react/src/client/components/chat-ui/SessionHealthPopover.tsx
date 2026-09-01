@@ -1,7 +1,8 @@
-import { useMemo } from "react"
-import { Mail } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
+import { Cog, Mail, Sparkles } from "lucide-react"
 import type { RateLimitSnapshot, RateLimitWindowSnapshot } from "../../../shared/types"
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/tooltip"
 import { useI18n } from "../../i18n/context"
 import { type ContextWindowSnapshot, formatContextWindowTokens } from "../../lib/contextWindow"
 import {
@@ -17,6 +18,8 @@ interface SessionHealthPopoverProps {
   contextUsage?: ContextWindowSnapshot | null
   accountEmail?: string | null
 }
+
+type ManagerSnapshot = { enabled?: boolean; mode?: string; gateway?: { state?: string }; accounts?: Array<{ name: string; active?: boolean }> }
 
 function clampPercent(value: number) {
   return Math.max(0, Math.min(100, value))
@@ -81,7 +84,30 @@ export function SessionHealthPanel({
   const contextRemaining = contextUsage?.remainingPercentage == null
     ? null
     : clampPercent(contextUsage.remainingPercentage)
+  const [manager, setManager] = useState<ManagerSnapshot | null>(null)
+  const [activatingBest, setActivatingBest] = useState(false)
+  const [accountActionError, setAccountActionError] = useState<string | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    void fetch("/api/codex-manager", { cache: "no-store" }).then(async (response) => response.ok ? await response.json() as ManagerSnapshot : null).then((next) => { if (!cancelled) setManager(next) }).catch(() => undefined)
+    return () => { cancelled = true }
+  }, [])
+  const activateBestAccount = async () => {
+    setActivatingBest(true)
+    setAccountActionError(null)
+    try {
+      const response = await fetch("/api/codex-manager/recommendation", { method: "POST" })
+      if (!response.ok) throw new Error(await response.text())
+      const snapshotResponse = await fetch("/api/codex-manager", { cache: "no-store" })
+      if (snapshotResponse.ok) setManager(await snapshotResponse.json() as ManagerSnapshot)
+    } catch (error) {
+      setAccountActionError(error instanceof Error ? error.message : (fa ? "انتخاب حساب ناموفق بود" : "Could not select an account"))
+    } finally {
+      setActivatingBest(false)
+    }
+  }
   return (
+    <TooltipProvider>
     <div className="space-y-3" dir={fa ? "rtl" : "ltr"}>
       <div className="flex min-w-0 items-start justify-between gap-3">
         <div className="min-w-0">
@@ -93,12 +119,31 @@ export function SessionHealthPanel({
             </div>
           ) : null}
         </div>
-        {snapshot?.planType ? (
-          <span className="shrink-0 rounded-full border border-border/70 px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-            {snapshot.planType}
-          </span>
-        ) : null}
+        <div className="flex shrink-0 items-center gap-1">
+          <Tooltip delayDuration={200}>
+            <TooltipTrigger asChild>
+              <button type="button" onClick={() => window.location.assign("/_/settings/codex-manager")} className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={fa ? "مدیریت حساب‌های Codex" : "Manage Codex accounts"}>
+                <Cog className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent dir={fa ? "rtl" : "ltr"}>{fa ? "مدیریت حساب‌ها" : "Manage accounts"}</TooltipContent>
+          </Tooltip>
+          <Tooltip delayDuration={200}>
+            <TooltipTrigger asChild>
+              <button type="button" disabled={activatingBest} onClick={() => void activateBestAccount()} className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-wait disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={fa ? "انتخاب بهترین حساب" : "Activate best account"}>
+                <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent dir={fa ? "rtl" : "ltr"}>{fa ? "انتخاب بهترین حساب" : "Activate best account"}</TooltipContent>
+          </Tooltip>
+          {snapshot?.planType ? (
+            <span className="rounded-full border border-border/70 px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+              {snapshot.planType}
+            </span>
+          ) : null}
+        </div>
       </div>
+      {accountActionError ? <p className="rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1.5 text-[11px] text-destructive">{accountActionError}</p> : null}
 
       {quotaWindows.length > 0 ? (
         <section className="space-y-2 rounded-xl border border-border/65 bg-muted/20 p-2.5" aria-label={fa ? "بازه‌های سهمیه" : "Quota windows"}>
@@ -159,7 +204,10 @@ export function SessionHealthPanel({
         </div>
       ) : null}
 
+      {manager?.enabled ? <div className="space-y-1 border-t border-border/60 pt-3 text-[11px]" data-session-routing-status="manager"><div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">{fa ? "مسیر ارسال" : "Routing"}</span><span className="font-medium text-foreground">{manager.mode === "manager" ? (fa ? "خودکار · Manager" : "Automatic · Manager") : manager.mode}</span></div><div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">{fa ? "حساب فعلی" : "Current account"}</span><span className="truncate font-medium text-foreground">{manager.accounts?.find((item) => item.active)?.name ?? (fa ? "نامشخص" : "Unknown")}</span></div><div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">{fa ? "سلامت gateway" : "Gateway health"}</span><span className={manager.gateway?.state === "ready" ? "font-medium text-emerald-600" : "font-medium text-amber-600"}>{manager.gateway?.state ?? (fa ? "نامشخص" : "Unknown")}</span></div></div> : null}
+
     </div>
+    </TooltipProvider>
   )
 }
 

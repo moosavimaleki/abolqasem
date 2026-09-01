@@ -24,6 +24,7 @@ const (
 	KindTurnPlan             = "turn_plan"
 	KindProposedPlan         = "proposed_plan"
 	KindTurnActivity         = "turn_activity"
+	KindModelChange          = "model_change"
 	KindUnknown              = "unknown"
 )
 

@@ -140,14 +140,17 @@ func workspaceConvertChat(raw json.RawMessage) (workspaceSessionConversionResult
 		return workspaceSessionConversionResult{}, "", err
 	}
 	pendingFork := false
-	if exportResult.SessionToken != "" {
+	// OpenCode's export is a portable transcript, not a resumable ses_* ID.
+	// Its first turn imports the context and receives a native token from the
+	// OpenCode CLI, so do not try to resume the synthetic conversion ID.
+	if exportResult.SessionToken != "" && payload.TargetProvider != "opencode" {
 		if err := store.SetSessionToken(fork.ID, exportResult.SessionToken); err != nil {
 			return workspaceSessionConversionResult{}, "", err
 		}
 	}
 	if err := appendWorkspaceStoreEvent(workspaceStore(), events.StreamChats, events.TypeChatRuntimeSet, time.Now().UnixMilli(), map[string]any{
 		"chatId":               fork.ID,
-		"nativeSessionId":      exportResult.SessionToken,
+		"nativeSessionId":      nativeSessionIDForProvider(payload.TargetProvider, exportResult.SessionToken),
 		"nativeTranscriptPath": exportResult.TranscriptPath,
 		"lastSummary":          workspaceConversionLastSummary(entries),
 	}); err != nil {
@@ -160,6 +163,13 @@ func workspaceConvertChat(raw json.RawMessage) (workspaceSessionConversionResult
 		ImportedMessageCount: len(entries),
 		PendingFork:          pendingFork,
 	}, fork.ID, nil
+}
+
+func nativeSessionIDForProvider(provider string, token string) string {
+	if strings.EqualFold(strings.TrimSpace(provider), "opencode") {
+		return ""
+	}
+	return token
 }
 
 func workspaceConversionLastSummary(entries []readmodels.TranscriptEntry) string {

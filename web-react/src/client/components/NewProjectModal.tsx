@@ -1,24 +1,25 @@
-import { useState, useEffect, useRef } from "react"
-import { DEFAULT_NEW_PROJECT_ROOT } from "../../shared/branding"
-import { Button } from "./ui/button"
+import { useState, useEffect, useRef } from "react";
+import { DEFAULT_NEW_PROJECT_ROOT } from "../../shared/branding";
+import { Button } from "./ui/button";
 import {
   Dialog,
   DialogContent,
   DialogBody,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
-} from "./ui/dialog"
-import { Input } from "./ui/input"
-import { SegmentedControl } from "./ui/segmented-control"
-import { useI18n } from "../i18n/context"
+} from "./ui/dialog";
+import { Input } from "./ui/input";
+import { SegmentedControl } from "./ui/segmented-control";
+import { useI18n } from "../i18n/context";
 
 interface Props {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  onConfirm: (project: { mode: Tab; localPath: string; title: string }) => void
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: (project: { mode: Tab; localPath: string; title: string }) => void;
 }
 
-type Tab = "new" | "existing"
+type Tab = "new" | "existing";
 
 function toKebab(str: string): string {
   return str
@@ -26,57 +27,64 @@ function toKebab(str: string): string {
     .replace(/[\s_]+/g, "-")
     .replace(/[^a-z0-9-]/g, "")
     .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "")
+    .replace(/^-|-$/g, "");
 }
 
 export function NewProjectModal({ open, onOpenChange, onConfirm }: Props) {
-  const { t } = useI18n()
-  const [tab, setTab] = useState<Tab>("new")
-  const [name, setName] = useState("")
-  const [existingPath, setExistingPath] = useState("")
-  const inputRef = useRef<HTMLInputElement>(null)
-  const existingInputRef = useRef<HTMLInputElement>(null)
+  const { t } = useI18n();
+  const [tab, setTab] = useState<Tab>("new");
+  const [name, setName] = useState("");
+  const [existingPath, setExistingPath] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const existingInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (open) {
-      setTab("new")
-      setName("")
-      setExistingPath("")
-      setTimeout(() => inputRef.current?.focus(), 0)
+      setTab("new");
+      setName("");
+      setExistingPath("");
+      setTimeout(() => inputRef.current?.focus(), 0);
     }
-  }, [open])
+  }, [open]);
 
   useEffect(() => {
     if (open) {
       setTimeout(() => {
-        if (tab === "new") inputRef.current?.focus()
-        else existingInputRef.current?.focus()
-      }, 0)
+        if (tab === "new") inputRef.current?.focus();
+        else existingInputRef.current?.focus();
+      }, 0);
     }
-  }, [tab, open])
+  }, [tab, open]);
 
-  const kebab = toKebab(name)
-  const newPath = kebab ? `${DEFAULT_NEW_PROJECT_ROOT}/${kebab}` : ""
-  const trimmedExisting = existingPath.trim()
+  const kebab = toKebab(name);
+  const newPath = kebab ? `${DEFAULT_NEW_PROJECT_ROOT}/${kebab}` : "";
+  const trimmedExisting = existingPath.trim();
 
-  const canSubmit = tab === "new" ? !!kebab : !!trimmedExisting
+  const canSubmit = tab === "new" ? !!kebab : !!trimmedExisting;
 
   const handleSubmit = () => {
-    if (!canSubmit) return
+    if (!canSubmit) return;
     if (tab === "new") {
-      onConfirm({ mode: "new", localPath: newPath, title: name.trim() })
+      onConfirm({ mode: "new", localPath: newPath, title: name.trim() });
     } else {
-      const folderName = trimmedExisting.split("/").pop() || trimmedExisting
-      onConfirm({ mode: "existing", localPath: trimmedExisting, title: folderName })
+      const folderName = trimmedExisting.split("/").pop() || trimmedExisting;
+      onConfirm({
+        mode: "existing",
+        localPath: trimmedExisting,
+        title: folderName,
+      });
     }
-    onOpenChange(false)
-  }
+    onOpenChange(false);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="sm">
         <DialogBody className="space-y-4">
           <DialogTitle>{t.newProject.addProject}</DialogTitle>
+          <DialogDescription className="sr-only">
+            {t.newProject.addProject}
+          </DialogDescription>
 
           <SegmentedControl
             value={tab}
@@ -97,8 +105,8 @@ export function NewProjectModal({ open, onOpenChange, onConfirm }: Props) {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") handleSubmit()
-                  if (e.key === "Escape") onOpenChange(false)
+                  if (e.key === "Enter") handleSubmit();
+                  if (e.key === "Escape") onOpenChange(false);
                 }}
                 placeholder={t.newProject.projectName}
               />
@@ -116,8 +124,8 @@ export function NewProjectModal({ open, onOpenChange, onConfirm }: Props) {
                 value={existingPath}
                 onChange={(e) => setExistingPath(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") handleSubmit()
-                  if (e.key === "Escape") onOpenChange(false)
+                  if (e.key === "Enter") handleSubmit();
+                  if (e.key === "Escape") onOpenChange(false);
                 }}
                 placeholder="~/Projects/my-app"
               />
@@ -142,5 +150,5 @@ export function NewProjectModal({ open, onOpenChange, onConfirm }: Props) {
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  )
+  );
 }

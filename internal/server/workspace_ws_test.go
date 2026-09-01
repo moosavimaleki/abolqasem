@@ -4,13 +4,50 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"abolqasem/internal/state"
 	"abolqasem/internal/workspace/events"
 	"abolqasem/internal/workspace/legacyimport"
 	"abolqasem/internal/workspace/protocol"
+	"abolqasem/internal/workspace/readmodels"
 )
+
+func TestWorkspaceNativeHistoryCacheUsesStatAndDoesNotExposeCachedPayload(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "rollout.jsonl")
+	if err := os.WriteFile(path, []byte("first"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	meta := state.SessionMeta{Agent: "codex", SessionID: "session-1", TranscriptPath: path}
+	key, modifiedAt, size, cacheable := workspaceNativeHistoryCacheFingerprint(meta, 20, "")
+	if !cacheable {
+		t.Fatal("expected regular native transcript to be cacheable")
+	}
+	workspaceNativeHistoryCacheStore(key, modifiedAt, size, map[string]any{
+		"messages": []readmodels.TranscriptEntry{{"_id": "message-1", "text": "first"}},
+	})
+	page, ok := workspaceNativeHistoryCacheLookup(key, modifiedAt, size)
+	if !ok {
+		t.Fatal("expected native transcript cache hit")
+	}
+	page["messages"].([]readmodels.TranscriptEntry)[0]["text"] = "mutated by caller"
+	freshPage, ok := workspaceNativeHistoryCacheLookup(key, modifiedAt, size)
+	if !ok || freshPage["messages"].([]readmodels.TranscriptEntry)[0]["text"] != "first" {
+		t.Fatalf("cache payload was mutated by caller: %#v", freshPage)
+	}
+
+	if err := os.WriteFile(path, []byte("file changed and grew"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, nextModifiedAt, nextSize, cacheable := workspaceNativeHistoryCacheFingerprint(meta, 20, "")
+	if !cacheable || (nextModifiedAt == modifiedAt && nextSize == size) {
+		t.Fatalf("expected changed transcript fingerprint, got modified=%d size=%d", nextModifiedAt, nextSize)
+	}
+	if _, ok := workspaceNativeHistoryCacheLookup(key, nextModifiedAt, nextSize); ok {
+		t.Fatal("expected changed native transcript to miss cache")
+	}
+}
 
 func TestWorkspaceCommandRoutingHandlesSystemPing(t *testing.T) {
 	conn := newTestWorkspaceConnection(nil)
@@ -28,6 +65,19 @@ func TestWorkspaceCommandRoutingHandlesSystemPing(t *testing.T) {
 	result, ok := response.Result.(map[string]any)
 	if !ok || result["ok"] != true {
 		t.Fatalf("unexpected ping result: %#v", response.Result)
+	}
+}
+
+func TestWorkspaceCommandRoutingExplainsUnknownCommandRecovery(t *testing.T) {
+	conn := newTestWorkspaceConnection(nil)
+	response := conn.handle(protocol.ClientEnvelope{
+		V:       protocol.ProtocolVersion,
+		Type:    protocol.EnvelopeCommand,
+		ID:      "unknown-command",
+		Command: mustWorkspaceRawCommand(t, map[string]any{"type": "future.command"}),
+	})
+	if response == nil || response.Type != protocol.EnvelopeError || !strings.Contains(response.Message, "Reload the page") {
+		t.Fatalf("expected actionable version-mismatch error, got %#v", response)
 	}
 }
 
@@ -77,6 +127,44 @@ func TestWorkspaceCommandRoutingCreatesProjectAndChat(t *testing.T) {
 	chatID, ok := chatResult["chatId"].(string)
 	if !ok || chatID == "" {
 		t.Fatalf("expected chat id in result, got %#v", chatResult)
+	}
+}
+
+func TestWorkspaceCommandRoutingPersistsProjectGroupOrder(t *testing.T) {
+	withWorkspaceComposerStore(t)
+	conn := newTestWorkspaceConnection(nil)
+	firstID := mustCreateWorkspaceProject(t, conn, t.TempDir())
+	secondID := mustCreateWorkspaceProject(t, conn, t.TempDir())
+
+	response := conn.handle(protocol.ClientEnvelope{
+		V:    protocol.ProtocolVersion,
+		Type: protocol.EnvelopeCommand,
+		ID:   "sidebar-reorder",
+		Command: mustWorkspaceRawCommand(t, map[string]any{
+			"type":       protocol.CommandSidebarReorderProjectGroups,
+			"projectIds": []string{secondID, firstID},
+		}),
+	})
+	if response == nil || response.Type != protocol.EnvelopeAck {
+		t.Fatalf("unexpected reorder response: %#v", response)
+	}
+
+	sidebar := workspaceSidebarSnapshot().(readmodels.SidebarData)
+	if len(sidebar.ProjectGroups) != 2 || sidebar.ProjectGroups[0].GroupKey != secondID || sidebar.ProjectGroups[1].GroupKey != firstID {
+		t.Fatalf("expected persisted order %q, %q; got %#v", secondID, firstID, sidebar.ProjectGroups)
+	}
+
+	invalid := conn.handle(protocol.ClientEnvelope{
+		V:    protocol.ProtocolVersion,
+		Type: protocol.EnvelopeCommand,
+		ID:   "sidebar-reorder-invalid",
+		Command: mustWorkspaceRawCommand(t, map[string]any{
+			"type":       protocol.CommandSidebarReorderProjectGroups,
+			"projectIds": []string{firstID, firstID},
+		}),
+	})
+	if invalid == nil || invalid.Type != protocol.EnvelopeError {
+		t.Fatalf("expected invalid order to be rejected, got %#v", invalid)
 	}
 }
 
@@ -263,12 +351,14 @@ func TestWorkspaceCommandRoutingHandlesGitAndHistoryCommands(t *testing.T) {
 
 func TestWorkspaceRefreshDiffsCommandRunsAsync(t *testing.T) {
 	conn := newTestWorkspaceConnection(nil)
-	raw := mustWorkspaceRawCommand(t, map[string]any{
-		"type":   protocol.CommandChatRefreshDiffs,
-		"chatId": "chat-1",
-	})
-	if !conn.shouldHandleCommandAsync(raw) {
-		t.Fatalf("expected chat.refreshDiffs to be handled asynchronously")
+	for _, commandType := range []string{protocol.CommandChatRefresh, protocol.CommandChatRefreshDiffs} {
+		raw := mustWorkspaceRawCommand(t, map[string]any{
+			"type":   commandType,
+			"chatId": "chat-1",
+		})
+		if !conn.shouldHandleCommandAsync(raw) {
+			t.Fatalf("expected %s to be handled asynchronously", commandType)
+		}
 	}
 }
 
@@ -439,6 +529,40 @@ func TestWorkspaceAppSettingsSubscriptionBroadcastsToSubscribers(t *testing.T) {
 	workspaceConnections.broadcastAppSettings(map[string]any{"locale": "fa"})
 	if len(envelopes) != 1 || envelopes[0].Snapshot == nil || envelopes[0].Snapshot.Type != protocol.SnapshotAppSettings {
 		t.Fatalf("expected app-settings broadcast, got %#v", envelopes)
+	}
+}
+
+func TestWorkspaceGlobalEventSubscriptionUsesExistingWebSocket(t *testing.T) {
+	withWorkspaceConnectionRegistry(t)
+
+	envelopes := []protocol.ServerEnvelope{}
+	conn := newTestWorkspaceConnection(func(envelope protocol.ServerEnvelope) error {
+		envelopes = append(envelopes, envelope)
+		return nil
+	})
+	subscribeResponse := conn.handle(protocol.ClientEnvelope{
+		V:     protocol.ProtocolVersion,
+		Type:  protocol.EnvelopeSubscribe,
+		ID:    "sub-global-events",
+		Topic: &protocol.SubscriptionTopic{Type: protocol.TopicGlobalEvents},
+	})
+	if subscribeResponse == nil || subscribeResponse.Snapshot == nil || subscribeResponse.Snapshot.Type != protocol.SnapshotGlobalEvents {
+		t.Fatalf("unexpected global-events subscribe response: %#v", subscribeResponse)
+	}
+
+	event := SSEEvent{Source: "hook", EventKey: "hook-1", HookEventName: "config-updated"}
+	workspaceConnections.broadcastGlobalEvent(event)
+
+	if len(envelopes) != 1 {
+		t.Fatalf("expected one global event envelope, got %#v", envelopes)
+	}
+	envelope := envelopes[0]
+	if envelope.Type != protocol.EnvelopeEvent || envelope.ID != "sub-global-events" {
+		t.Fatalf("unexpected global event envelope: %#v", envelope)
+	}
+	got, ok := envelope.Event.(SSEEvent)
+	if !ok || got.Source != "hook" || got.EventKey != "hook-1" {
+		t.Fatalf("unexpected global event payload: %#v", envelope.Event)
 	}
 }
 

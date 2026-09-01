@@ -36,7 +36,7 @@ import { useStickyChatFocus } from "../useStickyChatFocus"
 import { useTerminalToggleAnimation } from "../useTerminalToggleAnimation"
 import type { AbolqasemState } from "../useAbolqasemState"
 import { getNextMeasuredInputHeight, getTranscriptPaddingBottom } from "../useAbolqasemState"
-import type { CodexExecutionMode } from "../../../shared/types"
+import type { AgentProvider, CodexExecutionMode } from "../../../shared/types"
 import { ChatInputDock } from "./ChatInputDock"
 import { ChatTranscriptViewport } from "./ChatTranscriptViewport"
 import { TerminalWorkspaceShell } from "./TerminalWorkspaceShell"
@@ -849,7 +849,7 @@ function ChatWorkspace({
 }
 
 export function ChatPage() {
-  const { t, direction } = useI18n()
+  const { t, direction, locale } = useI18n()
   const isRtl = direction === "rtl"
   const [appearanceSettings] = useReaderAppearanceSettings()
   const state = useOutletContext<AbolqasemState>()
@@ -1484,6 +1484,11 @@ export function ChatPage() {
     await state.handleSend(content, options)
   }, [scrollToTranscriptEnd, state])
 
+  const handleRetryFailedTurn = useCallback(async () => {
+    if (!state.activeChatId || state.isProcessing || codexChatReadOnly) return
+    await handleChatSubmit(locale === "fa" ? "ادامه بده" : "Continue")
+  }, [codexChatReadOnly, handleChatSubmit, locale, state.activeChatId, state.isProcessing])
+
   const handleEditQueuedMessage = useCallback(async (queuedMessageId: string) => {
     const message = state.queuedMessages.find((queued) => queued.id === queuedMessageId)
     const composer = chatInputRef.current
@@ -1518,22 +1523,13 @@ export function ChatPage() {
     }
   }, [dialog, state.handleRemoveQueuedMessage, state.queuedMessages, t.common.cancel])
 
-  const refreshCodexLock = useCallback(async () => {
+  const refreshCodexLock = useCallback(() => {
     if (!state.activeChatId) return
-    setCodexLockActionPending(true)
-    try {
-      await state.socket.command({ type: "chat.refresh", chatId: state.activeChatId })
-    } catch (error) {
-      await dialog.alert({
-        title: "بررسی نشست ناموفق بود",
-        description: error instanceof Error ? error.message : String(error),
-        closeLabel: t.common.ok,
-        dir: "rtl",
-      })
-    } finally {
-      setCodexLockActionPending(false)
-    }
-  }, [dialog, state.activeChatId, state.socket, t.common.ok])
+    // Match the live polling path: queue the refresh immediately and let the
+    // chat subscription render its snapshot. A manual text refresh must never
+    // look like a slow lock/takeover operation.
+    void state.socket.command({ type: "chat.refresh", chatId: state.activeChatId }).catch(() => undefined)
+  }, [state.activeChatId, state.socket])
 
   const releaseCodexLock = useCallback(async () => {
     if (!state.activeChatId) return
@@ -1612,12 +1608,31 @@ export function ChatPage() {
     }
   }, [dialog, state.activeChatId, state.socket, t.common.ok])
 
+  const changeRuntimePreference = useCallback(async (preference: {
+    provider: AgentProvider
+    model: string
+  }) => {
+    // Persist the selected runtime model as the provider's manual default so a
+    // full page reload cannot silently restore the catalog's automatic model.
+    await state.handleWriteAppSettings({
+      providerDefaults: {
+        [preference.provider]: {
+          model: preference.model,
+          modelMode: "manual",
+        },
+      },
+    })
+  }, [state.handleWriteAppSettings])
+
   const reloadCodexAuth = useCallback(async () => {
     if (!state.activeChatId) return
     setCodexLockActionPending(true)
     try {
       await state.socket.command({ type: "chat.reloadCodexAuth", chatId: state.activeChatId })
-      await fetchUsageSnapshot("POST").catch(() => undefined)
+      // Usage refresh is independent of the auth reset. Do not block the
+      // button on a slow quota endpoint; it can update the usage panel when it
+      // completes in the background.
+      void fetchUsageSnapshot("POST").catch(() => undefined)
     } catch (error) {
       await dialog.alert({
         title: "حساب Codex بارگذاری نشد",
@@ -1967,6 +1982,7 @@ export function ChatPage() {
             hasOlderHistory={state.hasOlderHistory}
             isProcessing={state.isProcessing}
             runtimeStatus={state.runtimeStatus}
+            runtimeProvider={state.runtime?.provider ?? null}
             readOnly={codexChatReadOnly}
             isDraining={state.isDraining}
             commandError={state.commandError}
@@ -1984,6 +2000,7 @@ export function ChatPage() {
             onAskUserQuestionSubmit={state.handleAskUserQuestion}
             onApprovalRequestSubmit={state.handleApprovalRequest}
             onExitPlanModeConfirm={state.handleExitPlanMode}
+            onRetryTurn={handleRetryFailedTurn}
             checkpoints={state.chatDiffSnapshot?.checkpoints ?? []}
             onRestoreCheckpoint={state.handleRestoreCheckpoint}
             showScrollButton={showScrollToBottom && state.messages.length > 0}
@@ -2026,6 +2043,7 @@ export function ChatPage() {
           onReleaseSession={() => { void releaseCodexLock() }}
           onCodexExecutionModeChange={(executionMode) => { void changeCodexExecutionMode(executionMode) }}
           runtimePlanMode={state.runtime?.planMode}
+          onRuntimePreferenceChange={changeRuntimePreference}
           onRuntimePlanModeChange={changeRuntimePlanMode}
           onReloadCodexAuth={() => { void reloadCodexAuth() }}
           onSubmit={handleChatSubmit}

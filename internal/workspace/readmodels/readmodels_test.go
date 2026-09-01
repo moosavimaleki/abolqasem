@@ -46,6 +46,18 @@ func TestDeriveSidebarData(t *testing.T) {
 	}
 }
 
+func TestPinnedChatsArePersistedAndSortedFirst(t *testing.T) {
+	project, _ := events.NewAt(events.TypeProjectOpened, 100, map[string]any{"projectId": "p", "localPath": "/tmp/p", "title": "p"})
+	first, _ := events.NewAt(events.TypeChatCreated, 200, map[string]any{"chatId": "old", "projectId": "p", "title": "old"})
+	second, _ := events.NewAt(events.TypeChatCreated, 300, map[string]any{"chatId": "new", "projectId": "p", "title": "new"})
+	pinned, _ := events.NewAt(events.TypeChatPinned, 400, map[string]any{"chatId": "old", "pinned": true})
+	state := Replay([]events.Event{project, first, second, pinned})
+	group := DeriveSidebarData(state).ProjectGroups[0]
+	if len(group.Chats) != 2 || group.Chats[0].ChatID != "old" || !group.Chats[0].Pinned {
+		t.Fatalf("expected pinned chat first: %#v", group.Chats)
+	}
+}
+
 func TestReplayIgnoresDuplicateQueuedMessageEventIDs(t *testing.T) {
 	queued, err := events.NewAt(events.TypeQueuedMessageEnqueued, 100, map[string]any{
 		"chatId": "chat-1",

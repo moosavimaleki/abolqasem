@@ -47,6 +47,13 @@ describe("migrateChatPreferencesState", () => {
           modelOptions: { reasoningEffort: "minimal", fastMode: true },
           planMode: false,
         },
+        opencode: {
+          model: "opencode/nemotron-3.5-lightning-free",
+          modelMode: "auto",
+          reasoningEffortMode: "auto",
+          modelOptions: {},
+          planMode: false,
+        },
       },
       composerState: {
         provider: "claude",
@@ -71,6 +78,13 @@ describe("migrateChatPreferencesState", () => {
           modelMode: "auto",
           reasoningEffortMode: "auto",
           modelOptions: { reasoningEffort: "minimal", fastMode: true },
+          planMode: false,
+        },
+        opencode: {
+          model: "opencode/nemotron-3.5-lightning-free",
+          modelMode: "auto",
+          reasoningEffortMode: "auto",
+          modelOptions: {},
           planMode: false,
         },
       },

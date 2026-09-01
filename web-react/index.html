@@ -2,8 +2,12 @@
 <html lang="en" dir="ltr" data-abolqasem-locale="default">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no"
+    />
     <meta name="theme-color" content="#ffffff" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Abolqasem" />
@@ -13,7 +17,7 @@
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <script>
       (() => {
-        const root = document.documentElement
+        const root = document.documentElement;
         const appearanceClasses = [
           "appearance-theme",
           "appearance-light",
@@ -23,7 +27,7 @@
           "appearance-theme-charcoal",
           "appearance-theme-teal",
           "dark",
-        ]
+        ];
 
         function normalizeAppearanceTheme(value) {
           switch (value) {
@@ -32,96 +36,109 @@
             case "night":
             case "charcoal":
             case "teal":
-              return value
+              return value;
             case "abolqasem":
             case "dark":
-              return "night"
+              return "night";
             case "light":
-              return "paper"
+              return "paper";
             default:
-              return "night"
+              return "night";
           }
         }
 
         function getAppearanceThemeClasses(theme) {
-          const classes = ["appearance-theme"]
-          if (theme === "paper") classes.push("appearance-light", "appearance-theme-paper")
-          if (theme === "sepia") classes.push("appearance-theme-sepia")
-          if (theme === "night") classes.push("appearance-theme-night")
-          if (theme === "charcoal") classes.push("appearance-theme-charcoal")
-          if (theme === "teal") classes.push("appearance-theme-teal")
-          if (theme !== "paper") classes.push("dark")
-          return classes
+          const classes = ["appearance-theme"];
+          if (theme === "paper")
+            classes.push("appearance-light", "appearance-theme-paper");
+          if (theme === "sepia") classes.push("appearance-theme-sepia");
+          if (theme === "night") classes.push("appearance-theme-night");
+          if (theme === "charcoal") classes.push("appearance-theme-charcoal");
+          if (theme === "teal") classes.push("appearance-theme-teal");
+          if (theme !== "paper") classes.push("dark");
+          return classes;
         }
 
         function applyAppearanceTheme(theme) {
-          const resolvedTheme = normalizeAppearanceTheme(theme)
-          root.classList.remove(...appearanceClasses)
-          root.classList.add(...getAppearanceThemeClasses(resolvedTheme))
-          root.style.colorScheme = resolvedTheme === "paper" ? "light" : "dark"
-          return resolvedTheme
+          const resolvedTheme = normalizeAppearanceTheme(theme);
+          root.classList.remove(...appearanceClasses);
+          root.classList.add(...getAppearanceThemeClasses(resolvedTheme));
+          root.style.colorScheme = resolvedTheme === "paper" ? "light" : "dark";
+          return resolvedTheme;
         }
 
         try {
-          const serverLocale = root.dataset.abolqasemLocale === "server" ? root.lang : null
-          const cachedLocale = window.localStorage.getItem("abolqasem:locale")
-          const locale = serverLocale === "fa" || serverLocale === "en"
-            ? serverLocale
-            : cachedLocale === "fa" || cachedLocale === "en"
-              ? cachedLocale
-              : root.lang === "fa" || root.lang === "en"
-                ? root.lang
-                : "en"
-          root.lang = locale
-          root.dir = locale === "fa" ? "rtl" : "ltr"
-          root.dataset.abolqasemLocale = serverLocale ? "server" : "bootstrap"
+          const serverLocale =
+            root.dataset.abolqasemLocale === "server" ? root.lang : null;
+          const cachedLocale = window.localStorage.getItem("abolqasem:locale");
+          const locale =
+            serverLocale === "fa" || serverLocale === "en"
+              ? serverLocale
+              : cachedLocale === "fa" || cachedLocale === "en"
+                ? cachedLocale
+                : root.lang === "fa" || root.lang === "en"
+                  ? root.lang
+                  : "en";
+          root.lang = locale;
+          root.dir = locale === "fa" ? "rtl" : "ltr";
+          root.dataset.abolqasemLocale = serverLocale ? "server" : "bootstrap";
         } catch {
-          root.lang = root.lang === "fa" ? "fa" : "en"
-          root.dir = root.lang === "fa" ? "rtl" : "ltr"
+          root.lang = root.lang === "fa" ? "fa" : "en";
+          root.dir = root.lang === "fa" ? "rtl" : "ltr";
         }
 
         function systemAppearanceTheme() {
           try {
-            return window.matchMedia("(prefers-color-scheme: dark)").matches ? "night" : "paper"
+            return window.matchMedia("(prefers-color-scheme: dark)").matches
+              ? "night"
+              : "paper";
           } catch {
-            return "paper"
+            return "paper";
           }
         }
 
-        let appearanceTheme = systemAppearanceTheme()
+        let appearanceTheme = systemAppearanceTheme();
         try {
-          const rawSettings = window.localStorage.getItem("abolqasem:reader-settings:v1")
-            || window.localStorage.getItem("ai-agent-manager.abolqasem-reader-settings.v1")
-          const parsedSettings = rawSettings ? JSON.parse(rawSettings) : null
+          const rawSettings =
+            window.localStorage.getItem("abolqasem:reader-settings:v1") ||
+            window.localStorage.getItem(
+              "ai-agent-manager.abolqasem-reader-settings.v1",
+            );
+          const parsedSettings = rawSettings ? JSON.parse(rawSettings) : null;
           appearanceTheme = parsedSettings?.theme
             ? normalizeAppearanceTheme(parsedSettings.theme)
-            : systemAppearanceTheme()
+            : systemAppearanceTheme();
         } catch {
-          appearanceTheme = systemAppearanceTheme()
+          appearanceTheme = systemAppearanceTheme();
         }
 
-        const resolvedTheme = applyAppearanceTheme(appearanceTheme)
+        const resolvedTheme = applyAppearanceTheme(appearanceTheme);
         const themeColor = (() => {
           switch (resolvedTheme) {
             case "paper":
-              return "rgb(246, 241, 233)"
+              return "rgb(246, 241, 233)";
             case "sepia":
-              return "rgb(30, 22, 21)"
+              return "rgb(30, 22, 21)";
             case "teal":
-              return "rgb(4, 24, 22)"
+              return "rgb(4, 24, 22)";
             case "charcoal":
-              return "rgb(15, 17, 21)"
+              return "rgb(15, 17, 21)";
             case "night":
             default:
-              return "rgb(7, 16, 29)"
+              return "rgb(7, 16, 29)";
           }
-        })()
+        })();
 
-        document.querySelector('meta[name="theme-color"]')?.setAttribute("content", themeColor)
+        document
+          .querySelector('meta[name="theme-color"]')
+          ?.setAttribute("content", themeColor);
         document
           .querySelector('meta[name="apple-mobile-web-app-status-bar-style"]')
-          ?.setAttribute("content", resolvedTheme === "paper" ? "default" : "black-translucent")
-      })()
+          ?.setAttribute(
+            "content",
+            resolvedTheme === "paper" ? "default" : "black-translucent",
+          );
+      })();
     </script>
     <style>
       :root {
@@ -196,7 +213,11 @@
         overflow: hidden;
         color: var(--boot-text);
         background:
-          radial-gradient(circle at 50% 40%, color-mix(in srgb, var(--boot-accent) 18%, transparent), transparent 25rem),
+          radial-gradient(
+            circle at 50% 40%,
+            color-mix(in srgb, var(--boot-accent) 18%, transparent),
+            transparent 25rem
+          ),
           linear-gradient(135deg, var(--boot-bg-start), var(--boot-bg-end));
       }
 
@@ -215,21 +236,31 @@
         border-radius: 56px;
         position: relative;
         overflow: hidden;
-        background: linear-gradient(180deg, var(--boot-card-start), var(--boot-card-end));
+        background: linear-gradient(
+          180deg,
+          var(--boot-card-start),
+          var(--boot-card-end)
+        );
         box-shadow:
           0 24px 70px rgba(0, 0, 0, 0.36),
           inset 0 1px 0 rgba(255, 255, 255, 0.16),
           0 0 0 1px var(--boot-ring);
-        transform: translateY(12px) scale(.92);
+        transform: translateY(12px) scale(0.92);
         opacity: 0;
-        animation: abolqasem-boot-card-in 760ms cubic-bezier(.16, 1, .3, 1) 80ms forwards;
+        animation: abolqasem-boot-card-in 760ms cubic-bezier(0.16, 1, 0.3, 1)
+          80ms forwards;
       }
 
       .abolqasem-boot-splash__card::after {
         content: "";
         position: absolute;
         inset: -40%;
-        background: linear-gradient(115deg, transparent 35%, rgba(255, 255, 255, 0.24), transparent 65%);
+        background: linear-gradient(
+          115deg,
+          transparent 35%,
+          rgba(255, 255, 255, 0.24),
+          transparent 65%
+        );
         transform: translateX(80%) rotate(8deg);
         animation: abolqasem-boot-shine 1100ms ease-out 460ms forwards;
       }
@@ -240,7 +271,8 @@
         display: block;
         filter: drop-shadow(0 10px 20px rgba(0, 0, 0, 0.32));
         clip-path: inset(0 100% 0 0);
-        animation: abolqasem-boot-logo-in 760ms cubic-bezier(.16, 1, .3, 1) 220ms forwards;
+        animation: abolqasem-boot-logo-in 760ms cubic-bezier(0.16, 1, 0.3, 1)
+          220ms forwards;
       }
 
       .abolqasem-boot-splash__brand {
@@ -252,13 +284,17 @@
 
       .abolqasem-boot-splash__title {
         margin: 0;
-        font: 800 2.25rem/1.05 system-ui, sans-serif;
+        font:
+          800 2.25rem/1.05 system-ui,
+          sans-serif;
         letter-spacing: 0;
       }
 
       .abolqasem-boot-splash__subtitle {
         margin: 8px 0 0;
-        font: 500 .95rem/1.5 system-ui, sans-serif;
+        font:
+          500 0.95rem/1.5 system-ui,
+          sans-serif;
         color: var(--boot-muted);
       }
 
@@ -276,29 +312,48 @@
         width: 45%;
         height: 100%;
         border-radius: inherit;
-        background: linear-gradient(90deg, transparent, var(--boot-accent), transparent);
+        background: linear-gradient(
+          90deg,
+          transparent,
+          var(--boot-accent),
+          transparent
+        );
         animation: abolqasem-boot-load 1200ms ease-in-out 700ms infinite;
       }
 
       @keyframes abolqasem-boot-card-in {
-        to { opacity: 1; transform: translateY(0) scale(1); }
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
       }
 
       @keyframes abolqasem-boot-logo-in {
-        to { clip-path: inset(0 0 0 0); }
+        to {
+          clip-path: inset(0 0 0 0);
+        }
       }
 
       @keyframes abolqasem-boot-text-in {
-        to { opacity: 1; transform: translateY(0); }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
       }
 
       @keyframes abolqasem-boot-shine {
-        to { transform: translateX(-80%) rotate(8deg); }
+        to {
+          transform: translateX(-80%) rotate(8deg);
+        }
       }
 
       @keyframes abolqasem-boot-load {
-        0% { transform: translateX(230%); }
-        100% { transform: translateX(-230%); }
+        0% {
+          transform: translateX(230%);
+        }
+        100% {
+          transform: translateX(-230%);
+        }
       }
 
       @media (prefers-reduced-motion: reduce) {
@@ -324,16 +379,26 @@
   </head>
   <body>
     <div id="root">
-      <div class="abolqasem-boot-splash" role="status" aria-label="Abolqasem loading">
+      <div
+        class="abolqasem-boot-splash"
+        role="status"
+        aria-label="Abolqasem loading"
+      >
         <main class="abolqasem-boot-splash__inner">
           <section>
             <div class="abolqasem-boot-splash__card">
-              <img class="abolqasem-boot-splash__logo" src="/abolqasem-logo.svg" alt="" />
+              <img
+                class="abolqasem-boot-splash__logo"
+                src="/abolqasem-logo.svg"
+                alt=""
+              />
             </div>
             <div class="abolqasem-boot-splash__brand">
               <h1 class="abolqasem-boot-splash__title">Abolqasem</h1>
               <p class="abolqasem-boot-splash__subtitle">Loading</p>
-              <div class="abolqasem-boot-splash__loader" aria-hidden="true"><span></span></div>
+              <div class="abolqasem-boot-splash__loader" aria-hidden="true">
+                <span></span>
+              </div>
             </div>
           </section>
         </main>
@@ -341,4 +406,4 @@
     </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
-  </html>
+</html>

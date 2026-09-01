@@ -20,6 +20,7 @@ type Capabilities struct {
 }
 
 type ThreadStartParams struct {
+	ModelProvider          *string `json:"modelProvider,omitempty"`
 	Model                  *string `json:"model,omitempty"`
 	CWD                    *string `json:"cwd,omitempty"`
 	ServiceTier            *string `json:"serviceTier,omitempty"`
@@ -31,6 +32,7 @@ type ThreadStartParams struct {
 
 type ThreadResumeParams struct {
 	ThreadID               string  `json:"threadId"`
+	ModelProvider          *string `json:"modelProvider,omitempty"`
 	Model                  *string `json:"model,omitempty"`
 	CWD                    *string `json:"cwd,omitempty"`
 	ServiceTier            *string `json:"serviceTier,omitempty"`
@@ -41,6 +43,7 @@ type ThreadResumeParams struct {
 
 type ThreadForkParams struct {
 	ThreadID               string  `json:"threadId"`
+	ModelProvider          *string `json:"modelProvider,omitempty"`
 	BeforeTurnID           *string `json:"beforeTurnId,omitempty"`
 	Model                  *string `json:"model,omitempty"`
 	CWD                    *string `json:"cwd,omitempty"`
@@ -59,6 +62,7 @@ type ThreadStartResponse struct {
 	Thread          ThreadSummary `json:"thread"`
 	Model           string        `json:"model"`
 	ReasoningEffort *string       `json:"reasoningEffort"`
+	ModelProvider   string        `json:"modelProvider,omitempty"`
 }
 
 type ThreadResumeResponse = ThreadStartResponse

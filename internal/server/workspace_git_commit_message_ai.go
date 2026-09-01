@@ -76,6 +76,8 @@ func workspaceRunTransientCommitMessageTurn(ctx context.Context, localPath strin
 	case "codex":
 		turn = startWorkspaceCodexTurn(ctx, request)
 		defer workspaceCodexSessions.close(chatID)
+	case "opencode":
+		turn = startWorkspaceOpenCodeTurn(ctx, request)
 	default:
 		return "", fmt.Errorf("unsupported commit message provider: %s", provider)
 	}

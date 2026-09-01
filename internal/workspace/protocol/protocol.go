@@ -27,6 +27,10 @@ const (
 	TopicChat          = "chat"
 	TopicProjectGit    = "project-git"
 	TopicTerminal      = "terminal"
+	// TopicGlobalEvents carries application-wide notifications over the
+	// existing workspace websocket. Keeping it on the same socket prevents a
+	// second, long-lived HTTP connection per browser tab.
+	TopicGlobalEvents = "global-events"
 )
 
 const (
@@ -39,6 +43,7 @@ const (
 	SnapshotChat          = "chat"
 	SnapshotProjectGit    = "project-git"
 	SnapshotTerminal      = "terminal"
+	SnapshotGlobalEvents  = "global-events"
 )
 
 const (
@@ -89,6 +94,7 @@ const (
 	CommandChatRename                      = "chat.rename"
 	CommandChatArchive                     = "chat.archive"
 	CommandChatUnarchive                   = "chat.unarchive"
+	CommandChatPin                         = "chat.pin"
 	CommandChatDelete                      = "chat.delete"
 	CommandChatSetDraftProtection          = "chat.setDraftProtection"
 	CommandChatMarkRead                    = "chat.markRead"

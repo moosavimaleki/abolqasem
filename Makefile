@@ -2,7 +2,7 @@ APP=abolqasem
 PKG=./cmd/abolqasem
 DIST=dist
 
-.PHONY: clean build test build-all web-build
+.PHONY: clean build test build-all web-build sidecar-build sidecar-build-all
 
 web-build:
 	sh scripts/prepare-web-assets.sh
@@ -15,11 +15,17 @@ test:
 	go vet ./...
 	go test ./...
 
-build: web-build
+sidecar-build:
+	sh scripts/build-sidecar.sh
+
+sidecar-build-all:
+	sh scripts/build-sidecar.sh --all
+
+build: web-build sidecar-build
 	mkdir -p $(DIST)
 	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X abolqasem/internal/buildinfo.Version=dev" -o $(DIST)/$(APP) $(PKG)
 
-build-all: clean web-build
+build-all: clean web-build sidecar-build-all
 	mkdir -p $(DIST)
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w -X abolqasem/internal/buildinfo.Version=dev" -o $(DIST)/$(APP)-linux-amd64 $(PKG)
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w -X abolqasem/internal/buildinfo.Version=dev" -o $(DIST)/$(APP)-linux-arm64 $(PKG)

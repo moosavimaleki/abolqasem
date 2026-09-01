@@ -135,7 +135,7 @@ func (c *workspaceConnection) shouldHandleCommandAsync(raw json.RawMessage) bool
 		return false
 	}
 	switch commandType {
-	case protocol.CommandSkillsInstall, protocol.CommandSkillsUninstall, protocol.CommandMCPRegistryInstall, protocol.CommandChatRefreshDiffs:
+	case protocol.CommandSkillsInstall, protocol.CommandSkillsUninstall, protocol.CommandMCPRegistryInstall, protocol.CommandChatRefresh, protocol.CommandChatRefreshDiffs:
 		return true
 	default:
 		return false
@@ -396,7 +396,12 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 		response := protocol.AckEnvelope(envelope.ID, workspaceAck())
 		return &response
 	case protocol.CommandSidebarReorderProjectGroups:
-		response := protocol.ErrorEnvelope(envelope.ID, protocol.CommandSidebarReorderProjectGroups+" is not implemented in the Go workspace backend yet")
+		if err := workspaceReorderProjectGroups(envelope.Command); err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		workspaceConnections.broadcast("")
+		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
 		return &response
 	case protocol.CommandProjectReadDiffPatch:
 		result, err := workspaceReadDiffPatch(envelope.Command)
@@ -492,6 +497,15 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 		return &response
 	case protocol.CommandChatUnarchive:
 		chatID, err := workspaceUnarchiveChat(envelope.Command)
+		if err != nil {
+			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
+			return &response
+		}
+		workspaceConnections.broadcast(chatID)
+		response := protocol.AckEnvelope(envelope.ID, workspaceAck())
+		return &response
+	case protocol.CommandChatPin:
+		chatID, err := workspacePinChat(envelope.Command)
 		if err != nil {
 			response := protocol.ErrorEnvelope(envelope.ID, err.Error())
 			return &response
@@ -986,7 +1000,7 @@ func (c *workspaceConnection) handleCommand(envelope protocol.ClientEnvelope) *p
 		response := protocol.AckEnvelope(envelope.ID, map[string]any{"ok": true})
 		return &response
 	default:
-		response := protocol.ErrorEnvelope(envelope.ID, commandType+" is not implemented in the Go workspace backend yet")
+		response := protocol.ErrorEnvelope(envelope.ID, "This browser tab and the local server are out of sync (unknown command: "+commandType+"). Reload the page; if it persists, restart Abolqasem.")
 		return &response
 	}
 }
@@ -1086,6 +1100,8 @@ func workspaceSubscriptionKey(topic protocol.SubscriptionTopic) string {
 		return updateSubscription
 	case protocol.TopicAppSettings:
 		return appSettingsSubscription
+	case protocol.TopicGlobalEvents:
+		return globalEventsSubscription
 	case protocol.TopicChat:
 		if topic.ChatID == "" {
 			return ""
@@ -1121,6 +1137,11 @@ func workspaceSnapshotForTopic(topic protocol.SubscriptionTopic) (string, any) {
 		return protocol.SnapshotKeybindings, snapshot
 	case protocol.TopicAppSettings:
 		return protocol.SnapshotAppSettings, workspaceAppSettingsSnapshot()
+	case protocol.TopicGlobalEvents:
+		// The subscription exists only for future events. Returning a tiny empty
+		// snapshot keeps the subscribe handshake uniform without replaying stale
+		// notifications to a newly opened tab.
+		return protocol.SnapshotGlobalEvents, nil
 	case protocol.TopicChat:
 		return protocol.SnapshotChat, workspaceChatSnapshot(topic.ChatID, subscriptionRecentLimit(topic))
 	case protocol.TopicProjectGit:
@@ -1294,6 +1315,26 @@ func workspaceAppSettingsSnapshot() map[string]any {
 			"httpProxy": settings.ProviderProxy.HTTPProxy,
 			"noProxy":   settings.ProviderProxy.NoProxy,
 		},
+		"codexBackend": map[string]any{
+			"mode":             settings.CodexBackend.Mode,
+			"enabled":          settings.CodexBackend.Enabled,
+			"managerBaseUrl":   settings.CodexBackend.ManagerBaseURL,
+			"autoSwitchPolicy": settings.CodexBackend.AutoSwitchPolicy,
+			"maintenance": map[string]any{
+				"intervalSeconds": settings.CodexBackend.Maintenance.IntervalSeconds,
+				"jitterSeconds":   settings.CodexBackend.Maintenance.JitterSeconds,
+				"retentionDays":   settings.CodexBackend.Maintenance.RetentionDays,
+				"proxyUrl":        settings.CodexBackend.Maintenance.ProxyURL,
+			},
+			"sessionMonitor": map[string]any{
+				"enabled":         settings.CodexBackend.SessionMonitor.Enabled,
+				"intervalSeconds": settings.CodexBackend.SessionMonitor.IntervalSeconds,
+				"dryRun":          settings.CodexBackend.SessionMonitor.DryRun,
+				"chromeRoot":      settings.CodexBackend.SessionMonitor.ChromeRoot,
+			},
+			"customProviderId": settings.CodexBackend.CustomProviderID,
+			"customProviders":  customProviderSettingsSnapshot(settings.CodexBackend.CustomProviders),
+		},
 		"providerExecutables":  providerExecutableSnapshot(settings.ProviderExecutables),
 		"tmuxCommands":         settings.TmuxCommands,
 		"defaultProvider":      settings.DefaultProvider,
@@ -1317,7 +1358,7 @@ func workspaceAppSettingsSnapshot() map[string]any {
 
 func providerExecutableSnapshot(configured map[string]string) map[string]string {
 	out := map[string]string{}
-	for _, provider := range []string{"claude", "codex"} {
+	for _, provider := range []string{"claude", "codex", "opencode"} {
 		if executable := strings.TrimSpace(configured[provider]); executable != "" {
 			out[provider] = executable
 			continue

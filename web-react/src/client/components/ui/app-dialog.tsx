@@ -7,90 +7,105 @@ import {
   useRef,
   useState,
   type ReactNode,
-} from "react"
-import { Bot, Code2, PencilLine, ShieldAlert, ShieldCheck, Terminal } from "lucide-react"
-import { Button } from "./button"
-import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "./dialog"
-import { Input } from "./input"
-import { cn } from "../../lib/utils"
+} from "react";
+import {
+  Bot,
+  Code2,
+  PencilLine,
+  ShieldAlert,
+  ShieldCheck,
+  Terminal,
+} from "lucide-react";
+import { Button } from "./button";
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogTitle,
+} from "./dialog";
+import { Input } from "./input";
+import { cn } from "../../lib/utils";
 
 interface ConfirmDialogOptions {
-  title: string
-  description?: string
-  confirmLabel?: string
-  cancelLabel?: string
-  confirmVariant?: "default" | "destructive" | "secondary"
-  dir?: "ltr" | "rtl"
+  title: string;
+  description?: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  confirmVariant?: "default" | "destructive" | "secondary";
+  dir?: "ltr" | "rtl";
 }
 
 interface PromptDialogOptions {
-  title: string
-  description?: string
-  placeholder?: string
-  initialValue?: string
-  allowEmpty?: boolean
-  resetLabel?: string
-  resetValue?: string
-  confirmLabel?: string
-  cancelLabel?: string
-  dir?: "ltr" | "rtl"
+  title: string;
+  description?: string;
+  placeholder?: string;
+  initialValue?: string;
+  allowEmpty?: boolean;
+  resetLabel?: string;
+  resetValue?: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  dir?: "ltr" | "rtl";
 }
 
 interface AlertDialogOptions {
-  title: string
-  description?: string
-  closeLabel?: string
-  dir?: "ltr" | "rtl"
+  title: string;
+  description?: string;
+  closeLabel?: string;
+  dir?: "ltr" | "rtl";
 }
 
-type ChoiceDialogIcon = "claude" | "codex" | "custom" | "danger" | "safe" | "terminal"
+type ChoiceDialogIcon =
+  "claude" | "codex" | "custom" | "danger" | "safe" | "terminal";
 
 interface ChoiceDialogOption {
-  value: string
-  label: string
-  description?: string
-  icon?: ChoiceDialogIcon | string
+  value: string;
+  label: string;
+  description?: string;
+  icon?: ChoiceDialogIcon | string;
 }
 
 interface ChoiceDialogOptions {
-  title: string
-  description?: string
-  choices: ChoiceDialogOption[]
-  initialValue?: string
-  cancelLabel?: string
-  dir?: "ltr" | "rtl"
+  title: string;
+  description?: string;
+  choices: ChoiceDialogOption[];
+  initialValue?: string;
+  cancelLabel?: string;
+  dir?: "ltr" | "rtl";
 }
 
 interface AppDialogContextValue {
-  confirm: (options: ConfirmDialogOptions) => Promise<boolean>
-  prompt: (options: PromptDialogOptions) => Promise<string | null>
-  choice: (options: ChoiceDialogOptions) => Promise<string | null>
-  alert: (options: AlertDialogOptions) => Promise<void>
+  confirm: (options: ConfirmDialogOptions) => Promise<boolean>;
+  prompt: (options: PromptDialogOptions) => Promise<string | null>;
+  choice: (options: ChoiceDialogOptions) => Promise<string | null>;
+  alert: (options: AlertDialogOptions) => Promise<void>;
 }
 
 type DialogState =
   | {
-      kind: "confirm"
-      options: ConfirmDialogOptions
-      resolve: (value: boolean) => void
+      kind: "confirm";
+      options: ConfirmDialogOptions;
+      resolve: (value: boolean) => void;
     }
   | {
-      kind: "prompt"
-      options: PromptDialogOptions
-      resolve: (value: string | null) => void
+      kind: "prompt";
+      options: PromptDialogOptions;
+      resolve: (value: string | null) => void;
     }
   | {
-      kind: "alert"
-      options: AlertDialogOptions
-      resolve: () => void
+      kind: "alert";
+      options: AlertDialogOptions;
+      resolve: () => void;
     }
   | {
-      kind: "choice"
-      options: ChoiceDialogOptions
-      resolve: (value: string | null) => void
-    }
+      kind: "choice";
+      options: ChoiceDialogOptions;
+      resolve: (value: string | null) => void;
+    };
 
-const AppDialogContext = createContext<AppDialogContextValue | null>(null)
+const AppDialogContext = createContext<AppDialogContextValue | null>(null);
 
 const choiceIcons: Record<ChoiceDialogIcon, typeof Bot> = {
   claude: Bot,
@@ -99,101 +114,122 @@ const choiceIcons: Record<ChoiceDialogIcon, typeof Bot> = {
   danger: ShieldAlert,
   safe: ShieldCheck,
   terminal: Terminal,
-}
+};
 
-function resolveDialogDirection(value: string | undefined, fallback: "ltr" | "rtl" = "ltr") {
-  const text = value ?? ""
+function resolveDialogDirection(
+  value: string | undefined,
+  fallback: "ltr" | "rtl" = "ltr",
+) {
+  const text = value ?? "";
   for (const char of text) {
-    if ((char >= "؀" && char <= "ۿ") || (char >= "ݐ" && char <= "ݿ") || (char >= "ࢠ" && char <= "ࣿ")) {
-      return "rtl"
+    if (
+      (char >= "؀" && char <= "ۿ") ||
+      (char >= "ݐ" && char <= "ݿ") ||
+      (char >= "ࢠ" && char <= "ࣿ")
+    ) {
+      return "rtl";
     }
   }
-  return fallback
+  return fallback;
 }
 
 export function AppDialogProvider({ children }: { children: ReactNode }) {
-  const [dialogState, setDialogState] = useState<DialogState | null>(null)
-  const [inputValue, setInputValue] = useState("")
-  const inputRef = useRef<HTMLInputElement>(null)
+  const [dialogState, setDialogState] = useState<DialogState | null>(null);
+  const [inputValue, setInputValue] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (dialogState?.kind !== "prompt") return
-    setInputValue(dialogState.options.initialValue ?? "")
+    if (dialogState?.kind !== "prompt") return;
+    setInputValue(dialogState.options.initialValue ?? "");
     setTimeout(() => {
-      inputRef.current?.focus()
-      inputRef.current?.select()
-    }, 0)
-  }, [dialogState])
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }, 0);
+  }, [dialogState]);
 
   const closeDialog = useCallback(() => {
-    setDialogState(null)
-    setInputValue("")
-  }, [])
+    setDialogState(null);
+    setInputValue("");
+  }, []);
 
   const resolveCancel = useCallback(() => {
-    if (!dialogState) return
+    if (!dialogState) return;
     if (dialogState.kind === "confirm") {
-      dialogState.resolve(false)
+      dialogState.resolve(false);
     } else if (dialogState.kind === "prompt") {
-      dialogState.resolve(null)
+      dialogState.resolve(null);
     } else if (dialogState.kind === "choice") {
-      dialogState.resolve(null)
+      dialogState.resolve(null);
     } else {
-      dialogState.resolve()
+      dialogState.resolve();
     }
-    closeDialog()
-  }, [closeDialog, dialogState])
+    closeDialog();
+  }, [closeDialog, dialogState]);
 
   const resolveConfirm = useCallback(() => {
-    if (!dialogState) return
+    if (!dialogState) return;
     if (dialogState.kind === "confirm") {
-      dialogState.resolve(true)
+      dialogState.resolve(true);
     } else if (dialogState.kind === "prompt") {
-      const trimmed = inputValue.trim()
-      dialogState.resolve(trimmed || (dialogState.options.allowEmpty ? "" : null))
+      const trimmed = inputValue.trim();
+      dialogState.resolve(
+        trimmed || (dialogState.options.allowEmpty ? "" : null),
+      );
     } else if (dialogState.kind === "choice") {
-      dialogState.resolve(dialogState.options.initialValue ?? null)
+      dialogState.resolve(dialogState.options.initialValue ?? null);
     } else {
-      dialogState.resolve()
+      dialogState.resolve();
     }
-    closeDialog()
-  }, [closeDialog, dialogState, inputValue])
+    closeDialog();
+  }, [closeDialog, dialogState, inputValue]);
 
   const confirm = useCallback((options: ConfirmDialogOptions) => {
     return new Promise<boolean>((resolve) => {
-      setDialogState({ kind: "confirm", options, resolve })
-    })
-  }, [])
+      setDialogState({ kind: "confirm", options, resolve });
+    });
+  }, []);
 
   const prompt = useCallback((options: PromptDialogOptions) => {
     return new Promise<string | null>((resolve) => {
-      setDialogState({ kind: "prompt", options, resolve })
-    })
-  }, [])
+      setDialogState({ kind: "prompt", options, resolve });
+    });
+  }, []);
 
   const choice = useCallback((options: ChoiceDialogOptions) => {
     return new Promise<string | null>((resolve) => {
-      setDialogState({ kind: "choice", options, resolve })
-    })
-  }, [])
+      setDialogState({ kind: "choice", options, resolve });
+    });
+  }, []);
 
   const alert = useCallback((options: AlertDialogOptions) => {
     return new Promise<void>((resolve) => {
-      setDialogState({ kind: "alert", options, resolve })
-    })
-  }, [])
+      setDialogState({ kind: "alert", options, resolve });
+    });
+  }, []);
 
-  const value = useMemo<AppDialogContextValue>(() => ({ confirm, prompt, choice, alert }), [alert, choice, confirm, prompt])
+  const value = useMemo<AppDialogContextValue>(
+    () => ({ confirm, prompt, choice, alert }),
+    [alert, choice, confirm, prompt],
+  );
 
-  const resolveChoice = useCallback((choiceValue: string) => {
-    if (dialogState?.kind !== "choice") return
-    dialogState.resolve(choiceValue)
-    closeDialog()
-  }, [closeDialog, dialogState])
+  const resolveChoice = useCallback(
+    (choiceValue: string) => {
+      if (dialogState?.kind !== "choice") return;
+      dialogState.resolve(choiceValue);
+      closeDialog();
+    },
+    [closeDialog, dialogState],
+  );
 
-  const dialogDirection = dialogState?.options.dir
-    ?? resolveDialogDirection(`${dialogState?.options.title ?? ""}
-${dialogState?.options.description ?? ""}`, (typeof document !== "undefined" && document.documentElement.dir === "rtl") ? "rtl" : "ltr")
+  const dialogDirection =
+    dialogState?.options.dir ??
+    resolveDialogDirection(
+      `${dialogState?.options.title ?? ""}
+${dialogState?.options.description ?? ""}`,
+      typeof document !== "undefined" && document.documentElement.dir === "rtl"
+        ? "rtl"
+        : "ltr",
+    );
 
   return (
     <AppDialogContext.Provider value={value}>
@@ -201,26 +237,40 @@ ${dialogState?.options.description ?? ""}`, (typeof document !== "undefined" && 
       <Dialog
         open={dialogState !== null}
         onOpenChange={(open) => {
-          if (open || !dialogState) return
-          resolveCancel()
+          if (open || !dialogState) return;
+          resolveCancel();
         }}
       >
         <DialogContent
           size="sm"
           dir={dialogDirection}
           onKeyDown={(event) => {
-            if (event.key !== "Enter" || event.shiftKey || !dialogState || dialogState.kind !== "confirm") return
-            event.preventDefault()
-            resolveConfirm()
+            if (
+              event.key !== "Enter" ||
+              event.shiftKey ||
+              !dialogState ||
+              dialogState.kind !== "confirm"
+            )
+              return;
+            event.preventDefault();
+            resolveConfirm();
           }}
         >
           {dialogState ? (
             <>
               <DialogBody className="space-y-4">
-                <DialogTitle className="pe-8 leading-snug">{dialogState.options.title}</DialogTitle>
+                <DialogTitle className="pe-8 leading-snug">
+                  {dialogState.options.title}
+                </DialogTitle>
                 {dialogState.options.description ? (
-                  <DialogDescription className="whitespace-pre-line text-start leading-6">{dialogState.options.description}</DialogDescription>
-                ) : null}
+                  <DialogDescription className="whitespace-pre-line text-start leading-6">
+                    {dialogState.options.description}
+                  </DialogDescription>
+                ) : (
+                  <DialogDescription className="sr-only">
+                    {dialogState.options.title}
+                  </DialogDescription>
+                )}
                 {dialogState.kind === "prompt" ? (
                   <Input
                     ref={inputRef}
@@ -229,8 +279,8 @@ ${dialogState?.options.description ?? ""}`, (typeof document !== "undefined" && 
                     onChange={(event) => setInputValue(event.target.value)}
                     onKeyDown={(event) => {
                       if (event.key === "Enter") {
-                        event.preventDefault()
-                        resolveConfirm()
+                        event.preventDefault();
+                        resolveConfirm();
                       }
                     }}
                     placeholder={dialogState.options.placeholder}
@@ -239,10 +289,12 @@ ${dialogState?.options.description ?? ""}`, (typeof document !== "undefined" && 
                 {dialogState.kind === "choice" ? (
                   <div className="space-y-1">
                     {dialogState.options.choices.map((choiceOption) => {
-                      const Icon = choiceOption.icon && choiceOption.icon in choiceIcons
-                        ? choiceIcons[choiceOption.icon as ChoiceDialogIcon]
-                        : null
-                      const selected = dialogState.options.initialValue === choiceOption.value
+                      const Icon =
+                        choiceOption.icon && choiceOption.icon in choiceIcons
+                          ? choiceIcons[choiceOption.icon as ChoiceDialogIcon]
+                          : null;
+                      const selected =
+                        dialogState.options.initialValue === choiceOption.value;
                       return (
                         <button
                           key={choiceOption.value}
@@ -261,23 +313,30 @@ ${dialogState?.options.description ?? ""}`, (typeof document !== "undefined" && 
                             </span>
                           ) : null}
                           <span className="min-w-0">
-                            <span className="block text-sm font-medium">{choiceOption.label}</span>
+                            <span className="block text-sm font-medium">
+                              {choiceOption.label}
+                            </span>
                             {choiceOption.description ? (
-                              <span className="mt-1 block text-xs leading-5 text-muted-foreground">{choiceOption.description}</span>
+                              <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+                                {choiceOption.description}
+                              </span>
                             ) : null}
                           </span>
                         </button>
-                      )
+                      );
                     })}
                   </div>
                 ) : null}
               </DialogBody>
               <DialogFooter>
-                {dialogState.kind === "prompt" && dialogState.options.resetLabel ? (
+                {dialogState.kind === "prompt" &&
+                dialogState.options.resetLabel ? (
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => setInputValue(dialogState.options.resetValue ?? "")}
+                    onClick={() =>
+                      setInputValue(dialogState.options.resetValue ?? "")
+                    }
                     className="mr-auto"
                   >
                     {dialogState.options.resetLabel}
@@ -287,16 +346,30 @@ ${dialogState?.options.description ?? ""}`, (typeof document !== "undefined" && 
                   variant="ghost"
                   size="sm"
                   onClick={resolveCancel}
-                  className={dialogState.kind === "alert" ? "hidden" : undefined}
+                  className={
+                    dialogState.kind === "alert" ? "hidden" : undefined
+                  }
                 >
-                  {"cancelLabel" in dialogState.options ? (dialogState.options.cancelLabel ?? "Cancel") : "Cancel"}
+                  {"cancelLabel" in dialogState.options
+                    ? (dialogState.options.cancelLabel ?? "Cancel")
+                    : "Cancel"}
                 </Button>
                 <Button
-                  variant={dialogState.kind === "confirm" ? (dialogState.options.confirmVariant ?? "default") : "secondary"}
+                  variant={
+                    dialogState.kind === "confirm"
+                      ? (dialogState.options.confirmVariant ?? "default")
+                      : "secondary"
+                  }
                   size="sm"
                   onClick={resolveConfirm}
-                  className={dialogState.kind === "choice" ? "hidden" : undefined}
-                  disabled={dialogState.kind === "prompt" && !dialogState.options.allowEmpty && !inputValue.trim()}
+                  className={
+                    dialogState.kind === "choice" ? "hidden" : undefined
+                  }
+                  disabled={
+                    dialogState.kind === "prompt" &&
+                    !dialogState.options.allowEmpty &&
+                    !inputValue.trim()
+                  }
                 >
                   {dialogState.kind === "alert"
                     ? (dialogState.options.closeLabel ?? "OK")
@@ -310,13 +383,13 @@ ${dialogState?.options.description ?? ""}`, (typeof document !== "undefined" && 
         </DialogContent>
       </Dialog>
     </AppDialogContext.Provider>
-  )
+  );
 }
 
 export function useAppDialog() {
-  const context = useContext(AppDialogContext)
+  const context = useContext(AppDialogContext);
   if (!context) {
-    throw new Error("useAppDialog must be used within AppDialogProvider")
+    throw new Error("useAppDialog must be used within AppDialogProvider");
   }
-  return context
+  return context;
 }

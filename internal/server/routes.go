@@ -22,6 +22,10 @@ func setupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/sessions", handleAPISessions)
 	mux.HandleFunc("/api/search", handleAPISearch)
 	mux.HandleFunc("/api/settings", handleAPISettings)
+	mux.HandleFunc("/api/codex-manager", handleAPICodexManager)
+	mux.HandleFunc("/api/codex-manager/", handleAPICodexManager)
+	mux.HandleFunc("/api/custom-providers", handleAPICustomProvider)
+	mux.HandleFunc("/api/custom-providers/", handleAPICustomProvider)
 	mux.HandleFunc("/api/resources", handleAPIResources)
 	mux.HandleFunc("/api/resources/compact", handleAPIResourceCompact)
 	mux.HandleFunc("/api/resources/cache", handleAPIResourceCache)
@@ -93,6 +97,14 @@ func serveAppIndex(w http.ResponseWriter, rootFS fs.FS) {
 		http.Error(w, "app index not found", http.StatusInternalServerError)
 		return
 	}
+	// The HTML entry point contains references to content-hashed assets. It must
+	// always be revalidated after a deploy; otherwise a browser can retain an
+	// old index that points at bundles removed by the next build, producing a
+	// blank page until site data is cleared manually. Hashed assets themselves
+	// remain cacheable by the regular file server.
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write(rewriteAppIndexForDocumentLocale(rewriteAppIndexForRootRoute(data)))
 }

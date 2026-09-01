@@ -51,6 +51,12 @@ func Executable(provider string) string {
 	candidates = append(candidates, detectedExecutableCandidates(provider)...)
 	for _, candidate := range candidates {
 		for _, path := range executableCandidatePaths(candidate) {
+			// OpenCode's Bun launcher can leave a detached helper behind during
+			// a cold --version probe. Its install path is deterministic, so an
+			// executable file check is safer and avoids delaying every snapshot.
+			if provider == "opencode" && executableFile(path) {
+				return path
+			}
 			if executableWorks(path) {
 				return path
 			}
@@ -66,6 +72,9 @@ func DetectExecutable(provider string) string {
 	}
 	for _, candidate := range detectedExecutableCandidates(provider) {
 		for _, path := range executableCandidatePaths(candidate) {
+			if provider == "opencode" && executableFile(path) {
+				return path
+			}
 			if executableWorks(path) {
 				return path
 			}
@@ -113,6 +122,12 @@ func detectedExecutableCandidates(provider string) []string {
 				filepath.Join(home, ".bun", "install", "global", "node_modules", "@openai", "codex-linux-x64", "vendor", "x86_64-unknown-linux-musl", "bin", executable),
 				filepath.Join(home, ".bun", "bin", executable),
 			)
+		case "opencode":
+			candidates = append(candidates,
+				filepath.Join(home, ".opencode", "bin", executable),
+				filepath.Join(home, ".local", "bin", executable),
+				filepath.Join(home, ".bun", "bin", executable),
+			)
 		default:
 			candidates = append(candidates,
 				filepath.Join(home, ".bun", "bin", executable),
@@ -150,7 +165,7 @@ func executableCandidatePaths(path string) []string {
 func Normalize(provider string) string {
 	provider = strings.TrimSpace(strings.ToLower(provider))
 	switch provider {
-	case "claude", "codex":
+	case "claude", "codex", "opencode":
 		return provider
 	default:
 		return ""
@@ -178,7 +193,19 @@ func executableWorks(path string) bool {
 	if info, err := os.Stat(path); err != nil || info.IsDir() {
 		return false
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	timeout := 2 * time.Second
+	// OpenCode is a self-contained Bun binary and its first startup can take
+	// several seconds while it initializes its local database. Do not report a
+	// healthy installation as unavailable merely because the probe is cold.
+	if executableBase(path) == "opencode" {
+		timeout = 10 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	return exec.CommandContext(ctx, path, "--version").Run() == nil
+}
+
+func executableFile(path string) bool {
+	info, err := os.Stat(strings.TrimSpace(path))
+	return err == nil && !info.IsDir() && info.Mode()&0o111 != 0
 }

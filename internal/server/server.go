@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"log"
 	"net"
 	"net/http"
@@ -26,6 +27,12 @@ func Serve(listener net.Listener) error {
 
 	setupRoutes(mux)
 	workspaceTelegramBridge.Reload()
+	stopCodexManagerMaintenance := startCodexManagerMaintenance(context.Background())
+	defer stopCodexManagerMaintenance()
+	stopCodexManagerSessionMonitor := startCodexManagerSessionMonitor(context.Background())
+	defer stopCodexManagerSessionMonitor()
+	stopCodexManagerChromeScan := startCodexManagerChromeScanWorker(context.Background())
+	defer stopCodexManagerChromeScan()
 
 	srv := &http.Server{
 		Addr:    listener.Addr().String(),

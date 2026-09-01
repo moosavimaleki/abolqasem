@@ -9,9 +9,12 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"strings"
 	"sync"
 	"time"
+
+	"abolqasem/internal/providers/providerexec"
 )
 
 const providerModelDiscoveryTimeout = 8 * time.Second
@@ -22,7 +25,7 @@ type providerModelDiscovery struct {
 }
 
 func DiscoverProviderModelInventory(ctx context.Context) ProviderModelInventoryByProvider {
-	providers := []string{"claude", "codex"}
+	providers := []string{"claude", "codex", "opencode"}
 	out := ProviderModelInventoryByProvider{}
 	var mu sync.Mutex
 	var wg sync.WaitGroup
@@ -60,6 +63,8 @@ func discoverProviderModels(ctx context.Context, provider string) providerModelD
 		models, err = discoverClaudeModels(ctx)
 	case "codex":
 		models, err = discoverCodexModels(ctx)
+	case "opencode":
+		models, err = discoverOpenCodeModels(ctx)
 	default:
 		err = fmt.Errorf("unsupported provider: %s", provider)
 	}
@@ -67,6 +72,26 @@ func discoverProviderModels(ctx context.Context, provider string) providerModelD
 		return providerModelDiscovery{models: normalizeProviderModelOptions(provider, models)}
 	}
 	return providerModelDiscovery{err: err}
+}
+
+func discoverOpenCodeModels(ctx context.Context) ([]ProviderModelOption, error) {
+	command := exec.CommandContext(ctx, providerexec.ExecutableOrName("opencode"), "models")
+	output, err := command.Output()
+	if err != nil {
+		return nil, err
+	}
+	models := make([]ProviderModelOption, 0)
+	for _, line := range strings.Split(string(output), "\n") {
+		id := strings.TrimSpace(line)
+		if !providerModelIDLooksValid("opencode", id) {
+			continue
+		}
+		models = append(models, ProviderModelOption{ID: id, Label: id})
+	}
+	if len(models) == 0 {
+		return nil, errors.New("opencode model list is empty")
+	}
+	return models, nil
 }
 
 func discoverCodexModels(ctx context.Context) ([]ProviderModelOption, error) {
@@ -202,6 +227,8 @@ func providerModelIDLooksValid(provider string, id string) bool {
 		return strings.HasPrefix(id, "claude-")
 	case "codex":
 		return strings.HasPrefix(id, "gpt-")
+	case "opencode":
+		return strings.Contains(id, "/")
 	default:
 		return false
 	}

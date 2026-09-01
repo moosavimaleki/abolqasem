@@ -185,6 +185,64 @@ func TestApplySettingsPatchPersistsEditableProviderModelCatalog(t *testing.T) {
 	}
 }
 
+func TestApplySettingsPatchPersistsCodexManagerMaintenance(t *testing.T) {
+	settings := DefaultAppSettings()
+	interval, jitter, retention := 12*60*60, 5*60, 180
+	proxy := " http://127.0.0.1:7890 "
+	settings = ApplySettingsPatch(settings, AppSettingsPatch{
+		CodexBackend: &CodexBackendSettingsPatch{Maintenance: &CodexManagerMaintenancePatch{
+			IntervalSeconds: &interval,
+			JitterSeconds:   &jitter,
+			RetentionDays:   &retention,
+			ProxyURL:        &proxy,
+		}},
+	})
+	got := settings.CodexBackend.Maintenance
+	if got.IntervalSeconds != interval || got.JitterSeconds != jitter || got.RetentionDays != retention || got.ProxyURL != "http://127.0.0.1:7890" {
+		t.Fatalf("unexpected maintenance settings: %#v", got)
+	}
+
+	invalidInterval, invalidJitter, invalidRetention := 1, 99_999, 0
+	settings = ApplySettingsPatch(settings, AppSettingsPatch{
+		CodexBackend: &CodexBackendSettingsPatch{Maintenance: &CodexManagerMaintenancePatch{
+			IntervalSeconds: &invalidInterval,
+			JitterSeconds:   &invalidJitter,
+			RetentionDays:   &invalidRetention,
+		}},
+	})
+	defaults := DefaultAppSettings().CodexBackend.Maintenance
+	if settings.CodexBackend.Maintenance.IntervalSeconds != defaults.IntervalSeconds || settings.CodexBackend.Maintenance.JitterSeconds != defaults.JitterSeconds || settings.CodexBackend.Maintenance.RetentionDays != defaults.RetentionDays {
+		t.Fatalf("invalid maintenance values were not normalized: %#v", settings.CodexBackend.Maintenance)
+	}
+}
+
+func TestApplySettingsPatchPersistsCodexManagerSessionMonitorSafely(t *testing.T) {
+	settings := DefaultAppSettings()
+	if settings.CodexBackend.SessionMonitor.Enabled || !settings.CodexBackend.SessionMonitor.DryRun {
+		t.Fatalf("session monitor must be opt-in preview by default: %#v", settings.CodexBackend.SessionMonitor)
+	}
+	enabled, dryRun, interval := true, false, 12*60*60
+	chromeRoot := "/tmp/chrome-user-data"
+	settings = ApplySettingsPatch(settings, AppSettingsPatch{
+		CodexBackend: &CodexBackendSettingsPatch{SessionMonitor: &CodexManagerSessionMonitorPatch{
+			Enabled:         &enabled,
+			DryRun:          &dryRun,
+			IntervalSeconds: &interval,
+			ChromeRoot:      &chromeRoot,
+		}},
+	})
+	if got := settings.CodexBackend.SessionMonitor; !got.Enabled || got.DryRun || got.IntervalSeconds != interval || got.ChromeRoot != chromeRoot {
+		t.Fatalf("unexpected session monitor settings: %#v", got)
+	}
+	invalid := 1
+	settings = ApplySettingsPatch(settings, AppSettingsPatch{
+		CodexBackend: &CodexBackendSettingsPatch{SessionMonitor: &CodexManagerSessionMonitorPatch{IntervalSeconds: &invalid}},
+	})
+	if got, want := settings.CodexBackend.SessionMonitor.IntervalSeconds, DefaultAppSettings().CodexBackend.SessionMonitor.IntervalSeconds; got != want {
+		t.Fatalf("invalid session monitor interval=%d want=%d", got, want)
+	}
+}
+
 func TestApplyProviderProxyEnvRemovesInheritedProxyByDefault(t *testing.T) {
 	env := []string{
 		"PATH=/bin",

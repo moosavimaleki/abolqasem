@@ -599,6 +599,14 @@ export function processTranscriptMessages(entries: TranscriptEntry[]): HydratedT
         }
         break
       }
+      case "model_change":
+        messages.push({
+          ...createBaseMessage(entry),
+          kind: "model_change",
+          model: entry.model,
+          reasoningEffort: entry.reasoningEffort,
+        })
+        break
       case "context_window_updated":
         messages.push({
           ...createBaseMessage(entry),

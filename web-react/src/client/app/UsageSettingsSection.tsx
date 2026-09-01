@@ -5,6 +5,7 @@ import { Button } from "../components/ui/button"
 import { Input } from "../components/ui/input"
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "../components/ui/dialog"
 import { formatBytes, formatLocalizedPercent, formatRateLimitDurationLocalized, formatRelativeResetTime, selectRateLimitWindows, type ResourceUsageSnapshot, type UsageSnapshot } from "../lib/usage"
+import { UsageHistoryChart } from "../components/codex-manager/UsageHistoryChart"
 
 function RateWindow({ value, locale }: { value: RateLimitWindowSnapshot; locale: "en" | "fa" }) {
   const used = Math.max(0, Math.min(100, value.usedPercent))
@@ -55,7 +56,7 @@ export function UsageSettingsSection({ locale }: { locale: "en" | "fa" }) {
   const refreshResources = useCallback(async () => {
     setResourcesLoading(true)
     try {
-      const response = await fetch("/api/resources", { cache: "no-store" })
+      const response = await fetch("/api/resources?fresh=1", { cache: "no-store" })
       if (!response.ok) throw new Error(fa ? "خواندن فضای ذخیره‌سازی ناموفق بود" : "Could not load storage usage")
       setResources(await response.json() as ResourceUsageSnapshot)
     } catch (nextError) {
@@ -124,7 +125,7 @@ export function UsageSettingsSection({ locale }: { locale: "en" | "fa" }) {
   }, [])
 
   if (usageLoading && !usage) {
-    return <div className="flex min-h-52 items-center justify-center text-muted-foreground"><Loader2 className="size-4 animate-spin" /></div>
+    return <div className="flex min-h-52 items-center justify-center gap-2 text-sm text-muted-foreground" role="status" aria-live="polite"><Loader2 className="size-4 animate-spin" />{fa ? "در حال دریافت مصرف از app-server…" : "Loading usage from app-server…"}</div>
   }
 
   const codex = usage?.codex
@@ -153,7 +154,7 @@ export function UsageSettingsSection({ locale }: { locale: "en" | "fa" }) {
 
       <section className="rounded-2xl border border-border bg-card/30 p-3 sm:p-4" aria-labelledby="cache-usage-title">
         <div className="mb-3 flex items-center gap-2"><Database className="size-4 text-muted-foreground" /><h2 id="cache-usage-title" className="font-medium">{fa ? "کش و فضای ذخیره‌سازی ابوالقاسم" : "Abolqasem cache and storage"}</h2></div>
-        {resourcesLoading && !resources ? <div className="flex min-h-24 items-center justify-center text-muted-foreground"><Loader2 className="size-4 animate-spin" /></div> : <>
+        {resourcesLoading && !resources ? <div className="flex min-h-24 items-center justify-center gap-2 text-sm text-muted-foreground" role="status" aria-live="polite"><Loader2 className="size-4 animate-spin" />{fa ? "در حال بررسی فضای ذخیره‌سازی…" : "Checking storage…"}</div> : <>
         <div className="grid grid-cols-2 gap-2 lg:grid-cols-5">
           {[
             [fa ? "کش قابل پاک‌سازی" : "Clearable cache", resources?.storage.cache_bytes ?? 0],
@@ -181,6 +182,8 @@ export function UsageSettingsSection({ locale }: { locale: "en" | "fa" }) {
           <Button variant="outline" size="sm" onClick={() => void refreshResources()} disabled={resourcesLoading}>{fa ? "بررسی فضا" : "Check now"}</Button>
         </div>
       </section>
+
+      <UsageHistoryChart locale={locale} />
 
       <Dialog open={confirmClear} onOpenChange={setConfirmClear}>
         <DialogContent size="sm">

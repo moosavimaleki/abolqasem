@@ -15,6 +15,7 @@ const ROW_WRAPPER_CLASS = "mx-auto max-w-[800px] pb-5"
 function renderTranscript(
   messages: HydratedTranscriptMessage[],
   latestToolIds = { AskUserQuestion: null, ExitPlanMode: null, TodoWrite: null },
+  onRetryTurn?: () => Promise<void>,
 ) {
   return renderToStaticMarkup(
     <I18nProvider locale="en">
@@ -26,6 +27,7 @@ function renderTranscript(
         onAskUserQuestionSubmit={() => undefined}
         onApprovalRequestSubmit={() => undefined}
         onExitPlanModeConfirm={() => undefined}
+        onRetryTurn={onRetryTurn}
       />
     </I18nProvider>
   )
@@ -65,6 +67,24 @@ function createCommandMessage(id: string, command: string, output = "ok"): Hydra
 }
 
 describe("AbolqasemTranscript", () => {
+  test("offers a retry for a failed result only when the current turn is retryable", () => {
+    const failure: HydratedTranscriptMessage = {
+      id: "turn-error-1",
+      kind: "result",
+      success: false,
+      cancelled: false,
+      result: "Request timed out",
+      durationMs: 4028,
+      timestamp: new Date().toISOString(),
+    }
+
+    expect(renderTranscript([failure])).not.toContain(">Retry<")
+
+    const html = renderTranscript([failure], undefined, async () => undefined)
+    expect(html).toContain(">Retry<")
+    expect(html).toContain("Sends “Continue” in this same session.")
+  })
+
   test("renders native Codex command collapsed, plus file-change and live plan cards", () => {
     const html = renderTranscript([
       { id: "cmd", kind: "command_execution", itemId: "cmd-1", command: "go test ./...", cwd: "/work", status: "completed", aggregatedOutput: "ok", exitCode: 0, timestamp: new Date().toISOString() },

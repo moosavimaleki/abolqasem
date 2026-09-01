@@ -187,6 +187,31 @@ func TestExportNativeSessionPairwiseMatrix(t *testing.T) {
 	}
 }
 
+func TestExportNativeSessionOpenCodeRoundTrip(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+	result, err := ExportNativeSession(ExportArgs{
+		Provider:  "opencode",
+		LocalPath: filepath.Join(home, "project"),
+		Title:     "Converted conversation",
+		Entries: []readmodels.TranscriptEntry{
+			transcript.New(transcript.KindUserPrompt, map[string]any{"content": "hello from codex"}),
+			transcript.New(transcript.KindAssistantText, map[string]any{"text": "hello from OpenCode"}),
+		},
+	})
+	if err != nil {
+		t.Fatalf("export OpenCode: %v", err)
+	}
+	if !strings.HasSuffix(result.TranscriptPath, ".json") || result.SessionToken == "" {
+		t.Fatalf("unexpected OpenCode export: %#v", result)
+	}
+	imported, err := ImportLegacySession(state.SessionMeta{Agent: "opencode", SessionID: result.SessionToken, TranscriptPath: result.TranscriptPath, Cwd: filepath.Join(home, "project")})
+	if err != nil {
+		t.Fatalf("reimport OpenCode: %v", err)
+	}
+	assertTranscriptContentSurvived(t, imported.Entries, "hello from codex", "hello from OpenCode")
+}
+
 func assertTranscriptContentSurvived(t *testing.T, entries []readmodels.TranscriptEntry, userText string, assistantText string) {
 	t.Helper()
 	if !transcriptHasText(entries, transcript.KindUserPrompt, "content", userText) {

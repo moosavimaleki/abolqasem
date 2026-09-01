@@ -25,6 +25,7 @@ const TOOL_CATEGORIES: Record<string, ToolCategory> = {
   web_search: { key: "websearch", singular: "web search", plural: "web searches" },
   skill: { key: "skill", singular: "skill", plural: "skills" },
   todo_write: { key: "todo", singular: "todo update", plural: "todo updates" },
+  mcp_generic: { key: "mcp", singular: "MCP call", plural: "MCP calls" },
 }
 
 const OTHER_CATEGORY: ToolCategory = { key: "other", singular: "tool call", plural: "tool calls" }

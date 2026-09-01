@@ -41,6 +41,13 @@ describe("getProcessingStatus", () => {
     ], "running")).toBe("applying_changes")
   })
 
+  test("shows MCP activity while a native MCP tool is running", () => {
+    expect(getProcessingStatus([
+      message({ kind: "user_prompt", content: "search docs", attachments: [] }),
+      message({ kind: "turn_activity", activity: "running_mcp_tool" }),
+    ], "running")).toBe("running_mcp_tool")
+  })
+
   test("keeps the explicit waiting-for-user state", () => {
     expect(getProcessingStatus([], "waiting_for_user")).toBe("waiting_for_user")
   })

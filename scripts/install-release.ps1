@@ -55,6 +55,10 @@ try {
     if (-not $Binary) {
         throw "Binary not found in $Asset"
     }
+    $Sidecar = Get-ChildItem -Path $ExtractDir -Recurse -Filter "codex-manager-gateway.exe" | Select-Object -First 1
+    if (-not $Sidecar) {
+        throw "Codex Manager sidecar not found in $Asset"
+    }
 
     New-Item -ItemType Directory -Path $BinDir -Force | Out-Null
     $InstallPath = Join-Path $BinDir "$App.exe"
@@ -62,6 +66,7 @@ try {
         & $InstallPath service stop *> $null
     }
     Copy-Item -Path $Binary.FullName -Destination $InstallPath -Force
+    Copy-Item -Path $Sidecar.FullName -Destination (Join-Path $BinDir "codex-manager-gateway.exe") -Force
     & $InstallPath --help | Out-Null
 
     Write-Host "Installed $App to $InstallPath"

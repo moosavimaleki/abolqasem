@@ -1,38 +1,74 @@
-import { useId, useMemo, useState } from "react"
-import { Check, ChevronDown, ChevronRight, Circle, ClipboardList, FileCode2, FolderOpen, Loader2, TerminalSquare, X } from "lucide-react"
-import Markdown from "react-markdown"
-import remarkGfm from "remark-gfm"
-import type { CodexFileUpdateChange, HydratedTranscriptMessage } from "../../../shared/types"
-import { fileRouteHref } from "../file-preview/FilePreviewPanel"
-import { formatBashCommandTitle } from "../../lib/formatters"
-import { cn } from "../../lib/utils"
-import { Dialog, DialogContent, DialogTitle } from "../ui/dialog"
-import { createMarkdownComponents } from "./shared"
+import { useId, useMemo, useState } from "react";
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Circle,
+  ClipboardList,
+  FileCode2,
+  FolderOpen,
+  Loader2,
+  TerminalSquare,
+  X,
+} from "lucide-react";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import type {
+  CodexFileUpdateChange,
+  HydratedTranscriptMessage,
+} from "../../../shared/types";
+import { fileRouteHref } from "../file-preview/FilePreviewPanel";
+import { formatBashCommandTitle } from "../../lib/formatters";
+import { cn } from "../../lib/utils";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "../ui/dialog";
+import { createMarkdownComponents } from "./shared";
 
-type CommandMessage = Extract<HydratedTranscriptMessage, { kind: "command_execution" }>
-type FileChangeMessage = Extract<HydratedTranscriptMessage, { kind: "file_change" }>
-type PlanMessage = Extract<HydratedTranscriptMessage, { kind: "turn_plan" }>
-type ProposedPlanMessage = Extract<HydratedTranscriptMessage, { kind: "proposed_plan" }>
+type CommandMessage = Extract<
+  HydratedTranscriptMessage,
+  { kind: "command_execution" }
+>;
+type FileChangeMessage = Extract<
+  HydratedTranscriptMessage,
+  { kind: "file_change" }
+>;
+type PlanMessage = Extract<HydratedTranscriptMessage, { kind: "turn_plan" }>;
+type ProposedPlanMessage = Extract<
+  HydratedTranscriptMessage,
+  { kind: "proposed_plan" }
+>;
 
 function statusIcon(status: CommandMessage["status"]) {
-  if (status === "inProgress") return <Loader2 className="size-3.5 animate-spin text-sky-400" />
-  if (status === "completed") return <Check className="size-3.5 text-emerald-400" />
-  return <X className="size-3.5 text-red-400" />
+  if (status === "inProgress")
+    return <Loader2 className="size-3.5 animate-spin text-sky-400" />;
+  if (status === "completed")
+    return <Check className="size-3.5 text-emerald-400" />;
+  return <X className="size-3.5 text-red-400" />;
 }
 
 function commandStatusLabel(message: CommandMessage) {
-  if (message.status === "inProgress") return "Running"
-  if (message.status === "failed") return message.exitCode == null ? "Failed" : `Exit ${message.exitCode}`
-  if (message.status === "declined") return "Declined"
-  return message.exitCode != null && message.exitCode !== 0 ? `Exit ${message.exitCode}` : "Completed"
+  if (message.status === "inProgress") return "Running";
+  if (message.status === "failed")
+    return message.exitCode == null ? "Failed" : `Exit ${message.exitCode}`;
+  if (message.status === "declined") return "Declined";
+  return message.exitCode != null && message.exitCode !== 0
+    ? `Exit ${message.exitCode}`
+    : "Completed";
 }
 
 export function CodexCommandMessage({ message }: { message: CommandMessage }) {
-  const [expanded, setExpanded] = useState(false)
-  const detailsId = useId()
-  const title = formatBashCommandTitle(message.command) || "Command"
+  const [expanded, setExpanded] = useState(false);
+  const detailsId = useId();
+  const title = formatBashCommandTitle(message.command) || "Command";
   return (
-    <div className="my-1 w-full overflow-hidden rounded-lg border border-white/10 bg-zinc-900/70 font-mono text-xs" dir="ltr">
+    <div
+      className="my-1 w-full overflow-hidden rounded-lg border border-white/10 bg-zinc-900/70 font-mono text-xs"
+      dir="ltr"
+    >
       <button
         type="button"
         aria-expanded={expanded}
@@ -41,19 +77,41 @@ export function CodexCommandMessage({ message }: { message: CommandMessage }) {
         className="flex min-h-9 w-full cursor-pointer items-center gap-2 px-2.5 py-1.5 text-left transition-colors hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/70"
         title={title}
       >
-        {expanded ? <ChevronDown className="size-3.5 shrink-0 text-zinc-400" /> : <ChevronRight className="size-3.5 shrink-0 text-zinc-400" />}
+        {expanded ? (
+          <ChevronDown className="size-3.5 shrink-0 text-zinc-400" />
+        ) : (
+          <ChevronRight className="size-3.5 shrink-0 text-zinc-400" />
+        )}
         {statusIcon(message.status)}
         <span className="min-w-0 flex-1 truncate text-zinc-200">{title}</span>
-        <span className={cn("shrink-0 text-[11px] font-medium", message.status === "inProgress" ? "text-sky-400" : message.status === "completed" && (message.exitCode == null || message.exitCode === 0) ? "text-emerald-400" : "text-red-400")}>{commandStatusLabel(message)}</span>
+        <span
+          className={cn(
+            "shrink-0 text-[11px] font-medium",
+            message.status === "inProgress"
+              ? "text-sky-400"
+              : message.status === "completed" &&
+                  (message.exitCode == null || message.exitCode === 0)
+                ? "text-emerald-400"
+                : "text-red-400",
+          )}
+        >
+          {commandStatusLabel(message)}
+        </span>
       </button>
       {expanded ? (
         <div id={detailsId} className="border-t border-white/10">
-          {message.cwd ? <div className="border-b border-white/10 px-3 py-1.5 text-zinc-500">cwd: {message.cwd}</div> : null}
-          <pre className="max-h-80 overflow-auto whitespace-pre-wrap px-3 py-2 text-zinc-300">{message.aggregatedOutput || "No output yet"}</pre>
+          {message.cwd ? (
+            <div className="border-b border-white/10 px-3 py-1.5 text-zinc-500">
+              cwd: {message.cwd}
+            </div>
+          ) : null}
+          <pre className="max-h-80 overflow-auto whitespace-pre-wrap px-3 py-2 text-zinc-300">
+            {message.aggregatedOutput || "No output yet"}
+          </pre>
         </div>
       ) : null}
     </div>
-  )
+  );
 }
 
 export function CodexCommandGroup({
@@ -61,22 +119,31 @@ export function CodexCommandGroup({
   expanded,
   onExpandedChange,
 }: {
-  messages: CommandMessage[]
-  expanded: boolean
-  onExpandedChange: (next: boolean) => void
+  messages: CommandMessage[];
+  expanded: boolean;
+  onExpandedChange: (next: boolean) => void;
 }) {
-  const detailsId = useId()
-  const latest = messages[messages.length - 1]
-  const running = messages.some((message) => message.status === "inProgress")
-  const failed = messages.find((message) => message.status === "failed" || (message.exitCode != null && message.exitCode !== 0))
+  const detailsId = useId();
+  const latest = messages[messages.length - 1];
+  const running = messages.some((message) => message.status === "inProgress");
+  const failed = messages.find(
+    (message) =>
+      message.status === "failed" ||
+      (message.exitCode != null && message.exitCode !== 0),
+  );
   const statusMessage = running
-    ? messages.find((message) => message.status === "inProgress") ?? latest
-    : failed ?? latest
-  const latestTitle = formatBashCommandTitle(latest?.command ?? "") || "Command"
-  const label = `${messages.length} commands · latest: ${latestTitle}`
+    ? (messages.find((message) => message.status === "inProgress") ?? latest)
+    : (failed ?? latest);
+  const latestTitle =
+    formatBashCommandTitle(latest?.command ?? "") || "Command";
+  const label = `${messages.length} commands · latest: ${latestTitle}`;
 
   return (
-    <div className="my-1 w-full font-mono text-xs" dir="ltr" data-command-group="true">
+    <div
+      className="my-1 w-full font-mono text-xs"
+      dir="ltr"
+      data-command-group="true"
+    >
       <button
         type="button"
         aria-expanded={expanded}
@@ -85,127 +152,347 @@ export function CodexCommandGroup({
         className="flex min-h-9 w-full cursor-pointer items-center gap-2 rounded-lg border border-dashed border-white/15 bg-zinc-800/80 px-2.5 py-1.5 text-left transition-colors hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/70"
         title={label}
       >
-        {expanded ? <ChevronDown className="size-3.5 shrink-0 text-zinc-400" /> : <ChevronRight className="size-3.5 shrink-0 text-zinc-400" />}
+        {expanded ? (
+          <ChevronDown className="size-3.5 shrink-0 text-zinc-400" />
+        ) : (
+          <ChevronRight className="size-3.5 shrink-0 text-zinc-400" />
+        )}
         {statusMessage ? statusIcon(statusMessage.status) : null}
         <span className="min-w-0 flex-1 truncate text-zinc-200">{label}</span>
-        {statusMessage ? <span className={cn("shrink-0 text-[11px] font-medium", running ? "text-sky-400" : failed ? "text-red-400" : "text-emerald-400")}>{commandStatusLabel(statusMessage)}</span> : null}
+        {statusMessage ? (
+          <span
+            className={cn(
+              "shrink-0 text-[11px] font-medium",
+              running
+                ? "text-sky-400"
+                : failed
+                  ? "text-red-400"
+                  : "text-emerald-400",
+            )}
+          >
+            {commandStatusLabel(statusMessage)}
+          </span>
+        ) : null}
       </button>
       {expanded ? (
         <div id={detailsId} className="mt-1.5 border-l border-white/10 pl-2">
-          {messages.map((message) => <CodexCommandMessage key={message.id} message={message} />)}
+          {messages.map((message) => (
+            <CodexCommandMessage key={message.id} message={message} />
+          ))}
         </div>
       ) : null}
     </div>
-  )
+  );
 }
 
 function diffCounts(diff: string) {
-  let additions = 0
-  let deletions = 0
+  let additions = 0;
+  let deletions = 0;
   for (const line of diff.split("\n")) {
-    if (line.startsWith("+") && !line.startsWith("+++")) additions += 1
-    if (line.startsWith("-") && !line.startsWith("---")) deletions += 1
+    if (line.startsWith("+") && !line.startsWith("+++")) additions += 1;
+    if (line.startsWith("-") && !line.startsWith("---")) deletions += 1;
   }
-  return { additions, deletions }
+  return { additions, deletions };
 }
 
 function firstChangedLine(diff: string) {
-  const match = diff.match(/^@@\s+-\d+(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@/m)
-  if (!match) return undefined
-  const line = Number.parseInt(match[1], 10)
-  return Number.isFinite(line) && line > 0 ? line : undefined
+  const match = diff.match(/^@@\s+-\d+(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@/m);
+  if (!match) return undefined;
+  const line = Number.parseInt(match[1], 10);
+  return Number.isFinite(line) && line > 0 ? line : undefined;
 }
 
 function DiffBody({ change }: { change: CodexFileUpdateChange }) {
-  return <pre className="min-h-0 flex-1 overflow-auto bg-[#07090c] p-4 font-mono text-xs leading-6" dir="ltr">{change.diff.split("\n").map((line, index) => (
-    <div key={index} className={cn("min-w-max px-2", line.startsWith("+") && !line.startsWith("+++") && "bg-emerald-950/60 text-emerald-300", line.startsWith("-") && !line.startsWith("---") && "bg-red-950/60 text-red-300", line.startsWith("@@") && "bg-sky-950/60 text-sky-300")}>{line || " "}</div>
-  ))}</pre>
+  return (
+    <pre
+      className="min-h-0 flex-1 overflow-auto bg-[#07090c] p-4 font-mono text-xs leading-6"
+      dir="ltr"
+    >
+      {change.diff.split("\n").map((line, index) => (
+        <div
+          key={index}
+          className={cn(
+            "min-w-max px-2",
+            line.startsWith("+") &&
+              !line.startsWith("+++") &&
+              "bg-emerald-950/60 text-emerald-300",
+            line.startsWith("-") &&
+              !line.startsWith("---") &&
+              "bg-red-950/60 text-red-300",
+            line.startsWith("@@") && "bg-sky-950/60 text-sky-300",
+          )}
+        >
+          {line || " "}
+        </div>
+      ))}
+    </pre>
+  );
 }
 
-export function CodexFileChangeMessage({ message }: { message: FileChangeMessage }) {
-  const [expanded, setExpanded] = useState(false)
-  const detailsId = useId()
-  const [selected, setSelected] = useState<CodexFileUpdateChange | null>(null)
-  const totals = useMemo(() => message.changes.reduce((sum, change) => {
-    const count = diffCounts(change.diff || "")
-    return { additions: sum.additions + count.additions, deletions: sum.deletions + count.deletions }
-  }, { additions: 0, deletions: 0 }), [message.changes])
+export function CodexFileChangeMessage({
+  message,
+}: {
+  message: FileChangeMessage;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const detailsId = useId();
+  const [selected, setSelected] = useState<CodexFileUpdateChange | null>(null);
+  const totals = useMemo(
+    () =>
+      message.changes.reduce(
+        (sum, change) => {
+          const count = diffCounts(change.diff || "");
+          return {
+            additions: sum.additions + count.additions,
+            deletions: sum.deletions + count.deletions,
+          };
+        },
+        { additions: 0, deletions: 0 },
+      ),
+    [message.changes],
+  );
   return (
     <>
       <div className="my-2 overflow-hidden rounded-xl border border-white/10 bg-zinc-950/60 text-xs">
-        <button type="button" aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded((value) => !value)} className="flex w-full items-center gap-2 bg-zinc-800/80 px-3 py-2 text-left">
+        <button
+          type="button"
+          aria-expanded={expanded}
+          aria-controls={detailsId}
+          onClick={() => setExpanded((value) => !value)}
+          className="flex w-full items-center gap-2 bg-zinc-800/80 px-3 py-2 text-left"
+        >
           <FileCode2 className="size-4 text-sky-400" />
-          <span className="font-medium text-zinc-200">{message.changes.length} files changed</span>
+          <span className="font-medium text-zinc-200">
+            {message.changes.length} files changed
+          </span>
           <span className="text-emerald-400">+{totals.additions}</span>
           <span className="text-red-400">-{totals.deletions}</span>
           <span className="ml-auto text-zinc-500">{message.status}</span>
-          {expanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+          {expanded ? (
+            <ChevronDown className="size-3.5" />
+          ) : (
+            <ChevronRight className="size-3.5" />
+          )}
         </button>
-        {expanded ? <div id={detailsId} className="divide-y divide-white/10">{message.changes.map((change) => {
-          const counts = diffCounts(change.diff || "")
-          const targetPath = change.movedToPath || change.path
-          const targetLine = firstChangedLine(change.diff || "")
-          return <div key={change.path} className="flex items-stretch hover:bg-white/5" dir="ltr">
-            <button type="button" onClick={() => setSelected(change)} className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left">
-              <span className="rounded-full bg-sky-950 px-2 py-0.5 text-[10px] uppercase text-sky-300">{change.kind}</span>
-              <span className="min-w-0 flex-1 truncate font-mono text-sky-300">{change.path}{change.movedToPath ? ` → ${change.movedToPath}` : ""}</span>
-              <span className="text-emerald-400">+{counts.additions}</span><span className="text-red-400">-{counts.deletions}</span>
-            </button>
-            <a href={fileRouteHref(targetPath, targetLine)} target="_blank" rel="noreferrer" aria-label={`Open ${targetPath}${targetLine ? ` at line ${targetLine}` : ""} in file manager`} title="Open in file manager" className="flex w-10 shrink-0 items-center justify-center border-s border-white/10 text-sky-300 transition-colors hover:bg-sky-950/60 hover:text-sky-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-500">
-              <FolderOpen className="size-4" />
-            </a>
+        {expanded ? (
+          <div id={detailsId} className="divide-y divide-white/10">
+            {message.changes.map((change) => {
+              const counts = diffCounts(change.diff || "");
+              const targetPath = change.movedToPath || change.path;
+              const targetLine = firstChangedLine(change.diff || "");
+              return (
+                <div
+                  key={change.path}
+                  className="flex items-stretch hover:bg-white/5"
+                  dir="ltr"
+                >
+                  <button
+                    type="button"
+                    onClick={() => setSelected(change)}
+                    className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left"
+                  >
+                    <span className="rounded-full bg-sky-950 px-2 py-0.5 text-[10px] uppercase text-sky-300">
+                      {change.kind}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate font-mono text-sky-300">
+                      {change.path}
+                      {change.movedToPath ? ` → ${change.movedToPath}` : ""}
+                    </span>
+                    <span className="text-emerald-400">
+                      +{counts.additions}
+                    </span>
+                    <span className="text-red-400">-{counts.deletions}</span>
+                  </button>
+                  <a
+                    href={fileRouteHref(targetPath, targetLine)}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label={`Open ${targetPath}${targetLine ? ` at line ${targetLine}` : ""} in file manager`}
+                    title="Open in file manager"
+                    className="flex w-10 shrink-0 items-center justify-center border-s border-white/10 text-sky-300 transition-colors hover:bg-sky-950/60 hover:text-sky-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-500"
+                  >
+                    <FolderOpen className="size-4" />
+                  </a>
+                </div>
+              );
+            })}
           </div>
-        })}</div> : null}
+        ) : null}
       </div>
-      <Dialog open={selected !== null} onOpenChange={(open) => { if (!open) setSelected(null) }}>
-        <DialogContent size="lg" className="h-[85vh] max-w-[min(96vw,1200px)] overflow-hidden p-0">
-          <div className="border-b border-border p-4 pe-12"><DialogTitle className="truncate font-mono text-sm" dir="ltr">{selected?.path}</DialogTitle></div>
+      <Dialog
+        open={selected !== null}
+        onOpenChange={(open) => {
+          if (!open) setSelected(null);
+        }}
+      >
+        <DialogContent
+          size="lg"
+          className="h-[85vh] max-w-[min(96vw,1200px)] overflow-hidden p-0"
+        >
+          <div className="border-b border-border p-4 pe-12">
+            <DialogTitle className="truncate font-mono text-sm" dir="ltr">
+              {selected?.path}
+            </DialogTitle>
+            <DialogDescription className="sr-only">
+              View file changes
+            </DialogDescription>
+          </div>
           {selected ? <DiffBody change={selected} /> : null}
         </DialogContent>
       </Dialog>
     </>
-  )
+  );
 }
 
 export function CodexPlanMessage({ message }: { message: PlanMessage }) {
-  const updating = message.plan.some((step) => step.status === "inProgress")
-  return <section className="my-3 overflow-hidden rounded-xl border border-border bg-card/50" data-live-plan="true">
-    <div className="flex min-h-10 items-center gap-2 border-b border-border/80 px-3">
-      <ClipboardList className="size-4 shrink-0 text-muted-foreground" />
-      <span className="text-sm font-medium text-foreground">Plan</span>
-      <span className="ms-auto text-xs text-muted-foreground" aria-live="polite">{updating ? "Updating" : "Complete"}</span>
-    </div>
-    {message.explanation ? <p className="border-b border-border/60 px-3 py-2.5 text-sm leading-6 text-muted-foreground" dir="auto">{message.explanation}</p> : null}
-    <ol className="space-y-1.5 p-3">{message.plan.map((step, index) => {
-      const statusLabel = step.status === "completed" ? "Completed" : step.status === "inProgress" ? "In progress" : "Pending"
-      return <li key={`${index}:${step.step}`} className={cn("flex min-w-0 items-start gap-2.5 rounded-lg border border-border/70 bg-muted/20 px-3 py-2 text-sm", step.status === "inProgress" && "bg-muted/45")}>
-        {step.status === "completed" ? <Check className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" /> : step.status === "inProgress" ? <Loader2 className="mt-0.5 size-4 shrink-0 animate-spin text-foreground" aria-hidden="true" /> : <Circle className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />}
-        <span className={cn("min-w-0 flex-1 leading-6 text-foreground", step.status === "completed" && "text-muted-foreground")} dir="auto">{step.step}</span>
-        <span className="sr-only">{statusLabel}</span>
-      </li>
-    })}</ol>
-  </section>
+  const updating = message.plan.some((step) => step.status === "inProgress");
+  return (
+    <section
+      className="my-3 overflow-hidden rounded-xl border border-border bg-card/50"
+      data-live-plan="true"
+    >
+      <div className="flex min-h-10 items-center gap-2 border-b border-border/80 px-3">
+        <ClipboardList className="size-4 shrink-0 text-muted-foreground" />
+        <span className="text-sm font-medium text-foreground">Plan</span>
+        <span
+          className="ms-auto text-xs text-muted-foreground"
+          aria-live="polite"
+        >
+          {updating ? "Updating" : "Complete"}
+        </span>
+      </div>
+      {message.explanation ? (
+        <p
+          className="border-b border-border/60 px-3 py-2.5 text-sm leading-6 text-muted-foreground"
+          dir="auto"
+        >
+          {message.explanation}
+        </p>
+      ) : null}
+      <ol className="space-y-1.5 p-3">
+        {message.plan.map((step, index) => {
+          const statusLabel =
+            step.status === "completed"
+              ? "Completed"
+              : step.status === "inProgress"
+                ? "In progress"
+                : "Pending";
+          return (
+            <li
+              key={`${index}:${step.step}`}
+              className={cn(
+                "flex min-w-0 items-start gap-2.5 rounded-lg border border-border/70 bg-muted/20 px-3 py-2 text-sm",
+                step.status === "inProgress" && "bg-muted/45",
+              )}
+            >
+              {step.status === "completed" ? (
+                <Check
+                  className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                  aria-hidden="true"
+                />
+              ) : step.status === "inProgress" ? (
+                <Loader2
+                  className="mt-0.5 size-4 shrink-0 animate-spin text-foreground"
+                  aria-hidden="true"
+                />
+              ) : (
+                <Circle
+                  className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                  aria-hidden="true"
+                />
+              )}
+              <span
+                className={cn(
+                  "min-w-0 flex-1 leading-6 text-foreground",
+                  step.status === "completed" && "text-muted-foreground",
+                )}
+                dir="auto"
+              >
+                {step.step}
+              </span>
+              <span className="sr-only">{statusLabel}</span>
+            </li>
+          );
+        })}
+      </ol>
+    </section>
+  );
 }
 
-export function CodexProposedPlanMessage({ message }: { message: ProposedPlanMessage }) {
-  const [expanded, setExpanded] = useState(false)
-  const detailsId = useId()
-  const title = message.plan.match(/^#{1,6}\s+(.+)$/m)?.[1]?.trim() || "Plan"
+export function CodexProposedPlanMessage({
+  message,
+}: {
+  message: ProposedPlanMessage;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const detailsId = useId();
+  const title = message.plan.match(/^#{1,6}\s+(.+)$/m)?.[1]?.trim() || "Plan";
 
-  return <section className="my-3 w-full overflow-hidden rounded-xl border border-border bg-card/50" data-proposed-plan="true">
-    <button type="button" aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded((value) => !value)} className="flex min-h-10 w-full cursor-pointer items-center gap-2 px-3 text-start text-sm text-foreground transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
-        {expanded ? <ChevronDown className="size-4 text-muted-foreground" /> : <ChevronRight className="size-4 text-muted-foreground" />}
+  return (
+    <section
+      className="my-3 w-full overflow-hidden rounded-xl border border-border bg-card/50"
+      data-proposed-plan="true"
+    >
+      <button
+        type="button"
+        aria-expanded={expanded}
+        aria-controls={detailsId}
+        onClick={() => setExpanded((value) => !value)}
+        className="flex min-h-10 w-full cursor-pointer items-center gap-2 px-3 text-start text-sm text-foreground transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      >
+        {expanded ? (
+          <ChevronDown className="size-4 text-muted-foreground" />
+        ) : (
+          <ChevronRight className="size-4 text-muted-foreground" />
+        )}
         <ClipboardList className="size-4 text-muted-foreground" />
         <span className="shrink-0 font-medium">Plan</span>
-        {title !== "Plan" ? <span className="min-w-0 flex-1 truncate text-muted-foreground" dir="auto">{title}</span> : null}
-    </button>
-    {expanded ? <div id={detailsId} className="prose prose-sm mx-auto max-w-prose overflow-x-hidden border-t border-border/80 px-4 py-3 text-sm leading-6 text-foreground dark:prose-invert [&_h1]:!mb-2 [&_h1]:!mt-0 [&_h1]:!text-base [&_h2]:!mb-2 [&_h2]:!mt-4 [&_h2]:!text-sm [&_h3]:!mb-2 [&_h3]:!mt-4 [&_h3]:!text-sm [&_li]:!my-0.5 [&_ol]:!my-2 [&_p]:!my-2 [&_ul]:!my-2" dir="auto">
-      <Markdown remarkPlugins={[remarkGfm]} components={createMarkdownComponents({ source: message.plan })}>{message.plan}</Markdown>
-    </div> : null}
-  </section>
+        {title !== "Plan" ? (
+          <span
+            className="min-w-0 flex-1 truncate text-muted-foreground"
+            dir="auto"
+          >
+            {title}
+          </span>
+        ) : null}
+      </button>
+      {expanded ? (
+        <div
+          id={detailsId}
+          className="prose prose-sm mx-auto max-w-prose overflow-x-hidden border-t border-border/80 px-4 py-3 text-sm leading-6 text-foreground dark:prose-invert [&_h1]:!mb-2 [&_h1]:!mt-0 [&_h1]:!text-base [&_h2]:!mb-2 [&_h2]:!mt-4 [&_h2]:!text-sm [&_h3]:!mb-2 [&_h3]:!mt-4 [&_h3]:!text-sm [&_li]:!my-0.5 [&_ol]:!my-2 [&_p]:!my-2 [&_ul]:!my-2"
+          dir="auto"
+        >
+          <Markdown
+            remarkPlugins={[remarkGfm]}
+            components={createMarkdownComponents({ source: message.plan })}
+          >
+            {message.plan}
+          </Markdown>
+        </div>
+      ) : null}
+    </section>
+  );
 }
 
-export function CodexActivityLabel({ activity }: { activity: Extract<HydratedTranscriptMessage, { kind: "turn_activity" }>["activity"] }) {
-  const labels = { thinking: "Thinking", running_command: "Running command", applying_changes: "Applying changes", writing_response: "Writing response" }
-  return <span className="inline-flex items-center gap-2"><TerminalSquare className="size-4" />{labels[activity]}</span>
+export function CodexActivityLabel({
+  activity,
+}: {
+  activity: Extract<
+    HydratedTranscriptMessage,
+    { kind: "turn_activity" }
+  >["activity"];
+}) {
+  const labels = {
+    thinking: "Thinking",
+    running_command: "Running command",
+    running_mcp_tool: "Running MCP tool",
+    applying_changes: "Applying changes",
+    writing_response: "Writing response",
+  };
+  return (
+    <span className="inline-flex items-center gap-2">
+      <TerminalSquare className="size-4" />
+      {labels[activity]}
+    </span>
+  );
 }

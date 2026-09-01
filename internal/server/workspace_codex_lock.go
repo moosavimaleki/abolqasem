@@ -376,30 +376,9 @@ func workspaceReloadCodexAuth(chatID string) (readmodels.CodexLockStatus, error)
 		return status, errors.New("cannot reload Codex authentication while a turn is active")
 	}
 
-	executionMode := workspaceCodexExecutionPolicyFor(status.ExecutionMode).mode
-	projectPath, err := workspaceProjectLocalPathRequired(chat.ProjectID)
-	if err != nil {
-		return status, err
+	if !workspaceCodexSessions.resetIdleThread(ownerChatID, status.SessionID) {
+		return status, errors.New("cannot reset this Codex app-server while a turn is active")
 	}
-	sessionID := status.SessionID
-	if sessionID == "" {
-		sessionID = derefWorkspaceString(chat.SessionToken)
-	}
-
-	workspaceCodexSessions.closeThread(chatID, sessionID)
-	claimCtx, cancel := context.WithTimeout(context.Background(), workspaceCodexClaimTimeout)
-	defer cancel()
-	session, err := workspaceCodexSessions.session(claimCtx, agent.TurnRequest{
-		ChatID:        chat.ID,
-		LocalPath:     projectPath,
-		Provider:      "codex",
-		SessionToken:  sessionID,
-		ExecutionMode: executionMode,
-	})
-	if err != nil {
-		return workspaceCodexLockStatus(chat), fmt.Errorf("reload Codex authentication: %w", err)
-	}
-	session.startIdleDrain()
 	return workspaceCodexLockStatus(chat), nil
 }
 

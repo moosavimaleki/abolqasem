@@ -45,6 +45,17 @@ make build
 
 فرمان `abolqasem install` idempotent است؛ اجرای دوباره آن سرویس و هر سه hook را repair می‌کند. برای حذف کامل نیز از `abolqasem uninstall` استفاده کن.
 
+## Codex Manager
+
+در Settings → Providers می‌توانی Codex Manager را با یک تیک فعال کنی. این
+حالت Rust sidecar محلی را اجرا می‌کند، حساب‌های Codex را مدیریت می‌کند و مدل‌های
+بومی Codex را بدون model mapping عبور می‌دهد. Custom Provider مسیر جداگانه‌ای
+برای endpointهای سازگار با Responses API دارد و mapping در آن اختیاری است.
+
+راهنمای کامل فعال‌سازی، migration، Chrome sessions و عیب‌یابی در
+[Codex Manager](docs/codex-manager.md)، [migration](docs/codex-manager-migration.md)
+و [troubleshooting](docs/troubleshooting.md) قرار دارد.
+
 ## Architecture
 
 - Hook محلی event را از stdin می‌گیرد.

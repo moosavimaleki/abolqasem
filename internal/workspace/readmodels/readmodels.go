@@ -19,6 +19,7 @@ type ProjectRecord struct {
 	SidebarTitle *string `json:"sidebarTitle,omitempty"`
 	CreatedAt    int64   `json:"createdAt"`
 	UpdatedAt    int64   `json:"updatedAt"`
+	SidebarOrder int64   `json:"sidebarOrder,omitempty"`
 	DeletedAt    int64   `json:"deletedAt,omitempty"`
 }
 
@@ -30,6 +31,7 @@ type ChatRecord struct {
 	UpdatedAt               int64   `json:"updatedAt"`
 	DeletedAt               int64   `json:"deletedAt,omitempty"`
 	ArchivedAt              int64   `json:"archivedAt,omitempty"`
+	Pinned                  bool    `json:"pinned,omitempty"`
 	Unread                  bool    `json:"unread"`
 	Provider                *string `json:"provider"`
 	PlanMode                bool    `json:"planMode"`
@@ -204,6 +206,7 @@ type SidebarChatRow struct {
 	CanFork          bool    `json:"canFork,omitempty"`
 	ReadOnly         bool    `json:"readOnly,omitempty"`
 	LegacySessionKey string  `json:"legacySessionKey,omitempty"`
+	Pinned           bool    `json:"pinned,omitempty"`
 }
 
 func EmptyState() StoreState {
@@ -251,6 +254,21 @@ func Apply(state StoreState, event events.Event) StoreState {
 		record.SidebarTitle = data.Title
 		record.UpdatedAt = event.Timestamp
 		state.ProjectsByID[data.ProjectID] = record
+	case events.TypeProjectSidebarReordered:
+		var data struct {
+			ProjectIDs []string `json:"projectIds"`
+		}
+		if event.DecodeData(&data) != nil {
+			return state
+		}
+		for index, projectID := range data.ProjectIDs {
+			record, ok := state.ProjectsByID[projectID]
+			if !ok || record.DeletedAt != 0 {
+				continue
+			}
+			record.SidebarOrder = int64(index + 1)
+			state.ProjectsByID[projectID] = record
+		}
 	case events.TypeProjectRemoved:
 		var data struct {
 			ProjectID string `json:"projectId"`
@@ -317,6 +335,19 @@ func Apply(state StoreState, event events.Event) StoreState {
 		state = markChatTimestamp(state, event, func(record *ChatRecord) { record.ArchivedAt = event.Timestamp })
 	case events.TypeChatUnarchived:
 		state = markChatTimestamp(state, event, func(record *ChatRecord) { record.ArchivedAt = 0 })
+	case events.TypeChatPinned:
+		var data struct {
+			ChatID string `json:"chatId"`
+			Pinned bool   `json:"pinned"`
+		}
+		if event.DecodeData(&data) != nil || data.ChatID == "" {
+			return state
+		}
+		record := state.ChatsByID[data.ChatID]
+		record.Pinned = data.Pinned
+		record.UpdatedAt = event.Timestamp
+		state.ChatsByID[data.ChatID] = record
+		state = touchProjectTimestampForChat(state, record, event.Timestamp)
 	case events.TypeChatProviderSet:
 		var data struct {
 			ChatID   string `json:"chatId"`
@@ -571,6 +602,15 @@ func DeriveSidebarDataWithStatus(state StoreState, activeStatuses map[string]Abo
 		projects = append(projects, project)
 	}
 	sort.Slice(projects, func(i, j int) bool {
+		if projects[i].SidebarOrder != projects[j].SidebarOrder {
+			if projects[j].SidebarOrder == 0 {
+				return true
+			}
+			if projects[i].SidebarOrder == 0 {
+				return false
+			}
+			return projects[i].SidebarOrder < projects[j].SidebarOrder
+		}
 		return projects[i].UpdatedAt > projects[j].UpdatedAt
 	})
 
@@ -602,6 +642,12 @@ func DeriveSidebarDataWithStatus(state StoreState, activeStatuses map[string]Abo
 			}
 			group.Chats = append(group.Chats, row)
 		}
+		sort.SliceStable(group.Chats, func(i, j int) bool {
+			if group.Chats[i].Pinned != group.Chats[j].Pinned {
+				return group.Chats[i].Pinned
+			}
+			return sidebarChatRowTimestamp(group.Chats[i]) > sidebarChatRowTimestamp(group.Chats[j])
+		})
 		PopulateSidebarBuckets(&group, time.Now().UnixMilli())
 		groups = append(groups, group)
 	}
@@ -833,6 +879,7 @@ func sidebarRow(project ProjectRecord, chat ChatRecord, activeStatus AbolqasemSt
 		Preview:       chat.LastSummary,
 		HasAutomation: false,
 		CanFork:       chat.Provider != nil,
+		Pinned:        chat.Pinned,
 	}
 }
 

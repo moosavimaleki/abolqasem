@@ -317,6 +317,8 @@ function sameMessage(left: HydratedTranscriptMessage, right: HydratedTranscriptM
       return right.kind === "proposed_plan" && left.turnId === right.turnId && left.plan === right.plan
     case "turn_activity":
       return right.kind === "turn_activity" && left.turnId === right.turnId && left.activity === right.activity
+    case "model_change":
+      return right.kind === "model_change" && left.model === right.model && left.reasoningEffort === right.reasoningEffort
     case "compact_summary":
       return right.kind === "compact_summary" && left.summary === right.summary
     case "context_window_updated":
@@ -330,6 +332,7 @@ function sameMessage(left: HydratedTranscriptMessage, right: HydratedTranscriptM
     case "unknown":
       return right.kind === "unknown" && left.json === right.json
   }
+  return false
 }
 
 function isResolvedTranscriptRowUnchanged(left: ResolvedTranscriptRow, right: ResolvedTranscriptRow) {
@@ -418,6 +421,7 @@ interface TranscriptSingleRowProps {
   ) => void
   onApprovalRequestSubmit: (toolUseId: string, decision: ApprovalDecision) => void | Promise<void>
   onExitPlanModeConfirm: (toolUseId: string, confirmed: boolean, clearContext?: boolean, message?: string) => void
+  onRetryTurn?: () => Promise<void>
 }
 
 const TranscriptSingleRow = memo(function TranscriptSingleRow({
@@ -437,6 +441,7 @@ const TranscriptSingleRow = memo(function TranscriptSingleRow({
   onAskUserQuestionSubmit,
   onApprovalRequestSubmit,
   onExitPlanModeConfirm,
+  onRetryTurn,
 }: TranscriptSingleRowProps) {
   const promptCheckpointContext = useContext(PromptCheckpointContext)
   let rendered: React.ReactNode = null
@@ -483,6 +488,15 @@ const TranscriptSingleRow = memo(function TranscriptSingleRow({
       case "turn_activity":
         rendered = null
         break
+      case "model_change":
+        rendered = (
+          <div key={message.id} dir="rtl" className="mx-auto my-2 flex max-w-2xl items-center justify-center gap-2 rounded-md border border-border/50 bg-muted/20 px-3 py-1.5 text-xs text-muted-foreground" role="status">
+            <span>تنظیمات نشست تغییر کرد</span>
+            {message.model ? <code dir="ltr" className="rounded bg-muted px-1.5 py-0.5">{message.model}</code> : null}
+            {message.reasoningEffort ? <span>· سطح فکر: <strong>{message.reasoningEffort}</strong></span> : null}
+          </div>
+        )
+        break
       case "tool":
         if (message.toolKind === "approval_request") {
           rendered = (
@@ -523,7 +537,7 @@ const TranscriptSingleRow = memo(function TranscriptSingleRow({
         rendered = <ToolCallMessage key={message.id} message={message} isLoading={isLoading} localPath={localPath} />
         break
       case "result":
-        rendered = hideResult ? null : <ResultMessage key={message.id} message={message} />
+        rendered = hideResult ? null : <ResultMessage key={message.id} message={message} onRetry={onRetryTurn} />
         break
       case "context_window_updated":
         rendered = null
@@ -701,6 +715,7 @@ interface AbolqasemTranscriptProps {
   ) => void
   onApprovalRequestSubmit: (toolUseId: string, decision: ApprovalDecision) => void | Promise<void>
   onExitPlanModeConfirm: (toolUseId: string, confirmed: boolean, clearContext?: boolean, message?: string) => void
+  onRetryTurn?: () => Promise<void>
 }
 
 interface AbolqasemTranscriptRowProps {
@@ -720,6 +735,7 @@ interface AbolqasemTranscriptRowProps {
   ) => void
   onApprovalRequestSubmit: (toolUseId: string, decision: ApprovalDecision) => void | Promise<void>
   onExitPlanModeConfirm: (toolUseId: string, confirmed: boolean, clearContext?: boolean, message?: string) => void
+  onRetryTurn?: () => Promise<void>
 }
 
 export const AbolqasemTranscriptRow = memo(function AbolqasemTranscriptRow({
@@ -729,6 +745,7 @@ export const AbolqasemTranscriptRow = memo(function AbolqasemTranscriptRow({
   onAskUserQuestionSubmit,
   onApprovalRequestSubmit,
   onExitPlanModeConfirm,
+  onRetryTurn,
   promptCheckpoint,
   onRestoreCheckpoint,
 }: AbolqasemTranscriptRowProps) {
@@ -764,6 +781,7 @@ export const AbolqasemTranscriptRow = memo(function AbolqasemTranscriptRow({
       onAskUserQuestionSubmit={onAskUserQuestionSubmit}
       onApprovalRequestSubmit={onApprovalRequestSubmit}
       onExitPlanModeConfirm={onExitPlanModeConfirm}
+      onRetryTurn={onRetryTurn}
     />
   )
 }, (prev, next) => {
@@ -772,6 +790,7 @@ export const AbolqasemTranscriptRow = memo(function AbolqasemTranscriptRow({
   if (prev.onAskUserQuestionSubmit !== next.onAskUserQuestionSubmit) return false
   if (prev.onApprovalRequestSubmit !== next.onApprovalRequestSubmit) return false
   if (prev.onExitPlanModeConfirm !== next.onExitPlanModeConfirm) return false
+  if (prev.onRetryTurn !== next.onRetryTurn) return false
   if (prev.promptCheckpoint !== next.promptCheckpoint) return false
   if (prev.onRestoreCheckpoint !== next.onRestoreCheckpoint) return false
   if (prev.row.kind !== next.row.kind) return false
@@ -813,6 +832,7 @@ function AbolqasemTranscriptImpl({
   onAskUserQuestionSubmit,
   onApprovalRequestSubmit,
   onExitPlanModeConfirm,
+  onRetryTurn,
 }: AbolqasemTranscriptProps) {
   const [toolGroupExpanded, setToolGroupExpanded] = useState<Record<string, boolean>>({})
   const rows = useMemo(() => buildResolvedTranscriptRows(messages, {
@@ -845,6 +865,7 @@ function AbolqasemTranscriptImpl({
             onAskUserQuestionSubmit={onAskUserQuestionSubmit}
             onApprovalRequestSubmit={onApprovalRequestSubmit}
             onExitPlanModeConfirm={onExitPlanModeConfirm}
+            onRetryTurn={onRetryTurn}
           />
         </div>
       ))}

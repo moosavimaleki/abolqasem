@@ -21,6 +21,43 @@ type workspaceCodexTestTransport struct {
 	sent chan []byte
 }
 
+func TestCredentialSwitchResetsOnlyIdleCodexSessions(t *testing.T) {
+	manager := newWorkspaceCodexSessionManager()
+	idle := &workspaceCodexSession{chatID: "idle"}
+	running := &workspaceCodexSession{chatID: "running"}
+	running.turnMu.Lock()
+	defer running.turnMu.Unlock()
+	manager.sessions[idle.chatID] = idle
+	manager.sessions[running.chatID] = running
+
+	if reset := manager.resetForCredentialSwitch(); reset != 1 {
+		t.Fatalf("idle sessions reset = %d, want 1", reset)
+	}
+	if _, found := manager.sessions[idle.chatID]; found {
+		t.Fatal("idle session must be removed")
+	}
+	if manager.sessions[running.chatID] != running {
+		t.Fatal("running session must remain available to finish with its old credential")
+	}
+}
+
+func TestResetIdleThreadDoesNotInterruptRunningTurn(t *testing.T) {
+	manager := newWorkspaceCodexSessionManager()
+	session := &workspaceCodexSession{chatID: "chat", threadID: "thread"}
+	manager.sessions[session.chatID] = session
+	session.turnMu.Lock()
+	if manager.resetIdleThread("chat", "thread") {
+		t.Fatal("active turn must not be reset")
+	}
+	session.turnMu.Unlock()
+	if !manager.resetIdleThread("chat", "thread") {
+		t.Fatal("idle session must be reset")
+	}
+	if len(manager.sessions) != 0 {
+		t.Fatalf("session remains after reset: %#v", manager.sessions)
+	}
+}
+
 func (transport *workspaceCodexTestTransport) Send(message []byte) error {
 	transport.sent <- append([]byte(nil), message...)
 	return nil
@@ -128,6 +165,39 @@ func TestWorkspaceCodexTurnStartIncludesSelectedReasoningEffort(t *testing.T) {
 	result := <-resultCh
 	if result.err != nil || result.id != "turn-1" {
 		t.Fatalf("StartTurn result = %q, %v", result.id, result.err)
+	}
+}
+
+func TestWorkspaceCodexOpenThreadIncludesSelectedModelProvider(t *testing.T) {
+	transport := &workspaceCodexTestTransport{sent: make(chan []byte, 1)}
+	process := &workspaceCodexProcess{client: codexrpc.NewClient(transport)}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	resultCh := make(chan error, 1)
+	go func() {
+		_, err := process.OpenThread(ctx, agent.TurnRequest{
+			Model:              "gpt-5.6",
+			CodexModelProvider: "codex_manager",
+		})
+		resultCh <- err
+	}()
+
+	request := <-transport.sent
+	var envelope struct {
+		ID     string         `json:"id"`
+		Method string         `json:"method"`
+		Params map[string]any `json:"params"`
+	}
+	if err := json.Unmarshal(request, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.Method != "thread/start" || envelope.Params["modelProvider"] != "codex_manager" {
+		t.Fatalf("model provider was not sent in thread/start: %#v", envelope)
+	}
+	process.scanStdout(strings.NewReader(`{"id":"` + envelope.ID + `","result":{"thread":{"id":"thread-1"}}}` + "\n"))
+	if err := <-resultCh; err != nil {
+		t.Fatal(err)
 	}
 }
 

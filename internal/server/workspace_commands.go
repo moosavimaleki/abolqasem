@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -16,6 +17,32 @@ import (
 	"abolqasem/internal/workspace/readmodels"
 	"abolqasem/internal/workspace/transcript"
 )
+
+// A visible chat is refreshed once per second so that a session being worked
+// on in another Codex client feels live. Parsing a native JSONL transcript is
+// linear in its size, though, so avoid re-reading an unchanged file for every
+// browser refresh. A stat is cheap and the cache is deliberately small: it is
+// only an optimisation for currently viewed native transcripts, not storage.
+const workspaceNativeHistoryCacheMaxEntries = 32
+
+type workspaceNativeHistoryCacheKey struct {
+	agent     string
+	sessionID string
+	path      string
+	limit     int
+}
+
+type workspaceNativeHistoryCacheEntry struct {
+	modifiedAt int64
+	size       int64
+	page       map[string]any
+	lastAccess time.Time
+}
+
+var workspaceNativeHistoryCache = struct {
+	sync.Mutex
+	items map[workspaceNativeHistoryCacheKey]workspaceNativeHistoryCacheEntry
+}{items: make(map[workspaceNativeHistoryCacheKey]workspaceNativeHistoryCacheEntry)}
 
 func workspaceCreateProject(raw json.RawMessage) (readmodels.ProjectRecord, error) {
 	var payload struct {
@@ -67,6 +94,43 @@ func workspaceRemoveProject(raw json.RawMessage) error {
 	return workspaceStore().Append(events.StreamProjects, event)
 }
 
+func workspaceReorderProjectGroups(raw json.RawMessage) error {
+	var payload struct {
+		ProjectIDs []string `json:"projectIds"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return err
+	}
+	state, err := workspaceStore().LoadState()
+	if err != nil {
+		return err
+	}
+	active := make(map[string]bool)
+	for id, project := range state.ProjectsByID {
+		if project.DeletedAt == 0 {
+			active[id] = true
+		}
+	}
+	seen := make(map[string]bool, len(payload.ProjectIDs))
+	for _, id := range payload.ProjectIDs {
+		if !active[id] {
+			return errors.New("projectIds contains an unknown or deleted project")
+		}
+		if seen[id] {
+			return errors.New("projectIds contains a duplicate project")
+		}
+		seen[id] = true
+	}
+	if len(seen) != len(active) {
+		return errors.New("projectIds must include every active project")
+	}
+	event, err := events.New(events.TypeProjectSidebarReordered, map[string]any{"projectIds": payload.ProjectIDs})
+	if err != nil {
+		return err
+	}
+	return workspaceStore().Append(events.StreamProjects, event)
+}
+
 func workspaceRenameChat(raw json.RawMessage) (string, error) {
 	var payload struct {
 		ChatID string `json:"chatId"`
@@ -103,6 +167,31 @@ func workspaceArchiveChat(raw json.RawMessage) (string, error) {
 
 func workspaceUnarchiveChat(raw json.RawMessage) (string, error) {
 	return workspaceMarkChat(raw, events.TypeChatUnarchived)
+}
+
+func workspacePinChat(raw json.RawMessage) (string, error) {
+	var payload struct {
+		ChatID string `json:"chatId"`
+		Pinned bool   `json:"pinned"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return "", err
+	}
+	chatID, err := workspaceMaterializeImportedChatIfNeeded(payload.ChatID)
+	if err != nil {
+		return "", err
+	}
+	if _, _, err := workspaceChatProjectRequired(chatID); err != nil {
+		return "", err
+	}
+	event, err := events.New(events.TypeChatPinned, map[string]any{"chatId": chatID, "pinned": payload.Pinned})
+	if err != nil {
+		return "", err
+	}
+	if err := workspaceStore().Append(events.StreamChats, event); err != nil {
+		return "", err
+	}
+	return chatID, nil
 }
 
 func workspaceDeleteChat(raw json.RawMessage) (string, error) {
@@ -681,10 +770,16 @@ func workspaceLoadNativeChatHistory(meta state.SessionMeta, beforeCursor string,
 	if limit <= 0 {
 		limit = legacyDefaultRecentLimit
 	}
+	cursor := strings.TrimSpace(beforeCursor)
+	cacheKey, modifiedAt, size, cacheable := workspaceNativeHistoryCacheFingerprint(meta, limit, cursor)
+	if cacheable {
+		if page, ok := workspaceNativeHistoryCacheLookup(cacheKey, modifiedAt, size); ok {
+			return page, nil
+		}
+	}
 	window := []readmodels.TranscriptEntry{}
 	hasOlder := false
 	var olderCursor *string
-	cursor := strings.TrimSpace(beforeCursor)
 	err := parser.StreamSearchableMessages(meta.Agent, meta.SessionID, meta.TranscriptPath, func(message parser.SearchableMessage) bool {
 		if cursor != "" && workspaceSearchableMatchesCursor(message, cursor) {
 			return false
@@ -701,11 +796,82 @@ func workspaceLoadNativeChatHistory(meta state.SessionMeta, beforeCursor string,
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{
+	page := map[string]any{
 		"messages":    window,
 		"hasOlder":    hasOlder,
 		"olderCursor": olderCursor,
-	}, nil
+	}
+	if cacheable {
+		workspaceNativeHistoryCacheStore(cacheKey, modifiedAt, size, page)
+	}
+	return workspaceCloneNativeHistoryPage(page), nil
+}
+
+func workspaceNativeHistoryCacheFingerprint(meta state.SessionMeta, limit int, cursor string) (workspaceNativeHistoryCacheKey, int64, int64, bool) {
+	if cursor != "" || strings.TrimSpace(meta.TranscriptPath) == "" {
+		return workspaceNativeHistoryCacheKey{}, 0, 0, false
+	}
+	info, err := os.Stat(meta.TranscriptPath)
+	if err != nil || !info.Mode().IsRegular() {
+		return workspaceNativeHistoryCacheKey{}, 0, 0, false
+	}
+	return workspaceNativeHistoryCacheKey{
+		agent:     strings.ToLower(strings.TrimSpace(meta.Agent)),
+		sessionID: strings.TrimSpace(meta.SessionID),
+		path:      filepath.Clean(meta.TranscriptPath),
+		limit:     limit,
+	}, info.ModTime().UnixNano(), info.Size(), true
+}
+
+func workspaceNativeHistoryCacheLookup(key workspaceNativeHistoryCacheKey, modifiedAt int64, size int64) (map[string]any, bool) {
+	workspaceNativeHistoryCache.Lock()
+	defer workspaceNativeHistoryCache.Unlock()
+	entry, ok := workspaceNativeHistoryCache.items[key]
+	if !ok || entry.modifiedAt != modifiedAt || entry.size != size {
+		return nil, false
+	}
+	entry.lastAccess = time.Now()
+	workspaceNativeHistoryCache.items[key] = entry
+	return workspaceCloneNativeHistoryPage(entry.page), true
+}
+
+func workspaceNativeHistoryCacheStore(key workspaceNativeHistoryCacheKey, modifiedAt int64, size int64, page map[string]any) {
+	workspaceNativeHistoryCache.Lock()
+	defer workspaceNativeHistoryCache.Unlock()
+	if len(workspaceNativeHistoryCache.items) >= workspaceNativeHistoryCacheMaxEntries {
+		var oldestKey workspaceNativeHistoryCacheKey
+		var oldestAt time.Time
+		for candidateKey, entry := range workspaceNativeHistoryCache.items {
+			if oldestAt.IsZero() || entry.lastAccess.Before(oldestAt) {
+				oldestKey, oldestAt = candidateKey, entry.lastAccess
+			}
+		}
+		delete(workspaceNativeHistoryCache.items, oldestKey)
+	}
+	workspaceNativeHistoryCache.items[key] = workspaceNativeHistoryCacheEntry{
+		modifiedAt: modifiedAt,
+		size:       size,
+		page:       workspaceCloneNativeHistoryPage(page),
+		lastAccess: time.Now(),
+	}
+}
+
+func workspaceCloneNativeHistoryPage(page map[string]any) map[string]any {
+	clone := make(map[string]any, len(page))
+	for key, value := range page {
+		clone[key] = value
+	}
+	if messages, ok := page["messages"].([]readmodels.TranscriptEntry); ok {
+		copiedMessages := make([]readmodels.TranscriptEntry, len(messages))
+		for index, message := range messages {
+			copiedMessages[index] = make(readmodels.TranscriptEntry, len(message))
+			for key, value := range message {
+				copiedMessages[index][key] = value
+			}
+		}
+		clone["messages"] = copiedMessages
+	}
+	return clone
 }
 
 func workspaceLoadNativeChatHistoryAround(meta state.SessionMeta, targetCursor string, limit int) (map[string]any, error) {
@@ -812,6 +978,15 @@ func workspaceTranscriptEntryFromSearchable(message parser.SearchableMessage) re
 		entry["isError"] = isError
 		entry["durationMs"] = message.Fields["durationMs"]
 		entry["result"] = text
+		return entry
+	}
+	if message.Kind == transcript.KindModelChange {
+		entry["kind"] = transcript.KindModelChange
+		for _, key := range []string{"model", "reasoningEffort"} {
+			if value, ok := message.Fields[key]; ok && strings.TrimSpace(stringValue(value)) != "" {
+				entry[key] = value
+			}
+		}
 		return entry
 	}
 	switch workspaceSearchableTranscriptRole(message) {

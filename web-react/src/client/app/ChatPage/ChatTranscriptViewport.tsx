@@ -1,66 +1,116 @@
-import { LegendList, type LegendListRef } from "@legendapp/list/react"
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { AlertTriangle, ArrowDown, ArrowUp, BookOpen, Loader2, Trash2, Upload } from "lucide-react"
-import { AnimatedShinyText } from "../../components/ui/animated-shiny-text"
-import { AbolqasemLogo } from "../../components/AbolqasemLogo"
-import { ConversationMinimap, type MessageIndexItem } from "../../components/chat-ui/ConversationMinimap"
-import { DrainingIndicator } from "../../components/messages/DrainingIndicator"
-import { QueuedUserMessage } from "../../components/messages/QueuedUserMessage"
-import { OpenLocalLinkProvider, type OpenLocalLinkTarget } from "../../components/messages/shared"
-import { ProcessingMessage } from "../../components/messages/ProcessingMessage"
-import { ContextMenu, ContextMenuTrigger } from "../../components/ui/context-menu"
-import { Dialog, DialogBody, DialogContent } from "../../components/ui/dialog"
-import { OpenExternalContextMenuContent } from "../../components/open-external-menu"
-import { FilePreviewPanel, type FilePreviewResponse } from "../../components/file-preview/FilePreviewPanel"
-import { ReaderDialog } from "../../components/messages/ReaderDialog"
-import { getAppearanceTextStyle, isDarkAppearanceTheme, useReaderAppearanceSettings } from "../../components/appearance/ReaderAppearance"
-import { cn } from "../../lib/utils"
+import { LegendList, type LegendListRef } from "@legendapp/list/react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  AlertTriangle,
+  ArrowDown,
+  ArrowUp,
+  BookOpen,
+  Loader2,
+  Trash2,
+  Upload,
+} from "lucide-react";
+import { AnimatedShinyText } from "../../components/ui/animated-shiny-text";
+import { AbolqasemLogo } from "../../components/AbolqasemLogo";
+import {
+  ConversationMinimap,
+  type MessageIndexItem,
+} from "../../components/chat-ui/ConversationMinimap";
+import { DrainingIndicator } from "../../components/messages/DrainingIndicator";
+import { QueuedUserMessage } from "../../components/messages/QueuedUserMessage";
+import {
+  OpenLocalLinkProvider,
+  type OpenLocalLinkTarget,
+} from "../../components/messages/shared";
+import { ProcessingMessage } from "../../components/messages/ProcessingMessage";
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+} from "../../components/ui/context-menu";
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogTitle,
+} from "../../components/ui/dialog";
+import { OpenExternalContextMenuContent } from "../../components/open-external-menu";
+import {
+  FilePreviewPanel,
+  type FilePreviewResponse,
+} from "../../components/file-preview/FilePreviewPanel";
+import { ReaderDialog } from "../../components/messages/ReaderDialog";
+import {
+  getAppearanceTextStyle,
+  isDarkAppearanceTheme,
+  useReaderAppearanceSettings,
+} from "../../components/appearance/ReaderAppearance";
+import { cn } from "../../lib/utils";
 import {
   buildResolvedTranscriptRows,
   AbolqasemTranscriptRow,
   PromptCheckpointProvider,
   type ResolvedTranscriptRow,
   useStableResolvedRows,
-} from "../AbolqasemTranscript"
-import type { AbolqasemState } from "../useAbolqasemState"
+} from "../AbolqasemTranscript";
+import type { AbolqasemState } from "../useAbolqasemState";
+import { CHAT_NAVBAR_OFFSET_PX } from "./utils";
+import { READER_MODE_CHANGE_EVENT } from "../chatFocusPolicy";
 import {
-  CHAT_NAVBAR_OFFSET_PX,
-} from "./utils"
-import { READER_MODE_CHANGE_EVENT } from "../chatFocusPolicy"
-import { buildAssistantReaderDocument, type AssistantReaderDocument } from "./readerBlocks"
-import type { EditorPreset } from "../../../shared/protocol"
-import type { ChatCheckpointSummary, HydratedTranscriptMessage } from "../../../shared/types"
-import { useI18n } from "../../i18n/context"
-import { getProcessingStatus } from "./processingStatus"
-import { Button } from "../../components/ui/button"
+  buildAssistantReaderDocument,
+  type AssistantReaderDocument,
+} from "./readerBlocks";
+import type { EditorPreset } from "../../../shared/protocol";
+import type {
+  AgentProvider,
+  ChatCheckpointSummary,
+  HydratedTranscriptMessage,
+} from "../../../shared/types";
+import { useI18n } from "../../i18n/context";
+import { getProcessingStatus } from "./processingStatus";
+import { Button } from "../../components/ui/button";
 
-const CHECKPOINT_PROMPT_PREVIEW_MAX = 120
-const PROMPT_CHECKPOINT_MAX_DELAY_MS = 30 * 60 * 1000
-const TRANSCRIPT_JUMP_HINT_TIMEOUT_MS = 2600
+const CHECKPOINT_PROMPT_PREVIEW_MAX = 120;
+const PROMPT_CHECKPOINT_MAX_DELAY_MS = 30 * 60 * 1000;
+const TRANSCRIPT_JUMP_HINT_TIMEOUT_MS = 2600;
 
-export function shouldShowTranscriptJumpHint(previousTop: number, nextTop: number, elapsedMs: number) {
-  return elapsedMs > 0 && elapsedMs <= 140 && Math.abs(nextTop - previousTop) >= 220
+export function shouldShowTranscriptJumpHint(
+  previousTop: number,
+  nextTop: number,
+  elapsedMs: number,
+) {
+  return (
+    elapsedMs > 0 && elapsedMs <= 140 && Math.abs(nextTop - previousTop) >= 220
+  );
 }
 
-export function transcriptJumpDistance(viewportHeight: number, direction: "up" | "down") {
-  const amount = Math.max(280, Math.round(viewportHeight * 0.72))
-  return direction === "up" ? -amount : amount
+export function transcriptJumpDistance(
+  viewportHeight: number,
+  direction: "up" | "down",
+) {
+  const amount = Math.max(280, Math.round(viewportHeight * 0.72));
+  return direction === "up" ? -amount : amount;
 }
 
 function checkpointPromptPreview(value: string) {
-  const normalized = value.trim().split(/\s+/).filter(Boolean).join(" ")
-  return Array.from(normalized).slice(0, CHECKPOINT_PROMPT_PREVIEW_MAX).join("")
+  const normalized = value.trim().split(/\s+/).filter(Boolean).join(" ");
+  return Array.from(normalized)
+    .slice(0, CHECKPOINT_PROMPT_PREVIEW_MAX)
+    .join("");
 }
 
 function getMessageCreatedAt(message: HydratedTranscriptMessage) {
-  const createdAt = Date.parse(message.timestamp)
-  return Number.isFinite(createdAt) ? createdAt : null
+  const createdAt = Date.parse(message.timestamp);
+  return Number.isFinite(createdAt) ? createdAt : null;
 }
 
-function isCheckpointNearPrompt(checkpoint: ChatCheckpointSummary, createdAt: number | null) {
-  if (createdAt === null) return true
-  return checkpoint.createdAt <= createdAt + 1000
-    && createdAt <= checkpoint.createdAt + PROMPT_CHECKPOINT_MAX_DELAY_MS
+function isCheckpointNearPrompt(
+  checkpoint: ChatCheckpointSummary,
+  createdAt: number | null,
+) {
+  if (createdAt === null) return true;
+  return (
+    checkpoint.createdAt <= createdAt + 1000 &&
+    createdAt <= checkpoint.createdAt + PROMPT_CHECKPOINT_MAX_DELAY_MS
+  );
 }
 
 function buildPromptCheckpointMap(
@@ -68,110 +118,121 @@ function buildPromptCheckpointMap(
   checkpoints: ChatCheckpointSummary[],
   activeChatId: string | null,
 ) {
-  const result = new Map<string, ChatCheckpointSummary>()
+  const result = new Map<string, ChatCheckpointSummary>();
   if (!activeChatId || checkpoints.length === 0) {
-    return result
+    return result;
   }
 
   const promptCheckpoints = checkpoints
-    .filter((checkpoint) => (
-      checkpoint.chatId === activeChatId
-      && checkpoint.trigger === "before_user_prompt"
-      && !checkpoint.restoreOf
-    ))
-    .sort((left, right) => left.createdAt - right.createdAt)
+    .filter(
+      (checkpoint) =>
+        checkpoint.chatId === activeChatId &&
+        checkpoint.trigger === "before_user_prompt" &&
+        !checkpoint.restoreOf,
+    )
+    .sort((left, right) => left.createdAt - right.createdAt);
   const promptMessages = messages
     .filter((message) => message.kind === "user_prompt")
     .map((message) => ({
       message,
       createdAt: getMessageCreatedAt(message),
       preview: checkpointPromptPreview(message.content),
-    }))
-  const usedMessageIds = new Set<string>()
+    }));
+  const usedMessageIds = new Set<string>();
 
   for (const checkpoint of promptCheckpoints) {
-    const promptPreview = checkpointPromptPreview(checkpoint.promptPreview ?? "")
-    const exactPrompt = promptMessages.find(({ message, createdAt, preview }) => (
-      !usedMessageIds.has(message.id)
-      && promptPreview.length > 0
-      && preview === promptPreview
-      && isCheckpointNearPrompt(checkpoint, createdAt)
-    ))
-    const fallbackPrompt = exactPrompt ?? promptMessages.find(({ message, createdAt }) => (
-      !usedMessageIds.has(message.id)
-      && isCheckpointNearPrompt(checkpoint, createdAt)
-    ))
-    if (!fallbackPrompt) continue
+    const promptPreview = checkpointPromptPreview(
+      checkpoint.promptPreview ?? "",
+    );
+    const exactPrompt = promptMessages.find(
+      ({ message, createdAt, preview }) =>
+        !usedMessageIds.has(message.id) &&
+        promptPreview.length > 0 &&
+        preview === promptPreview &&
+        isCheckpointNearPrompt(checkpoint, createdAt),
+    );
+    const fallbackPrompt =
+      exactPrompt ??
+      promptMessages.find(
+        ({ message, createdAt }) =>
+          !usedMessageIds.has(message.id) &&
+          isCheckpointNearPrompt(checkpoint, createdAt),
+      );
+    if (!fallbackPrompt) continue;
 
-    usedMessageIds.add(fallbackPrompt.message.id)
-    result.set(fallbackPrompt.message.id, checkpoint)
+    usedMessageIds.add(fallbackPrompt.message.id);
+    result.set(fallbackPrompt.message.id, checkpoint);
   }
 
-  return result
+  return result;
 }
 
-function buildLiveMinimapItems(messages: HydratedTranscriptMessage[]): MessageIndexItem[] {
+function buildLiveMinimapItems(
+  messages: HydratedTranscriptMessage[],
+): MessageIndexItem[] {
   return messages
     .map((message, sequence): MessageIndexItem | null => {
-      if (message.kind !== "user_prompt") return null
+      if (message.kind !== "user_prompt") return null;
       return {
         id: message.id,
         sequence,
         role: "user",
         loaded: true,
         preview: message.content.trim().slice(0, CHECKPOINT_PROMPT_PREVIEW_MAX),
-      }
+      };
     })
-    .filter((item): item is MessageIndexItem => Boolean(item))
+    .filter((item): item is MessageIndexItem => Boolean(item));
 }
 
 type TranscriptViewportRow = ResolvedTranscriptRow & {
-  promptCheckpoint?: ChatCheckpointSummary
-}
+  promptCheckpoint?: ChatCheckpointSummary;
+};
 
 interface ChatTranscriptViewportProps {
-  activeChatId: string | null
-  listRef: React.RefObject<LegendListRef | null>
-  messages: AbolqasemState["messages"]
-  queuedMessages: AbolqasemState["queuedMessages"]
-  transcriptPaddingBottom: number
-  localPath: string | null | undefined
-  latestToolIds: AbolqasemState["latestToolIds"]
-  isHistoryLoading: boolean
-  hasOlderHistory: boolean
-  isProcessing: boolean
-  hasTmuxRuntime?: boolean
-  runtimeStatus: string | null
-  readOnly?: boolean
-  isDraining: boolean
-  commandError: string | null
-  loadOlderHistory: () => Promise<void>
-  onStopDraining: () => void
-  onRemoveQueuedMessage: (queuedMessageId: string) => Promise<void>
-  onSteerQueuedMessage: (queuedMessageId: string) => Promise<void>
-  onInterruptQueuedMessage: (queuedMessageId: string) => Promise<void>
-  onEditQueuedMessage: (queuedMessageId: string) => Promise<void>
-  onRemoveAllQueuedMessages?: () => Promise<void>
-  onOpenLocalLink: AbolqasemState["handleOpenLocalLink"]
-  onAskUserQuestionSubmit: AbolqasemState["handleAskUserQuestion"]
-  onApprovalRequestSubmit: AbolqasemState["handleApprovalRequest"]
-  onExitPlanModeConfirm: AbolqasemState["handleExitPlanMode"]
-  checkpoints?: ChatCheckpointSummary[]
-  onRestoreCheckpoint?: AbolqasemState["handleRestoreCheckpoint"]
-  showScrollButton: boolean
-  showUnreadDot: boolean
-  onIsAtEndChange: (isAtEnd: boolean) => void
-  scrollToBottom: () => void
-  typedEmptyStateText: string
-  isEmptyStateTypingComplete: boolean
-  isPageFileDragActive: boolean
-  showEmptyState: boolean
-  emptyStateText: string
-  editorPreset?: EditorPreset
-  editorCommandTemplate?: string
-  platform?: NodeJS.Platform
-  headerOffsetPx?: number
-  onMinimapScrollToMessage?: (item: MessageIndexItem) => Promise<void>
+  activeChatId: string | null;
+  listRef: React.RefObject<LegendListRef | null>;
+  messages: AbolqasemState["messages"];
+  queuedMessages: AbolqasemState["queuedMessages"];
+  transcriptPaddingBottom: number;
+  localPath: string | null | undefined;
+  latestToolIds: AbolqasemState["latestToolIds"];
+  isHistoryLoading: boolean;
+  hasOlderHistory: boolean;
+  isProcessing: boolean;
+  hasTmuxRuntime?: boolean;
+  runtimeStatus: string | null;
+  runtimeProvider?: AgentProvider | null;
+  readOnly?: boolean;
+  isDraining: boolean;
+  commandError: string | null;
+  loadOlderHistory: () => Promise<void>;
+  onStopDraining: () => void;
+  onRemoveQueuedMessage: (queuedMessageId: string) => Promise<void>;
+  onSteerQueuedMessage: (queuedMessageId: string) => Promise<void>;
+  onInterruptQueuedMessage: (queuedMessageId: string) => Promise<void>;
+  onEditQueuedMessage: (queuedMessageId: string) => Promise<void>;
+  onRemoveAllQueuedMessages?: () => Promise<void>;
+  onOpenLocalLink: AbolqasemState["handleOpenLocalLink"];
+  onAskUserQuestionSubmit: AbolqasemState["handleAskUserQuestion"];
+  onApprovalRequestSubmit: AbolqasemState["handleApprovalRequest"];
+  onExitPlanModeConfirm: AbolqasemState["handleExitPlanMode"];
+  onRetryTurn?: () => Promise<void>;
+  checkpoints?: ChatCheckpointSummary[];
+  onRestoreCheckpoint?: AbolqasemState["handleRestoreCheckpoint"];
+  showScrollButton: boolean;
+  showUnreadDot: boolean;
+  onIsAtEndChange: (isAtEnd: boolean) => void;
+  scrollToBottom: () => void;
+  typedEmptyStateText: string;
+  isEmptyStateTypingComplete: boolean;
+  isPageFileDragActive: boolean;
+  showEmptyState: boolean;
+  emptyStateText: string;
+  editorPreset?: EditorPreset;
+  editorCommandTemplate?: string;
+  platform?: NodeJS.Platform;
+  headerOffsetPx?: number;
+  onMinimapScrollToMessage?: (item: MessageIndexItem) => Promise<void>;
 }
 
 export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
@@ -187,6 +248,7 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
   isProcessing,
   hasTmuxRuntime = false,
   runtimeStatus,
+  runtimeProvider = null,
   readOnly = false,
   isDraining,
   commandError,
@@ -201,6 +263,7 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
   onAskUserQuestionSubmit,
   onApprovalRequestSubmit,
   onExitPlanModeConfirm,
+  onRetryTurn,
   checkpoints = [],
   onRestoreCheckpoint,
   showScrollButton,
@@ -218,287 +281,399 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
   headerOffsetPx = CHAT_NAVBAR_OFFSET_PX,
   onMinimapScrollToMessage,
 }: ChatTranscriptViewportProps) {
-  const { t, direction } = useI18n()
-  const [appearanceSettings] = useReaderAppearanceSettings()
-  const previousRowCountRef = useRef(0)
-  const localLinkMenuTriggerRef = useRef<HTMLSpanElement | null>(null)
-  const [toolGroupExpanded, setToolGroupExpanded] = useState<Record<string, boolean>>({})
-  const [localLinkMenuTarget, setLocalLinkMenuTarget] = useState<OpenLocalLinkTarget | null>(null)
-  const [filePreviewTarget, setFilePreviewTarget] = useState<OpenLocalLinkTarget | null>(null)
-  const [filePreview, setFilePreview] = useState<FilePreviewResponse | null>(null)
-  const [filePreviewLoading, setFilePreviewLoading] = useState(false)
-  const [filePreviewError, setFilePreviewError] = useState<string | null>(null)
-  const [readerDocument, setReaderDocument] = useState<AssistantReaderDocument | null>(null)
-  const [floatingReaderMessageId, setFloatingReaderMessageId] = useState<string | null>(null)
-  const [showTranscriptJumpHint, setShowTranscriptJumpHint] = useState(false)
-  const scrollHintTimeoutRef = useRef<number | null>(null)
-  const lastScrollSampleRef = useRef<{ top: number; time: number } | null>(null)
-  const isMac = platform === "darwin"
-  const transcriptAppearanceStyle = useMemo(() => getAppearanceTextStyle(appearanceSettings), [appearanceSettings])
-  const transcriptAppearanceClassName = useMemo(() => cn(
-    "appearance-content reader-article",
-    isDarkAppearanceTheme(appearanceSettings.theme) && "prose-invert",
-  ), [appearanceSettings.theme])
-  const rawRows = useMemo(() => buildResolvedTranscriptRows(messages, {
-    isLoading: isProcessing,
-    localPath: localPath ?? undefined,
-    latestToolIds,
-  }), [isProcessing, latestToolIds, localPath, messages])
-  const resolvedRows = useStableResolvedRows(rawRows)
+  const { t, direction } = useI18n();
+  const [appearanceSettings] = useReaderAppearanceSettings();
+  const previousRowCountRef = useRef(0);
+  const localLinkMenuTriggerRef = useRef<HTMLSpanElement | null>(null);
+  const [toolGroupExpanded, setToolGroupExpanded] = useState<
+    Record<string, boolean>
+  >({});
+  const [localLinkMenuTarget, setLocalLinkMenuTarget] =
+    useState<OpenLocalLinkTarget | null>(null);
+  const [filePreviewTarget, setFilePreviewTarget] =
+    useState<OpenLocalLinkTarget | null>(null);
+  const [filePreview, setFilePreview] = useState<FilePreviewResponse | null>(
+    null,
+  );
+  const [filePreviewLoading, setFilePreviewLoading] = useState(false);
+  const [filePreviewError, setFilePreviewError] = useState<string | null>(null);
+  const [readerDocument, setReaderDocument] =
+    useState<AssistantReaderDocument | null>(null);
+  const [floatingReaderMessageId, setFloatingReaderMessageId] = useState<
+    string | null
+  >(null);
+  const [showTranscriptJumpHint, setShowTranscriptJumpHint] = useState(false);
+  const scrollHintTimeoutRef = useRef<number | null>(null);
+  const lastScrollSampleRef = useRef<{ top: number; time: number } | null>(
+    null,
+  );
+  const isMac = platform === "darwin";
+  const transcriptAppearanceStyle = useMemo(
+    () => getAppearanceTextStyle(appearanceSettings),
+    [appearanceSettings],
+  );
+  const transcriptAppearanceClassName = useMemo(
+    () =>
+      cn(
+        "appearance-content reader-article",
+        isDarkAppearanceTheme(appearanceSettings.theme) && "prose-invert",
+      ),
+    [appearanceSettings.theme],
+  );
+  const rawRows = useMemo(
+    () =>
+      buildResolvedTranscriptRows(messages, {
+        isLoading: isProcessing,
+        localPath: localPath ?? undefined,
+        latestToolIds,
+      }),
+    [isProcessing, latestToolIds, localPath, messages],
+  );
+  const resolvedRows = useStableResolvedRows(rawRows);
+  const retryableResultId = useMemo(() => {
+    if (isProcessing || readOnly || !onRetryTurn) return null;
+    let latestPromptIndex = -1;
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      if (messages[index]?.kind === "user_prompt") {
+        latestPromptIndex = index;
+        break;
+      }
+    }
+    if (latestPromptIndex < 0) return null;
+    for (let index = messages.length - 1; index > latestPromptIndex; index -= 1) {
+      const message = messages[index];
+      if (message?.kind === "result" && !message.success && !message.cancelled) {
+        return message.id;
+      }
+    }
+    return null;
+  }, [isProcessing, messages, onRetryTurn, readOnly]);
   const promptCheckpointByMessageId = useMemo(
     () => buildPromptCheckpointMap(messages, checkpoints, activeChatId),
     [activeChatId, checkpoints, messages],
-  )
+  );
   const rowsWithCheckpoints = useMemo<TranscriptViewportRow[]>(() => {
     if (promptCheckpointByMessageId.size === 0) {
-      return resolvedRows
+      return resolvedRows;
     }
 
     return resolvedRows.map((row) => {
-      const promptCheckpoint = row.kind === "single" && row.message.kind === "user_prompt"
-        ? promptCheckpointByMessageId.get(row.message.id)
-        : undefined
-      return promptCheckpoint ? { ...row, promptCheckpoint } : row
-    })
-  }, [promptCheckpointByMessageId, resolvedRows])
+      const promptCheckpoint =
+        row.kind === "single" && row.message.kind === "user_prompt"
+          ? promptCheckpointByMessageId.get(row.message.id)
+          : undefined;
+      return promptCheckpoint ? { ...row, promptCheckpoint } : row;
+    });
+  }, [promptCheckpointByMessageId, resolvedRows]);
   const checkpointRenderVersion = useMemo(
-    () => Array.from(promptCheckpointByMessageId.entries())
-      .map(([messageId, checkpoint]) => `${messageId}:${checkpoint.id}`)
-      .join("|"),
+    () =>
+      Array.from(promptCheckpointByMessageId.entries())
+        .map(([messageId, checkpoint]) => `${messageId}:${checkpoint.id}`)
+        .join("|"),
     [promptCheckpointByMessageId],
-  )
-  const listExtraData = useMemo(() => ({
-    appearanceSettings,
-    checkpointRenderVersion,
-    toolGroupExpanded,
-  }), [appearanceSettings, checkpointRenderVersion, toolGroupExpanded])
+  );
+  const listExtraData = useMemo(
+    () => ({
+      appearanceSettings,
+      checkpointRenderVersion,
+      toolGroupExpanded,
+    }),
+    [appearanceSettings, checkpointRenderVersion, toolGroupExpanded],
+  );
   const floatingReaderDocument = useMemo(
     () => buildAssistantReaderDocument(messages, floatingReaderMessageId),
     [floatingReaderMessageId, messages],
-  )
-  const minimapItems = useMemo<MessageIndexItem[]>(() => buildLiveMinimapItems(messages), [messages])
+  );
+  const minimapItems = useMemo<MessageIndexItem[]>(
+    () => buildLiveMinimapItems(messages),
+    [messages],
+  );
 
   useEffect(() => {
-    setToolGroupExpanded({})
-    setReaderDocument(null)
-    setFloatingReaderMessageId(null)
-  }, [activeChatId])
-
-  useEffect(() => {
-    return () => {
-      if (scrollHintTimeoutRef.current !== null) window.clearTimeout(scrollHintTimeoutRef.current)
-    }
-  }, [])
-
-  useEffect(() => {
-    if (typeof window === "undefined") return
-    window.dispatchEvent(new CustomEvent(READER_MODE_CHANGE_EVENT, {
-      detail: { open: Boolean(readerDocument) },
-    }))
-  }, [readerDocument])
+    setToolGroupExpanded({});
+    setReaderDocument(null);
+    setFloatingReaderMessageId(null);
+  }, [activeChatId]);
 
   useEffect(() => {
     return () => {
-      if (typeof window === "undefined") return
-      window.dispatchEvent(new CustomEvent(READER_MODE_CHANGE_EVENT, {
-        detail: { open: false },
-      }))
-    }
-  }, [])
+      if (scrollHintTimeoutRef.current !== null)
+        window.clearTimeout(scrollHintTimeoutRef.current);
+    };
+  }, []);
 
   useEffect(() => {
-    const previousRowCount = previousRowCountRef.current
-    previousRowCountRef.current = rowsWithCheckpoints.length
+    if (typeof window === "undefined") return;
+    window.dispatchEvent(
+      new CustomEvent(READER_MODE_CHANGE_EVENT, {
+        detail: { open: Boolean(readerDocument) },
+      }),
+    );
+  }, [readerDocument]);
+
+  useEffect(() => {
+    return () => {
+      if (typeof window === "undefined") return;
+      window.dispatchEvent(
+        new CustomEvent(READER_MODE_CHANGE_EVENT, {
+          detail: { open: false },
+        }),
+      );
+    };
+  }, []);
+
+  useEffect(() => {
+    const previousRowCount = previousRowCountRef.current;
+    previousRowCountRef.current = rowsWithCheckpoints.length;
 
     if (previousRowCount > 0 || rowsWithCheckpoints.length === 0) {
-      return
+      return;
     }
 
-    onIsAtEndChange(true)
+    onIsAtEndChange(true);
     const frameId = window.requestAnimationFrame(() => {
       // When reopening a chat whose latest turn has finished, show the start
       // of the agent response. Scrolling to the absolute end hides the first
       // part of a long answer and makes returning to a chat disorienting.
-      const latestMessage = messages.at(-1)
+      const latestMessage = messages.at(-1);
       if (latestMessage?.kind === "assistant_text") {
-        const row = Array.from(document.querySelectorAll<HTMLElement>("[data-reader-message-id]"))
-          .find((candidate) => candidate.dataset.readerMessageId === latestMessage.id)
+        const row = Array.from(
+          document.querySelectorAll<HTMLElement>("[data-reader-message-id]"),
+        ).find(
+          (candidate) => candidate.dataset.readerMessageId === latestMessage.id,
+        );
         if (row) {
-          row.scrollIntoView({ behavior: "auto", block: "start" })
-          return
+          row.scrollIntoView({ behavior: "auto", block: "start" });
+          return;
         }
       }
-      void listRef.current?.scrollToEnd?.({ animated: false })
-    })
-    return () => window.cancelAnimationFrame(frameId)
-  }, [listRef, messages, onIsAtEndChange, rowsWithCheckpoints.length])
+      void listRef.current?.scrollToEnd?.({ animated: false });
+    });
+    return () => window.cancelAnimationFrame(frameId);
+  }, [listRef, messages, onIsAtEndChange, rowsWithCheckpoints.length]);
 
   const updateFloatingReaderMessage = useCallback(() => {
-    const scrollNode = listRef.current?.getScrollableNode?.()
+    const scrollNode = listRef.current?.getScrollableNode?.();
     if (!(scrollNode instanceof HTMLElement)) {
-      setFloatingReaderMessageId(null)
-      return
+      setFloatingReaderMessageId(null);
+      return;
     }
 
-    const scrollRect = scrollNode.getBoundingClientRect()
-    const followY = scrollRect.bottom - Math.max(72, transcriptPaddingBottom + 22)
-    const rows = Array.from(scrollNode.querySelectorAll<HTMLElement>("[data-reader-message-id]"))
-    let nextMessageId: string | null = null
+    const scrollRect = scrollNode.getBoundingClientRect();
+    const followY =
+      scrollRect.bottom - Math.max(72, transcriptPaddingBottom + 22);
+    const rows = Array.from(
+      scrollNode.querySelectorAll<HTMLElement>("[data-reader-message-id]"),
+    );
+    let nextMessageId: string | null = null;
 
     for (const row of rows) {
-      const rect = row.getBoundingClientRect()
-      const messageId = row.dataset.readerMessageId
-      if (!messageId) continue
+      const rect = row.getBoundingClientRect();
+      const messageId = row.dataset.readerMessageId;
+      if (!messageId) continue;
 
-      const rowContainsFollowLine = rect.top <= followY && rect.bottom >= followY
-      const mainButtonStillBelowViewport = rect.bottom > scrollRect.bottom - Math.max(96, transcriptPaddingBottom + 44)
-      const rowStillReadable = rect.bottom > scrollRect.top + headerOffsetPx + 80
-      if (rowContainsFollowLine && mainButtonStillBelowViewport && rowStillReadable) {
-        nextMessageId = messageId
-        break
+      const rowContainsFollowLine =
+        rect.top <= followY && rect.bottom >= followY;
+      const mainButtonStillBelowViewport =
+        rect.bottom >
+        scrollRect.bottom - Math.max(96, transcriptPaddingBottom + 44);
+      const rowStillReadable =
+        rect.bottom > scrollRect.top + headerOffsetPx + 80;
+      if (
+        rowContainsFollowLine &&
+        mainButtonStillBelowViewport &&
+        rowStillReadable
+      ) {
+        nextMessageId = messageId;
+        break;
       }
     }
 
-    setFloatingReaderMessageId((current) => current === nextMessageId ? current : nextMessageId)
-  }, [headerOffsetPx, listRef, transcriptPaddingBottom])
+    setFloatingReaderMessageId((current) =>
+      current === nextMessageId ? current : nextMessageId,
+    );
+  }, [headerOffsetPx, listRef, transcriptPaddingBottom]);
 
-  const handleToolGroupExpandedChange = useCallback((groupId: string, next: boolean) => {
-    setToolGroupExpanded((current) => (
-      current[groupId] === next
-        ? current
-        : {
-            ...current,
-            [groupId]: next,
-          }
-    ))
-  }, [])
+  const handleToolGroupExpandedChange = useCallback(
+    (groupId: string, next: boolean) => {
+      setToolGroupExpanded((current) =>
+        current[groupId] === next
+          ? current
+          : {
+              ...current,
+              [groupId]: next,
+            },
+      );
+    },
+    [],
+  );
 
-  const handleScroll = useCallback((event?: unknown) => {
-    const currentTarget = (
-      typeof event === "object"
-      && event !== null
-      && "currentTarget" in event
-      && event.currentTarget instanceof HTMLElement
-    )
-      ? event.currentTarget
-      : listRef.current?.getScrollableNode?.()
+  const handleScroll = useCallback(
+    (event?: unknown) => {
+      const currentTarget =
+        typeof event === "object" &&
+        event !== null &&
+        "currentTarget" in event &&
+        event.currentTarget instanceof HTMLElement
+          ? event.currentTarget
+          : listRef.current?.getScrollableNode?.();
 
-    if (currentTarget instanceof HTMLElement) {
-      const now = performance.now()
-      const previousSample = lastScrollSampleRef.current
-      if (previousSample && shouldShowTranscriptJumpHint(previousSample.top, currentTarget.scrollTop, now - previousSample.time)) {
-        setShowTranscriptJumpHint(true)
-        if (scrollHintTimeoutRef.current !== null) window.clearTimeout(scrollHintTimeoutRef.current)
-        scrollHintTimeoutRef.current = window.setTimeout(() => {
-          setShowTranscriptJumpHint(false)
-          scrollHintTimeoutRef.current = null
-        }, TRANSCRIPT_JUMP_HINT_TIMEOUT_MS)
+      if (currentTarget instanceof HTMLElement) {
+        const now = performance.now();
+        const previousSample = lastScrollSampleRef.current;
+        if (
+          previousSample &&
+          shouldShowTranscriptJumpHint(
+            previousSample.top,
+            currentTarget.scrollTop,
+            now - previousSample.time,
+          )
+        ) {
+          setShowTranscriptJumpHint(true);
+          if (scrollHintTimeoutRef.current !== null)
+            window.clearTimeout(scrollHintTimeoutRef.current);
+          scrollHintTimeoutRef.current = window.setTimeout(() => {
+            setShowTranscriptJumpHint(false);
+            scrollHintTimeoutRef.current = null;
+          }, TRANSCRIPT_JUMP_HINT_TIMEOUT_MS);
+        }
+        lastScrollSampleRef.current = {
+          top: currentTarget.scrollTop,
+          time: now,
+        };
+        const distanceFromEnd =
+          currentTarget.scrollHeight -
+          currentTarget.clientHeight -
+          currentTarget.scrollTop;
+        onIsAtEndChange(distanceFromEnd <= 4);
+        return;
       }
-      lastScrollSampleRef.current = { top: currentTarget.scrollTop, time: now }
-      const distanceFromEnd = currentTarget.scrollHeight - currentTarget.clientHeight - currentTarget.scrollTop
-      onIsAtEndChange(distanceFromEnd <= 4)
-      return
-    }
 
-    const state = listRef.current?.getState?.()
-    if (state) {
-      onIsAtEndChange(state.isAtEnd)
-    }
-  }, [listRef, onIsAtEndChange])
+      const state = listRef.current?.getState?.();
+      if (state) {
+        onIsAtEndChange(state.isAtEnd);
+      }
+    },
+    [listRef, onIsAtEndChange],
+  );
 
   useEffect(() => {
     const handleJumpShortcut = (event: KeyboardEvent) => {
-      if (!event.shiftKey || event.altKey || event.ctrlKey || event.metaKey || (event.key !== "ArrowUp" && event.key !== "ArrowDown")) return
-      const target = event.target instanceof HTMLElement ? event.target : null
-      if (target?.matches("input, textarea, select, [contenteditable='true']")) return
-      const scrollNode = listRef.current?.getScrollableNode?.()
-      if (!(scrollNode instanceof HTMLElement)) return
-      event.preventDefault()
+      if (
+        !event.shiftKey ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        (event.key !== "ArrowUp" && event.key !== "ArrowDown")
+      )
+        return;
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      if (target?.matches("input, textarea, select, [contenteditable='true']"))
+        return;
+      const scrollNode = listRef.current?.getScrollableNode?.();
+      if (!(scrollNode instanceof HTMLElement)) return;
+      event.preventDefault();
       scrollNode.scrollBy({
-        top: transcriptJumpDistance(scrollNode.clientHeight, event.key === "ArrowUp" ? "up" : "down"),
+        top: transcriptJumpDistance(
+          scrollNode.clientHeight,
+          event.key === "ArrowUp" ? "up" : "down",
+        ),
         behavior: "smooth",
-      })
-    }
-    window.addEventListener("keydown", handleJumpShortcut)
-    return () => window.removeEventListener("keydown", handleJumpShortcut)
-  }, [listRef])
+      });
+    };
+    window.addEventListener("keydown", handleJumpShortcut);
+    return () => window.removeEventListener("keydown", handleJumpShortcut);
+  }, [listRef]);
 
   useEffect(() => {
-    let cleanup: (() => void) | undefined
+    let cleanup: (() => void) | undefined;
     const frameId = window.requestAnimationFrame(() => {
-      const scrollNode = listRef.current?.getScrollableNode?.()
+      const scrollNode = listRef.current?.getScrollableNode?.();
       if (!(scrollNode instanceof HTMLElement)) {
-        return
+        return;
       }
 
       const handleNativeScroll = () => {
-        handleScroll({ currentTarget: scrollNode })
-        updateFloatingReaderMessage()
-      }
+        handleScroll({ currentTarget: scrollNode });
+        updateFloatingReaderMessage();
+      };
 
-      scrollNode.addEventListener("scroll", handleNativeScroll, { passive: true })
-      window.addEventListener("resize", updateFloatingReaderMessage)
-      handleNativeScroll()
+      scrollNode.addEventListener("scroll", handleNativeScroll, {
+        passive: true,
+      });
+      window.addEventListener("resize", updateFloatingReaderMessage);
+      handleNativeScroll();
       cleanup = () => {
-        scrollNode.removeEventListener("scroll", handleNativeScroll)
-        window.removeEventListener("resize", updateFloatingReaderMessage)
-      }
-    })
+        scrollNode.removeEventListener("scroll", handleNativeScroll);
+        window.removeEventListener("resize", updateFloatingReaderMessage);
+      };
+    });
 
     return () => {
-      window.cancelAnimationFrame(frameId)
-      cleanup?.()
-    }
-  }, [activeChatId, handleScroll, listRef, resolvedRows.length, updateFloatingReaderMessage])
+      window.cancelAnimationFrame(frameId);
+      cleanup?.();
+    };
+  }, [
+    activeChatId,
+    handleScroll,
+    listRef,
+    resolvedRows.length,
+    updateFloatingReaderMessage,
+  ]);
 
   const handleStartReached = useCallback(() => {
     if (isHistoryLoading || !hasOlderHistory) {
-      return
+      return;
     }
-    void loadOlderHistory()
-  }, [hasOlderHistory, isHistoryLoading, loadOlderHistory])
+    void loadOlderHistory();
+  }, [hasOlderHistory, isHistoryLoading, loadOlderHistory]);
 
-  const handleOpenLocalLinkClick = useCallback((target: OpenLocalLinkTarget) => {
-    if (target.trigger !== "contextmenu") {
-      setFilePreviewTarget(target)
-      return
-    }
+  const handleOpenLocalLinkClick = useCallback(
+    (target: OpenLocalLinkTarget) => {
+      if (target.trigger !== "contextmenu") {
+        setFilePreviewTarget(target);
+        return;
+      }
 
-    setLocalLinkMenuTarget(target)
-    window.requestAnimationFrame(() => {
-      const trigger = localLinkMenuTriggerRef.current
-      if (!trigger) return
-      const clientX = target.clientX ?? window.innerWidth / 2
-      const clientY = target.clientY ?? window.innerHeight / 2
-      trigger.dispatchEvent(new MouseEvent("contextmenu", {
-        bubbles: true,
-        cancelable: true,
-        clientX,
-        clientY,
-        view: window,
-      }))
-    })
-  }, [])
+      setLocalLinkMenuTarget(target);
+      window.requestAnimationFrame(() => {
+        const trigger = localLinkMenuTriggerRef.current;
+        if (!trigger) return;
+        const clientX = target.clientX ?? window.innerWidth / 2;
+        const clientY = target.clientY ?? window.innerHeight / 2;
+        trigger.dispatchEvent(
+          new MouseEvent("contextmenu", {
+            bubbles: true,
+            cancelable: true,
+            clientX,
+            clientY,
+            view: window,
+          }),
+        );
+      });
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!filePreviewTarget) {
-      setFilePreview(null)
-      setFilePreviewError(null)
-      setFilePreviewLoading(false)
-      return
+      setFilePreview(null);
+      setFilePreviewError(null);
+      setFilePreviewLoading(false);
+      return;
     }
 
-    const controller = new AbortController()
+    const controller = new AbortController();
     const params = new URLSearchParams({
       path: filePreviewTarget.path,
       full: "1",
-    })
+    });
     if (filePreviewTarget.line && filePreviewTarget.line > 0) {
-      params.set("line", String(filePreviewTarget.line))
+      params.set("line", String(filePreviewTarget.line));
     }
 
-    setFilePreviewLoading(true)
-    setFilePreviewError(null)
+    setFilePreviewLoading(true);
+    setFilePreviewError(null);
     fetch(`/api/file-preview?${params.toString()}`, {
       signal: controller.signal,
       headers: { Accept: "application/json" },
@@ -506,56 +681,97 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
     })
       .then(async (response) => {
         if (!response.ok) {
-          throw new Error(await response.text() || `File preview failed with ${response.status}`)
+          throw new Error(
+            (await response.text()) ||
+              `File preview failed with ${response.status}`,
+          );
         }
-        return response.json() as Promise<FilePreviewResponse>
+        return response.json() as Promise<FilePreviewResponse>;
       })
       .then((payload) => {
-        if (!controller.signal.aborted) setFilePreview(payload)
+        if (!controller.signal.aborted) setFilePreview(payload);
       })
       .catch((err: unknown) => {
-        if (controller.signal.aborted) return
-        setFilePreview(null)
-        setFilePreviewError(err instanceof Error ? err.message : String(err))
+        if (controller.signal.aborted) return;
+        setFilePreview(null);
+        setFilePreviewError(err instanceof Error ? err.message : String(err));
       })
       .finally(() => {
-        if (!controller.signal.aborted) setFilePreviewLoading(false)
-      })
+        if (!controller.signal.aborted) setFilePreviewLoading(false);
+      });
 
     return () => {
-      controller.abort()
-    }
-  }, [filePreviewTarget])
+      controller.abort();
+    };
+  }, [filePreviewTarget]);
 
-  const renderItem = useCallback(({ item }: { item: TranscriptViewportRow }) => {
-    const readerMessageId = item.kind === "single" && item.message.kind === "assistant_text"
-      ? item.message.id
-      : undefined
+  const renderItem = useCallback(
+    ({ item }: { item: TranscriptViewportRow }) => {
+      const readerMessageId =
+        item.kind === "single" && item.message.kind === "assistant_text"
+          ? item.message.id
+          : undefined;
 
-    return (
-    <div
-      className={cn("mx-auto w-full max-w-[800px] pb-5", transcriptAppearanceClassName)}
-      dir={direction}
-      style={transcriptAppearanceStyle}
-      data-transcript-row-id={item.id}
-      data-reader-message-id={readerMessageId}
-    >
-      <AbolqasemTranscriptRow
-        row={item}
-        toolGroupExpanded={item.kind === "tool-group" ? (toolGroupExpanded[item.id] ?? false) : undefined}
-        onToolGroupExpandedChange={handleToolGroupExpandedChange}
-        onAskUserQuestionSubmit={onAskUserQuestionSubmit}
-        onApprovalRequestSubmit={onApprovalRequestSubmit}
-        onExitPlanModeConfirm={onExitPlanModeConfirm}
-        promptCheckpoint={item.kind === "single" && item.message.kind === "user_prompt" ? item.promptCheckpoint : undefined}
-        onRestoreCheckpoint={onRestoreCheckpoint}
-      />
-    </div>
-    )
-  }, [direction, handleToolGroupExpandedChange, onApprovalRequestSubmit, onAskUserQuestionSubmit, onExitPlanModeConfirm, onRestoreCheckpoint, toolGroupExpanded, transcriptAppearanceClassName, transcriptAppearanceStyle])
+      return (
+        <div
+          className={cn(
+            "mx-auto w-full max-w-[800px] pb-5",
+            transcriptAppearanceClassName,
+          )}
+          dir={direction}
+          style={transcriptAppearanceStyle}
+          data-transcript-row-id={item.id}
+          data-reader-message-id={readerMessageId}
+        >
+          <AbolqasemTranscriptRow
+            row={item}
+            toolGroupExpanded={
+              item.kind === "tool-group"
+                ? (toolGroupExpanded[item.id] ?? false)
+                : undefined
+            }
+            onToolGroupExpandedChange={handleToolGroupExpandedChange}
+            onAskUserQuestionSubmit={onAskUserQuestionSubmit}
+            onApprovalRequestSubmit={onApprovalRequestSubmit}
+            onExitPlanModeConfirm={onExitPlanModeConfirm}
+            onRetryTurn={
+              item.kind === "single" &&
+              item.message.kind === "result" &&
+              item.message.id === retryableResultId
+                ? onRetryTurn
+                : undefined
+            }
+            promptCheckpoint={
+              item.kind === "single" && item.message.kind === "user_prompt"
+                ? item.promptCheckpoint
+                : undefined
+            }
+            onRestoreCheckpoint={onRestoreCheckpoint}
+          />
+        </div>
+      );
+    },
+    [
+      direction,
+      handleToolGroupExpandedChange,
+      onApprovalRequestSubmit,
+      onAskUserQuestionSubmit,
+      onExitPlanModeConfirm,
+      onRetryTurn,
+      retryableResultId,
+      onRestoreCheckpoint,
+      toolGroupExpanded,
+      transcriptAppearanceClassName,
+      transcriptAppearanceStyle,
+    ],
+  );
 
   const listHeader = (
-    <div className="mx-auto w-full max-w-[800px]" dir={direction} style={{ paddingTop: `${headerOffsetPx}px` }}>
+    <div
+      className="mx-auto w-full max-w-[800px]"
+      dir={direction}
+      style={{ paddingTop: `${headerOffsetPx}px` }}
+    >
       {isHistoryLoading ? (
         <div className="flex justify-center pb-4">
           <span className="text-sm translate-y-[-0.5px]">
@@ -569,17 +785,40 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
         </div>
       ) : null}
     </div>
-  )
+  );
 
-  const processingStatus = getProcessingStatus(messages, runtimeStatus ?? undefined)
+  const processingStatus = getProcessingStatus(
+    messages,
+    runtimeStatus ?? undefined,
+  );
   const listFooter = (
-    <div className={cn("mx-auto w-full max-w-[800px]", transcriptAppearanceClassName)} dir={direction} style={transcriptAppearanceStyle}>
-      {isProcessing && !hasTmuxRuntime ? <ProcessingMessage status={processingStatus} /> : null}
+    <div
+      className={cn(
+        "mx-auto w-full max-w-[800px]",
+        transcriptAppearanceClassName,
+      )}
+      dir={direction}
+      style={transcriptAppearanceStyle}
+    >
+      {isProcessing && !hasTmuxRuntime ? (
+        <ProcessingMessage status={processingStatus} provider={runtimeProvider} />
+      ) : null}
       {readOnly && queuedMessages.length > 0 ? (
-        <div className="flex items-center gap-3 border-b border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200" role="status">
+        <div
+          className="flex items-center gap-3 border-b border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200"
+          role="status"
+        >
           <AlertTriangle className="size-4 shrink-0" />
-          <span className="min-w-0 flex-1">{t.chat.queueBlockedDescription}</span>
-          <Button type="button" variant="outline" size="sm" className="shrink-0 border-amber-400/40 text-amber-100 hover:bg-amber-500/15" onClick={() => void onRemoveAllQueuedMessages()}>
+          <span className="min-w-0 flex-1">
+            {t.chat.queueBlockedDescription}
+          </span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="shrink-0 border-amber-400/40 text-amber-100 hover:bg-amber-500/15"
+            onClick={() => void onRemoveAllQueuedMessages()}
+          >
             <Trash2 className="size-3.5" />
             {t.chat.queueClearAll}
           </Button>
@@ -604,8 +843,8 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
         </div>
       ) : null}
     </div>
-  )
-  const showFloatingReader = Boolean(floatingReaderDocument) && !readerDocument
+  );
+  const showFloatingReader = Boolean(floatingReaderDocument) && !readerDocument;
 
   return (
     <>
@@ -630,11 +869,14 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
               onStartReached={handleStartReached}
               onStartReachedThreshold={0.1}
               className="h-full flex-1 overflow-x-hidden overscroll-y-contain px-3 scroll-pt-[72px] [direction:ltr] [scrollbar-gutter:auto]"
-              contentContainerStyle={{ paddingBottom: transcriptPaddingBottom + 10 }}
+              contentContainerStyle={{
+                paddingBottom: transcriptPaddingBottom + 10,
+              }}
               ListHeaderComponent={listHeader}
               ListFooterComponent={listFooter}
             />
-            {(minimapItems.length > 0 || hasOlderHistory) && onMinimapScrollToMessage ? (
+            {(minimapItems.length > 0 || hasOlderHistory) &&
+            onMinimapScrollToMessage ? (
               <ConversationMinimap
                 items={minimapItems}
                 hasOlderItems={hasOlderHistory}
@@ -648,12 +890,20 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
         </PromptCheckpointProvider>
       </OpenLocalLinkProvider>
 
-      <Dialog open={Boolean(filePreviewTarget)} onOpenChange={(open) => {
-        if (!open) {
-          setFilePreviewTarget(null)
-        }
-      }}>
-        <DialogContent hideClose className="w-[min(92vw,1040px)] max-w-none rounded-3xl p-0">
+      <Dialog
+        open={Boolean(filePreviewTarget)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setFilePreviewTarget(null);
+          }
+        }}
+      >
+        <DialogContent
+          hideClose
+          aria-describedby={undefined}
+          className="w-[min(92vw,1040px)] max-w-none rounded-3xl p-0"
+        >
+          <DialogTitle className="sr-only">{t.common.loading}</DialogTitle>
           <DialogBody className="p-0">
             {filePreviewLoading ? (
               <div className="flex min-h-[360px] items-center justify-center gap-3 text-sm text-muted-foreground">
@@ -682,15 +932,17 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
         title={readerDocument?.title ?? "Reader"}
         content={readerDocument?.content ?? ""}
         onOpenChange={(open) => {
-          if (!open) setReaderDocument(null)
+          if (!open) setReaderDocument(null);
         }}
       />
 
-      <ContextMenu onOpenChange={(open) => {
-        if (!open) {
-          setLocalLinkMenuTarget(null)
-        }
-      }}>
+      <ContextMenu
+        onOpenChange={(open) => {
+          if (!open) {
+            setLocalLinkMenuTarget(null);
+          }
+        }}
+      >
         <ContextMenuTrigger asChild>
           <span
             ref={localLinkMenuTriggerRef}
@@ -711,7 +963,7 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
             includePreview
             includeDefault
             onOpenExternal={(action, editor) => {
-              void onOpenLocalLink(localLinkMenuTarget, action, editor)
+              void onOpenLocalLink(localLinkMenuTarget, action, editor);
             }}
           />
         ) : null}
@@ -735,14 +987,22 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
                 <span className="relative inline-grid place-items-start">
                   <span className="invisible col-start-1 row-start-1 flex items-center whitespace-pre">
                     <span>{emptyStateText}</span>
-                    <span className="abolqasem-typewriter-cursor-slot" aria-hidden="true" />
+                    <span
+                      className="abolqasem-typewriter-cursor-slot"
+                      aria-hidden="true"
+                    />
                   </span>
                   <span className="col-start-1 row-start-1 flex items-center whitespace-pre">
                     <span>{typedEmptyStateText}</span>
-                    <span className="abolqasem-typewriter-cursor-slot" aria-hidden="true">
+                    <span
+                      className="abolqasem-typewriter-cursor-slot"
+                      aria-hidden="true"
+                    >
                       <span
                         className="abolqasem-typewriter-cursor"
-                        data-typing-complete={isEmptyStateTypingComplete ? "true" : "false"}
+                        data-typing-complete={
+                          isEmptyStateTypingComplete ? "true" : "false"
+                        }
                       />
                     </span>
                   </span>
@@ -759,8 +1019,13 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
           <div className="absolute inset-6 ">
             <div className="flex h-full items-center justify-center">
               <div className="flex flex-col items-center justify-center gap-3 text-center">
-                <Upload className="mx-auto size-14 text-foreground" strokeWidth={1.75} />
-                <div className="text-xl font-medium text-foreground">{t.chat.dropFiles}</div>
+                <Upload
+                  className="mx-auto size-14 text-foreground"
+                  strokeWidth={1.75}
+                />
+                <div className="text-xl font-medium text-foreground">
+                  {t.chat.dropFiles}
+                </div>
               </div>
             </div>
           </div>
@@ -770,17 +1035,28 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
       <div
         className={cn(
           "pointer-events-none absolute end-5 top-1/2 z-20 -translate-y-1/2 transition-all duration-200",
-          showTranscriptJumpHint ? "translate-x-0 opacity-100" : "translate-x-2 opacity-0",
+          showTranscriptJumpHint
+            ? "translate-x-0 opacity-100"
+            : "translate-x-2 opacity-0",
         )}
         aria-hidden={!showTranscriptJumpHint}
       >
-        <div className="rounded-lg border border-border/80 bg-background/88 px-2.5 py-2 text-[11px] text-muted-foreground shadow-lg backdrop-blur-md" dir={direction}>
+        <div
+          className="rounded-lg border border-border/80 bg-background/88 px-2.5 py-2 text-[11px] text-muted-foreground shadow-lg backdrop-blur-md"
+          dir={direction}
+        >
           <div className="flex items-center gap-1.5 whitespace-nowrap">
-            <kbd className="rounded border border-border bg-muted/60 px-1 font-mono text-[10px] text-foreground">Shift</kbd>
+            <kbd className="rounded border border-border bg-muted/60 px-1 font-mono text-[10px] text-foreground">
+              Shift
+            </kbd>
             <ArrowUp className="size-3" />
             <ArrowDown className="size-3" />
           </div>
-          <div className="mt-1">{direction === "rtl" ? "پرش سریع در گفت‌وگو" : "Jump through the conversation"}</div>
+          <div className="mt-1">
+            {direction === "rtl"
+              ? "پرش سریع در گفت‌وگو"
+              : "Jump through the conversation"}
+          </div>
         </div>
       </div>
 
@@ -822,7 +1098,8 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
         <button
           type="button"
           onClick={() => {
-            if (floatingReaderDocument) setReaderDocument(floatingReaderDocument)
+            if (floatingReaderDocument)
+              setReaderDocument(floatingReaderDocument);
           }}
           className="relative flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border border-border bg-background/95 text-muted-foreground shadow-[0_16px_44px_rgba(0,0,0,0.18)] transition-colors before:absolute before:inset-1 before:-z-10 before:rounded-full before:bg-primary/15 before:blur-lg hover:text-foreground dark:bg-slate-800/95"
           aria-label="Open reader"
@@ -831,9 +1108,9 @@ export const ChatTranscriptViewport = memo(function ChatTranscriptViewport({
         </button>
       </div>
     </>
-  )
-})
+  );
+});
 
 function keyExtractor(item: TranscriptViewportRow) {
-  return item.id
+  return item.id;
 }

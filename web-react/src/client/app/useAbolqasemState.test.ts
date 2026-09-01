@@ -3,6 +3,7 @@ import {
   applySidebarProjectOrder,
   countMatchingUserPrompts,
   getActiveChatSnapshot,
+  getActiveChatRefreshDelay,
   getComposerStateForActiveProvider,
   getNextMeasuredInputHeight,
   getNewestRemainingChatId,
@@ -22,7 +23,10 @@ import {
   shouldEnqueueUserPrompt,
   shouldHandleUiUpdateReloadRequest,
   shouldMarkActiveChatRead,
+  sameTranscriptEntries,
   shouldAutoFollowTranscript,
+  ACTIVE_CHAT_REFRESH_INTERVAL_MS,
+  BACKGROUND_CHAT_REFRESH_INTERVAL_MS,
 } from "./useAbolqasemState"
 import type { ChatAttachment, ChatProviderPreferences, ChatSnapshot, QueuedChatMessage, SidebarData, UserPromptEntry } from "../../shared/types"
 
@@ -148,6 +152,11 @@ describe("getComposerStateForActiveProvider", () => {
       modelOptions: { reasoningEffort: "low", fastMode: true },
       planMode: false,
     },
+    opencode: {
+      model: "opencode/nemotron-3.5-lightning-free",
+      modelOptions: {},
+      planMode: false,
+    },
   }
 
   test("uses the runtime provider when local composer state is stale", () => {
@@ -164,6 +173,24 @@ describe("getComposerStateForActiveProvider", () => {
       provider: "codex",
       model: "gpt-5.5",
       modelOptions: { reasoningEffort: "low", fastMode: true },
+      planMode: true,
+    })
+  })
+
+  test("keeps OpenCode defaults when the runtime provider is OpenCode", () => {
+    expect(getComposerStateForActiveProvider(
+      {
+        provider: "codex",
+        model: "gpt-5.5",
+        modelOptions: { reasoningEffort: "low", fastMode: true },
+        planMode: true,
+      },
+      "opencode",
+      providerDefaults,
+    )).toEqual({
+      provider: "opencode",
+      model: "opencode/nemotron-3.5-lightning-free",
+      modelOptions: {},
       planMode: true,
     })
   })
@@ -247,6 +274,29 @@ describe("shouldMarkActiveChatRead", () => {
       visibilityState: "visible",
       hasFocus: () => false,
     })).toBe(false)
+  })
+})
+
+describe("getActiveChatRefreshDelay", () => {
+  test("refreshes the selected browser tab every second and backs off hidden tabs", () => {
+    expect(getActiveChatRefreshDelay({ visibilityState: "visible" })).toBe(ACTIVE_CHAT_REFRESH_INTERVAL_MS)
+    expect(getActiveChatRefreshDelay({ visibilityState: "hidden" })).toBe(BACKGROUND_CHAT_REFRESH_INTERVAL_MS)
+  })
+})
+
+describe("sameTranscriptEntries", () => {
+  test("does not discard a native streaming update that keeps the same item id", () => {
+    expect(sameTranscriptEntries(
+      [{ _id: "response-1", kind: "assistant_text", text: "partial" }],
+      [{ _id: "response-1", kind: "assistant_text", text: "partial output" }],
+    )).toBe(false)
+  })
+
+  test("reuses an unchanged transcript snapshot", () => {
+    expect(sameTranscriptEntries(
+      [{ _id: "response-1", kind: "assistant_text", text: "complete" }],
+      [{ _id: "response-1", kind: "assistant_text", text: "complete" }],
+    )).toBe(true)
   })
 })
 

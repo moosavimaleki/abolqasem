@@ -20,6 +20,14 @@ const (
 	ProviderProxyModeCustom = "custom"
 )
 
+type CodexBackendMode string
+
+const (
+	CodexBackendNative  CodexBackendMode = "native"
+	CodexBackendManager CodexBackendMode = "manager"
+	CodexBackendCustom  CodexBackendMode = "custom"
+)
+
 type AppSettings struct {
 	HookUpdates                     bool                                     `json:"hook_updates"`
 	HookFollowMode                  string                                   `json:"hook_follow_mode"`
@@ -33,6 +41,7 @@ type AppSettings struct {
 	Terminal                        TerminalSettings                         `json:"terminal"`
 	Editor                          EditorSettings                           `json:"editor"`
 	ProviderProxy                   ProviderProxySettings                    `json:"provider_proxy"`
+	CodexBackend                    CodexBackendSettings                     `json:"codex_backend"`
 	DefaultProvider                 string                                   `json:"default_provider"`
 	QueueDeliveryMode               string                                   `json:"queue_delivery_mode"`
 	ProviderDefaults                map[string]ProviderPreference            `json:"provider_defaults"`
@@ -61,6 +70,54 @@ type ProviderProxySettings struct {
 	NoProxy   string `json:"no_proxy"`
 }
 
+type CodexBackendSettings struct {
+	Mode             CodexBackendMode                   `json:"mode"`
+	Enabled          bool                               `json:"enabled"`
+	ManagerBaseURL   string                             `json:"manager_base_url"`
+	AutoSwitchPolicy string                             `json:"auto_switch_policy"`
+	Maintenance      CodexManagerMaintenanceSettings    `json:"maintenance"`
+	SessionMonitor   CodexManagerSessionMonitorSettings `json:"session_monitor"`
+	CustomProviderID string                             `json:"custom_provider_id"`
+	CustomProviders  map[string]CustomProviderSettings  `json:"custom_providers"`
+}
+
+// CodexManagerMaintenanceSettings controls only stored-account refreshes.
+// It is intentionally separate from a custom provider's endpoint/config.
+type CodexManagerMaintenanceSettings struct {
+	IntervalSeconds int    `json:"interval_seconds"`
+	JitterSeconds   int    `json:"jitter_seconds"`
+	RetentionDays   int    `json:"retention_days"`
+	ProxyURL        string `json:"proxy_url"`
+}
+
+// CodexManagerSessionMonitorSettings controls the optional Chrome session
+// audit. It is disabled and dry-run by default: enabling it never revokes a
+// session until the user explicitly turns preview mode off.
+type CodexManagerSessionMonitorSettings struct {
+	Enabled         bool   `json:"enabled"`
+	IntervalSeconds int    `json:"interval_seconds"`
+	DryRun          bool   `json:"dry_run"`
+	ChromeRoot      string `json:"chrome_root"`
+}
+
+type CustomProviderSettings struct {
+	Name     string                        `json:"name"`
+	BaseURL  string                        `json:"base_url"`
+	WireAPI  string                        `json:"wire_api"`
+	EnvKey   string                        `json:"env_key"`
+	Headers  map[string]string             `json:"headers"`
+	Models   []CustomProviderModelSettings `json:"models"`
+	ModelMap map[string]string             `json:"model_map,omitempty"` // legacy shorthand retained on migration
+}
+
+type CustomProviderModelSettings struct {
+	ID               string   `json:"id"`
+	UpstreamID       string   `json:"upstream_id"`
+	DisplayName      string   `json:"display_name,omitempty"`
+	ReasoningEfforts []string `json:"reasoning_efforts,omitempty"`
+	InputModalities  []string `json:"input_modalities,omitempty"`
+}
+
 type ProviderPreference struct {
 	Model               string         `json:"model"`
 	ModelMode           string         `json:"model_mode"`
@@ -83,6 +140,7 @@ type AppSettingsPatch struct {
 	Terminal                *TerminalSettingsPatch                 `json:"terminal"`
 	Editor                  *EditorSettingsPatch                   `json:"editor"`
 	ProviderProxy           *ProviderProxySettingsPatch            `json:"providerProxy"`
+	CodexBackend            *CodexBackendSettingsPatch             `json:"codexBackend"`
 	DefaultProvider         string                                 `json:"defaultProvider"`
 	QueueDeliveryMode       string                                 `json:"queueDeliveryMode"`
 	ProviderDefaults        map[string]ProviderPreferencePatch     `json:"providerDefaults"`
@@ -107,6 +165,31 @@ type ProviderProxySettingsPatch struct {
 	Mode      *string `json:"mode"`
 	HTTPProxy *string `json:"httpProxy"`
 	NoProxy   *string `json:"noProxy"`
+}
+
+type CodexBackendSettingsPatch struct {
+	Mode             *CodexBackendMode                 `json:"mode"`
+	Enabled          *bool                             `json:"enabled"`
+	ManagerBaseURL   *string                           `json:"managerBaseUrl"`
+	AutoSwitchPolicy *string                           `json:"autoSwitchPolicy"`
+	Maintenance      *CodexManagerMaintenancePatch     `json:"maintenance"`
+	SessionMonitor   *CodexManagerSessionMonitorPatch  `json:"sessionMonitor"`
+	CustomProviderID *string                           `json:"customProviderId"`
+	CustomProviders  map[string]CustomProviderSettings `json:"customProviders"`
+}
+
+type CodexManagerMaintenancePatch struct {
+	IntervalSeconds *int    `json:"intervalSeconds"`
+	JitterSeconds   *int    `json:"jitterSeconds"`
+	RetentionDays   *int    `json:"retentionDays"`
+	ProxyURL        *string `json:"proxyUrl"`
+}
+
+type CodexManagerSessionMonitorPatch struct {
+	Enabled         *bool   `json:"enabled"`
+	IntervalSeconds *int    `json:"intervalSeconds"`
+	DryRun          *bool   `json:"dryRun"`
+	ChromeRoot      *string `json:"chromeRoot"`
 }
 
 type ProviderPreferencePatch struct {
@@ -156,7 +239,15 @@ func DefaultAppSettings() AppSettings {
 			Preset:          "custom",
 			CommandTemplate: "",
 		},
-		ProviderProxy:     defaultProviderProxySettings(),
+		ProviderProxy: defaultProviderProxySettings(),
+		CodexBackend: CodexBackendSettings{
+			Mode:             CodexBackendNative,
+			ManagerBaseURL:   "http://127.0.0.1:8787/v1",
+			AutoSwitchPolicy: "automatic",
+			Maintenance:      CodexManagerMaintenanceSettings{IntervalSeconds: 15 * 60, JitterSeconds: 0, RetentionDays: 90},
+			SessionMonitor:   CodexManagerSessionMonitorSettings{IntervalSeconds: 5 * 60, DryRun: true},
+			CustomProviders:  map[string]CustomProviderSettings{},
+		},
 		DefaultProvider:   "last_used",
 		QueueDeliveryMode: "queue",
 		ProviderDefaults: map[string]ProviderPreference{
@@ -180,6 +271,13 @@ func DefaultAppSettings() AppSettings {
 					"executionMode":   catalog.DefaultCodexExecutionMode,
 				},
 				PlanMode: false,
+			},
+			"opencode": {
+				Model:               catalog.DefaultOpenCodeModel,
+				ModelMode:           "auto",
+				ReasoningEffortMode: "auto",
+				ModelOptions:        map[string]any{},
+				PlanMode:            false,
 			},
 		},
 		ProviderModelCatalog: catalog.ProviderModelInventoryByProvider{},
@@ -262,6 +360,7 @@ func NormalizeSettings(settings AppSettings) AppSettings {
 	settings.Terminal = normalizeTerminalSettings(settings.Terminal, defaults.Terminal)
 	settings.Editor = normalizeEditorSettings(settings.Editor, defaults.Editor)
 	settings.ProviderProxy = normalizeProviderProxySettings(settings.ProviderProxy)
+	settings.CodexBackend = normalizeCodexBackendSettings(settings.CodexBackend, defaults.CodexBackend)
 	settings.DefaultProvider = normalizeDefaultProvider(settings.DefaultProvider, defaults.DefaultProvider)
 	settings.QueueDeliveryMode = normalizeChoice(settings.QueueDeliveryMode, defaults.QueueDeliveryMode, "queue", "steer")
 	settings.ProviderModelCatalog = normalizeProviderModelCatalog(settings.ProviderModelCatalog)
@@ -274,6 +373,70 @@ func NormalizeSettings(settings AppSettings) AppSettings {
 		settings.DiskManagement.WarningThresholdBytes = defaults.DiskManagement.WarningThresholdBytes
 	}
 	return settings
+}
+
+func normalizeCodexBackendSettings(value, defaults CodexBackendSettings) CodexBackendSettings {
+	value.Mode = CodexBackendMode(strings.TrimSpace(strings.ToLower(string(value.Mode))))
+	if value.Mode != CodexBackendNative && value.Mode != CodexBackendManager && value.Mode != CodexBackendCustom {
+		value.Mode = defaults.Mode
+	}
+	value.ManagerBaseURL = strings.TrimSpace(value.ManagerBaseURL)
+	if value.ManagerBaseURL == "" {
+		value.ManagerBaseURL = defaults.ManagerBaseURL
+	}
+	value.AutoSwitchPolicy = normalizeChoice(value.AutoSwitchPolicy, defaults.AutoSwitchPolicy, "off", "pinned", "automatic")
+	value.Maintenance = normalizeCodexManagerMaintenanceSettings(value.Maintenance, defaults.Maintenance)
+	value.SessionMonitor = normalizeCodexManagerSessionMonitorSettings(value.SessionMonitor, defaults.SessionMonitor)
+	if value.CustomProviders == nil {
+		value.CustomProviders = map[string]CustomProviderSettings{}
+	}
+	value.CustomProviderID = strings.TrimSpace(value.CustomProviderID)
+	if value.CustomProviderID != "" {
+		if _, ok := value.CustomProviders[value.CustomProviderID]; !ok {
+			value.CustomProviderID = ""
+		}
+	}
+	for id, provider := range value.CustomProviders {
+		if provider.Headers == nil {
+			provider.Headers = map[string]string{}
+		}
+		if provider.Models == nil && len(provider.ModelMap) > 0 {
+			provider.Models = make([]CustomProviderModelSettings, 0, len(provider.ModelMap))
+			for modelID, upstreamID := range provider.ModelMap {
+				provider.Models = append(provider.Models, CustomProviderModelSettings{ID: modelID, UpstreamID: upstreamID})
+			}
+		}
+		if provider.Models == nil {
+			provider.Models = []CustomProviderModelSettings{}
+		}
+		value.CustomProviders[id] = provider
+	}
+	return value
+}
+
+func normalizeCodexManagerMaintenanceSettings(value, defaults CodexManagerMaintenanceSettings) CodexManagerMaintenanceSettings {
+	if value.IntervalSeconds < 5*60 || value.IntervalSeconds > 7*24*60*60 {
+		value.IntervalSeconds = defaults.IntervalSeconds
+	}
+	if value.JitterSeconds < 0 || value.JitterSeconds > 60*60 || value.JitterSeconds > value.IntervalSeconds {
+		value.JitterSeconds = defaults.JitterSeconds
+	}
+	if value.RetentionDays < 1 || value.RetentionDays > 3650 {
+		value.RetentionDays = defaults.RetentionDays
+	}
+	value.ProxyURL = strings.TrimSpace(value.ProxyURL)
+	return value
+}
+
+func normalizeCodexManagerSessionMonitorSettings(value, defaults CodexManagerSessionMonitorSettings) CodexManagerSessionMonitorSettings {
+	if value.IntervalSeconds < 5*60 || value.IntervalSeconds > 7*24*60*60 {
+		value.IntervalSeconds = defaults.IntervalSeconds
+	}
+	value.ChromeRoot = strings.TrimSpace(value.ChromeRoot)
+	if value.ChromeRoot != "" && !filepath.IsAbs(value.ChromeRoot) {
+		value.ChromeRoot = ""
+	}
+	return value
 }
 
 func ApplySettingsPatch(settings AppSettings, patch AppSettingsPatch) AppSettings {
@@ -317,6 +480,54 @@ func ApplySettingsPatch(settings AppSettings, patch AppSettingsPatch) AppSetting
 		}
 		if patch.ProviderProxy.NoProxy != nil {
 			settings.ProviderProxy.NoProxy = *patch.ProviderProxy.NoProxy
+		}
+	}
+	if patch.CodexBackend != nil {
+		if patch.CodexBackend.Mode != nil {
+			settings.CodexBackend.Mode = *patch.CodexBackend.Mode
+		}
+		if patch.CodexBackend.Enabled != nil {
+			settings.CodexBackend.Enabled = *patch.CodexBackend.Enabled
+		}
+		if patch.CodexBackend.ManagerBaseURL != nil {
+			settings.CodexBackend.ManagerBaseURL = *patch.CodexBackend.ManagerBaseURL
+		}
+		if patch.CodexBackend.AutoSwitchPolicy != nil {
+			settings.CodexBackend.AutoSwitchPolicy = *patch.CodexBackend.AutoSwitchPolicy
+		}
+		if patch.CodexBackend.Maintenance != nil {
+			if patch.CodexBackend.Maintenance.IntervalSeconds != nil {
+				settings.CodexBackend.Maintenance.IntervalSeconds = *patch.CodexBackend.Maintenance.IntervalSeconds
+			}
+			if patch.CodexBackend.Maintenance.JitterSeconds != nil {
+				settings.CodexBackend.Maintenance.JitterSeconds = *patch.CodexBackend.Maintenance.JitterSeconds
+			}
+			if patch.CodexBackend.Maintenance.RetentionDays != nil {
+				settings.CodexBackend.Maintenance.RetentionDays = *patch.CodexBackend.Maintenance.RetentionDays
+			}
+			if patch.CodexBackend.Maintenance.ProxyURL != nil {
+				settings.CodexBackend.Maintenance.ProxyURL = *patch.CodexBackend.Maintenance.ProxyURL
+			}
+		}
+		if patch.CodexBackend.SessionMonitor != nil {
+			if patch.CodexBackend.SessionMonitor.Enabled != nil {
+				settings.CodexBackend.SessionMonitor.Enabled = *patch.CodexBackend.SessionMonitor.Enabled
+			}
+			if patch.CodexBackend.SessionMonitor.IntervalSeconds != nil {
+				settings.CodexBackend.SessionMonitor.IntervalSeconds = *patch.CodexBackend.SessionMonitor.IntervalSeconds
+			}
+			if patch.CodexBackend.SessionMonitor.DryRun != nil {
+				settings.CodexBackend.SessionMonitor.DryRun = *patch.CodexBackend.SessionMonitor.DryRun
+			}
+			if patch.CodexBackend.SessionMonitor.ChromeRoot != nil {
+				settings.CodexBackend.SessionMonitor.ChromeRoot = *patch.CodexBackend.SessionMonitor.ChromeRoot
+			}
+		}
+		if patch.CodexBackend.CustomProviderID != nil {
+			settings.CodexBackend.CustomProviderID = *patch.CodexBackend.CustomProviderID
+		}
+		if patch.CodexBackend.CustomProviders != nil {
+			settings.CodexBackend.CustomProviders = patch.CodexBackend.CustomProviders
 		}
 	}
 	if patch.DefaultProvider != "" {
@@ -489,8 +700,9 @@ func ApplyProviderProxyEnv(env []string, settings AppSettings) []string {
 
 func normalizeAgentModels(models map[string]string) map[string]string {
 	normalized := map[string]string{
-		"codex":  "",
-		"claude": "",
+		"codex":    "",
+		"claude":   "",
+		"opencode": "",
 	}
 	for agent, model := range models {
 		agent = normalizeAgentName(agent)
@@ -509,7 +721,7 @@ func normalizeAgentModels(models map[string]string) map[string]string {
 func normalizeAgentName(agent string) string {
 	agent = strings.TrimSpace(strings.ToLower(agent))
 	switch agent {
-	case "codex", "claude":
+	case "codex", "claude", "opencode":
 		return agent
 	default:
 		return ""
@@ -583,7 +795,7 @@ func envLookupKey(key string) string {
 
 func normalizeDefaultProvider(value string, fallback string) string {
 	value = strings.TrimSpace(strings.ToLower(value))
-	if value == "last_used" || value == "claude" || value == "codex" {
+	if value == "last_used" || value == "claude" || value == "codex" || value == "opencode" {
 		return value
 	}
 	return fallback
@@ -591,7 +803,7 @@ func normalizeDefaultProvider(value string, fallback string) string {
 
 func normalizeWorkspaceProvider(value string) string {
 	value = strings.TrimSpace(strings.ToLower(value))
-	if value == "claude" || value == "codex" {
+	if value == "claude" || value == "codex" || value == "opencode" {
 		return value
 	}
 	return ""

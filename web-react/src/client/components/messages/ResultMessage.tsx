@@ -1,13 +1,19 @@
+import { useState } from "react"
+import { Loader2, RotateCcw } from "lucide-react"
 import type { ProcessedResultMessage } from "./types"
 import { MetaRow, MetaLabel } from "./shared"
 import { useI18n } from "../../i18n/context"
+import { Button } from "../ui/button"
 
 interface Props {
   message: ProcessedResultMessage
+  onRetry?: () => Promise<void>
 }
 
-export function ResultMessage({ message }: Props) {
-  const { t } = useI18n()
+export function ResultMessage({ message, onRetry }: Props) {
+  const { t, locale } = useI18n()
+  const [retrying, setRetrying] = useState(false)
+  const [retryError, setRetryError] = useState<string | null>(null)
   const formatDuration = (ms: number) => {
     if (ms < 1000) {
       return `${ms}ms`
@@ -30,9 +36,48 @@ export function ResultMessage({ message }: Props) {
   }
 
   if (!message.success) {
+    const retry = async () => {
+      if (!onRetry || retrying) return
+      setRetrying(true)
+      setRetryError(null)
+      try {
+        await onRetry()
+      } catch (error) {
+        setRetryError(error instanceof Error ? error.message : String(error))
+      } finally {
+        setRetrying(false)
+      }
+    }
     return (
-      <div role="alert" className="px-4 py-3 mx-2 my-1 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm">
-        {message.result || t.messages.unknownError}
+      <div role="alert" className="mx-2 my-1 rounded-lg border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+        <div className="whitespace-pre-wrap">
+          {message.result || t.messages.unknownError}
+        </div>
+        {onRetry && !message.cancelled ? (
+          <div className="mt-3 flex flex-wrap items-center gap-2" dir={locale === "fa" ? "rtl" : "ltr"}>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => void retry()}
+              disabled={retrying}
+              aria-label={t.common.retry}
+            >
+              {retrying ? <Loader2 className="size-3.5 animate-spin" /> : <RotateCcw className="size-3.5" />}
+              {t.common.retry}
+            </Button>
+            <span className="text-xs text-destructive/80">
+              {locale === "fa"
+                ? "یک پیام «ادامه بده» در همین نشست فرستاده می‌شود."
+                : "Sends “Continue” in this same session."}
+            </span>
+          </div>
+        ) : null}
+        {retryError ? (
+          <p className="mt-2 text-xs" aria-live="polite">
+            {retryError}
+          </p>
+        ) : null}
       </div>
     )
   }

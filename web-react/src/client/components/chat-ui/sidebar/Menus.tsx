@@ -1,6 +1,6 @@
 import type { ReactNode } from "react"
 import type { AgentProvider } from "../../../../shared/types"
-import { Archive, Code, Copy, EyeOff, FolderOpen, Pencil, Split, SquareArrowOutUpRight, Trash2 } from "lucide-react"
+import { Archive, Code, Copy, EyeOff, FolderOpen, Pencil, Pin, PinOff, Split, SquareArrowOutUpRight, Trash2 } from "lucide-react"
 import {
   ContextMenu,
   ContextMenuContent,
@@ -102,6 +102,8 @@ export function ChatRowMenu({
   onFork,
   onConvert,
   onArchive,
+  onPin,
+  pinned,
   onDelete,
   children,
 }: {
@@ -112,16 +114,22 @@ export function ChatRowMenu({
   onFork: () => void
   onConvert: (provider: AgentProvider) => void
   onArchive: () => void
+  onPin: () => void
+  pinned: boolean
   onDelete: () => void
   children: ReactNode
 }) {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
         {children}
       </ContextMenuTrigger>
       <ContextMenuContent>
+        <ContextMenuItem onSelect={(event) => { event.preventDefault(); onPin() }}>
+          {pinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
+          <span className="text-xs font-medium">{pinned ? (locale === "fa" ? "برداشتن سنجاق" : "Unpin") : (locale === "fa" ? "سنجاق کردن" : "Pin")}</span>
+        </ContextMenuItem>
         <ContextMenuItem
           onSelect={(event) => {
             event.preventDefault()
@@ -160,7 +168,7 @@ export function ChatRowMenu({
           <Split className="h-3.5 w-3.5" />
           <span className="text-xs font-medium">{t.common.fork}</span>
         </ContextMenuItem>
-        {(["claude", "codex"] as const).map((provider) => (
+        {(["claude", "codex", "opencode"] as const).map((provider) => (
           <ContextMenuItem
             key={provider}
             disabled={!canFork}
@@ -171,7 +179,7 @@ export function ChatRowMenu({
             }}
           >
             <Split className="h-3.5 w-3.5" />
-            <span className="text-xs font-medium">{t.sidebar.forkToProvider(provider === "claude" ? "Claude" : "Codex")}</span>
+            <span className="text-xs font-medium">{t.sidebar.forkToProvider(provider === "claude" ? "Claude" : provider === "codex" ? "Codex" : "OpenCode")}</span>
           </ContextMenuItem>
         ))}
         <ContextMenuItem

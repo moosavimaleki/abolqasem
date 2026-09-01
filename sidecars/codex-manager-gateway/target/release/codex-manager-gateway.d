@@ -1,0 +1,1 @@
+/home/h-mousavi/Projects/Hamed/codex-rtl-plugin/sidecars/codex-manager-gateway/target/release/codex-manager-gateway: /home/h-mousavi/Projects/Hamed/codex-rtl-plugin/sidecars/codex-manager-gateway/src/bindings.rs /home/h-mousavi/Projects/Hamed/codex-rtl-plugin/sidecars/codex-manager-gateway/src/main.rs

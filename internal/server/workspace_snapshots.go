@@ -1,8 +1,12 @@
 package server
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"abolqasem/internal/state"
@@ -18,6 +22,17 @@ var workspaceDataDir = func() string {
 	return filepath.Join(state.GetStateDir(), "data")
 }
 
+// Sidebar data is shared by every tab, while producing it requires replaying
+// workspace state and merging legacy sessions. Cache the finished read model
+// by the on-disk inputs so a burst of newly opened tabs performs that work
+// once instead of once per websocket.
+var workspaceSidebarCache struct {
+	sync.Mutex
+	valid       bool
+	fingerprint string
+	snapshot    readmodels.SidebarData
+}
+
 func workspaceStore() *eventstore.Store {
 	return eventstore.New(workspaceDataDir())
 }
@@ -31,11 +46,63 @@ func workspaceChatHasTmuxRuntime(chat readmodels.ChatRecord) bool {
 }
 
 func workspaceSidebarSnapshot() any {
+	activeStatuses := workspaceAgentCoordinator().ActiveStatuses()
+	fingerprint := workspaceSidebarSnapshotFingerprint(activeStatuses)
+	workspaceSidebarCache.Lock()
+	defer workspaceSidebarCache.Unlock()
+	if workspaceSidebarCache.valid && workspaceSidebarCache.fingerprint == fingerprint {
+		return workspaceSidebarCache.snapshot
+	}
+
 	storeState, err := workspaceStore().LoadStateLight()
 	if err != nil {
 		return readmodels.SidebarData{ProjectGroups: []readmodels.SidebarProjectGroup{}}
 	}
-	return mergeLegacySidebarData(readmodels.DeriveSidebarDataWithStatus(storeState, workspaceAgentCoordinator().ActiveStatuses()))
+	snapshot := mergeLegacySidebarDataWithStoreState(
+		readmodels.DeriveSidebarDataWithStatus(storeState, activeStatuses),
+		storeState,
+	)
+	workspaceSidebarCache.valid = true
+	workspaceSidebarCache.fingerprint = workspaceSidebarSnapshotFingerprint(activeStatuses)
+	workspaceSidebarCache.snapshot = snapshot
+	return snapshot
+}
+
+func workspaceInvalidateSidebarSnapshot() {
+	workspaceSidebarCache.Lock()
+	defer workspaceSidebarCache.Unlock()
+	workspaceSidebarCache.valid = false
+	workspaceSidebarCache.fingerprint = ""
+	workspaceSidebarCache.snapshot = readmodels.SidebarData{}
+}
+
+func workspaceSidebarSnapshotFingerprint(activeStatuses map[string]readmodels.AbolqasemStatus) string {
+	paths := []string{
+		state.GetStateFilePath(),
+		filepath.Join(workspaceDataDir(), "snapshot.json"),
+		filepath.Join(workspaceDataDir(), "projects.jsonl"),
+		filepath.Join(workspaceDataDir(), "chats.jsonl"),
+		filepath.Join(workspaceDataDir(), "queued-messages.jsonl"),
+		filepath.Join(workspaceDataDir(), "turns.jsonl"),
+	}
+	parts := make([]string, 0, len(paths))
+	for _, path := range paths {
+		info, err := os.Stat(path)
+		if err != nil {
+			parts = append(parts, path+":missing")
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s:%d:%d", path, info.Size(), info.ModTime().UnixNano()))
+	}
+	statusKeys := make([]string, 0, len(activeStatuses))
+	for chatID := range activeStatuses {
+		statusKeys = append(statusKeys, chatID)
+	}
+	sort.Strings(statusKeys)
+	for _, chatID := range statusKeys {
+		parts = append(parts, "status:"+chatID+":"+string(activeStatuses[chatID]))
+	}
+	return strings.Join(parts, "|")
 }
 
 func workspaceLocalProjectsSnapshot() any {

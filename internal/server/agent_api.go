@@ -2,13 +2,16 @@ package server
 
 import (
 	"abolqasem/internal/agent"
+	claudeprovider "abolqasem/internal/providers/claude"
+	opencodeprovider "abolqasem/internal/providers/opencode"
+	"abolqasem/internal/providers/providerexec"
 	"abolqasem/internal/state"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
-	"os/exec"
 	"strings"
 	"sync"
 	"time"
@@ -28,6 +31,18 @@ type agentTurnRequest struct {
 	Cwd        string `json:"cwd"`
 	New        bool   `json:"new"`
 	Model      string `json:"model"`
+	Effort     string `json:"effort,omitempty"`
+	PlanMode   bool   `json:"plan_mode,omitempty"`
+	Fork       bool   `json:"fork,omitempty"`
+}
+
+type legacyAgentResult struct {
+	SessionID      string
+	TurnID         string
+	TranscriptPath string
+	Cwd            string
+	Preview        string
+	Model          string
 }
 
 type agentStatusResponse struct {
@@ -62,7 +77,8 @@ func handleAPIAgentStatus(w http.ResponseWriter, r *http.Request) {
 	codexStatus := buildCodexRuntimeStatus()
 	agents := []agentRuntimeStatus{
 		codexStatus,
-		buildReadOnlyRuntimeStatus("claude", "کلود", commandAvailable("claude")),
+		buildCLIRuntimeStatus("claude", "کلود"),
+		buildCLIRuntimeStatus("opencode", "OpenCode"),
 	}
 	writeJSON(w, agentStatusResponse{
 		Agents: agents,
@@ -130,11 +146,14 @@ func handleAgentTurn(w http.ResponseWriter, r *http.Request, forcedAgent string)
 	if payload.Agent == "" {
 		payload.Agent = agent.CodexAgentName
 	}
-	if payload.Agent != agent.CodexAgentName {
-		http.Error(w, "Web UI control for "+payload.Agent+" is not implemented yet", http.StatusNotImplemented)
+	if payload.Agent == "" {
+		payload.Agent = agent.CodexAgentName
+	}
+	if payload.Agent != agent.CodexAgentName && !commandAvailable(payload.Agent) {
+		http.Error(w, payload.Agent+" is not available in PATH", http.StatusServiceUnavailable)
 		return
 	}
-	if !agent.CodexAvailable() {
+	if payload.Agent == agent.CodexAgentName && !agent.CodexAvailable() {
 		http.Error(w, "Codex is not available in PATH", http.StatusServiceUnavailable)
 		return
 	}
@@ -154,21 +173,29 @@ func handleAgentTurn(w http.ResponseWriter, r *http.Request, forcedAgent string)
 	ctx, cancel := context.WithTimeout(r.Context(), agentTurnTimeout)
 	defer cancel()
 
-	result, err := agent.RunCodexTurn(ctx, agent.CodexRequest{
-		ThreadID: existing.SessionID,
-		Message:  payload.Message,
-		Cwd:      cwd,
-		New:      payload.New,
-		Model:    payload.Model,
-	})
-	if err != nil {
+	var result legacyAgentResult
+	var runErr error
+	if payload.Agent == agent.CodexAgentName {
+		codexResult, err := agent.RunCodexTurn(ctx, agent.CodexRequest{
+			ThreadID: existing.SessionID,
+			Message:  payload.Message,
+			Cwd:      cwd,
+			New:      payload.New,
+			Model:    payload.Model,
+		})
+		runErr = err
+		result = legacyAgentResult{SessionID: codexResult.ThreadID, TurnID: codexResult.TurnID, TranscriptPath: codexResult.TranscriptPath, Cwd: codexResult.Cwd, Preview: codexResult.Preview, Model: codexResult.Model}
+	} else {
+		result, runErr = runLegacyAgentTurn(ctx, payload, existing.SessionID, cwd)
+	}
+	if runErr != nil {
 		switch {
-		case errors.Is(err, agent.ErrThreadActive):
-			http.Error(w, "This Codex session is already active in another client. Wait for the current turn to finish, then try again. "+err.Error(), http.StatusConflict)
-		case errors.Is(err, context.DeadlineExceeded):
-			http.Error(w, "Codex did not finish within 5 minutes. The app-server was stopped for this request. "+err.Error(), http.StatusGatewayTimeout)
+		case errors.Is(runErr, agent.ErrThreadActive):
+			http.Error(w, "This Codex session is already active in another client. Wait for the current turn to finish, then try again. "+runErr.Error(), http.StatusConflict)
+		case errors.Is(runErr, context.DeadlineExceeded):
+			http.Error(w, "Agent did not finish within 5 minutes. The provider process was stopped for this request. "+runErr.Error(), http.StatusGatewayTimeout)
 		default:
-			http.Error(w, err.Error(), http.StatusBadGateway)
+			http.Error(w, runErr.Error(), http.StatusBadGateway)
 		}
 		return
 	}
@@ -179,8 +206,8 @@ func handleAgentTurn(w http.ResponseWriter, r *http.Request, forcedAgent string)
 		return
 	}
 	meta := state.UpsertSession(appState, state.HookEvent{
-		Agent:          agent.CodexAgentName,
-		SessionID:      result.ThreadID,
+		Agent:          payload.Agent,
+		SessionID:      result.SessionID,
 		TranscriptPath: firstNonEmptyServer(result.TranscriptPath, existing.TranscriptPath),
 		Cwd:            firstNonEmptyServer(result.Cwd, cwd),
 		ProjectName:    agent.ProjectNameFromCwd(firstNonEmptyServer(result.Cwd, cwd)),
@@ -194,7 +221,7 @@ func handleAgentTurn(w http.ResponseWriter, r *http.Request, forcedAgent string)
 	}
 
 	eventKey := meta.Key + ":web:" + meta.UpdatedAt.Format(time.RFC3339Nano)
-	EventBroker.Broadcast(SSEEvent{
+	broadcastGlobalEvent(SSEEvent{
 		Source:      "runtime",
 		EventKey:    eventKey,
 		SessionKey:  meta.Key,
@@ -206,13 +233,32 @@ func handleAgentTurn(w http.ResponseWriter, r *http.Request, forcedAgent string)
 
 	writeJSON(w, map[string]any{
 		"status":      "ok",
-		"thread_id":   result.ThreadID,
+		"thread_id":   result.SessionID,
 		"turn_id":     result.TurnID,
-		"agent":       agent.CodexAgentName,
+		"agent":       payload.Agent,
 		"model":       result.Model,
 		"session":     enrichSessionMeta(meta),
 		"session_key": meta.Key,
 	})
+}
+
+func runLegacyAgentTurn(ctx context.Context, payload agentTurnRequest, sessionID, cwd string) (legacyAgentResult, error) {
+	switch payload.Agent {
+	case "claude":
+		result, err := claudeprovider.NewAdapter(providerexec.ExecutableOrName("claude")).RunPromptResult(ctx, claudeprovider.PromptRequest{
+			CWD: cwd, Model: payload.Model, Effort: payload.Effort, PlanMode: payload.PlanMode,
+			SessionToken: sessionID, ForkSession: payload.Fork, Prompt: payload.Message,
+		})
+		return legacyAgentResult{SessionID: firstNonEmptyServer(result.SessionToken, sessionID), Model: payload.Model, Cwd: cwd, Preview: payload.Message}, err
+	case "opencode":
+		result, err := opencodeprovider.NewAdapter(providerexec.ExecutableOrName("opencode")).RunPromptResult(ctx, opencodeprovider.PromptRequest{
+			CWD: cwd, Model: payload.Model, Effort: payload.Effort,
+			SessionToken: sessionID, ForkSession: payload.Fork, Prompt: payload.Message,
+		})
+		return legacyAgentResult{SessionID: firstNonEmptyServer(result.SessionToken, sessionID), Model: payload.Model, Cwd: cwd, Preview: payload.Message}, err
+	default:
+		return legacyAgentResult{}, fmt.Errorf("unsupported agent: %s", payload.Agent)
+	}
 }
 
 func buildCodexRuntimeStatus() agentRuntimeStatus {
@@ -254,17 +300,18 @@ func buildCodexRuntimeStatus() agentRuntimeStatus {
 	return status
 }
 
-func buildReadOnlyRuntimeStatus(agentName, label string, available bool) agentRuntimeStatus {
+func buildCLIRuntimeStatus(agentName, label string) agentRuntimeStatus {
+	available := commandAvailable(agentName)
 	return agentRuntimeStatus{
 		Agent:        agentName,
 		Label:        label,
 		Available:    available,
-		Controllable: false,
+		Controllable: available,
 		Models:       []agent.ModelInfo{},
 		Capabilities: map[string]bool{
-			"can_start":              false,
-			"can_resume":             false,
-			"can_send":               false,
+			"can_start":              available,
+			"can_resume":             available,
+			"can_send":               available,
 			"supports_live_events":   false,
 			"supports_multiple_runs": false,
 		},
@@ -272,13 +319,12 @@ func buildReadOnlyRuntimeStatus(agentName, label string, available bool) agentRu
 }
 
 func commandAvailable(name string) bool {
-	_, err := exec.LookPath(name)
-	return err == nil
+	return providerexec.Executable(name) != ""
 }
 
 func normalizeAgentNameServer(agentName string) string {
 	switch strings.TrimSpace(strings.ToLower(agentName)) {
-	case "codex", "claude":
+	case "codex", "claude", "opencode":
 		return strings.TrimSpace(strings.ToLower(agentName))
 	default:
 		return ""
