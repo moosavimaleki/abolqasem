@@ -35,7 +35,10 @@ jobs:
         uses: mlugg/setup-zig@v2
 
       - name: Install cargo-zigbuild
-        run: cargo install cargo-zigbuild --locked
+        run: |
+          cargo install cargo-zigbuild --locked
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          "$HOME/.cargo/bin/cargo-zigbuild" --version
 
       - name: Set up Node
         uses: actions/setup-node@v6
