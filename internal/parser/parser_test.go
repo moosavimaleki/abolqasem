@@ -233,7 +233,7 @@ func TestStreamSearchableMessagesCodexExposesTaskCompleteError(t *testing.T) {
 
 func TestStreamSearchableMessagesOpenCodeReadsPartsUnderInfo(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "session.json")
-	body := `{"info":{"id":"ses-1"},"messages":[{"info":{"role":"user","time":{"created":1788275902202},"parts":[{"type":"text","text":"سلام"}]}},{"info":{"role":"assistant","time":{"created":1788275902203},"parts":[{"type":"text","text":"در خدمتم"}]}}]}`
+	body := `{"info":{"id":"ses-1"},"messages":[{"info":{"role":"user","time":{"created":1788275902202},"parts":[{"type":"text","text":"سلام"}]}},{"info":{"role":"assistant","time":{"created":1788275902203},"parts":[{"type":"reasoning","text":"private"},{"type":"step-start"},{"type":"text","text":"در خدمتم"},{"type":"step-finish","reason":"stop"}]}}]}`
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}

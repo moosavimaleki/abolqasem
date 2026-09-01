@@ -823,11 +823,38 @@ func extractOpenCodeMessage(raw map[string]any, sessionID string, index int) *Se
 	if parts == nil {
 		parts = raw["part"]
 	}
-	text := strings.TrimSpace(flattenText(parts))
+	// OpenCode messages contain protocol parts alongside visible text. Only
+	// parts explicitly marked as `text` belong in the transcript; reasoning,
+	// step-start/finish and other metadata must never be rendered as chat text.
+	text := extractOpenCodeText(parts)
 	if text == "" {
 		return nil
 	}
 	return newSearchableMessage(sessionID, index, role, "message", text, extractOpenCodeTimestamp(raw, info))
+}
+
+func extractOpenCodeText(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return strings.TrimSpace(typed)
+	case []any:
+		visible := make([]string, 0, len(typed))
+		for _, item := range typed {
+			part := asMap(item)
+			if stringValue(part["type"]) != "text" {
+				continue
+			}
+			if text := strings.TrimSpace(stringValue(part["text"])); text != "" {
+				visible = append(visible, text)
+			}
+		}
+		return strings.Join(visible, "\n\n")
+	case map[string]any:
+		if stringValue(typed["type"]) == "text" {
+			return strings.TrimSpace(stringValue(typed["text"]))
+		}
+	}
+	return ""
 }
 
 func extractOpenCodeTimestamp(raw, info map[string]any) *time.Time {
