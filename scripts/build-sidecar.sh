@@ -9,18 +9,31 @@ TARGET=""
 
 cargo_zigbuild() {
   if command -v cargo-zigbuild >/dev/null 2>&1; then
-    cargo-zigbuild "$@"
+    cargo-zigbuild build "$@"
     return
   fi
   if [ -n "${CARGO_HOME:-}" ] && [ -x "$CARGO_HOME/bin/cargo-zigbuild" ]; then
-    "$CARGO_HOME/bin/cargo-zigbuild" "$@"
+    "$CARGO_HOME/bin/cargo-zigbuild" build "$@"
     return
   fi
   if [ -x "$HOME/.cargo/bin/cargo-zigbuild" ]; then
-    "$HOME/.cargo/bin/cargo-zigbuild" "$@"
+    "$HOME/.cargo/bin/cargo-zigbuild" build "$@"
     return
   fi
   cargo zigbuild "$@"
+}
+
+cargo_zigbuild_available() {
+  if command -v cargo-zigbuild >/dev/null 2>&1; then
+    return 0
+  fi
+  if [ -n "${CARGO_HOME:-}" ] && [ -x "$CARGO_HOME/bin/cargo-zigbuild" ]; then
+    return 0
+  fi
+  if [ -x "$HOME/.cargo/bin/cargo-zigbuild" ]; then
+    return 0
+  fi
+  cargo zigbuild --version >/dev/null 2>&1
 }
 
 usage() {
@@ -110,7 +123,7 @@ command -v cargo >/dev/null 2>&1 || { echo "cargo is required to build the Codex
 
 if [ "$BUILD_ALL" = "1" ]; then
   command -v zig >/dev/null 2>&1 || { echo "zig is required for --all" >&2; exit 1; }
-  cargo_zigbuild --version >/dev/null 2>&1 || { echo "cargo-zigbuild is required for --all" >&2; exit 1; }
+  cargo_zigbuild_available || { echo "cargo-zigbuild is required for --all" >&2; exit 1; }
   for target in linux-amd64 linux-arm64 darwin-amd64 darwin-arm64 windows-amd64 windows-arm64; do
     build_target "$target"
   done
