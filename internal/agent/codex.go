@@ -2,6 +2,7 @@ package agent
 
 import (
 	"abolqasem/internal/appinfo"
+	"abolqasem/internal/boundedlog"
 	"abolqasem/internal/state"
 	"bufio"
 	"bytes"
@@ -213,7 +214,7 @@ type codexClient struct {
 	stdin   io.WriteCloser
 	lines   *bufio.Scanner
 	stderr  *bytes.Buffer
-	logFile *os.File
+	logFile *boundedlog.File
 	logPath string
 }
 
@@ -564,14 +565,11 @@ func redactCodexLogText(text string) string {
 	return redacted
 }
 
-func createCodexLogFile() (*os.File, string) {
+func createCodexLogFile() (*boundedlog.File, string) {
 	logDir := filepath.Join(state.GetStateDir(), "logs")
-	if err := os.MkdirAll(logDir, 0755); err != nil {
-		return nil, ""
-	}
 	now := time.Now()
-	logPath := filepath.Join(logDir, fmt.Sprintf("codex-app-server-%s-%d-%d.log", now.Format("20060102-150405"), os.Getpid(), now.UnixNano()))
-	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	name := fmt.Sprintf("codex-app-server-%s-%d-%d.log", now.Format("20060102-150405"), os.Getpid(), now.UnixNano())
+	file, logPath, err := boundedlog.Open(logDir, "codex-app-server-", name)
 	if err != nil {
 		return nil, ""
 	}

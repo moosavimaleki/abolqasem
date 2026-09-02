@@ -77,7 +77,7 @@ jobs:
           cache: npm
           cache-dependency-path: web-react/package-lock.json
       - run: sh scripts/prepare-web-assets.sh
-      - run: make build-all
+      - run: PATH="$HOME/.cargo/bin:$PATH" make build-all
       - run: |
           test -x dist/sidecars/linux-amd64/codex-manager-gateway
           test -x dist/sidecars/linux-arm64/codex-manager-gateway

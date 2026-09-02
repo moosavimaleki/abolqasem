@@ -2,6 +2,7 @@ package server
 
 import (
 	"abolqasem/internal/appinfo"
+	"abolqasem/internal/boundedlog"
 	"bufio"
 	"bytes"
 	"context"
@@ -692,7 +693,7 @@ type workspaceCodexProcess struct {
 	cmd       *exec.Cmd
 	client    *codexrpc.Client
 	transport *workspaceCodexTransport
-	logFile   *os.File
+	logFile   *boundedlog.File
 	logPath   string
 	done      chan struct{}
 	doneMu    sync.Mutex
@@ -701,7 +702,7 @@ type workspaceCodexProcess struct {
 
 type workspaceCodexTransport struct {
 	stdin   io.WriteCloser
-	logFile *os.File
+	logFile *boundedlog.File
 	mu      sync.Mutex
 }
 
@@ -1317,14 +1318,11 @@ func escapeWorkspaceXML(value string) string {
 	return value
 }
 
-func createWorkspaceCodexLogFile() (*os.File, string) {
+func createWorkspaceCodexLogFile() (*boundedlog.File, string) {
 	logDir := filepath.Join(state.GetStateDir(), "logs")
-	if err := os.MkdirAll(logDir, 0o755); err != nil {
-		return nil, ""
-	}
 	now := time.Now()
-	logPath := filepath.Join(logDir, fmt.Sprintf("codex-workspace-%s-%d-%d.log", now.Format("20060102-150405"), os.Getpid(), now.UnixNano()))
-	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	name := fmt.Sprintf("codex-workspace-%s-%d-%d.log", now.Format("20060102-150405"), os.Getpid(), now.UnixNano())
+	file, logPath, err := boundedlog.Open(logDir, "codex-workspace-", name)
 	if err != nil {
 		return nil, ""
 	}

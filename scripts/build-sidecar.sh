@@ -7,6 +7,22 @@ DIST="dist/sidecars"
 BUILD_ALL="0"
 TARGET=""
 
+cargo_zigbuild() {
+  if command -v cargo-zigbuild >/dev/null 2>&1; then
+    cargo-zigbuild "$@"
+    return
+  fi
+  if [ -n "${CARGO_HOME:-}" ] && [ -x "$CARGO_HOME/bin/cargo-zigbuild" ]; then
+    "$CARGO_HOME/bin/cargo-zigbuild" "$@"
+    return
+  fi
+  if [ -x "$HOME/.cargo/bin/cargo-zigbuild" ]; then
+    "$HOME/.cargo/bin/cargo-zigbuild" "$@"
+    return
+  fi
+  cargo zigbuild "$@"
+}
+
 usage() {
   cat <<'EOF'
 Build the embedded Codex Manager Rust sidecar.
@@ -81,7 +97,7 @@ build_target() {
     case "$target" in windows-*) artifact="$artifact.exe" ;; esac
   else
     command -v zig >/dev/null 2>&1 || { echo "zig is required for cross-compiling $target" >&2; exit 1; }
-    cargo zigbuild --release --manifest-path "$SIDECARE_DIR/Cargo.toml" --target "$triple"
+    cargo_zigbuild --release --manifest-path "$SIDECARE_DIR/Cargo.toml" --target "$triple"
     artifact="$SIDECARE_DIR/target/$triple/release/codex-manager-gateway"
     case "$target" in windows-*) artifact="$artifact.exe" ;; esac
   fi
@@ -94,7 +110,7 @@ command -v cargo >/dev/null 2>&1 || { echo "cargo is required to build the Codex
 
 if [ "$BUILD_ALL" = "1" ]; then
   command -v zig >/dev/null 2>&1 || { echo "zig is required for --all" >&2; exit 1; }
-  cargo zigbuild --version >/dev/null 2>&1 || { echo "cargo-zigbuild is required for --all" >&2; exit 1; }
+  cargo_zigbuild --version >/dev/null 2>&1 || { echo "cargo-zigbuild is required for --all" >&2; exit 1; }
   for target in linux-amd64 linux-arm64 darwin-amd64 darwin-arm64 windows-amd64 windows-arm64; do
     build_target "$target"
   done
