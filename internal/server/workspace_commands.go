@@ -989,6 +989,36 @@ func workspaceTranscriptEntryFromSearchable(message parser.SearchableMessage) re
 		}
 		return entry
 	}
+	if message.Kind == "mcp_tool_call" {
+		toolID := firstNonEmpty(stringValue(message.Fields["toolId"]), workspaceSearchableCursor(message))
+		server := stringValue(message.Fields["server"])
+		tool := stringValue(message.Fields["tool"])
+		if tool == "" {
+			tool = message.Text
+		}
+		entry["kind"] = transcript.KindToolCall
+		entry["tool"] = map[string]any{
+			"kind":     "tool",
+			"toolKind": "mcp_generic",
+			"toolName": "mcp__" + server + "__" + tool,
+			"toolId":   toolID,
+			"input": map[string]any{
+				"server":  server,
+				"tool":    tool,
+				"payload": message.Fields["input"],
+			},
+		}
+		return entry
+	}
+	if message.Kind == "mcp_tool_result" {
+		entry["kind"] = transcript.KindToolResult
+		entry["toolId"] = message.Fields["toolId"]
+		entry["content"] = message.Fields["content"]
+		if isError, ok := message.Fields["isError"].(bool); ok {
+			entry["isError"] = isError
+		}
+		return entry
+	}
 	switch workspaceSearchableTranscriptRole(message) {
 	case "user":
 		entry["kind"] = transcript.KindUserPrompt

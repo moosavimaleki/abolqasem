@@ -319,6 +319,9 @@ func StreamSearchableMessages(agent, sessionID, transcriptPath string, visit fun
 			raw := map[string]any{}
 			if decodeErr := json.Unmarshal(bytesTrimSpace(line), &raw); decodeErr == nil {
 				if msg := extractSearchableMessage(agent, raw, sessionID, lineIndex); msg != nil {
+					if !normalizeCodexMCPMessage(agent, previous, msg) {
+						continue
+					}
 					if !normalizeCodexCommandMessage(agent, msg, codexCommandItems) {
 						continue
 					}
@@ -432,6 +435,9 @@ func loadMessages(agent, sessionID, transcriptPath string) ([]Message, error) {
 			raw := map[string]any{}
 			if decodeErr := json.Unmarshal(bytesTrimSpace(line), &raw); decodeErr == nil {
 				if msg := extractSearchableMessage(agent, raw, sessionID, lineIndex); msg != nil {
+					if !normalizeCodexMCPMessage(agent, previous, msg) {
+						continue
+					}
 					if !normalizeCodexCommandMessage(agent, msg, codexCommandItems) {
 						continue
 					}
@@ -903,6 +909,13 @@ func extractCodexMessage(raw map[string]any, sessionID string, index int) *Searc
 	if isCodexInterAgentMessage(recordType, eventType, payload) {
 		return nil
 	}
+	// mcp_tool_call_end is emitted as an event_msg, independently of the
+	// custom_tool_call response item that initiated it. Handle it before the
+	// generic event switch so it cannot be mistaken for a non-rendered status
+	// event in older transcript shapes.
+	if eventType == "mcp_tool_call_end" || eventType == "mcp_tool_call_result" || eventType == "mcp_tool_result" {
+		return newCodexMCPResultMessage(sessionID, index, raw, payload, source)
+	}
 
 	switch eventType {
 	case "thread_settings_applied":
@@ -985,6 +998,19 @@ func extractCodexMessage(raw map[string]any, sessionID string, index int) *Searc
 			return msg
 		}
 		toolName := strings.TrimSpace(stringValue(payload["name"]))
+		if server, tool, arguments, ok := extractCodexMCPToolCall(input); ok {
+			itemID := firstNonEmpty(stringValue(payload["call_id"]), stringValue(payload["id"]))
+			msg := newCodexSearchableMessage(sessionID, index, "tool", "mcp_tool_call", tool, extractTimestamp(raw, payload), source)
+			if msg != nil {
+				msg.Fields = map[string]any{
+					"toolId": itemID,
+					"server": server,
+					"tool":   tool,
+					"input":  arguments,
+				}
+			}
+			return msg
+		}
 		if changes := extractCodexPatchToolChanges(toolName, input); len(changes) > 0 {
 			itemID := firstNonEmpty(stringValue(payload["call_id"]), stringValue(payload["id"]))
 			msg := newCodexSearchableMessage(sessionID, index, "tool", "file_change", fmt.Sprintf("%d files changed", len(changes)), extractTimestamp(raw, payload), source)
@@ -1299,9 +1325,84 @@ func normalizeCodexCommandMessage(agent string, message *SearchableMessage, comm
 	}
 }
 
+// Recent Codex transcripts record an MCP invocation as a custom_tool_call
+// (whose JavaScript source calls tools.mcp__server__tool) followed by an
+// mcp_tool_call_end event. The two records use different call IDs, so pair the
+// result with the immediately preceding MCP call before the web transcript is
+// built. This keeps MCP cards visible after a page refresh as well as live.
+func normalizeCodexMCPMessage(agent string, previous *SearchableMessage, message *SearchableMessage) bool {
+	if !strings.EqualFold(strings.TrimSpace(agent), "codex") || message == nil {
+		return true
+	}
+	switch message.Kind {
+	case "mcp_tool_call":
+		return strings.TrimSpace(stringValue(message.Fields["toolId"])) != ""
+	case "mcp_tool_result":
+		if previous == nil || previous.Kind != "mcp_tool_call" {
+			return false
+		}
+		toolID := strings.TrimSpace(stringValue(previous.Fields["toolId"]))
+		if toolID == "" {
+			return false
+		}
+		message.Fields["toolId"] = toolID
+		return true
+	default:
+		return true
+	}
+}
+
 var codexExecCommandFieldPattern = regexp.MustCompile(`(?:^|[,\{]\s*)["']?cmd["']?\s*:\s*("(?:\\.|[^"\\])*")`)
 var codexExecWorkdirFieldPattern = regexp.MustCompile(`(?:^|[,\{]\s*)["']?workdir["']?\s*:\s*("(?:\\.|[^"\\])*")`)
 var codexExitCodePattern = regexp.MustCompile(`(?i)(?:exited with code|exit(?:ed)? code\s*[:=]?)\s*(-?[0-9]+)`)
+var codexMCPToolCallPattern = regexp.MustCompile(`(?s)tools\.mcp__([A-Za-z0-9_-]+)__([A-Za-z0-9_-]+)\s*\((.*?)\)`)
+
+func extractCodexMCPToolCall(input string) (string, string, map[string]any, bool) {
+	match := codexMCPToolCallPattern.FindStringSubmatch(input)
+	if len(match) != 4 {
+		return "", "", nil, false
+	}
+	arguments := map[string]any{}
+	if rawArguments := strings.TrimSpace(match[3]); rawArguments != "" {
+		if json.Unmarshal([]byte(rawArguments), &arguments) != nil {
+			// The transcript stores JavaScript source, which is not necessarily
+			// strict JSON. Preserve it instead of dropping the MCP call.
+			arguments = map[string]any{"source": rawArguments}
+		}
+	}
+	return match[1], match[2], arguments, true
+}
+
+func codexMCPResultIsError(result any, payload map[string]any) bool {
+	if strings.EqualFold(strings.TrimSpace(stringValue(payload["status"])), "failed") || payload["error"] != nil {
+		return true
+	}
+	resultMap := asMap(result)
+	if resultMap == nil {
+		return false
+	}
+	_, failed := resultMap["Err"]
+	if !failed {
+		_, failed = resultMap["error"]
+	}
+	return failed
+}
+
+func newCodexMCPResultMessage(sessionID string, index int, raw map[string]any, payload map[string]any, source string) *SearchableMessage {
+	result := payload["result"]
+	if result == nil {
+		result = payload["output"]
+	}
+	msg := newCodexSearchableMessage(sessionID, index, "tool", "mcp_tool_result", firstNonEmpty(flattenText(result), "MCP result"), extractTimestamp(raw, payload), source)
+	if msg != nil {
+		msg.Fields = map[string]any{
+			"toolId":  firstNonEmpty(stringValue(payload["call_id"]), stringValue(payload["id"])),
+			"content": result,
+			"isError": codexMCPResultIsError(result, payload),
+		}
+	}
+	return msg
+}
 
 func extractCodexExecCommand(input string) (string, string, bool) {
 	const marker = "tools.exec_command("

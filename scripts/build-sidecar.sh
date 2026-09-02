@@ -36,6 +36,19 @@ cargo_zigbuild_available() {
   cargo zigbuild --version >/dev/null 2>&1
 }
 
+ensure_rust_target() {
+  target="$1"
+  if rustup target list --installed 2>/dev/null | grep -Fx "$target" >/dev/null 2>&1; then
+    return 0
+  fi
+  command -v rustup >/dev/null 2>&1 || {
+    echo "Rust target $target is not installed and rustup is unavailable" >&2
+    exit 1
+  }
+  echo "Installing Rust target $target..." >&2
+  rustup target add "$target"
+}
+
 usage() {
   cat <<'EOF'
 Build the embedded Codex Manager Rust sidecar.
@@ -110,6 +123,7 @@ build_target() {
     case "$target" in windows-*) artifact="$artifact.exe" ;; esac
   else
     command -v zig >/dev/null 2>&1 || { echo "zig is required for cross-compiling $target" >&2; exit 1; }
+    ensure_rust_target "$triple"
     cargo_zigbuild --release --manifest-path "$SIDECARE_DIR/Cargo.toml" --target "$triple"
     artifact="$SIDECARE_DIR/target/$triple/release/codex-manager-gateway"
     case "$target" in windows-*) artifact="$artifact.exe" ;; esac

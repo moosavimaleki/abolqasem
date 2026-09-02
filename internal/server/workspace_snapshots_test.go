@@ -341,6 +341,28 @@ func TestWorkspaceTranscriptEntryRestoresCodexMobileAttachmentsAndPlan(t *testin
 	if turnError["kind"] != transcript.KindResult || turnError["result"] != "Please sign in again" || turnError["isError"] != true {
 		t.Fatalf("expected native turn error transcript entry, got %#v", turnError)
 	}
+
+	mcpCall := workspaceTranscriptEntryFromSearchable(parser.SearchableMessage{
+		ID: "mcp-call-1", Kind: "mcp_tool_call", Fields: map[string]any{
+			"toolId": "mcp-call-1", "server": "grafana", "tool": "query_victoriametrics", "input": map[string]any{"expr": "up"},
+		},
+	})
+	if mcpCall["kind"] != transcript.KindToolCall {
+		t.Fatalf("expected MCP tool call card, got %#v", mcpCall)
+	}
+	mcpTool := mcpCall["tool"].(map[string]any)
+	if mcpTool["toolKind"] != "mcp_generic" || mcpTool["toolName"] != "mcp__grafana__query_victoriametrics" {
+		t.Fatalf("unexpected MCP tool card: %#v", mcpTool)
+	}
+
+	mcpResult := workspaceTranscriptEntryFromSearchable(parser.SearchableMessage{
+		ID: "mcp-result-1", Kind: "mcp_tool_result", Fields: map[string]any{
+			"toolId": "mcp-call-1", "content": map[string]any{"ok": true}, "isError": false,
+		},
+	})
+	if mcpResult["kind"] != transcript.KindToolResult || mcpResult["toolId"] != "mcp-call-1" || mcpResult["isError"] != false {
+		t.Fatalf("expected MCP tool result card data, got %#v", mcpResult)
+	}
 }
 
 func TestWorkspacePendingToolTranscriptEntryPreservesPlanQuestions(t *testing.T) {

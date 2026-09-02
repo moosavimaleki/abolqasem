@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -276,6 +277,42 @@ func TestStreamSearchableMessagesCodexKeepsCustomExecEvents(t *testing.T) {
 	}
 	if messages[1].Fields["status"] != "completed" || !strings.Contains(stringValue(messages[1].Fields["aggregatedOutput"]), "./examples/text_basic.py") {
 		t.Fatalf("expected completed command output, got %#v", messages[1])
+	}
+}
+
+func TestStreamSearchableMessagesCodexMapsMCPToolCallAndResult(t *testing.T) {
+	var resultRaw map[string]any
+	if err := json.Unmarshal([]byte(`{"timestamp":"2026-09-02T10:00:00.100Z","type":"event_msg","payload":{"type":"mcp_tool_call_end","call_id":"exec-internal-1","result":{"Ok":{"content":[{"type":"text","text":"metric result"}]}}}}`), &resultRaw); err != nil {
+		t.Fatal(err)
+	}
+	if message := extractCodexMessage(resultRaw, "session-1", 2); message == nil || message.Kind != "mcp_tool_result" {
+		t.Fatalf("expected raw MCP result extraction, got %#v from %#v", message, resultRaw["payload"])
+	}
+	path := writeTranscript(t, strings.Join([]string{
+		`{"timestamp":"2026-09-02T10:00:00.000Z","type":"response_item","payload":{"type":"custom_tool_call","call_id":"call-mcp-1","name":"exec","input":"const r = await tools.mcp__grafana__query_victoriametrics({\"expr\":\"up\"}); text(JSON.stringify(r));"}}`,
+		`{"timestamp":"2026-09-02T10:00:00.100Z","type":"event_msg","payload":{"type":"mcp_tool_call_end","call_id":"exec-internal-1","result":{"Ok":{"content":[{"type":"text","text":"metric result"}]}}}}`,
+		`{"timestamp":"2026-09-02T10:00:00.110Z","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"call-mcp-1","output":[{"type":"input_text","text":"metric result"}]}}`,
+	}, "\n"))
+
+	messages := []SearchableMessage{}
+	if err := StreamSearchableMessages("codex", "session-1", path, func(message SearchableMessage) bool {
+		messages = append(messages, message)
+		return true
+	}); err != nil {
+		t.Fatalf("StreamSearchableMessages returned error: %v", err)
+	}
+	if len(messages) != 2 {
+		t.Fatalf("expected MCP call and result, got %#v", messages)
+	}
+	if messages[0].Kind != "mcp_tool_call" || messages[0].Fields["server"] != "grafana" || messages[0].Fields["tool"] != "query_victoriametrics" {
+		t.Fatalf("unexpected MCP call: %#v", messages[0])
+	}
+	if messages[1].Kind != "mcp_tool_result" || messages[1].Fields["toolId"] != "call-mcp-1" || messages[1].Fields["isError"] != false {
+		t.Fatalf("unexpected MCP result: %#v", messages[1])
+	}
+	input, ok := messages[0].Fields["input"].(map[string]any)
+	if !ok || input["expr"] != "up" {
+		t.Fatalf("expected parsed MCP arguments, got %#v", messages[0].Fields["input"])
 	}
 }
 
