@@ -49,6 +49,7 @@ type workspaceConnectionRegistry struct {
 	subscribers      map[string]map[*workspaceConnection]map[string]struct{}
 	broadcastPending map[string]bool
 	broadcastRunning map[string]bool
+	chatStatuses     map[string]readmodels.AbolqasemStatus
 }
 
 func newWorkspaceConnectionRegistry() *workspaceConnectionRegistry {
@@ -57,14 +58,31 @@ func newWorkspaceConnectionRegistry() *workspaceConnectionRegistry {
 		subscribers:      map[string]map[*workspaceConnection]map[string]struct{}{},
 		broadcastPending: map[string]bool{},
 		broadcastRunning: map[string]bool{},
+		chatStatuses:     map[string]readmodels.AbolqasemStatus{},
 	}
 }
 
 func (r *workspaceConnectionRegistry) scheduleBroadcast(chatID string) {
+	// A streaming Codex turn can emit many deltas per second. Broadcasting the
+	// sidebar and local-project snapshots for every one of those deltas blocks
+	// the single websocket writer behind large payloads. In turn, chat.send ACKs
+	// time out in the browser even though Codex already accepted the prompt.
+	// Stream only the affected chat; the sidebar needs a refresh only when the
+	// chat status changes (starting/running/idle/etc.).
+	status := readmodels.StatusIdle
+	if active, ok := workspaceAgentCoordinator().ActiveStatuses()[chatID]; ok {
+		status = active
+	}
 	r.mu.Lock()
+	previousStatus, knownStatus := r.chatStatuses[chatID]
+	sidebarChanged := !knownStatus || previousStatus != status
+	r.chatStatuses[chatID] = status
 	r.broadcastPending[chatID] = true
 	if r.broadcastRunning[chatID] {
 		r.mu.Unlock()
+		if sidebarChanged {
+			r.broadcastSidebar()
+		}
 		return
 	}
 	r.broadcastRunning[chatID] = true
@@ -80,9 +98,12 @@ func (r *workspaceConnectionRegistry) scheduleBroadcast(chatID string) {
 			}
 			delete(r.broadcastPending, chatID)
 			r.mu.Unlock()
-			r.broadcast(chatID)
+			r.broadcastChat(chatID)
 		}
 	}()
+	if sidebarChanged {
+		r.broadcastSidebar()
+	}
 }
 
 func (r *workspaceConnectionRegistry) add(conn *workspaceConnection) {
@@ -149,12 +170,16 @@ func (r *workspaceConnectionRegistry) topicSubscribers(topicKey string) map[*wor
 }
 
 func (r *workspaceConnectionRegistry) broadcast(chatID string) {
-	workspaceInvalidateSidebarSnapshot()
-	r.broadcastTopic(sidebarSubscription, protocol.SnapshotSidebar, workspaceSidebarSnapshot())
+	r.broadcastSidebar()
 	r.broadcastTopic(localProjectsSubscription, protocol.SnapshotLocalProjects, workspaceLocalProjectsSnapshot())
 	if chatID != "" {
 		r.broadcastChat(chatID)
 	}
+}
+
+func (r *workspaceConnectionRegistry) broadcastSidebar() {
+	workspaceInvalidateSidebarSnapshot()
+	r.broadcastTopic(sidebarSubscription, protocol.SnapshotSidebar, workspaceSidebarSnapshot())
 }
 
 func (r *workspaceConnectionRegistry) broadcastTopic(topicKey string, snapshotType string, data any) {
