@@ -122,14 +122,24 @@ build_target() {
   if [ "$target" = "$(host_target)" ]; then
     cargo build --release --manifest-path "$SIDECARE_DIR/Cargo.toml"
     artifact="$SIDECARE_DIR/target/release/codex-manager-gateway"
-    case "$target" in windows-*) artifact="$artifact.exe" ;; esac
   else
     command -v zig >/dev/null 2>&1 || { echo "zig is required for cross-compiling $target" >&2; exit 1; }
     ensure_rust_target "$triple"
     cargo_zigbuild --release --manifest-path "$SIDECARE_DIR/Cargo.toml" --target "$triple"
     artifact="$SIDECARE_DIR/target/$triple/release/codex-manager-gateway"
-    case "$target" in windows-*) artifact="$artifact.exe" ;; esac
   fi
+  # Depending on the linker/cargo-zigbuild version, a Windows cross build may
+  # emit either `codex-manager-gateway.exe` or the extensionless target name.
+  # The release artifact is always named .exe, but select the file that Cargo
+  # actually produced instead of assuming one convention.
+  case "$target" in
+    windows-*)
+      if [ -f "$artifact.exe" ]; then
+        artifact="$artifact.exe"
+      fi
+      ;;
+  esac
+  [ -f "$artifact" ] || { echo "sidecar artifact was not produced: $artifact" >&2; exit 1; }
   cp "$artifact" "$output"
   chmod 0755 "$output" 2>/dev/null || true
   printf 'Built %s\n' "$output"
