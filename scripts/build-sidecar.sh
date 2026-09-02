@@ -105,7 +105,9 @@ rust_target() {
     darwin-amd64) printf '%s' x86_64-apple-darwin ;;
     darwin-arm64) printf '%s' aarch64-apple-darwin ;;
     windows-amd64) printf '%s' x86_64-pc-windows-gnu ;;
-    windows-arm64) printf '%s' aarch64-pc-windows-gnu ;;
+    # Rust has no aarch64-pc-windows-gnu target. gnullvm is the Rust
+    # Windows/ARM64 target compatible with Zig's GNU Windows linker.
+    windows-arm64) printf '%s' aarch64-pc-windows-gnullvm ;;
     *) echo "unsupported target: $1" >&2; exit 1 ;;
   esac
 }
