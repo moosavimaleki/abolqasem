@@ -18,11 +18,16 @@ import (
 )
 
 func TestCodexManagerAccountAPIRedactsCredentialsAndSupportsCRUD(t *testing.T) {
-	previousDir, previousLiveRoot := codexManagerStateDir, codexManagerLiveAuthRoot
+	previousDir, previousLiveRoot, previousCheck := codexManagerStateDir, codexManagerLiveAuthRoot, startCodexManagerPostSwitchCheck
 	stateDir := t.TempDir()
 	codexManagerStateDir = func() string { return stateDir }
 	codexManagerLiveAuthRoot = t.TempDir
-	t.Cleanup(func() { codexManagerStateDir, codexManagerLiveAuthRoot = previousDir, previousLiveRoot })
+	// Creating an active account schedules a background quota check. Suppress it
+	// here so it cannot write into this test's TempDir after cleanup begins.
+	startCodexManagerPostSwitchCheck = func(string) {}
+	t.Cleanup(func() {
+		codexManagerStateDir, codexManagerLiveAuthRoot, startCodexManagerPostSwitchCheck = previousDir, previousLiveRoot, previousCheck
+	})
 
 	create := httptest.NewRequest(http.MethodPost, "/api/codex-manager/accounts", bytes.NewBufferString(`{"name":"personal","credentials":{"email":"user@example.com","tokens":{"access_token":"access-secret","refresh_token":"refresh-secret"}},"activate":true}`))
 	created := httptest.NewRecorder()
