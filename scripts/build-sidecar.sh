@@ -120,12 +120,15 @@ build_target() {
   mkdir -p "$(dirname "$output")"
 
   if [ "$target" = "$(host_target)" ]; then
-    cargo build --release --manifest-path "$SIDECARE_DIR/Cargo.toml"
+    cargo build --release --manifest-path "$SIDECARE_DIR/Cargo.toml" --target-dir "$SIDECARE_DIR/target"
     artifact="$SIDECARE_DIR/target/release/codex-manager-gateway"
   else
     command -v zig >/dev/null 2>&1 || { echo "zig is required for cross-compiling $target" >&2; exit 1; }
     ensure_rust_target "$triple"
-    cargo_zigbuild --release --manifest-path "$SIDECARE_DIR/Cargo.toml" --target "$triple"
+    # cargo-zigbuild can otherwise inherit a workspace/root target directory
+    # from its invocation directory. Pin it so the artifact path below is the
+    # same for every runner and target.
+    cargo_zigbuild --release --manifest-path "$SIDECARE_DIR/Cargo.toml" --target-dir "$SIDECARE_DIR/target" --target "$triple"
     artifact="$SIDECARE_DIR/target/$triple/release/codex-manager-gateway"
   fi
   # Depending on the linker/cargo-zigbuild version, a Windows cross build may
