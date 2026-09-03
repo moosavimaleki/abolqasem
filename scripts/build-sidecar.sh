@@ -38,16 +38,16 @@ cargo_zigbuild_available() {
 }
 
 ensure_rust_target() {
-  target="$1"
-  if rustup target list --installed 2>/dev/null | grep -Fx "$target" >/dev/null 2>&1; then
+  rust_target_name="$1"
+  if rustup target list --installed 2>/dev/null | grep -Fx "$rust_target_name" >/dev/null 2>&1; then
     return 0
   fi
   command -v rustup >/dev/null 2>&1 || {
-    echo "Rust target $target is not installed and rustup is unavailable" >&2
+    echo "Rust target $rust_target_name is not installed and rustup is unavailable" >&2
     exit 1
   }
-  echo "Installing Rust target $target..." >&2
-  rustup target add "$target"
+  echo "Installing Rust target $rust_target_name..." >&2
+  rustup target add "$rust_target_name"
 }
 
 usage() {
