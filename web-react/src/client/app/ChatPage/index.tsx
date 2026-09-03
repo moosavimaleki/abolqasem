@@ -921,7 +921,10 @@ export function ChatPage() {
     () => deriveLatestRateLimitSnapshot(state.chatSnapshot?.messages ?? []),
     [state.chatSnapshot?.messages],
   )
-  const rateLimitSnapshot = transcriptRateLimitSnapshot ?? cachedUsageSnapshot?.rate_limits ?? null
+  // A transcript snapshot is historical. Prefer the independently refreshed
+  // account snapshot so a limit hit or an account switch becomes visible even
+  // when the current transcript has no newer rate_limit_updated event.
+  const rateLimitSnapshot = cachedUsageSnapshot?.rate_limits ?? transcriptRateLimitSnapshot ?? null
   const transcriptAccountEmail = useMemo(() => {
     const entries = state.chatSnapshot?.messages ?? []
     for (let index = entries.length - 1; index >= 0; index -= 1) {
@@ -1482,7 +1485,10 @@ export function ChatPage() {
     lastUserPromptJumpIdRef.current = null
     await scrollToTranscriptEnd(false)
     await state.handleSend(content, options)
-  }, [scrollToTranscriptEnd, state])
+    // Sending can consume quota or cause the manager to switch accounts. Do
+    // this off the send path: composing must not wait for the quota endpoint.
+    void fetchUsageSnapshot("POST").catch(() => undefined)
+  }, [fetchUsageSnapshot, scrollToTranscriptEnd, state])
 
   const handleRetryFailedTurn = useCallback(async () => {
     if (!state.activeChatId || state.isProcessing || codexChatReadOnly) return

@@ -6,6 +6,7 @@ SIDECARE_DIR="sidecars/codex-manager-gateway"
 DIST="dist/sidecars"
 BUILD_ALL="0"
 TARGET=""
+SIDECARE_TARGET_DIR=""
 
 cargo_zigbuild() {
   if command -v cargo-zigbuild >/dev/null 2>&1; then
@@ -120,7 +121,7 @@ build_target() {
   mkdir -p "$(dirname "$output")"
 
   if [ "$target" = "$(host_target)" ]; then
-    cargo build --release --manifest-path "$SIDECARE_DIR/Cargo.toml" --target-dir "$SIDECARE_DIR/target"
+    cargo build --release --manifest-path "$SIDECARE_DIR/Cargo.toml" --target-dir "$SIDECARE_TARGET_DIR"
     artifact="$SIDECARE_DIR/target/release/codex-manager-gateway"
   else
     command -v zig >/dev/null 2>&1 || { echo "zig is required for cross-compiling $target" >&2; exit 1; }
@@ -128,7 +129,7 @@ build_target() {
     # cargo-zigbuild can otherwise inherit a workspace/root target directory
     # from its invocation directory. Pin it so the artifact path below is the
     # same for every runner and target.
-    cargo_zigbuild --release --manifest-path "$SIDECARE_DIR/Cargo.toml" --target-dir "$SIDECARE_DIR/target" --target "$triple"
+    cargo_zigbuild --release --manifest-path "$SIDECARE_DIR/Cargo.toml" --target-dir "$SIDECARE_TARGET_DIR" --target "$triple"
     artifact="$SIDECARE_DIR/target/$triple/release/codex-manager-gateway"
   fi
   # Depending on the linker/cargo-zigbuild version, a Windows cross build may
@@ -149,6 +150,9 @@ build_target() {
 }
 
 command -v cargo >/dev/null 2>&1 || { echo "cargo is required to build the Codex Manager sidecar" >&2; exit 1; }
+# cargo-zigbuild can change into the package directory. A relative target-dir
+# would then be resolved twice on some runners, so always pass an absolute one.
+SIDECARE_TARGET_DIR="$(cd "$SIDECARE_DIR" && pwd)/target"
 
 if [ "$BUILD_ALL" = "1" ]; then
   command -v zig >/dev/null 2>&1 || { echo "zig is required for --all" >&2; exit 1; }
