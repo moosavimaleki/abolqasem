@@ -2,6 +2,10 @@ version: 2
 
 project_name: abolqasem
 
+# GoReleaser's own archives must not share the directory that the sidecar
+# pre-build hook fills with runtime binaries.
+dist: .goreleaser-dist
+
 before:
   hooks:
     - go mod tidy
@@ -30,7 +34,7 @@ archives:
     name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
     format_overrides:
       - goos: windows
-        format: zip
+        formats: [zip]
     files:
       - README.md
       - scripts/install-release.sh
