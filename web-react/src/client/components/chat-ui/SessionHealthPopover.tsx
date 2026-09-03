@@ -1,38 +1,60 @@
-import { useEffect, useMemo, useState } from "react"
-import { Cog, Mail, Sparkles } from "lucide-react"
-import type { RateLimitSnapshot, RateLimitWindowSnapshot } from "../../../shared/types"
-import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover"
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/tooltip"
-import { useI18n } from "../../i18n/context"
-import { type ContextWindowSnapshot, formatContextWindowTokens } from "../../lib/contextWindow"
+import { useEffect, useMemo, useState } from "react";
+import { Check, Cog, Loader2, Mail, Sparkles } from "lucide-react";
+import type {
+  RateLimitSnapshot,
+  RateLimitWindowSnapshot,
+} from "../../../shared/types";
+import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "../ui/tooltip";
+import { useI18n } from "../../i18n/context";
+import {
+  type ContextWindowSnapshot,
+  formatContextWindowTokens,
+} from "../../lib/contextWindow";
 import {
   formatLocalizedPercent,
   formatRateLimitDurationLocalized,
   formatRelativeResetTime,
   selectLongRateLimitWindow,
   selectRateLimitWindows,
-} from "../../lib/usage"
+} from "../../lib/usage";
 
 interface SessionHealthPopoverProps {
-  snapshot?: RateLimitSnapshot | null
-  contextUsage?: ContextWindowSnapshot | null
-  accountEmail?: string | null
+  snapshot?: RateLimitSnapshot | null;
+  contextUsage?: ContextWindowSnapshot | null;
+  accountEmail?: string | null;
+  onAccountActivated?: () => void | Promise<void>;
 }
 
-type ManagerSnapshot = { enabled?: boolean; mode?: string; gateway?: { state?: string }; accounts?: Array<{ name: string; active?: boolean }> }
+type ManagerSnapshot = {
+  enabled?: boolean;
+  mode?: string;
+  gateway?: { state?: string };
+  accounts?: Array<{ name: string; active?: boolean }>;
+};
+type ActivateBestAccountResponse = { authChanged?: boolean };
 
 function clampPercent(value: number) {
-  return Math.max(0, Math.min(100, value))
+  return Math.max(0, Math.min(100, value));
 }
 
-export function getQuotaWindowComparison(window: RateLimitWindowSnapshot, nowMs = Date.now()) {
-  const quotaRemaining = clampPercent(100 - window.usedPercent)
-  const durationMs = (window.windowDurationMins ?? 0) * 60_000
-  const resetMs = (window.resetsAt ?? 0) * 1000
-  const timeRemaining = durationMs > 0 && resetMs > 0
-    ? clampPercent(((resetMs - nowMs) / durationMs) * 100)
-    : null
-  return { quotaRemaining, timeRemaining }
+export function getQuotaWindowComparison(
+  window: RateLimitWindowSnapshot,
+  nowMs = Date.now(),
+) {
+  const quotaRemaining = clampPercent(100 - window.usedPercent);
+  const durationMs = (window.windowDurationMins ?? 0) * 60_000;
+  const resetMs = (window.resetsAt ?? 0) * 1000;
+  const timeRemaining =
+    durationMs > 0 && resetMs > 0
+      ? clampPercent(((resetMs - nowMs) / durationMs) * 100)
+      : null;
+  return { quotaRemaining, timeRemaining };
 }
 
 function ProgressRow({
@@ -41,16 +63,18 @@ function ProgressRow({
   detail,
   marker,
 }: {
-  label: string
-  value: number
-  detail: string
-  marker?: "quota" | "time" | "context"
+  label: string;
+  value: number;
+  detail: string;
+  marker?: "quota" | "time" | "context";
 }) {
   return (
     <div className="space-y-1.5">
       <div className="flex items-baseline justify-between gap-3 text-xs">
         <span className="text-muted-foreground">{label}</span>
-        <span className="font-medium tabular-nums text-foreground">{detail}</span>
+        <span className="font-medium tabular-nums text-foreground">
+          {detail}
+        </span>
       </div>
       <div
         className="h-1.5 overflow-hidden rounded-full bg-muted"
@@ -61,173 +85,372 @@ function ProgressRow({
         aria-valuenow={Math.round(value)}
       >
         <div
-          className={marker === "quota" && value <= 10
-            ? "h-full rounded-full bg-destructive/70 transition-transform duration-300 motion-reduce:transition-none"
-            : marker === "time"
-              ? "h-full rounded-full bg-muted-foreground/55 transition-transform duration-300 motion-reduce:transition-none"
-              : "h-full rounded-full bg-foreground/65 transition-transform duration-300 motion-reduce:transition-none"}
+          className={
+            marker === "quota" && value <= 10
+              ? "h-full rounded-full bg-destructive/70 transition-transform duration-300 motion-reduce:transition-none"
+              : marker === "time"
+                ? "h-full rounded-full bg-muted-foreground/55 transition-transform duration-300 motion-reduce:transition-none"
+                : "h-full rounded-full bg-foreground/65 transition-transform duration-300 motion-reduce:transition-none"
+          }
           style={{ transform: `translateX(${value - 100}%)` }}
         />
       </div>
     </div>
-  )
+  );
+}
+
+function SessionHealthSkeleton({ fa }: { fa: boolean }) {
+  return (
+    <section
+      className="space-y-3 rounded-xl border border-border/65 bg-muted/20 p-2.5"
+      aria-busy="true"
+      aria-label={
+        fa ? "در حال خواندن سهمیهٔ حساب جدید" : "Loading new account quota"
+      }
+      data-session-health-loading="account-switch"
+    >
+      {[0, 1].map((index) => (
+        <div
+          key={index}
+          className={
+            index > 0
+              ? "space-y-2 border-t border-border/55 pt-2.5"
+              : "space-y-2"
+          }
+        >
+          <div className="flex items-center justify-between gap-3">
+            <span className="h-3 w-12 animate-pulse rounded bg-muted" />
+            <span className="h-3 w-28 animate-pulse rounded bg-muted" />
+          </div>
+          <div className="space-y-1.5">
+            <span className="block h-3 w-24 animate-pulse rounded bg-muted" />
+            <span className="block h-1.5 w-full animate-pulse rounded-full bg-muted" />
+          </div>
+        </div>
+      ))}
+    </section>
+  );
 }
 
 export function SessionHealthPanel({
   snapshot,
   contextUsage,
   accountEmail,
+  onAccountActivated,
 }: SessionHealthPopoverProps) {
-  const { locale } = useI18n()
-  const fa = locale === "fa"
-  const quotaWindows = selectRateLimitWindows(snapshot ?? null)
-  const contextRemaining = contextUsage?.remainingPercentage == null
-    ? null
-    : clampPercent(contextUsage.remainingPercentage)
-  const [manager, setManager] = useState<ManagerSnapshot | null>(null)
-  const [activatingBest, setActivatingBest] = useState(false)
-  const [accountActionError, setAccountActionError] = useState<string | null>(null)
+  const { locale } = useI18n();
+  const fa = locale === "fa";
+  const quotaWindows = selectRateLimitWindows(snapshot ?? null);
+  const contextRemaining =
+    contextUsage?.remainingPercentage == null
+      ? null
+      : clampPercent(contextUsage.remainingPercentage);
+  const [manager, setManager] = useState<ManagerSnapshot | null>(null);
+  const [activatingBest, setActivatingBest] = useState(false);
+  const [bestActivationConfirmed, setBestActivationConfirmed] = useState(false);
+  const [accountActionError, setAccountActionError] = useState<string | null>(
+    null,
+  );
   useEffect(() => {
-    let cancelled = false
-    void fetch("/api/codex-manager", { cache: "no-store" }).then(async (response) => response.ok ? await response.json() as ManagerSnapshot : null).then((next) => { if (!cancelled) setManager(next) }).catch(() => undefined)
-    return () => { cancelled = true }
-  }, [])
+    let cancelled = false;
+    void fetch("/api/codex-manager", { cache: "no-store" })
+      .then(async (response) =>
+        response.ok ? ((await response.json()) as ManagerSnapshot) : null,
+      )
+      .then((next) => {
+        if (!cancelled) setManager(next);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const activateBestAccount = async () => {
-    setActivatingBest(true)
-    setAccountActionError(null)
+    setActivatingBest(true);
+    setBestActivationConfirmed(false);
+    setAccountActionError(null);
     try {
-      const response = await fetch("/api/codex-manager/recommendation", { method: "POST" })
-      if (!response.ok) throw new Error(await response.text())
-      const snapshotResponse = await fetch("/api/codex-manager", { cache: "no-store" })
-      if (snapshotResponse.ok) setManager(await snapshotResponse.json() as ManagerSnapshot)
+      const response = await fetch("/api/codex-manager/recommendation", {
+        method: "POST",
+      });
+      if (!response.ok) throw new Error(await response.text());
+      const result = (await response.json()) as ActivateBestAccountResponse;
+      if (!result.authChanged) {
+        const snapshotResponse = await fetch("/api/codex-manager", {
+          cache: "no-store",
+        });
+        if (snapshotResponse.ok)
+          setManager((await snapshotResponse.json()) as ManagerSnapshot);
+        return;
+      }
+      const [managerResponse] = await Promise.all([
+        fetch("/api/codex-manager", { cache: "no-store" }),
+        Promise.resolve(onAccountActivated?.()),
+      ]);
+      if (managerResponse.ok)
+        setManager((await managerResponse.json()) as ManagerSnapshot);
+      setBestActivationConfirmed(true);
     } catch (error) {
-      setAccountActionError(error instanceof Error ? error.message : (fa ? "انتخاب حساب ناموفق بود" : "Could not select an account"))
+      setAccountActionError(
+        error instanceof Error
+          ? error.message
+          : fa
+            ? "انتخاب حساب ناموفق بود"
+            : "Could not select an account",
+      );
     } finally {
-      setActivatingBest(false)
+      setActivatingBest(false);
     }
-  }
+  };
   return (
     <TooltipProvider>
-    <div className="space-y-3" dir={fa ? "rtl" : "ltr"}>
-      <div className="flex min-w-0 items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-sm font-medium text-foreground">{fa ? "وضعیت نشست" : "Session status"}</div>
-          {accountEmail ? (
-            <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">
-              <Mail className="h-3 w-3 shrink-0" aria-hidden="true" />
-              <span dir="ltr" className="truncate">{accountEmail}</span>
+      <div className="space-y-3" dir={fa ? "rtl" : "ltr"}>
+        <div className="flex min-w-0 items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-sm font-medium text-foreground">
+              {fa ? "وضعیت نشست" : "Session status"}
             </div>
-          ) : null}
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <Tooltip delayDuration={200}>
-            <TooltipTrigger asChild>
-              <button type="button" onClick={() => window.location.assign("/_/settings/codex-manager")} className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={fa ? "مدیریت حساب‌های Codex" : "Manage Codex accounts"}>
-                <Cog className="h-3.5 w-3.5" aria-hidden="true" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent dir={fa ? "rtl" : "ltr"}>{fa ? "مدیریت حساب‌ها" : "Manage accounts"}</TooltipContent>
-          </Tooltip>
-          <Tooltip delayDuration={200}>
-            <TooltipTrigger asChild>
-              <button type="button" disabled={activatingBest} onClick={() => void activateBestAccount()} className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-wait disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={fa ? "انتخاب بهترین حساب" : "Activate best account"}>
-                <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent dir={fa ? "rtl" : "ltr"}>{fa ? "انتخاب بهترین حساب" : "Activate best account"}</TooltipContent>
-          </Tooltip>
-          {snapshot?.planType ? (
-            <span className="rounded-full border border-border/70 px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-              {snapshot.planType}
-            </span>
-          ) : null}
-        </div>
-      </div>
-      {accountActionError ? <p className="rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1.5 text-[11px] text-destructive">{accountActionError}</p> : null}
-
-      {quotaWindows.length > 0 ? (
-        <section className="space-y-2 rounded-xl border border-border/65 bg-muted/20 p-2.5" aria-label={fa ? "بازه‌های سهمیه" : "Quota windows"}>
-          {quotaWindows.map((quotaWindow, index) => {
-            const comparison = getQuotaWindowComparison(quotaWindow)
-            const resetAfter = formatRelativeResetTime(quotaWindow.resetsAt, locale)
-            const duration = formatRateLimitDurationLocalized(quotaWindow.windowDurationMins, locale)
-            return (
+            {activatingBest ? (
               <div
-                key={`${quotaWindow.windowDurationMins ?? "unknown"}-${quotaWindow.resetsAt ?? index}`}
-                className={index > 0 ? "space-y-2 border-t border-border/55 pt-2.5" : "space-y-2"}
-                data-session-health-comparison="quota-time"
-              >
-                <div className="flex items-center justify-between gap-3 text-[11px]">
-                  <span className="font-medium text-foreground">{duration}</span>
-                  {resetAfter ? (
-                    <span className="tabular-nums text-muted-foreground">
-                      {fa ? `بازنشانی پس از ${resetAfter}` : `Resets in ${resetAfter}`}
-                    </span>
-                  ) : null}
-                </div>
-                <ProgressRow
-                  marker="quota"
-                  label={fa ? "سهمیهٔ باقی‌مانده" : "Quota remaining"}
-                  value={comparison.quotaRemaining}
-                  detail={formatLocalizedPercent(comparison.quotaRemaining, locale)}
-                />
+                className="mt-1 h-3 w-36 animate-pulse rounded bg-muted"
+                aria-hidden="true"
+              />
+            ) : accountEmail ? (
+              <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+                <Mail className="h-3 w-3 shrink-0" aria-hidden="true" />
+                <span dir="ltr" className="truncate">
+                  {accountEmail}
+                </span>
               </div>
-            )
-          })}
-        </section>
-      ) : null}
-
-      {contextUsage ? (
-        <div className="space-y-1.5 border-t border-border/60 pt-3">
-          {contextRemaining !== null && contextUsage.maxTokens !== undefined ? (
-            <ProgressRow
-              marker="context"
-              label={fa ? "کانتکست این چت" : "Chat context"}
-              value={contextRemaining}
-              detail={fa
-                ? `${formatLocalizedPercent(contextRemaining, locale)} باقی`
-                : `${formatLocalizedPercent(contextRemaining, locale)} left`}
-            />
-          ) : (
-            <div className="flex items-baseline justify-between gap-3 text-xs">
-              <span className="text-muted-foreground">{fa ? "اندازهٔ کانتکست" : "Context size"}</span>
-              <span className="tabular-nums text-foreground">{formatContextWindowTokens(contextUsage.usedTokens)}</span>
-            </div>
-          )}
-          {contextUsage.maxTokens !== undefined ? (
-            <div className="text-[10px] text-muted-foreground">
-              {fa
-                ? `${formatContextWindowTokens(contextUsage.usedTokens)} از ${formatContextWindowTokens(contextUsage.maxTokens)} توکن استفاده شده`
-                : `${formatContextWindowTokens(contextUsage.usedTokens)} of ${formatContextWindowTokens(contextUsage.maxTokens)} tokens used`}
-            </div>
-          ) : null}
+            ) : null}
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            <Tooltip delayDuration={200}>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={() =>
+                    window.location.assign("/_/settings/codex-manager")
+                  }
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  aria-label={
+                    fa ? "مدیریت حساب‌های Codex" : "Manage Codex accounts"
+                  }
+                >
+                  <Cog className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent dir={fa ? "rtl" : "ltr"}>
+                {fa ? "مدیریت حساب‌ها" : "Manage accounts"}
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip delayDuration={200}>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  disabled={activatingBest}
+                  onClick={() => void activateBestAccount()}
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-wait disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  aria-label={
+                    bestActivationConfirmed
+                      ? fa
+                        ? "حساب جدید فعال شد"
+                        : "New account activated"
+                      : fa
+                        ? "انتخاب بهترین حساب"
+                        : "Activate best account"
+                  }
+                >
+                  {activatingBest ? (
+                    <Loader2
+                      className="h-3.5 w-3.5 animate-spin"
+                      aria-hidden="true"
+                    />
+                  ) : bestActivationConfirmed ? (
+                    <Check
+                      className="h-3.5 w-3.5 text-emerald-500"
+                      aria-hidden="true"
+                    />
+                  ) : (
+                    <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+                  )}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent dir={fa ? "rtl" : "ltr"}>
+                {fa ? "انتخاب بهترین حساب" : "Activate best account"}
+              </TooltipContent>
+            </Tooltip>
+            {!activatingBest && snapshot?.planType ? (
+              <span className="rounded-full border border-border/70 px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                {snapshot.planType}
+              </span>
+            ) : null}
+          </div>
         </div>
-      ) : null}
+        {accountActionError ? (
+          <p className="rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1.5 text-[11px] text-destructive">
+            {accountActionError}
+          </p>
+        ) : null}
 
-      {manager?.enabled ? <div className="space-y-1 border-t border-border/60 pt-3 text-[11px]" data-session-routing-status="manager"><div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">{fa ? "مسیر ارسال" : "Routing"}</span><span className="font-medium text-foreground">{manager.mode === "manager" ? (fa ? "خودکار · Manager" : "Automatic · Manager") : manager.mode}</span></div><div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">{fa ? "حساب فعلی" : "Current account"}</span><span className="truncate font-medium text-foreground">{manager.accounts?.find((item) => item.active)?.name ?? (fa ? "نامشخص" : "Unknown")}</span></div><div className="flex items-center justify-between gap-3"><span className="text-muted-foreground">{fa ? "سلامت gateway" : "Gateway health"}</span><span className={manager.gateway?.state === "ready" ? "font-medium text-emerald-600" : "font-medium text-amber-600"}>{manager.gateway?.state ?? (fa ? "نامشخص" : "Unknown")}</span></div></div> : null}
+        {activatingBest ? (
+          <SessionHealthSkeleton fa={fa} />
+        ) : quotaWindows.length > 0 ? (
+          <section
+            className="space-y-2 rounded-xl border border-border/65 bg-muted/20 p-2.5"
+            aria-label={fa ? "بازه‌های سهمیه" : "Quota windows"}
+          >
+            {quotaWindows.map((quotaWindow, index) => {
+              const comparison = getQuotaWindowComparison(quotaWindow);
+              const resetAfter = formatRelativeResetTime(
+                quotaWindow.resetsAt,
+                locale,
+              );
+              const duration = formatRateLimitDurationLocalized(
+                quotaWindow.windowDurationMins,
+                locale,
+              );
+              return (
+                <div
+                  key={`${quotaWindow.windowDurationMins ?? "unknown"}-${quotaWindow.resetsAt ?? index}`}
+                  className={
+                    index > 0
+                      ? "space-y-2 border-t border-border/55 pt-2.5"
+                      : "space-y-2"
+                  }
+                  data-session-health-comparison="quota-time"
+                >
+                  <div className="flex items-center justify-between gap-3 text-[11px]">
+                    <span className="font-medium text-foreground">
+                      {duration}
+                    </span>
+                    {resetAfter ? (
+                      <span className="tabular-nums text-muted-foreground">
+                        {fa
+                          ? `بازنشانی پس از ${resetAfter}`
+                          : `Resets in ${resetAfter}`}
+                      </span>
+                    ) : null}
+                  </div>
+                  <ProgressRow
+                    marker="quota"
+                    label={fa ? "سهمیهٔ باقی‌مانده" : "Quota remaining"}
+                    value={comparison.quotaRemaining}
+                    detail={formatLocalizedPercent(
+                      comparison.quotaRemaining,
+                      locale,
+                    )}
+                  />
+                </div>
+              );
+            })}
+          </section>
+        ) : null}
 
-    </div>
+        {!activatingBest && contextUsage ? (
+          <div className="space-y-1.5 border-t border-border/60 pt-3">
+            {contextRemaining !== null &&
+            contextUsage.maxTokens !== undefined ? (
+              <ProgressRow
+                marker="context"
+                label={fa ? "کانتکست این چت" : "Chat context"}
+                value={contextRemaining}
+                detail={
+                  fa
+                    ? `${formatLocalizedPercent(contextRemaining, locale)} باقی`
+                    : `${formatLocalizedPercent(contextRemaining, locale)} left`
+                }
+              />
+            ) : (
+              <div className="flex items-baseline justify-between gap-3 text-xs">
+                <span className="text-muted-foreground">
+                  {fa ? "اندازهٔ کانتکست" : "Context size"}
+                </span>
+                <span className="tabular-nums text-foreground">
+                  {formatContextWindowTokens(contextUsage.usedTokens)}
+                </span>
+              </div>
+            )}
+            {contextUsage.maxTokens !== undefined ? (
+              <div className="text-[10px] text-muted-foreground">
+                {fa
+                  ? `${formatContextWindowTokens(contextUsage.usedTokens)} از ${formatContextWindowTokens(contextUsage.maxTokens)} توکن استفاده شده`
+                  : `${formatContextWindowTokens(contextUsage.usedTokens)} of ${formatContextWindowTokens(contextUsage.maxTokens)} tokens used`}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {!activatingBest && manager?.enabled ? (
+          <div
+            className="space-y-1 border-t border-border/60 pt-3 text-[11px]"
+            data-session-routing-status="manager"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-muted-foreground">
+                {fa ? "مسیر ارسال" : "Routing"}
+              </span>
+              <span className="font-medium text-foreground">
+                {manager.mode === "manager"
+                  ? fa
+                    ? "خودکار · Manager"
+                    : "Automatic · Manager"
+                  : manager.mode}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-muted-foreground">
+                {fa ? "حساب فعلی" : "Current account"}
+              </span>
+              <span className="truncate font-medium text-foreground">
+                {manager.accounts?.find((item) => item.active)?.name ??
+                  (fa ? "نامشخص" : "Unknown")}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-muted-foreground">
+                {fa ? "سلامت gateway" : "Gateway health"}
+              </span>
+              <span
+                className={
+                  manager.gateway?.state === "ready"
+                    ? "font-medium text-emerald-600"
+                    : "font-medium text-amber-600"
+                }
+              >
+                {manager.gateway?.state ?? (fa ? "نامشخص" : "Unknown")}
+              </span>
+            </div>
+          </div>
+        ) : null}
+      </div>
     </TooltipProvider>
-  )
+  );
 }
 
 export function SessionHealthPopover(props: SessionHealthPopoverProps) {
-  const { locale } = useI18n()
-  const fa = locale === "fa"
-  const quotaWindow = selectLongRateLimitWindow(props.snapshot ?? null)
-  const comparison = useMemo(() => quotaWindow ? getQuotaWindowComparison(quotaWindow) : null, [quotaWindow])
-  const fallback = props.contextUsage?.remainingPercentage ?? 0
-  const quota = comparison?.quotaRemaining ?? clampPercent(fallback)
-  const time = comparison?.timeRemaining
-  const outerRadius = 10
-  const innerRadius = 6.5
-  const outerCircumference = 2 * Math.PI * outerRadius
-  const innerCircumference = 2 * Math.PI * innerRadius
-  const label = comparison && typeof time === "number"
-    ? (fa
-      ? `سهمیهٔ باقی‌مانده ${formatLocalizedPercent(quota, locale)}، زمان باقی‌مانده ${formatLocalizedPercent(time, locale)}`
-      : `${formatLocalizedPercent(quota, locale)} quota and ${formatLocalizedPercent(time, locale)} time remaining`)
-    : (fa ? "وضعیت نشست" : "Session status")
+  const { locale } = useI18n();
+  const fa = locale === "fa";
+  const quotaWindow = selectLongRateLimitWindow(props.snapshot ?? null);
+  const comparison = useMemo(
+    () => (quotaWindow ? getQuotaWindowComparison(quotaWindow) : null),
+    [quotaWindow],
+  );
+  const fallback = props.contextUsage?.remainingPercentage ?? 0;
+  const quota = comparison?.quotaRemaining ?? clampPercent(fallback);
+  const time = comparison?.timeRemaining;
+  const outerRadius = 10;
+  const innerRadius = 6.5;
+  const outerCircumference = 2 * Math.PI * outerRadius;
+  const innerCircumference = 2 * Math.PI * innerRadius;
+  const label =
+    comparison && typeof time === "number"
+      ? fa
+        ? `سهمیهٔ باقی‌مانده ${formatLocalizedPercent(quota, locale)}، زمان باقی‌مانده ${formatLocalizedPercent(time, locale)}`
+        : `${formatLocalizedPercent(quota, locale)} quota and ${formatLocalizedPercent(time, locale)} time remaining`
+      : fa
+        ? "وضعیت نشست"
+        : "Session status";
 
   return (
     <Popover>
@@ -238,23 +461,79 @@ export function SessionHealthPopover(props: SessionHealthPopoverProps) {
           aria-label={label}
           title={label}
         >
-          <span className="relative flex h-7 w-7 items-center justify-center" data-session-health-chart="dual-radial">
-            <svg viewBox="0 0 24 24" className="absolute inset-0 h-full w-full -rotate-90 transform-gpu" aria-hidden="true">
-              <circle cx="12" cy="12" r={outerRadius} fill="none" stroke="currentColor" strokeWidth="1.5" className="text-muted-foreground/20" />
-              <circle cx="12" cy="12" r={outerRadius} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeDasharray={outerCircumference} strokeDashoffset={outerCircumference - quota / 100 * outerCircumference} className={quota <= 10 ? "text-destructive/75" : "text-foreground/65"} />
+          <span
+            className="relative flex h-7 w-7 items-center justify-center"
+            data-session-health-chart="dual-radial"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              className="absolute inset-0 h-full w-full -rotate-90 transform-gpu"
+              aria-hidden="true"
+            >
+              <circle
+                cx="12"
+                cy="12"
+                r={outerRadius}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                className="text-muted-foreground/20"
+              />
+              <circle
+                cx="12"
+                cy="12"
+                r={outerRadius}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeDasharray={outerCircumference}
+                strokeDashoffset={
+                  outerCircumference - (quota / 100) * outerCircumference
+                }
+                className={
+                  quota <= 10 ? "text-destructive/75" : "text-foreground/65"
+                }
+              />
               {time !== null && time !== undefined ? (
                 <>
-                  <circle cx="12" cy="12" r={innerRadius} fill="none" stroke="currentColor" strokeWidth="1.5" className="text-muted-foreground/15" />
-                  <circle cx="12" cy="12" r={innerRadius} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeDasharray={innerCircumference} strokeDashoffset={innerCircumference - time / 100 * innerCircumference} className="text-muted-foreground/65" />
+                  <circle
+                    cx="12"
+                    cy="12"
+                    r={innerRadius}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    className="text-muted-foreground/15"
+                  />
+                  <circle
+                    cx="12"
+                    cy="12"
+                    r={innerRadius}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeDasharray={innerCircumference}
+                    strokeDashoffset={
+                      innerCircumference - (time / 100) * innerCircumference
+                    }
+                    className="text-muted-foreground/65"
+                  />
                 </>
               ) : null}
             </svg>
           </span>
         </button>
       </PopoverTrigger>
-      <PopoverContent side="top" align="center" sideOffset={8} className="w-[min(calc(100vw-1.5rem),320px)] p-3 shadow-xl">
+      <PopoverContent
+        side="top"
+        align="center"
+        sideOffset={8}
+        className="w-[min(calc(100vw-1.5rem),320px)] p-3 shadow-xl"
+      >
         <SessionHealthPanel {...props} />
       </PopoverContent>
     </Popover>
-  )
+  );
 }

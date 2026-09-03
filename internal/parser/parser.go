@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"abolqasem/internal/codexutil"
 	"abolqasem/internal/render"
 	"abolqasem/internal/state"
 )
@@ -1025,7 +1026,7 @@ func extractCodexMessage(raw map[string]any, sessionID string, index int) *Searc
 		if !strings.EqualFold(toolName, "exec") {
 			return nil
 		}
-		command, cwd, ok := extractCodexExecCommand(input)
+		command, cwd, ok := codexutil.ExtractExecCommand(input)
 		if !ok {
 			return nil
 		}
@@ -1039,7 +1040,7 @@ func extractCodexMessage(raw map[string]any, sessionID string, index int) *Searc
 		output := firstNonEmpty(flattenText(payload["output"]), flattenText(payload["content"]))
 		msg := newCodexSearchableMessage(sessionID, index, "tool", "custom_tool_call_output", output, extractTimestamp(raw, payload), source)
 		if msg != nil {
-			status, exitCode, hasExitCode := codexCommandCompletion(output)
+			status, exitCode, hasExitCode := codexutil.CommandCompletion(output)
 			msg.Fields = map[string]any{
 				"itemId":           firstNonEmpty(stringValue(payload["call_id"]), stringValue(payload["id"])),
 				"status":           status,
@@ -1352,9 +1353,6 @@ func normalizeCodexMCPMessage(agent string, previous *SearchableMessage, message
 	}
 }
 
-var codexExecCommandFieldPattern = regexp.MustCompile(`(?:^|[,\{]\s*)["']?cmd["']?\s*:\s*("(?:\\.|[^"\\])*")`)
-var codexExecWorkdirFieldPattern = regexp.MustCompile(`(?:^|[,\{]\s*)["']?workdir["']?\s*:\s*("(?:\\.|[^"\\])*")`)
-var codexExitCodePattern = regexp.MustCompile(`(?i)(?:exited with code|exit(?:ed)? code\s*[:=]?)\s*(-?[0-9]+)`)
 var codexMCPToolCallPattern = regexp.MustCompile(`(?s)tools\.mcp__([A-Za-z0-9_-]+)__([A-Za-z0-9_-]+)\s*\((.*?)\)`)
 
 func extractCodexMCPToolCall(input string) (string, string, map[string]any, bool) {
@@ -1402,66 +1400,6 @@ func newCodexMCPResultMessage(sessionID string, index int, raw map[string]any, p
 		}
 	}
 	return msg
-}
-
-func extractCodexExecCommand(input string) (string, string, bool) {
-	const marker = "tools.exec_command("
-	commands := make([]string, 0, 1)
-	workdirs := make([]string, 0, 1)
-	for remaining := input; ; {
-		markerIndex := strings.Index(remaining, marker)
-		if markerIndex < 0 {
-			break
-		}
-		remaining = remaining[markerIndex+len(marker):]
-		segment := remaining
-		if nextIndex := strings.Index(segment, marker); nextIndex >= 0 {
-			segment = segment[:nextIndex]
-		}
-		command := extractCodexJSONStringField(segment, codexExecCommandFieldPattern)
-		if strings.TrimSpace(command) != "" {
-			commands = append(commands, command)
-			workdirs = append(workdirs, extractCodexJSONStringField(segment, codexExecWorkdirFieldPattern))
-		}
-	}
-	if len(commands) == 0 {
-		return "", "", false
-	}
-	cwd := workdirs[0]
-	for _, workdir := range workdirs[1:] {
-		if workdir != cwd {
-			cwd = ""
-			break
-		}
-	}
-	return strings.Join(commands, "\n"), cwd, true
-}
-
-func extractCodexJSONStringField(input string, pattern *regexp.Regexp) string {
-	match := pattern.FindStringSubmatch(input)
-	if len(match) != 2 {
-		return ""
-	}
-	var value string
-	if err := json.Unmarshal([]byte(match[1]), &value); err != nil {
-		return ""
-	}
-	return value
-}
-
-func codexCommandCompletion(output string) (string, int, bool) {
-	if match := codexExitCodePattern.FindStringSubmatch(output); len(match) == 2 {
-		if exitCode, err := strconv.Atoi(match[1]); err == nil {
-			if exitCode == 0 {
-				return "completed", exitCode, true
-			}
-			return "failed", exitCode, true
-		}
-	}
-	if strings.Contains(output, "Script completed") {
-		return "completed", 0, true
-	}
-	return "completed", 0, false
 }
 
 func isCodexInterAgentMessage(recordType, eventType string, payload map[string]any) bool {

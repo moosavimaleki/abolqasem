@@ -282,6 +282,37 @@ func TestCodexManagerAccountActivationReplacesLiveAuth(t *testing.T) {
 	}
 }
 
+func TestSwitchCodexManagerLiveAccountReportsWhetherAuthChanged(t *testing.T) {
+	previousDir, previousLiveRoot, previousCheck := codexManagerStateDir, codexManagerLiveAuthRoot, startCodexManagerPostSwitchCheck
+	stateDir, codexRoot := t.TempDir(), t.TempDir()
+	codexManagerStateDir = func() string { return stateDir }
+	codexManagerLiveAuthRoot = func() string { return codexRoot }
+	startCodexManagerPostSwitchCheck = func(string) {}
+	t.Cleanup(func() {
+		codexManagerStateDir, codexManagerLiveAuthRoot, startCodexManagerPostSwitchCheck = previousDir, previousLiveRoot, previousCheck
+	})
+
+	repository := account.Repository{Paths: codexManagerPaths()}
+	if err := repository.Add(context.Background(), "chosen", map[string]any{
+		"email":  "chosen@example.com",
+		"tokens": map[string]any{"refresh_token": "chosen-refresh"},
+	}, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(codexRoot, "auth.json"), []byte(`{"email":"old@example.com","tokens":{"refresh_token":"old-refresh"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	changed, err := switchCodexManagerLiveAccountWithResult(context.Background(), repository, "chosen")
+	if err != nil || !changed {
+		t.Fatalf("first switch = changed:%t err:%v, want changed auth", changed, err)
+	}
+	changed, err = switchCodexManagerLiveAccountWithResult(context.Background(), repository, "chosen")
+	if err != nil || changed {
+		t.Fatalf("same-account switch = changed:%t err:%v, want unchanged auth", changed, err)
+	}
+}
+
 func TestCodexManagerAccountActivationKeepsRunningTurnAndReplacesLiveAuth(t *testing.T) {
 	previousDir, previousLiveRoot, previousSessions, previousCheck := codexManagerStateDir, codexManagerLiveAuthRoot, workspaceCodexSessions, startCodexManagerPostSwitchCheck
 	stateDir, codexRoot := t.TempDir(), t.TempDir()

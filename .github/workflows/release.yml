@@ -70,4 +70,3 @@ jobs:
           args: release --clean --release-notes=.github/release-notes/${{ github.ref_name }}.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PATH: /home/runner/.cargo/bin:${{ env.PATH }}

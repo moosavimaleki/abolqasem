@@ -6,7 +6,6 @@ import {
   useState,
   type KeyboardEvent,
   type MouseEvent as ReactMouseEvent,
-  type ReactNode,
 } from "react";
 import {
   BookText,
@@ -26,13 +25,10 @@ import {
   Server,
   Settings2,
   SquarePen,
-  DownloadCloud,
   LogOut,
   Trash2,
   X,
 } from "lucide-react";
-import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import {
   useLocation,
   useNavigate,
@@ -72,10 +68,9 @@ import {
   type ProviderModelOption,
   type UpdateSnapshot,
 } from "../../shared/types";
-import { markdownComponents } from "../components/messages/shared";
 import { ChatPreferenceControls } from "../components/chat-ui/ChatPreferenceControls";
 import { EDITOR_OPTIONS, EditorIcon } from "../components/editor-icons";
-import { Button, buttonVariants } from "../components/ui/button";
+import { Button } from "../components/ui/button";
 import {
   Dialog,
   DialogBody,
@@ -94,11 +89,6 @@ import {
 } from "../components/ui/context-menu";
 import { Input } from "../components/ui/input";
 import { SettingsHeaderButton } from "../components/ui/settings-header-button";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "../components/ui/tooltip";
 import type { EditorPreset } from "../../shared/protocol";
 import { SegmentedControl } from "../components/ui/segmented-control";
 import {
@@ -144,6 +134,11 @@ import {
 import { useI18n } from "../i18n/context";
 import { HOOK_NOTIFICATION_SETTINGS_HASH, settingsRoute } from "./routes";
 import { UsageSettingsSection } from "./UsageSettingsSection";
+import { ChangelogSection } from "../components/settings/ChangelogSection";
+import {
+  SettingsInfoHint,
+  SettingsRow,
+} from "../components/settings/SettingsPrimitives";
 import { useAppSettingsStore } from "../stores/appSettingsStore";
 import { CustomProviderEditor } from "../components/settings/CustomProviderEditor";
 import { DeviceLoginDialog } from "../components/codex-manager/DeviceLoginDialog";
@@ -160,11 +155,7 @@ type TelegramCustomCommandDraft = {
 };
 
 type CodexManagerTab =
-  | "accounts"
-  | "load-balancer"
-  | "chrome"
-  | "charts"
-  | "advanced";
+  "accounts" | "load-balancer" | "chrome" | "charts" | "advanced";
 
 type CodexManagerGatewaySnapshot = {
   enabled: boolean;
@@ -597,248 +588,11 @@ export function formatPublishedDate(value: string | null) {
   }).format(parsed);
 }
 
-export function ChangelogSection({
-  status,
-  releases,
-  error,
-  onRetry,
-  updateSnapshot,
-  currentVersion,
-  onInstallUpdate,
-  onCheckForUpdates,
-}: {
-  status: ChangelogStatus;
-  releases: GithubRelease[];
-  error: string | null;
-  onRetry: () => void;
-  updateSnapshot: UpdateSnapshot | null;
-  currentVersion: string;
-  onInstallUpdate: () => void | Promise<void>;
-  onCheckForUpdates: () => void | Promise<void>;
-}) {
-  const { t } = useI18n();
-  const [checkPending, setCheckPending] = useState(false);
-  const [installPending, setInstallPending] = useState(false);
-  const mountedRef = useRef(true);
-
-  useEffect(() => {
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
-
-  const latestStableRelease = releases.find((release) => !release.prerelease);
-  const latestVersion =
-    updateSnapshot?.latestVersion ??
-    latestStableRelease?.tag_name ??
-    releases[0]?.tag_name ??
-    t.common.unknown;
-  const currentVersionLabel = updateSnapshot?.currentVersion ?? currentVersion;
-  const isChecking = checkPending || updateSnapshot?.status === "checking";
-  const isUpdating =
-    installPending ||
-    updateSnapshot?.status === "updating" ||
-    updateSnapshot?.status === "restart_pending";
-  const canInstallUpdate =
-    updateSnapshot?.updateAvailable === true ||
-    (status === "success" &&
-      isChangelogReleaseNewer(
-        latestStableRelease?.tag_name,
-        currentVersionLabel,
-      ));
-  const normalizedLatestVersion = latestVersion.replace(/^v/i, "");
-  const normalizedCurrentVersion = currentVersionLabel.replace(/^v/i, "");
-
-  const runWithPending = (
-    action: () => void | Promise<void>,
-    setPending: (pending: boolean) => void,
-  ) => {
-    setPending(true);
-    void Promise.resolve()
-      .then(action)
-      .finally(() => {
-        if (mountedRef.current) setPending(false);
-      });
-  };
-
-  const handleCheckForUpdatesClick = () => {
-    if (isChecking || isUpdating) return;
-    runWithPending(onCheckForUpdates, setCheckPending);
-  };
-
-  const handleInstallUpdateClick = () => {
-    if (isChecking || isUpdating) return;
-    runWithPending(onInstallUpdate, setInstallPending);
-  };
-
-  return (
-    <div className="space-y-4">
-      {status === "loading" || status === "idle" ? (
-        <div className="flex min-h-[180px] items-center justify-center rounded-2xl border border-border bg-card/40 px-6 py-8 text-sm text-muted-foreground">
-          <div className="flex items-center gap-3">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            <span>{t.common.loading}…</span>
-          </div>
-        </div>
-      ) : null}
-
-      {status === "error" ? (
-        <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-6 py-5">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <div className="text-sm font-medium text-foreground">
-                {t.settings.couldNotLoadChangelog}
-              </div>
-              <div className="mt-1 text-sm text-muted-foreground">
-                {error ?? t.settings.unableLoadChangelog}
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={onRetry}
-              className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground transition-colors hover:bg-muted"
-            >
-              {t.common.retry}
-            </button>
-          </div>
-        </div>
-      ) : null}
-
-      {status === "success" && releases.length === 0 ? (
-        <div className="rounded-lg border border-border bg-card/30 px-6 py-8">
-          <div className="text-sm font-medium text-foreground">
-            {t.settings.changelog}
-          </div>
-          <div className="mt-2 text-sm text-muted-foreground">
-            {t.settings.noPublishedReleases}
-          </div>
-        </div>
-      ) : null}
-
-      {!canInstallUpdate && status === "success" ? (
-        <div className="flex justify-end">
-          <SettingsHeaderButton
-            variant="outline"
-            onClick={handleCheckForUpdatesClick}
-            disabled={isChecking || isUpdating}
-          >
-            {isChecking ? `${t.common.loading}…` : t.settings.checkForUpdates}
-          </SettingsHeaderButton>
-        </div>
-      ) : null}
-
-      {status === "success" && releases.length > 0
-        ? releases.map((release) => {
-            const normalizedTag = release.tag_name.replace(/^v/i, "");
-            const isLatestRelease = normalizedTag === normalizedLatestVersion;
-            const isCurrentRelease = normalizedTag === normalizedCurrentVersion;
-
-            return (
-              <article
-                key={release.id}
-                className={cn(
-                  "rounded-xl border bg-card/30 py-4 pe-4 ps-6",
-                  isLatestRelease ? "border-border bg-muted" : "border-border",
-                )}
-              >
-                <div className="flex flex-row items-center min-w-0 flex-1 gap-3 ">
-                  <div className="flex flex-row items-center min-w-0 flex-1 gap-2 ">
-                    <div className="text-lg font-semibold tracking-[-0.2px] text-foreground">
-                      {release.name?.trim() || release.tag_name}
-                    </div>
-                    <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                      <span>{formatPublishedDate(release.published_at)}</span>
-                      {release.prerelease ? (
-                        <span className="rounded-full border border-border px-2.5 py-1 uppercase tracking-wide">
-                          {t.settings.prerelease}
-                        </span>
-                      ) : null}
-                    </div>
-                  </div>
-
-                  <div className="flex flex-row items-center justify-end min-w-0 flex-1 gap-2 ">
-                    {/* <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  
-                  <span className="rounded-full bg-muted px-2.5 py-1 font-mono text-foreground/80">
-                    {release.tag_name}
-                  </span>
-                </div> */}
-
-                    <a
-                      href={release.html_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      aria-label={t.settings.viewReleaseOnGithub}
-                      className={cn(
-                        buttonVariants({ variant: "ghost", size: "icon-sm" }),
-                        "h-8 w-8 shrink-0 rounded-md hover:!bg-transparent hover:border-border/0",
-                      )}
-                    >
-                      <GitHubIcon className="h-4 w-4" />
-                    </a>
-
-                    {isCurrentRelease ? (
-                      <span
-                        className={cn(
-                          "bg-transparent border border-border text-secondary-foreground",
-                          "h-9 rounded-full px-3 text-sm",
-                          "h-auto gap-1.5 px-3 py-1.5",
-                        )}
-                      >
-                        {t.settings.currentRelease}
-                      </span>
-                    ) : null}
-
-                    {isLatestRelease && canInstallUpdate ? (
-                      <SettingsHeaderButton
-                        variant="default"
-                        className=""
-                        onClick={handleInstallUpdateClick}
-                        disabled={isChecking || isUpdating}
-                      >
-                        <div className="flex flex-row items-center justify-center gap-2">
-                          <DownloadCloud className="size-4" />
-                          {isUpdating ? t.settings.updating : t.settings.update}
-                        </div>
-                      </SettingsHeaderButton>
-                    ) : null}
-                  </div>
-                </div>
-
-                {release.body?.trim() ? (
-                  <div className="prose prose-sm mt-5 max-w-none text-foreground dark:prose-invert">
-                    <Markdown
-                      remarkPlugins={[remarkGfm]}
-                      components={markdownComponents}
-                    >
-                      {release.body}
-                    </Markdown>
-                  </div>
-                ) : (
-                  <div className="mt-5 text-sm text-muted-foreground">
-                    {t.settings.noReleaseNotes}
-                  </div>
-                )}
-              </article>
-            );
-          })
-        : null}
-    </div>
-  );
-}
-
-function GitHubIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="currentColor"
-      aria-hidden="true"
-      className={className}
-    >
-      <path d="M12 .5C5.649.5.5 5.649.5 12A11.5 11.5 0 0 0 8.36 22.04c.575.106.785-.25.785-.556 0-.274-.01-1-.015-1.962-3.181.691-3.853-1.532-3.853-1.532-.52-1.322-1.27-1.674-1.27-1.674-1.038-.71.08-.695.08-.695 1.148.08 1.752 1.178 1.752 1.178 1.02 1.748 2.676 1.243 3.328.95.103-.738.399-1.243.725-1.53-2.54-.289-5.211-1.27-5.211-5.65 0-1.248.446-2.27 1.177-3.07-.118-.288-.51-1.45.112-3.024 0 0 .96-.307 3.145 1.173A10.91 10.91 0 0 1 12 6.03c.973.004 1.954.132 2.87.387 2.182-1.48 3.14-1.173 3.14-1.173.625 1.573.233 2.736.115 3.024.734.8 1.175 1.822 1.175 3.07 0 4.39-2.676 5.358-5.224 5.642.41.353.776 1.05.776 2.117 0 1.528-.014 2.761-.014 3.136 0 .309.207.668.79.555A11.502 11.502 0 0 0 23.5 12C23.5 5.649 18.351.5 12 .5Z" />
-    </svg>
-  );
-}
+export {
+  ChangelogSection,
+  type ChangelogStatus,
+  type GithubRelease,
+} from "../components/settings/ChangelogSection";
 
 function formatInstallCount(count: number) {
   if (!count || count <= 0) return "0 installs";
@@ -2632,92 +2386,6 @@ export function McpSection({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
-  );
-}
-
-function SettingsInfoHint({
-  label,
-  children,
-  direction,
-}: {
-  label: string;
-  children: ReactNode;
-  direction: "rtl" | "ltr";
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          aria-label={label}
-          className="inline-flex size-5 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <Info className="size-3.5" />
-        </button>
-      </TooltipTrigger>
-      <TooltipContent
-        dir={direction}
-        side="bottom"
-        className="max-w-80 whitespace-normal text-start leading-relaxed"
-      >
-        {children}
-      </TooltipContent>
-    </Tooltip>
-  );
-}
-
-function SettingsRow({
-  title,
-  description,
-  children,
-  bordered = true,
-  alignStart = false,
-  wide = false,
-  anchorId,
-}: {
-  title: ReactNode;
-  description: ReactNode;
-  children: ReactNode;
-  bordered?: boolean;
-  alignStart?: boolean;
-  wide?: boolean;
-  anchorId?: string;
-}) {
-  return (
-    <div
-      id={anchorId}
-      className={cn(
-        anchorId ? "scroll-mt-24" : undefined,
-        bordered ? "border-t border-border" : undefined,
-      )}
-    >
-      <div
-        className={cn(
-          "flex flex-col gap-4 py-5",
-          wide ? "md:gap-3" : "md:flex-row md:justify-between md:gap-8",
-          wide
-            ? "md:items-stretch"
-            : alignStart
-              ? "md:items-start"
-              : "md:items-center",
-        )}
-      >
-        <div className={cn("min-w-0", wide ? "w-full max-w-none" : "max-w-xl")}>
-          <div className="text-sm font-medium text-foreground">{title}</div>
-          <div className="mt-1 text-[13px] text-muted-foreground">
-            {description}
-          </div>
-        </div>
-        <div
-          className={cn(
-            "flex items-center justify-start md:shrink-0 md:justify-end",
-            wide ? "w-full" : undefined,
-          )}
-        >
-          {children}
-        </div>
-      </div>
     </div>
   );
 }
@@ -5438,7 +5106,11 @@ export function SettingsPage() {
                         </h2>
                         <SettingsInfoHint
                           direction={direction}
-                          label={locale === "fa" ? "راهنمای مدیریت حساب‌ها" : "Account management help"}
+                          label={
+                            locale === "fa"
+                              ? "راهنمای مدیریت حساب‌ها"
+                              : "Account management help"
+                          }
                         >
                           {locale === "fa"
                             ? "حساب فعال را از تب «حساب‌ها» انتخاب کنید. تب‌های دیگر فقط برای خودکارسازی انتخاب حساب، مدیریت Chrome، نمودار مصرف و تنظیمات تخصصی‌اند."
@@ -5448,16 +5120,31 @@ export function SettingsPage() {
                     </div>
                     <div
                       role="tablist"
-                      aria-label={locale === "fa" ? "بخش‌های مدیریت Codex" : "Codex Manager sections"}
+                      aria-label={
+                        locale === "fa"
+                          ? "بخش‌های مدیریت Codex"
+                          : "Codex Manager sections"
+                      }
                       className="flex max-w-full gap-1 overflow-x-auto rounded-xl border border-border bg-muted/20 p-1"
                     >
-                      {([
-                        ["accounts", locale === "fa" ? "حساب‌ها" : "Accounts"],
-                        ["load-balancer", locale === "fa" ? "لود بالانسر" : "Load balancer"],
-                        ["chrome", "Chrome"],
-                        ["charts", locale === "fa" ? "نمودارها" : "Charts"],
-                        ["advanced", locale === "fa" ? "تنظیمات پیشرفته" : "Advanced"],
-                      ] as const).map(([id, label]) => (
+                      {(
+                        [
+                          [
+                            "accounts",
+                            locale === "fa" ? "حساب‌ها" : "Accounts",
+                          ],
+                          [
+                            "load-balancer",
+                            locale === "fa" ? "لود بالانسر" : "Load balancer",
+                          ],
+                          ["chrome", "Chrome"],
+                          ["charts", locale === "fa" ? "نمودارها" : "Charts"],
+                          [
+                            "advanced",
+                            locale === "fa" ? "تنظیمات پیشرفته" : "Advanced",
+                          ],
+                        ] as const
+                      ).map(([id, label]) => (
                         <button
                           key={id}
                           id={`codex-manager-tab-${id}`}
@@ -5485,8 +5172,14 @@ export function SettingsPage() {
                       >
                         <AccountsPanel
                           locale={locale}
-                          onAdd={() => { setDeviceLoginAccountName(""); setDeviceLoginOpen(true); }}
-                          onRelogin={(accountName) => { setDeviceLoginAccountName(accountName); setDeviceLoginOpen(true); }}
+                          onAdd={() => {
+                            setDeviceLoginAccountName("");
+                            setDeviceLoginOpen(true);
+                          }}
+                          onRelogin={(accountName) => {
+                            setDeviceLoginAccountName(accountName);
+                            setDeviceLoginOpen(true);
+                          }}
                           refreshKey={codexManagerRefreshKey}
                         />
                       </div>
@@ -5497,114 +5190,137 @@ export function SettingsPage() {
                         role="tabpanel"
                         aria-labelledby="codex-manager-tab-load-balancer"
                       >
-                    <SettingsRow
-                      title={
-                        <span className="flex items-center gap-1.5">
-                          {locale === "fa" ? "انتخاب خودکار حساب (اختیاری)" : "Load-balancer gateway (optional)"}
-                          <SettingsInfoHint direction={direction} label={locale === "fa" ? "راهنمای انتخاب خودکار حساب" : "Load-balancer help"}>
-                            {locale === "fa" ? "برای گفت‌وگوهای جدید، حسابی با ظرفیت بهتر را انتخاب می‌کند. روشن یا خاموش بودن آن، مدیریت دستی حساب‌ها را تغییر نمی‌دهد." : "Selects an account with better capacity for new chats. It never changes manual account management."}
-                          </SettingsInfoHint>
-                        </span>
-                      }
-                      description={null}
-                    >
-                      <div className="flex min-w-[250px] flex-col items-end gap-2">
-                        <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-foreground has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60">
-                          <input
-                            type="checkbox"
-                            className="size-4 accent-primary"
-                            checked={
-                              codexManagerGateway?.enabled ??
-                              (appSettings?.codexBackend.mode === "manager" &&
-                                appSettings.codexBackend.enabled)
+                        <SettingsRow
+                          title={
+                            <span className="flex items-center gap-1.5">
+                              {locale === "fa"
+                                ? "انتخاب خودکار حساب (اختیاری)"
+                                : "Load-balancer gateway (optional)"}
+                              <SettingsInfoHint
+                                direction={direction}
+                                label={
+                                  locale === "fa"
+                                    ? "راهنمای انتخاب خودکار حساب"
+                                    : "Load-balancer help"
+                                }
+                              >
+                                {locale === "fa"
+                                  ? "برای گفت‌وگوهای جدید، حسابی با ظرفیت بهتر را انتخاب می‌کند. روشن یا خاموش بودن آن، مدیریت دستی حساب‌ها را تغییر نمی‌دهد."
+                                  : "Selects an account with better capacity for new chats. It never changes manual account management."}
+                              </SettingsInfoHint>
+                            </span>
+                          }
+                          description={null}
+                        >
+                          <div className="flex min-w-[250px] flex-col items-end gap-2">
+                            <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-foreground has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60">
+                              <input
+                                type="checkbox"
+                                className="size-4 accent-primary"
+                                checked={
+                                  codexManagerGateway?.enabled ??
+                                  (appSettings?.codexBackend.mode ===
+                                    "manager" &&
+                                    appSettings.codexBackend.enabled)
+                                }
+                                disabled={codexManagerPending || isConnecting}
+                                onChange={(event) =>
+                                  void handleCodexManagerEnabledChange(
+                                    event.target.checked,
+                                  )
+                                }
+                              />
+                              <span>
+                                {codexManagerPending
+                                  ? locale === "fa"
+                                    ? "در حال اعمال…"
+                                    : "Applying…"
+                                  : locale === "fa"
+                                    ? "فعال‌سازی انتخاب خودکار"
+                                    : "Enable load-balancer"}
+                              </span>
+                              {codexManagerPending ? (
+                                <Loader2 className="size-3.5 animate-spin" />
+                              ) : null}
+                            </label>
+                            <p
+                              className={cn(
+                                "max-w-[380px] text-xs",
+                                codexManagerError
+                                  ? "text-destructive"
+                                  : "text-muted-foreground",
+                              )}
+                            >
+                              {codexManagerError ??
+                                codexManagerGateway?.gateway?.lastError ??
+                                (codexManagerGateway?.enabled
+                                  ? locale === "fa"
+                                    ? "انتخاب خودکار برای گفت‌وگوهای جدید فعال است."
+                                    : "Load-balancer is active."
+                                  : locale === "fa"
+                                    ? "خاموش است؛ شما همچنان می‌توانید حساب فعال را خودتان انتخاب کنید."
+                                    : "Disabled; account management remains available.")}
+                            </p>
+                          </div>
+                        </SettingsRow>
+                        <SettingsRow
+                          title={
+                            <span className="flex items-center gap-1.5">
+                              {locale === "fa"
+                                ? "سیاست انتخاب حساب"
+                                : "Account selection policy"}
+                              <SettingsInfoHint
+                                direction={direction}
+                                label={
+                                  locale === "fa"
+                                    ? "راهنمای سیاست انتخاب حساب"
+                                    : "Selection policy help"
+                                }
+                              >
+                                {locale === "fa"
+                                  ? "«حساب فعال ثابت» همیشه از انتخاب فعلی استفاده می‌کند؛ «انتخاب خودکار» برای هر گفت‌وگوی جدید ظرفیت حساب‌ها را مقایسه می‌کند."
+                                  : "Pinned always uses the active account; Automatic compares available capacity for each new chat."}
+                              </SettingsInfoHint>
+                            </span>
+                          }
+                          description={null}
+                        >
+                          <Select
+                            value={
+                              codexManagerGateway?.autoSwitchPolicy ??
+                              appSettings?.codexBackend.autoSwitchPolicy ??
+                              "automatic"
+                            }
+                            onValueChange={(value) =>
+                              void handleWriteAppSettings({
+                                codexBackend: {
+                                  autoSwitchPolicy: value as
+                                    "off" | "pinned" | "automatic",
+                                },
+                              })
                             }
                             disabled={codexManagerPending || isConnecting}
-                            onChange={(event) =>
-                              void handleCodexManagerEnabledChange(
-                                event.target.checked,
-                              )
-                            }
-                          />
-                          <span>
-                            {codexManagerPending
-                              ? locale === "fa"
-                                ? "در حال اعمال…"
-                                : "Applying…"
-                              : locale === "fa"
-                                ? "فعال‌سازی انتخاب خودکار"
-                                : "Enable load-balancer"}
-                          </span>
-                          {codexManagerPending ? (
-                            <Loader2 className="size-3.5 animate-spin" />
-                          ) : null}
-                        </label>
-                        <p
-                          className={cn(
-                            "max-w-[380px] text-xs",
-                            codexManagerError
-                              ? "text-destructive"
-                              : "text-muted-foreground",
-                          )}
-                        >
-                          {codexManagerError ??
-                            codexManagerGateway?.gateway?.lastError ??
-                            (codexManagerGateway?.enabled
-                              ? locale === "fa"
-                                ? "انتخاب خودکار برای گفت‌وگوهای جدید فعال است."
-                                : "Load-balancer is active."
-                              : locale === "fa"
-                                ? "خاموش است؛ شما همچنان می‌توانید حساب فعال را خودتان انتخاب کنید."
-                                : "Disabled; account management remains available.")}
-                        </p>
-                      </div>
-                    </SettingsRow>
-                    <SettingsRow
-                      title={
-                        <span className="flex items-center gap-1.5">
-                          {locale === "fa" ? "سیاست انتخاب حساب" : "Account selection policy"}
-                          <SettingsInfoHint direction={direction} label={locale === "fa" ? "راهنمای سیاست انتخاب حساب" : "Selection policy help"}>
-                            {locale === "fa" ? "«حساب فعال ثابت» همیشه از انتخاب فعلی استفاده می‌کند؛ «انتخاب خودکار» برای هر گفت‌وگوی جدید ظرفیت حساب‌ها را مقایسه می‌کند." : "Pinned always uses the active account; Automatic compares available capacity for each new chat."}
-                          </SettingsInfoHint>
-                        </span>
-                      }
-                      description={null}
-                    >
-                      <Select
-                        value={
-                          codexManagerGateway?.autoSwitchPolicy ??
-                          appSettings?.codexBackend.autoSwitchPolicy ??
-                          "automatic"
-                        }
-                        onValueChange={(value) =>
-                          void handleWriteAppSettings({
-                            codexBackend: {
-                              autoSwitchPolicy: value as
-                                "off" | "pinned" | "automatic",
-                            },
-                          })
-                        }
-                        disabled={codexManagerPending || isConnecting}
-                      >
-                        <SelectTrigger className="min-w-44">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent dir={direction}>
-                          <SelectItem value="off">
-                            {locale === "fa" ? "خاموش" : "Off"}
-                          </SelectItem>
-                          <SelectItem value="pinned">
-                            {locale === "fa"
-                              ? "حساب فعال ثابت"
-                              : "Pinned account"}
-                          </SelectItem>
-                          <SelectItem value="automatic">
-                            {locale === "fa"
-                              ? "انتخاب خودکار بر اساس سهمیه"
-                              : "Automatic by quota"}
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </SettingsRow>
+                          >
+                            <SelectTrigger className="min-w-44">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent dir={direction}>
+                              <SelectItem value="off">
+                                {locale === "fa" ? "خاموش" : "Off"}
+                              </SelectItem>
+                              <SelectItem value="pinned">
+                                {locale === "fa"
+                                  ? "حساب فعال ثابت"
+                                  : "Pinned account"}
+                              </SelectItem>
+                              <SelectItem value="automatic">
+                                {locale === "fa"
+                                  ? "انتخاب خودکار بر اساس سهمیه"
+                                  : "Automatic by quota"}
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </SettingsRow>
                       </div>
                     ) : null}
                     {codexManagerTab === "advanced" ? (
@@ -5613,138 +5329,208 @@ export function SettingsPage() {
                         role="tabpanel"
                         aria-labelledby="codex-manager-tab-advanced"
                       >
-                    <SettingsRow
-                      title={
-                        <span className="flex items-center gap-1.5">
-                          {locale === "fa" ? "به‌روزرسانی پس‌زمینهٔ حساب‌ها" : "Background account maintenance"}
-                          <SettingsInfoHint direction={direction} label={locale === "fa" ? "راهنمای به‌روزرسانی پس‌زمینه" : "Background maintenance help"}>
-                            {locale === "fa" ? "این زمان‌بندی فقط سهمیه و اعتبار ورود حساب‌ها را به‌روز می‌کند و مدل یا provider گفت‌وگو را تغییر نمی‌دهد." : "This only refreshes account quota and sign-in status; it does not change your chat model or provider."}
-                          </SettingsInfoHint>
-                        </span>
-                      }
-                      description={null}
-                    >
-                      <fieldset
-                        className="grid w-full max-w-2xl gap-3 sm:grid-cols-2"
-                        disabled={codexManagerPending || isConnecting}
-                      >
-                        <label className="grid min-w-0 gap-1 text-xs font-medium text-foreground">
-                          <span className="flex items-center gap-1.5">
-                            {locale === "fa" ? "بازهٔ بررسی سهمیه" : "Quota check interval"}
-                            <SettingsInfoHint direction={direction} label={locale === "fa" ? "راهنمای بازهٔ بررسی سهمیه" : "Quota interval help"}>
-                              {locale === "fa" ? "۵ تا ۱۵ دقیقه برای آزمایش یا تغییر سریع مناسب است؛ برای استفادهٔ روزمره ۳۰ تا ۶۰ دقیقه کافی است. بازهٔ کوتاه‌تر درخواست بیشتری می‌فرستد." : "Use 5–15 minutes for testing or rapid changes; 30–60 minutes suits normal use. Shorter intervals make more requests."}
-                            </SettingsInfoHint>
-                          </span>
-                          <Select
-                            value={String(
-                              appSettings?.codexBackend.maintenance
-                                .intervalSeconds ?? 3600,
-                            )}
-                            onValueChange={(value) =>
+                        <SettingsRow
+                          title={
+                            <span className="flex items-center gap-1.5">
+                              {locale === "fa"
+                                ? "به‌روزرسانی پس‌زمینهٔ حساب‌ها"
+                                : "Background account maintenance"}
+                              <SettingsInfoHint
+                                direction={direction}
+                                label={
+                                  locale === "fa"
+                                    ? "راهنمای به‌روزرسانی پس‌زمینه"
+                                    : "Background maintenance help"
+                                }
+                              >
+                                {locale === "fa"
+                                  ? "این زمان‌بندی فقط سهمیه و اعتبار ورود حساب‌ها را به‌روز می‌کند و مدل یا provider گفت‌وگو را تغییر نمی‌دهد."
+                                  : "This only refreshes account quota and sign-in status; it does not change your chat model or provider."}
+                              </SettingsInfoHint>
+                            </span>
+                          }
+                          description={null}
+                        >
+                          <fieldset
+                            className="grid w-full max-w-2xl gap-3 sm:grid-cols-2"
+                            disabled={codexManagerPending || isConnecting}
+                          >
+                            <label className="grid min-w-0 gap-1 text-xs font-medium text-foreground">
+                              <span className="flex items-center gap-1.5">
+                                {locale === "fa"
+                                  ? "بازهٔ بررسی سهمیه"
+                                  : "Quota check interval"}
+                                <SettingsInfoHint
+                                  direction={direction}
+                                  label={
+                                    locale === "fa"
+                                      ? "راهنمای بازهٔ بررسی سهمیه"
+                                      : "Quota interval help"
+                                  }
+                                >
+                                  {locale === "fa"
+                                    ? "۵ تا ۱۵ دقیقه برای آزمایش یا تغییر سریع مناسب است؛ برای استفادهٔ روزمره ۳۰ تا ۶۰ دقیقه کافی است. بازهٔ کوتاه‌تر درخواست بیشتری می‌فرستد."
+                                    : "Use 5–15 minutes for testing or rapid changes; 30–60 minutes suits normal use. Shorter intervals make more requests."}
+                                </SettingsInfoHint>
+                              </span>
+                              <Select
+                                value={String(
+                                  appSettings?.codexBackend.maintenance
+                                    .intervalSeconds ?? 3600,
+                                )}
+                                onValueChange={(value) =>
+                                  void handleWriteAppSettings({
+                                    codexBackend: {
+                                      maintenance: {
+                                        intervalSeconds: Number(value),
+                                      },
+                                    },
+                                  })
+                                }
+                              >
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent dir={direction}>
+                                  <SelectItem value="300">
+                                    {locale === "fa"
+                                      ? "هر ۵ دقیقه"
+                                      : "Every 5 minutes"}
+                                  </SelectItem>
+                                  <SelectItem value="900">
+                                    {locale === "fa"
+                                      ? "هر ۱۵ دقیقه"
+                                      : "Every 15 minutes"}
+                                  </SelectItem>
+                                  <SelectItem value="1800">
+                                    {locale === "fa"
+                                      ? "هر ۳۰ دقیقه"
+                                      : "Every 30 minutes"}
+                                  </SelectItem>
+                                  <SelectItem value="3600">
+                                    {locale === "fa"
+                                      ? "هر ۱ ساعت"
+                                      : "Every hour"}
+                                  </SelectItem>
+                                  <SelectItem value="7200">
+                                    {locale === "fa"
+                                      ? "هر ۲ ساعت"
+                                      : "Every 2 hours"}
+                                  </SelectItem>
+                                  <SelectItem value="21600">
+                                    {locale === "fa"
+                                      ? "هر ۶ ساعت"
+                                      : "Every 6 hours"}
+                                  </SelectItem>
+                                  <SelectItem value="43200">
+                                    {locale === "fa"
+                                      ? "هر ۱۲ ساعت"
+                                      : "Every 12 hours"}
+                                  </SelectItem>
+                                  <SelectItem value="86400">
+                                    {locale === "fa" ? "هر روز" : "Daily"}
+                                  </SelectItem>
+                                  <SelectItem value="259200">
+                                    {locale === "fa"
+                                      ? "هر ۳ روز"
+                                      : "Every 3 days"}
+                                  </SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </label>
+                            <label className="grid min-w-0 gap-1 text-xs font-medium text-foreground">
+                              <span className="flex items-center gap-1.5">
+                                {locale === "fa"
+                                  ? "پروکسی بررسی حساب‌ها (اختیاری)"
+                                  : "Check proxy (optional)"}
+                                <SettingsInfoHint
+                                  direction={direction}
+                                  label={
+                                    locale === "fa"
+                                      ? "راهنمای پروکسی بررسی حساب"
+                                      : "Check proxy help"
+                                  }
+                                >
+                                  {locale === "fa"
+                                    ? "اگر ChatGPT را فقط با پروکسی باز می‌کنید، همان آدرس را وارد کنید. هم دریافت سهمیه و هم نوسازی ورود از آن استفاده می‌کنند."
+                                    : "If ChatGPT requires a proxy on this device, enter it here. Both quota checks and sign-in refresh use it."}
+                                </SettingsInfoHint>
+                              </span>
+                              <Input
+                                key={
+                                  appSettings?.codexBackend.maintenance
+                                    .proxyUrl ?? ""
+                                }
+                                defaultValue={
+                                  appSettings?.codexBackend.maintenance
+                                    .proxyUrl ?? ""
+                                }
+                                dir="ltr"
+                                className="h-9 font-mono text-left text-xs"
+                                placeholder="http://127.0.0.1:7890"
+                                onBlur={(event) =>
+                                  void handleWriteAppSettings({
+                                    codexBackend: {
+                                      maintenance: {
+                                        proxyUrl: event.target.value,
+                                      },
+                                    },
+                                  })
+                                }
+                              />
+                            </label>
+                          </fieldset>
+                        </SettingsRow>
+                        <SettingsRow
+                          title={
+                            <span className="flex items-center gap-1.5">
+                              {locale === "fa"
+                                ? "مسیر دادهٔ Chrome (اختیاری)"
+                                : "Chrome data directory (optional)"}
+                              <SettingsInfoHint
+                                direction={direction}
+                                label={
+                                  locale === "fa"
+                                    ? "راهنمای مسیر دادهٔ Chrome"
+                                    : "Chrome data directory help"
+                                }
+                              >
+                                {locale === "fa"
+                                  ? "فقط وقتی Chrome را در مسیر غیرمعمول نصب کرده‌اید این مقدار را وارد کنید. در حالت عادی خالی بماند تا مسیر پیش‌فرض سیستم استفاده شود."
+                                  : "Only set this when Chrome uses a nonstandard data directory. Leave it blank to use the system default."}
+                              </SettingsInfoHint>
+                            </span>
+                          }
+                          description={null}
+                        >
+                          <Input
+                            key={
+                              appSettings?.codexBackend.sessionMonitor
+                                ?.chromeRoot ?? ""
+                            }
+                            defaultValue={
+                              appSettings?.codexBackend.sessionMonitor
+                                ?.chromeRoot ?? ""
+                            }
+                            dir="ltr"
+                            className="h-9 w-full max-w-xl font-mono text-left text-xs"
+                            placeholder={
+                              locale === "fa"
+                                ? "پیش‌فرض سیستم"
+                                : "Use the system default"
+                            }
+                            disabled={codexManagerPending || isConnecting}
+                            onBlur={(event) =>
                               void handleWriteAppSettings({
                                 codexBackend: {
-                                  maintenance: {
-                                    intervalSeconds: Number(value),
+                                  sessionMonitor: {
+                                    chromeRoot: event.target.value,
                                   },
                                 },
                               })
                             }
-                          >
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent dir={direction}>
-                              <SelectItem value="300">
-                                {locale === "fa" ? "هر ۵ دقیقه" : "Every 5 minutes"}
-                              </SelectItem>
-                              <SelectItem value="900">
-                                {locale === "fa" ? "هر ۱۵ دقیقه" : "Every 15 minutes"}
-                              </SelectItem>
-                              <SelectItem value="1800">
-                                {locale === "fa" ? "هر ۳۰ دقیقه" : "Every 30 minutes"}
-                              </SelectItem>
-                              <SelectItem value="3600">
-                                {locale === "fa" ? "هر ۱ ساعت" : "Every hour"}
-                              </SelectItem>
-                              <SelectItem value="7200">
-                                {locale === "fa" ? "هر ۲ ساعت" : "Every 2 hours"}
-                              </SelectItem>
-                              <SelectItem value="21600">
-                                {locale === "fa"
-                                  ? "هر ۶ ساعت"
-                                  : "Every 6 hours"}
-                              </SelectItem>
-                              <SelectItem value="43200">
-                                {locale === "fa"
-                                  ? "هر ۱۲ ساعت"
-                                  : "Every 12 hours"}
-                              </SelectItem>
-                              <SelectItem value="86400">
-                                {locale === "fa" ? "هر روز" : "Daily"}
-                              </SelectItem>
-                              <SelectItem value="259200">
-                                {locale === "fa" ? "هر ۳ روز" : "Every 3 days"}
-                              </SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </label>
-                        <label className="grid min-w-0 gap-1 text-xs font-medium text-foreground">
-                          <span className="flex items-center gap-1.5">
-                            {locale === "fa" ? "پروکسی بررسی حساب‌ها (اختیاری)" : "Check proxy (optional)"}
-                            <SettingsInfoHint direction={direction} label={locale === "fa" ? "راهنمای پروکسی بررسی حساب" : "Check proxy help"}>
-                              {locale === "fa" ? "اگر ChatGPT را فقط با پروکسی باز می‌کنید، همان آدرس را وارد کنید. هم دریافت سهمیه و هم نوسازی ورود از آن استفاده می‌کنند." : "If ChatGPT requires a proxy on this device, enter it here. Both quota checks and sign-in refresh use it."}
-                            </SettingsInfoHint>
-                          </span>
-                          <Input
-                            key={
-                              appSettings?.codexBackend.maintenance.proxyUrl ??
-                              ""
-                            }
-                            defaultValue={
-                              appSettings?.codexBackend.maintenance.proxyUrl ??
-                              ""
-                            }
-                            dir="ltr"
-                            className="h-9 font-mono text-left text-xs"
-                            placeholder="http://127.0.0.1:7890"
-                            onBlur={(event) =>
-                              void handleWriteAppSettings({
-                                codexBackend: {
-                                  maintenance: { proxyUrl: event.target.value },
-                                },
-                              })
-                            }
                           />
-                        </label>
-                      </fieldset>
-                    </SettingsRow>
-                    <SettingsRow
-                      title={
-                        <span className="flex items-center gap-1.5">
-                          {locale === "fa" ? "مسیر دادهٔ Chrome (اختیاری)" : "Chrome data directory (optional)"}
-                          <SettingsInfoHint direction={direction} label={locale === "fa" ? "راهنمای مسیر دادهٔ Chrome" : "Chrome data directory help"}>
-                            {locale === "fa" ? "فقط وقتی Chrome را در مسیر غیرمعمول نصب کرده‌اید این مقدار را وارد کنید. در حالت عادی خالی بماند تا مسیر پیش‌فرض سیستم استفاده شود." : "Only set this when Chrome uses a nonstandard data directory. Leave it blank to use the system default."}
-                          </SettingsInfoHint>
-                        </span>
-                      }
-                      description={null}
-                    >
-                      <Input
-                        key={appSettings?.codexBackend.sessionMonitor?.chromeRoot ?? ""}
-                        defaultValue={appSettings?.codexBackend.sessionMonitor?.chromeRoot ?? ""}
-                        dir="ltr"
-                        className="h-9 w-full max-w-xl font-mono text-left text-xs"
-                        placeholder={locale === "fa" ? "پیش‌فرض سیستم" : "Use the system default"}
-                        disabled={codexManagerPending || isConnecting}
-                        onBlur={(event) =>
-                          void handleWriteAppSettings({
-                            codexBackend: {
-                              sessionMonitor: { chromeRoot: event.target.value },
-                            },
-                          })
-                        }
-                      />
-                    </SettingsRow>
+                        </SettingsRow>
                       </div>
                     ) : null}
                     {/* Global cleanup controls were replaced by the per-account switch. */}
@@ -6325,7 +6111,11 @@ export function SettingsPage() {
 
                     <SettingsRow
                       title="OpenCode"
-                      description={locale === "fa" ? "مدل پیش‌فرض و مسیر برنامهٔ OpenCode. نشست‌ها مستقیماً از OpenCode خوانده می‌شوند." : "Default model and OpenCode executable path. Sessions are read directly from OpenCode."}
+                      description={
+                        locale === "fa"
+                          ? "مدل پیش‌فرض و مسیر برنامهٔ OpenCode. نشست‌ها مستقیماً از OpenCode خوانده می‌شوند."
+                          : "Default model and OpenCode executable path. Sessions are read directly from OpenCode."
+                      }
                       alignStart
                     >
                       <div className="max-w-[420px]">
@@ -6337,19 +6127,39 @@ export function SettingsPage() {
                           model={providerDefaults.opencode.model}
                           modelMode={providerDefaults.opencode.modelMode}
                           modelOptions={providerDefaults.opencode.modelOptions}
-                          onModelChange={(_, model) => handleProviderDefaultModelChange("opencode", model)}
-                          onModelModeChange={(modelMode) => handleProviderDefaultModelModeChange("opencode", modelMode)}
+                          onModelChange={(_, model) =>
+                            handleProviderDefaultModelChange("opencode", model)
+                          }
+                          onModelModeChange={(modelMode) =>
+                            handleProviderDefaultModelModeChange(
+                              "opencode",
+                              modelMode,
+                            )
+                          }
                           onModelOptionChange={() => undefined}
                           includePlanMode={false}
                           className="justify-start flex-wrap"
                         />
                         <Input
                           value={providerExecutableDrafts.opencode ?? ""}
-                          onChange={(event) => handleProviderExecutableDraftChange("opencode", event.target.value)}
+                          onChange={(event) =>
+                            handleProviderExecutableDraftChange(
+                              "opencode",
+                              event.target.value,
+                            )
+                          }
                           onBlur={() => commitProviderExecutable("opencode")}
-                          onKeyDown={(event) => handleTextInputKeyDown(event, () => commitProviderExecutable("opencode"))}
-                          placeholder={dictionary.settings.providerExecutablePlaceholder("opencode")}
-                          aria-label={dictionary.settings.providerExecutable("OpenCode")}
+                          onKeyDown={(event) =>
+                            handleTextInputKeyDown(event, () =>
+                              commitProviderExecutable("opencode"),
+                            )
+                          }
+                          placeholder={dictionary.settings.providerExecutablePlaceholder(
+                            "opencode",
+                          )}
+                          aria-label={dictionary.settings.providerExecutable(
+                            "OpenCode",
+                          )}
                           className="mt-3 w-full font-mono text-xs"
                           dir="ltr"
                         />

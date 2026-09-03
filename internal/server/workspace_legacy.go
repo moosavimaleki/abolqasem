@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -266,28 +265,6 @@ func workspaceMaterializeLegacyChat(importedChatID string) (string, error) {
 	}
 
 	return chatID, nil
-}
-
-func workspaceLegacySessions() []state.SessionMeta {
-	appState, err := workspaceLoadLegacyState()
-	if err != nil || appState == nil {
-		return nil
-	}
-	sessions := make([]state.SessionMeta, 0, len(appState.Sessions))
-	for _, meta := range appState.Sessions {
-		if strings.TrimSpace(meta.Key) == "" {
-			continue
-		}
-		meta = workspaceEnrichLegacySessionMeta(meta)
-		if !workspaceShouldExposeLegacySession(meta) {
-			continue
-		}
-		sessions = append(sessions, meta)
-	}
-	sort.SliceStable(sessions, func(i, j int) bool {
-		return sessions[i].UpdatedAt.After(sessions[j].UpdatedAt)
-	})
-	return sessions
 }
 
 func workspaceLegacySessionMetas() []state.SessionMeta {
@@ -861,28 +838,6 @@ func workspaceRecentTranscriptEntries(entries []readmodels.TranscriptEntry, rece
 	return append([]readmodels.TranscriptEntry(nil), entries[len(entries)-recentLimit:]...), history
 }
 
-func workspaceSliceTranscriptEntriesBefore(entries []readmodels.TranscriptEntry, beforeCursor string, limit int) ([]readmodels.TranscriptEntry, bool, *string) {
-	if limit <= 0 {
-		limit = legacyDefaultRecentLimit
-	}
-	end := len(entries)
-	if cursor := strings.TrimSpace(beforeCursor); cursor != "" {
-		if index := workspaceTranscriptEntryIndex(entries, cursor); index >= 0 {
-			end = index
-		}
-	}
-	start := end - limit
-	if start < 0 {
-		start = 0
-	}
-	sliced := append([]readmodels.TranscriptEntry(nil), entries[start:end]...)
-	if start == 0 || len(sliced) == 0 {
-		return sliced, false, nil
-	}
-	cursor := strconv.Itoa(start + 1)
-	return sliced, true, &cursor
-}
-
 func workspaceSliceTranscriptEntriesAround(entries []readmodels.TranscriptEntry, targetCursor string, limit int) ([]readmodels.TranscriptEntry, bool, *string, bool) {
 	if limit <= 0 {
 		limit = legacyDefaultRecentLimit
@@ -933,20 +888,6 @@ func workspaceTranscriptEntryIndex(entries []readmodels.TranscriptEntry, cursor 
 		}
 	}
 	return -1
-}
-
-func workspaceReconcileLegacyMaterializedMessages(meta state.SessionMeta, existing []readmodels.TranscriptEntry, imported []readmodels.TranscriptEntry) ([]readmodels.TranscriptEntry, bool) {
-	tail := make([]readmodels.TranscriptEntry, 0, len(existing))
-	for _, entry := range existing {
-		if workspaceIsLegacyImportedEntry(meta, entry) {
-			continue
-		}
-		tail = append(tail, entry)
-	}
-	merged := make([]readmodels.TranscriptEntry, 0, len(imported)+len(tail))
-	merged = append(merged, imported...)
-	merged = append(merged, tail...)
-	return merged, !workspaceTranscriptEntriesEqual(existing, merged)
 }
 
 func workspaceIsLegacyImportedEntry(meta state.SessionMeta, entry readmodels.TranscriptEntry) bool {
@@ -1001,15 +942,6 @@ func workspaceLegacyImportedEntryPrefixes(meta state.SessionMeta) []string {
 	}
 }
 
-func workspaceTranscriptEntriesEqual(left []readmodels.TranscriptEntry, right []readmodels.TranscriptEntry) bool {
-	leftJSON, leftErr := json.Marshal(left)
-	rightJSON, rightErr := json.Marshal(right)
-	if leftErr != nil || rightErr != nil {
-		return false
-	}
-	return bytes.Equal(leftJSON, rightJSON)
-}
-
 func workspaceLegacyTranscriptUnavailable(err error) bool {
 	return errors.Is(err, fs.ErrNotExist)
 }
@@ -1025,18 +957,6 @@ func workspaceFirstTranscriptEntryTimestamp(entries []readmodels.TranscriptEntry
 
 func workspaceLastTranscriptEntryTimestamp(entries []readmodels.TranscriptEntry) int64 {
 	for index := len(entries) - 1; index >= 0; index-- {
-		if timestamp := transcriptEntryTimestamp(entries[index]); timestamp > 0 {
-			return timestamp
-		}
-	}
-	return 0
-}
-
-func workspaceLastUserTranscriptEntryTimestamp(entries []readmodels.TranscriptEntry) int64 {
-	for index := len(entries) - 1; index >= 0; index-- {
-		if workspaceEntryString(entries[index], "kind") != "user_prompt" {
-			continue
-		}
 		if timestamp := transcriptEntryTimestamp(entries[index]); timestamp > 0 {
 			return timestamp
 		}

@@ -155,90 +155,62 @@ func TestMergeLegacySidebarDataUsesLatestLegacyActivityAndUnreadFlag(t *testing.
 }
 
 func TestMergeLegacySidebarDataUsesFirstUserMessageTitle(t *testing.T) {
-	dir := t.TempDir()
-	transcriptPath := filepath.Join(dir, "rollout-2026-05-16T00-00-00-000Z-aaaa-bbbb-cccc-dddd-eeee.jsonl")
-	body := `{"type":"event_msg","payload":{"type":"agent_message","message":"assistant preface"}}` + "\n" +
-		`{"type":"event_msg","payload":{"type":"user_message","message":"اولین پیام کاربر"}}` + "\n"
-	if err := os.WriteFile(transcriptPath, []byte(body), 0o644); err != nil {
-		t.Fatalf("write transcript: %v", err)
-	}
-	meta := state.SessionMeta{
-		Key:            "codex:aaaa-bbbb-cccc-dddd-eeee",
-		Agent:          "codex",
-		SessionID:      "aaaa-bbbb-cccc-dddd-eeee",
-		SessionName:    "aaaa-bbbb-cccc-dddd-eeee",
-		TranscriptPath: transcriptPath,
-		Cwd:            dir,
-		ProjectName:    "Project",
-		UpdatedAt:      time.Unix(1700000000, 0),
-	}
-	withLegacyState(t, &state.AppState{Sessions: map[string]state.SessionMeta{meta.Key: meta}})
-
-	sidebar := mergeLegacySidebarData(readmodels.SidebarData{})
-	if len(sidebar.ProjectGroups) != 1 || len(sidebar.ProjectGroups[0].Chats) != 1 {
-		t.Fatalf("expected one imported chat, got %#v", sidebar.ProjectGroups)
-	}
-	if got := sidebar.ProjectGroups[0].Chats[0].Title; got != "اولین پیام کاربر" {
-		t.Fatalf("expected title from first user message, got %q", got)
-	}
-}
-
-func TestMergeLegacySidebarDataUsesCodexResponseItemUserTitle(t *testing.T) {
-	dir := t.TempDir()
-	transcriptPath := filepath.Join(dir, "rollout-2026-05-23T11-09-51-019e53c6-b496-7320-8735-711ec53cb9fc.jsonl")
-	body := `{"timestamp":"2026-05-23T07:39:57.247Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"عنوان از پیام کاربر"}]}}` + "\n" +
-		`{"timestamp":"2026-05-23T07:39:58.016Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"پاسخ دستیار"}]}}` + "\n"
-	if err := os.WriteFile(transcriptPath, []byte(body), 0o644); err != nil {
-		t.Fatalf("write transcript: %v", err)
-	}
-	meta := state.SessionMeta{
-		Key:            "codex:019e53c6-b496-7320-8735-711ec53cb9fc",
-		Agent:          "codex",
-		SessionID:      "019e53c6-b496-7320-8735-711ec53cb9fc",
-		SessionName:    "019e53c6-b496-7320-8735-711ec53cb9fc",
-		TranscriptPath: transcriptPath,
-		Cwd:            dir,
-		ProjectName:    "Project",
-		UpdatedAt:      time.Unix(1700000000, 0),
-	}
-	withLegacyState(t, &state.AppState{Sessions: map[string]state.SessionMeta{meta.Key: meta}})
-
-	sidebar := mergeLegacySidebarData(readmodels.SidebarData{})
-	if len(sidebar.ProjectGroups) != 1 || len(sidebar.ProjectGroups[0].Chats) != 1 {
-		t.Fatalf("expected one imported chat, got %#v", sidebar.ProjectGroups)
-	}
-	if got := sidebar.ProjectGroups[0].Chats[0].Title; got != "عنوان از پیام کاربر" {
-		t.Fatalf("expected title from codex response_item user message, got %q", got)
-	}
-}
-
-func TestMergeLegacySidebarDataUsesCodexResponseItemUserTitleWhenSessionNameEmpty(t *testing.T) {
-	dir := t.TempDir()
-	transcriptPath := filepath.Join(dir, "rollout-2026-05-23T11-09-51-019e53c6-b496-7320-8735-711ec53cb9fc.jsonl")
 	bootstrap := "# AGENTS.md instructions for /home/h-mousavi/Projects/Hamed/codex-rtl-plugin\n\n<INSTRUCTIONS>\n@/home/h-mousavi/.codex/RTK.md\n</INSTRUCTIONS>\n\n<environment_context>\n  <cwd>/home/h-mousavi/Projects/Hamed/codex-rtl-plugin</cwd>\n  <shell>zsh</shell>\n</environment_context>"
-	body := `{"timestamp":"2026-05-23T07:39:57.247Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":` + strconv.Quote(bootstrap) + `}]}}` + "\n" +
-		`{"timestamp":"2026-05-23T07:40:57.247Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"عنوان از پیام کاربر با نام خالی"}]}}` + "\n"
-	if err := os.WriteFile(transcriptPath, []byte(body), 0o644); err != nil {
-		t.Fatalf("write transcript: %v", err)
+	tests := []struct {
+		name        string
+		sessionName string
+		body        string
+		wantTitle   string
+	}{
+		{
+			name:        "legacy event message",
+			sessionName: "aaaa-bbbb-cccc-dddd-eeee",
+			body: `{"type":"event_msg","payload":{"type":"agent_message","message":"assistant preface"}}` + "\n" +
+				`{"type":"event_msg","payload":{"type":"user_message","message":"اولین پیام کاربر"}}` + "\n",
+			wantTitle: "اولین پیام کاربر",
+		},
+		{
+			name:        "response item",
+			sessionName: "aaaa-bbbb-cccc-dddd-eeee",
+			body: `{"timestamp":"2026-05-23T07:39:57.247Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"عنوان از پیام کاربر"}]}}` + "\n" +
+				`{"timestamp":"2026-05-23T07:39:58.016Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"پاسخ دستیار"}]}}` + "\n",
+			wantTitle: "عنوان از پیام کاربر",
+		},
+		{
+			name: "response item ignores bootstrap when session name is empty",
+			body: `{"timestamp":"2026-05-23T07:39:57.247Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":` + strconv.Quote(bootstrap) + `}]}}` + "\n" +
+				`{"timestamp":"2026-05-23T07:40:57.247Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"عنوان از پیام کاربر با نام خالی"}]}}` + "\n",
+			wantTitle: "عنوان از پیام کاربر با نام خالی",
+		},
 	}
-	meta := state.SessionMeta{
-		Key:            "codex:019e53c6-b496-7320-8735-711ec53cb9fc",
-		Agent:          "codex",
-		SessionID:      "019e53c6-b496-7320-8735-711ec53cb9fc",
-		SessionName:    "",
-		TranscriptPath: transcriptPath,
-		Cwd:            dir,
-		ProjectName:    "Project",
-		UpdatedAt:      time.Unix(1700000000, 0),
-	}
-	withLegacyState(t, &state.AppState{Sessions: map[string]state.SessionMeta{meta.Key: meta}})
 
-	sidebar := mergeLegacySidebarData(readmodels.SidebarData{})
-	if len(sidebar.ProjectGroups) != 1 || len(sidebar.ProjectGroups[0].Chats) != 1 {
-		t.Fatalf("expected one imported chat, got %#v", sidebar.ProjectGroups)
-	}
-	if got := sidebar.ProjectGroups[0].Chats[0].Title; got != "عنوان از پیام کاربر با نام خالی" {
-		t.Fatalf("expected title from codex response_item user message when session name empty, got %q", got)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			transcriptPath := filepath.Join(dir, "rollout-2026-05-23T11-09-51-aaaa-bbbb-cccc-dddd-eeee.jsonl")
+			if err := os.WriteFile(transcriptPath, []byte(test.body), 0o644); err != nil {
+				t.Fatalf("write transcript: %v", err)
+			}
+			meta := state.SessionMeta{
+				Key:            "codex:aaaa-bbbb-cccc-dddd-eeee",
+				Agent:          "codex",
+				SessionID:      "aaaa-bbbb-cccc-dddd-eeee",
+				SessionName:    test.sessionName,
+				TranscriptPath: transcriptPath,
+				Cwd:            dir,
+				ProjectName:    "Project",
+				UpdatedAt:      time.Unix(1700000000, 0),
+			}
+			withLegacyState(t, &state.AppState{Sessions: map[string]state.SessionMeta{meta.Key: meta}})
+
+			sidebar := mergeLegacySidebarData(readmodels.SidebarData{})
+			if len(sidebar.ProjectGroups) != 1 || len(sidebar.ProjectGroups[0].Chats) != 1 {
+				t.Fatalf("expected one imported chat, got %#v", sidebar.ProjectGroups)
+			}
+			if got := sidebar.ProjectGroups[0].Chats[0].Title; got != test.wantTitle {
+				t.Fatalf("title = %q, want %q", got, test.wantTitle)
+			}
+		})
 	}
 }
 

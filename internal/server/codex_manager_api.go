@@ -467,11 +467,17 @@ func handleAPICodexManagerActivateBest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	repository := account.Repository{Paths: codexManagerPaths()}
-	if err := switchCodexManagerLiveAccount(r.Context(), repository, selection.Best.Account); err != nil {
+	authChanged, err := switchCodexManagerLiveAccountWithResult(r.Context(), repository, selection.Best.Account)
+	if err != nil {
 		http.Error(w, "Could not activate recommended account: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	writeJSON(w, map[string]any{"account": selection.Best.Account, "recommendation": selection.Best, "accounts": redactCodexManagerAccounts(repository)})
+	writeJSON(w, map[string]any{
+		"account":        selection.Best.Account,
+		"authChanged":    authChanged,
+		"recommendation": selection.Best,
+		"accounts":       redactCodexManagerAccounts(repository),
+	})
 }
 
 func handleAPICodexManagerHistory(w http.ResponseWriter, r *http.Request) {

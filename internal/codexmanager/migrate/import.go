@@ -463,25 +463,6 @@ func readCurrentHistory(path string) ([]history.Sample, error) {
 	return samples, scanner.Err()
 }
 
-func readLegacyHistory(path string) ([]history.Sample, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-	samples := make([]history.Sample, 0)
-	scanner := bufio.NewScanner(file)
-	buffer := make([]byte, 0, 64<<10)
-	scanner.Buffer(buffer, 2<<20)
-	for scanner.Scan() {
-		sample, parseErr := parseLegacyHistorySample(scanner.Bytes())
-		if parseErr == nil && sample.Account != "" {
-			samples = append(samples, sample)
-		}
-	}
-	return samples, scanner.Err()
-}
-
 func parseLegacyHistorySample(data []byte) (history.Sample, error) {
 	var row struct {
 		Account   string   `json:"account"`

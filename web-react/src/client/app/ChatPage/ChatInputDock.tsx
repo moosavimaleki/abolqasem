@@ -1,40 +1,54 @@
-import { memo, type RefObject } from "react"
-import type { AgentProvider, CodexExecutionMode, CodexLockStatus, ModelOptions, RateLimitSnapshot } from "../../../shared/types"
-import { ChatInput, type ChatInputHandle } from "../../components/chat-ui/ChatInput"
-import type { ContextWindowSnapshot } from "../../lib/contextWindow"
-import type { AbolqasemState } from "../useAbolqasemState"
+import { memo, type RefObject } from "react";
+import type {
+  AgentProvider,
+  CodexExecutionMode,
+  CodexLockStatus,
+  ModelOptions,
+  RateLimitSnapshot,
+} from "../../../shared/types";
+import {
+  ChatInput,
+  type ChatInputHandle,
+} from "../../components/chat-ui/ChatInput";
+import type { ContextWindowSnapshot } from "../../lib/contextWindow";
+import type { AbolqasemState } from "../useAbolqasemState";
 
 interface ChatInputDockProps {
-  inputRef: RefObject<HTMLDivElement | null>
-  onLayoutChange: () => void
-  chatInputRef: RefObject<ChatInputHandle | null>
-  chatInputElementRef: RefObject<HTMLTextAreaElement | null>
-  activeChatId: string | null
-  previousPrompt: string | null
-  onJumpToPreviousUserPrompt?: () => void | Promise<void>
-  hasSelectedProject: boolean
-  connectionStatus: AbolqasemState["connectionStatus"]
-  runtimeStatus: string | null
-  canCancel: boolean
-  projectId: string | null
-  activeProvider: AgentProvider | null
-  availableProviders: AbolqasemState["availableProviders"]
-  contextWindowSnapshot: ContextWindowSnapshot | null
-  rateLimitSnapshot: RateLimitSnapshot | null
-  accountEmail?: string | null
-  readOnly?: boolean
-  codexLock?: CodexLockStatus | null
-  lockBusy?: boolean
-  onTakeOverSession?: (executionMode: CodexExecutionMode) => void
-  onReleaseSession?: () => void
-  onRefreshSessionLock?: () => void
-  onCodexExecutionModeChange?: (executionMode: CodexExecutionMode) => void
-  runtimePlanMode?: boolean
-  onRuntimePlanModeChange?: (planMode: boolean) => Promise<void>
-  onReloadCodexAuth?: () => void
-  onSubmit: AbolqasemState["handleSend"]
-  onRuntimePreferenceChange?: (preference: { provider: AgentProvider; model: string; modelOptions: ModelOptions }) => Promise<void>
-  onCancel: () => void
+  inputRef: RefObject<HTMLDivElement | null>;
+  onLayoutChange: () => void;
+  chatInputRef: RefObject<ChatInputHandle | null>;
+  chatInputElementRef: RefObject<HTMLTextAreaElement | null>;
+  activeChatId: string | null;
+  previousPrompt: string | null;
+  onJumpToPreviousUserPrompt?: () => void | Promise<void>;
+  hasSelectedProject: boolean;
+  connectionStatus: AbolqasemState["connectionStatus"];
+  runtimeStatus: string | null;
+  canCancel: boolean;
+  projectId: string | null;
+  activeProvider: AgentProvider | null;
+  availableProviders: AbolqasemState["availableProviders"];
+  contextWindowSnapshot: ContextWindowSnapshot | null;
+  rateLimitSnapshot: RateLimitSnapshot | null;
+  accountEmail?: string | null;
+  onAccountActivated?: () => void | Promise<void>;
+  readOnly?: boolean;
+  codexLock?: CodexLockStatus | null;
+  lockBusy?: boolean;
+  onTakeOverSession?: (executionMode: CodexExecutionMode) => void;
+  onReleaseSession?: () => void;
+  onRefreshSessionLock?: () => void;
+  onCodexExecutionModeChange?: (executionMode: CodexExecutionMode) => void;
+  runtimePlanMode?: boolean;
+  onRuntimePlanModeChange?: (planMode: boolean) => Promise<void>;
+  onReloadCodexAuth?: () => void;
+  onSubmit: AbolqasemState["handleSend"];
+  onRuntimePreferenceChange?: (preference: {
+    provider: AgentProvider;
+    model: string;
+    modelOptions: ModelOptions;
+  }) => Promise<void>;
+  onCancel: () => void;
 }
 
 export const ChatInputDock = memo(function ChatInputDock({
@@ -55,6 +69,7 @@ export const ChatInputDock = memo(function ChatInputDock({
   contextWindowSnapshot,
   rateLimitSnapshot,
   accountEmail = null,
+  onAccountActivated,
   readOnly = false,
   codexLock = null,
   lockBusy = false,
@@ -71,7 +86,10 @@ export const ChatInputDock = memo(function ChatInputDock({
 }: ChatInputDockProps) {
   return (
     <div className="absolute bottom-0 left-0 right-0 z-20 pointer-events-none">
-      <div className="bg-gradient-to-t from-background via-background pointer-events-auto" ref={inputRef}>
+      <div
+        className="bg-gradient-to-t from-background via-background pointer-events-auto"
+        ref={inputRef}
+      >
         <ChatInput
           ref={chatInputRef}
           inputElementRef={chatInputElementRef}
@@ -93,6 +111,7 @@ export const ChatInputDock = memo(function ChatInputDock({
           contextWindowSnapshot={contextWindowSnapshot}
           rateLimitSnapshot={rateLimitSnapshot}
           accountEmail={accountEmail}
+          onAccountActivated={onAccountActivated}
           readOnly={readOnly}
           codexLock={codexLock}
           lockBusy={lockBusy}
@@ -106,5 +125,5 @@ export const ChatInputDock = memo(function ChatInputDock({
         />
       </div>
     </div>
-  )
-})
+  );
+});
